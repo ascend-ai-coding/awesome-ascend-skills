@@ -1,6 +1,6 @@
 ---
 name: toolkit-conda
-description: Install CANN 8.3.RC1 toolkit via Conda environment. Use when setting up isolated CANN environments with Conda for Atlas A3/A2/910 chips. Recommended for development.
+description: Install CANN 8.3 toolkit via Conda environment. Use when setting up isolated CANN environments with Conda for Atlas A3/A2/910 chips. Recommended for development.
 ---
 
 # CANN Toolkit Installation (Conda)

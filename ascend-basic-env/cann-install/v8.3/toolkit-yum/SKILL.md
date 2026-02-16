@@ -1,6 +1,6 @@
 ---
 name: toolkit-yum
-description: Install CANN 8.3.RC1 toolkit via Yum/APT package manager. Use for system-wide CANN installation on openEuler, CentOS, and other RPM-based Linux distributions.
+description: Install CANN 8.3 toolkit via Yum/APT package manager. Use for system-wide CANN installation on openEuler, CentOS, and other RPM-based Linux distributions.
 ---
 
 # CANN Toolkit Installation (Yum)
@@ -27,7 +27,7 @@ yum makecache
 
 ```bash
 # Install toolkit
-sudo yum install -y Ascend-cann-toolkit-8.3.RC1
+sudo yum install -y Ascend-cann-toolkit-8.3
 ```
 
 ## Configure Environment
@@ -41,17 +41,17 @@ source /usr/local/Ascend/ascend-toolkit/set_env.sh
 
 ### Atlas A3 Series
 ```bash
-sudo yum install -y Atlas-A3-cann-kernels-8.3.RC1
+sudo yum install -y Atlas-A3-cann-kernels-8.3
 ```
 
 ### Atlas A2 Series (910B)
 ```bash
-sudo yum install -y Ascend-cann-kernels-910b-8.3.RC1
+sudo yum install -y Ascend-cann-kernels-910b-8.3
 ```
 
 ### Atlas Training Series (910)
 ```bash
-sudo yum install -y Ascend-cann-kernels-910-8.3.RC1
+sudo yum install -y Ascend-cann-kernels-910-8.3
 ```
 
 ## Quick Reference Commands
@@ -60,16 +60,16 @@ sudo yum install -y Ascend-cann-kernels-910-8.3.RC1
 # Full installation (A3)
 sudo curl https://repo.oepkgs.net/ascend/cann/ascend.repo -o /etc/yum.repos.d/ascend.repo
 yum makecache
-sudo yum install -y Ascend-cann-toolkit-8.3.RC1
+sudo yum install -y Ascend-cann-toolkit-8.3
 source /usr/local/Ascend/ascend-toolkit/set_env.sh
-sudo yum install -y Atlas-A3-cann-kernels-8.3.RC1
+sudo yum install -y Atlas-A3-cann-kernels-8.3
 
 # Full installation (910B)
 sudo curl https://repo.oepkgs.net/ascend/cann/ascend.repo -o /etc/yum.repos.d/ascend.repo
 yum makecache
-sudo yum install -y Ascend-cann-toolkit-8.3.RC1
+sudo yum install -y Ascend-cann-toolkit-8.3
 source /usr/local/Ascend/ascend-toolkit/set_env.sh
-sudo yum install -y Ascend-cann-kernels-910b-8.3.RC1
+sudo yum install -y Ascend-cann-kernels-910b-8.3
 ```
 
 ## List Available Packages

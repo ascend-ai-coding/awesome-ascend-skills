@@ -1,85 +1,65 @@
 ---
 name: cann-install
-description: CANN 8.3.RC1 installation master skill for Huawei Ascend NPU. Routes to prerequisites, driver/firmware, toolkit installation methods (conda/yum/offline), environment configuration, verification, and troubleshooting. Use when installing, upgrading, or troubleshooting CANN installation on Atlas A3/A2/910 chips.
+description: CANN installation master skill for Huawei Ascend NPU. Routes to version-specific installation guides for CANN 8.3 and 8.5. Use when installing, upgrading, or troubleshooting CANN installation on Atlas A3/A2/910 chips.
 ---
 
-# CANN 8.3.RC1 Installation
+# CANN Installation
 
-CANN (Compute Architecture for Neural Networks) installation guide for Ascend NPU.
+CANN (Compute Architecture for Neural Networks) installation guides for Ascend NPU.
 
-## Quick Navigation
+## Version Selection
 
-| Step | Task | Sub-Skill |
-|------|------|-----------|
-| 1 | Check Prerequisites | [prerequisites/](prerequisites/SKILL.md) |
-| 2 | Install Driver & Firmware | [driver-firmware/](driver-firmware/SKILL.md) |
-| 3 | Install Toolkit (Choose One) | See below |
-| 4 | Configure Environment | [env-config/](env-config/SKILL.md) |
-| 5 | Verify Installation | [verification/](verification/SKILL.md) |
-| - | Troubleshooting | [troubleshooting/](troubleshooting/SKILL.md) |
+| Version | Status | Sub-Skill |
+|---------|--------|-----------|
+| **8.5.0** | Latest | [v8.5/](v8.5/SKILL.md) |
+| **8.3.RC1** | Stable | [v8.3/](v8.3/SKILL.md) |
 
-## Toolkit Installation Methods
-
-| Method | Sub-Skill | Best For |
-|--------|-----------|----------|
-| Conda (Recommended) | [toolkit-conda/](toolkit-conda/SKILL.md) | Development, isolated environments |
-| Yum/APT | [toolkit-yum/](toolkit-yum/SKILL.md) | System-wide, production servers |
-| Offline | [toolkit-offline/](toolkit-offline/SKILL.md) | Air-gapped systems, no internet |
-
-## Quick Start (Conda Method)
+## Quick Start (Recommended: 8.5.0)
 
 ```bash
 # 1. Add Conda channel
 conda config --add channels https://repo.huaweicloud.com/ascend/repos/conda/
 
 # 2. Install CANN toolkit
-conda install ascend::cann-toolkit
+conda install ascend::cann-toolkit==8.5.0
 
 # 3. Configure environment
 source /home/miniconda3/Ascend/ascend-toolkit/set_env.sh
 
-# 4. Install kernels (choose your chip)
-conda install ascend::a3-cann-kernels      # Atlas A3
+# 4. Install ops (choose your chip)
+conda install ascend::cann-a3-ops==8.5.0     # Atlas A3
 # OR
-conda install ascend::cann-kernels-910b    # Atlas A2 (910B)
+conda install ascend::cann-910b-ops==8.5.0   # Atlas A2 (910B)
 # OR
-conda install ascend::cann-kernels-910     # Atlas Training (910)
+conda install ascend::cann-910-ops==8.5.0    # Atlas Training (910)
 ```
 
-## Chip Support Matrix
+## Version Comparison
 
-| Chip Series | Kernels Package | Use Case |
-|-------------|-----------------|----------|
-| Atlas A3 | `a3-cann-kernels` | Latest inference/training |
-| Atlas A2 (910B) | `cann-kernels-910b` | Inference, fine-tuning |
-| Atlas Training (910) | `cann-kernels-910` | Training workloads |
+| Feature | 8.3.RC1 | 8.5.0 |
+|---------|---------|-------|
+| Python Support | 3.7-3.11.4 | **3.7-3.13.x** |
+| New OS | - | **vesselOS** |
+| Package Naming | `*-cann-kernels` | `cann-*-ops` |
+| Conda Permissions | N/A | **Requires 755** |
+
+## Chip Support
+
+| Chip Series | 8.3 Package | 8.5 Package |
+|-------------|-------------|-------------|
+| Atlas A3 | `a3-cann-kernels` | `cann-a3-ops` |
+| Atlas A2 (910B) | `cann-kernels-910b` | `cann-910b-ops` |
+| Atlas Training (910) | `cann-kernels-910` | `cann-910-ops` |
 
 ## Installation Workflow
 
-```
-┌─────────────────┐
-│ Prerequisites   │ ← Check OS, Python, Hardware
-└────────┬────────┘
-         ▼
-┌─────────────────┐
-│ Driver/Firmware │ ← Install NPU driver first
-└────────┬────────┘
-         ▼
-┌─────────────────┐
-│ CANN Toolkit    │ ← Choose: Conda/Yum/Offline
-└────────┬────────┘
-         ▼
-┌─────────────────┐
-│ Env Config      │ ← Source set_env.sh
-└────────┬────────┘
-         ▼
-┌─────────────────┐
-│ Verification    │ ← npu-smi info
-└─────────────────┘
-```
+1. **Check Prerequisites** → Hardware, OS, Python version
+2. **Install Driver & Firmware** → NPU driver must be installed first
+3. **Install CANN Toolkit** → Choose: Conda/Yum/Offline
+4. **Configure Environment** → Source set_env.sh
+5. **Verify Installation** → Run npu-smi info
 
 ## Official References
 
-- [CANN 8.3 Documentation](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/83RC1)
-- [Download Center](https://www.hiascend.com/developer/download/community/result?module=cann&cann=8.3.RC1)
-- [Installation Guide](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/83RC1/softwareinst/instg/instg_quick.html)
+- [CANN Documentation](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition)
+- [Download Center](https://www.hiascend.com/developer/download/community/result?module=cann)

@@ -1,11 +1,11 @@
 ---
 name: prerequisites
-description: CANN 8.3.RC1 installation prerequisites and system requirements. Use when checking hardware compatibility, OS support, Python versions, or system requirements before CANN installation on Ascend NPU.
+description: CANN 8.3 installation prerequisites and system requirements. Use when checking hardware compatibility, OS support, Python versions, or system requirements before CANN installation on Ascend NPU.
 ---
 
 # CANN Installation Prerequisites
 
-Check system requirements before installing CANN 8.3.RC1.
+Check system requirements before installing CANN 8.3.
 
 ## Hardware Requirements
 

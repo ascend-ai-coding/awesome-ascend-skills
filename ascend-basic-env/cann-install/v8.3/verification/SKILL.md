@@ -1,6 +1,6 @@
 ---
 name: verification
-description: Verify CANN 8.3.RC1 installation and environment on Ascend NPU. Use when checking if CANN, drivers, and NPU devices are correctly installed and configured.
+description: Verify CANN 8.3 installation and environment on Ascend NPU. Use when checking if CANN, drivers, and NPU devices are correctly installed and configured.
 ---
 
 # Installation Verification
@@ -39,7 +39,7 @@ cat /usr/local/Ascend/ascend-toolkit/latest/version.info
 
 **Expected output:**
 ```
-Version=8.3.RC1
+Version=8.3
 ```
 
 ## Verify Environment Variables
@@ -121,7 +121,7 @@ echo -e "\n=== Verification Complete ==="
 | Check | Command | Expected |
 |-------|---------|----------|
 | Driver installed | `npu-smi info` | NPU info displayed |
-| CANN version | `cat .../version.info` | Version=8.3.RC1 |
+| CANN version | `cat .../version.info` | Version=8.3 |
 | Env vars set | `echo $ASCEND_TOOLKIT_HOME` | Path displayed |
 | NPU available | `torch.npu.is_available()` | True |
 

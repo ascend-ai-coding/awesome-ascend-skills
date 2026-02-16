@@ -1,6 +1,6 @@
 ---
 name: driver-firmware
-description: Ascend NPU driver and firmware installation for CANN 8.3.RC1. Use when installing or upgrading NPU drivers, firmware, creating HwHiAiUser, or resolving driver-related issues.
+description: Ascend NPU driver and firmware installation for CANN 8.3. Use when installing or upgrading NPU drivers, firmware, creating HwHiAiUser, or resolving driver-related issues.
 ---
 
 # NPU Driver & Firmware Installation

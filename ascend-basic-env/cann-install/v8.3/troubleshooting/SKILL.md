@@ -1,6 +1,6 @@
 ---
 name: troubleshooting
-description: CANN 8.3.RC1 installation troubleshooting guide. Use when resolving installation errors, DKMS failures, missing tools, kernel header issues, HwHiAiUser creation, or permission problems on Ascend NPU.
+description: CANN 8.3 installation troubleshooting guide. Use when resolving installation errors, DKMS failures, missing tools, kernel header issues, HwHiAiUser creation, or permission problems on Ascend NPU.
 ---
 
 # Installation Troubleshooting

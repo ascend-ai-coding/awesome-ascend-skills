@@ -1,6 +1,6 @@
 ---
 name: env-config
-description: Configure CANN 8.3.RC1 environment variables after installation. Use when setting up PATH, LD_LIBRARY_PATH, ASCEND_TOOLKIT_HOME, or persisting CANN environment via set_env.sh.
+description: Configure CANN 8.3 environment variables after installation. Use when setting up PATH, LD_LIBRARY_PATH, ASCEND_TOOLKIT_HOME, or persisting CANN environment via set_env.sh.
 ---
 
 # Environment Configuration

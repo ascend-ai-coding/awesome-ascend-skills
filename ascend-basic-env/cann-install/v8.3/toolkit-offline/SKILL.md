@@ -1,6 +1,6 @@
 ---
 name: toolkit-offline
-description: Install CANN 8.3.RC1 toolkit from offline packages. Use for air-gapped environments, systems without internet access, or when package managers are unavailable.
+description: Install CANN 8.3 toolkit from offline packages. Use for air-gapped environments, systems without internet access, or when package managers are unavailable.
 ---
 
 # CANN Toolkit Installation (Offline)
@@ -9,16 +9,16 @@ Install CANN toolkit from offline packages for **air-gapped environments**.
 
 ## Download Packages
 
-Download from [Ascend Download Center](https://www.hiascend.com/developer/download/community/result?module=cann&cann=8.3.RC1):
+Download from [Ascend Download Center](https://www.hiascend.com/developer/download/community/result?module=cann&cann=8.3):
 
 ### Required Packages
 
 | Package | Description |
 |---------|-------------|
-| `Ascend-cann-toolkit_8.3.RC1_linux-aarch64.run` | CANN toolkit |
-| `Atlas-A3-cann-kernels_8.3.RC1_linux-aarch64.run` | A3 kernels |
-| `Ascend-cann-kernels-910b_8.3.RC1_linux-aarch64.run` | 910B kernels |
-| `Ascend-cann-kernels-910_8.3.RC1_linux-aarch64.run` | 910 kernels |
+| `Ascend-cann-toolkit_8.3_linux-aarch64.run` | CANN toolkit |
+| `Atlas-A3-cann-kernels_8.3_linux-aarch64.run` | A3 kernels |
+| `Ascend-cann-kernels-910b_8.3_linux-aarch64.run` | 910B kernels |
+| `Ascend-cann-kernels-910_8.3_linux-aarch64.run` | 910 kernels |
 
 ## Transfer Files
 
@@ -35,10 +35,10 @@ scp Ascend-cann-*.run user@server:/home/
 cd /home
 
 # Add execute permission
-chmod +x Ascend-cann-toolkit_8.3.RC1_linux-aarch64.run
+chmod +x Ascend-cann-toolkit_8.3_linux-aarch64.run
 
 # Install
-./Ascend-cann-toolkit_8.3.RC1_linux-aarch64.run --install
+./Ascend-cann-toolkit_8.3_linux-aarch64.run --install
 
 # Expected output:
 # Install success!
@@ -55,20 +55,20 @@ source /usr/local/Ascend/ascend-toolkit/set_env.sh
 
 ### Atlas A3 Series
 ```bash
-chmod +x Atlas-A3-cann-kernels_8.3.RC1_linux-aarch64.run
-./Atlas-A3-cann-kernels_8.3.RC1_linux-aarch64.run --install
+chmod +x Atlas-A3-cann-kernels_8.3_linux-aarch64.run
+./Atlas-A3-cann-kernels_8.3_linux-aarch64.run --install
 ```
 
 ### Atlas A2 Series (910B)
 ```bash
-chmod +x Ascend-cann-kernels-910b_8.3.RC1_linux-aarch64.run
-./Ascend-cann-kernels-910b_8.3.RC1_linux-aarch64.run --install
+chmod +x Ascend-cann-kernels-910b_8.3_linux-aarch64.run
+./Ascend-cann-kernels-910b_8.3_linux-aarch64.run --install
 ```
 
 ### Atlas Training Series (910)
 ```bash
-chmod +x Ascend-cann-kernels-910_8.3.RC1_linux-aarch64.run
-./Ascend-cann-kernels-910_8.3.RC1_linux-aarch64.run --install
+chmod +x Ascend-cann-kernels-910_8.3_linux-aarch64.run
+./Ascend-cann-kernels-910_8.3_linux-aarch64.run --install
 ```
 
 ## Installation Options
@@ -112,4 +112,4 @@ source ~/.bashrc
 ## Official Reference
 
 - [Offline Installation Guide](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/83RC1/softwareinst/instg/instg_0012.html)
-- [Download Center](https://www.hiascend.com/developer/download/community/result?module=cann&cann=8.3.RC1)
+- [Download Center](https://www.hiascend.com/developer/download/community/result?module=cann&cann=8.3)
