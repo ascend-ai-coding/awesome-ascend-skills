@@ -8,6 +8,7 @@ A streamlined knowledge base for Huawei Ascend NPU development, structured as AI
 |-------|-------------|
 | [npu-smi](npu-smi/SKILL.md) | npu-smi device management: queries, configuration, firmware upgrades, virtualization, certificates |
 | [hccl-test](hccl-test/SKILL.md) | HCCL collective communication performance testing and benchmarking |
+| [atc-model-converter](atc-model-converter/SKILL.md) | ATC model conversion: ONNX to .om format, OM inference with ais_bench, precision comparison, YOLO end-to-end deployment |
 
 ## Installation
 
@@ -17,6 +18,7 @@ A streamlined knowledge base for Huawei Ascend NPU development, structured as AI
 # Copy skills to Claude Code directory
 cp -r npu-smi ~/.claude/skills/
 cp -r hccl-test ~/.claude/skills/
+cp -r atc-model-converter ~/.claude/skills/
 ```
 
 ### OpenCode
@@ -26,10 +28,12 @@ cp -r hccl-test ~/.claude/skills/
 mkdir -p .opencode/skills
 cp -r npu-smi .opencode/skills/
 cp -r hccl-test .opencode/skills/
+cp -r atc-model-converter .opencode/skills/
 
 # User-level
 cp -r npu-smi ~/.config/opencode/skills/
 cp -r hccl-test ~/.config/opencode/skills/
+cp -r atc-model-converter ~/.config/opencode/skills/
 ```
 
 ### Codex
@@ -39,10 +43,12 @@ cp -r hccl-test ~/.config/opencode/skills/
 mkdir -p .agents/skills
 cp -r npu-smi .agents/skills/
 cp -r hccl-test .agents/skills/
+cp -r atc-model-converter .agents/skills/
 
 # User-level
 cp -r npu-smi ~/.agents/skills/
 cp -r hccl-test ~/.agents/skills/
+cp -r atc-model-converter ~/.agents/skills/
 ```
 
 ### Cursor
@@ -52,10 +58,12 @@ cp -r hccl-test ~/.agents/skills/
 mkdir -p .cursor/skills
 cp -r npu-smi .cursor/skills/
 cp -r hccl-test .cursor/skills/
+cp -r atc-model-converter .cursor/skills/
 
 # User-level
 cp -r npu-smi ~/.cursor/skills/
 cp -r hccl-test ~/.cursor/skills/
+cp -r atc-model-converter ~/.cursor/skills/
 ```
 
 ## Structure
@@ -76,6 +84,21 @@ awesome-ascend-skills/
 │   ├── SKILL.md                      # HCCL testing guide
 │   ├── references/
 │   └── scripts/
+├── atc-model-converter/
+│   ├── SKILL.md                      # ATC model conversion guide
+│   ├── references/
+│   │   ├── FAQ.md
+│   │   ├── CANN_VERSIONS.md
+│   │   ├── PARAMETERS.md
+│   │   ├── INFERENCE.md
+│   │   └── AIPP_CONFIG.md
+│   └── scripts/
+│       ├── check_env.sh
+│       ├── convert_onnx.sh
+│       ├── get_onnx_info.py
+│       ├── infer_om.py
+│       ├── compare_precision.py
+│       └── yolo_om_infer.py
 └── README.md
 ```
 
