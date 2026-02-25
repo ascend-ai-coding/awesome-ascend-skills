@@ -1,0 +1,28 @@
+# W4A8 Quantization Configuration
+# Usage: msmodelslim quant --config_path assets/quant_config_w4a8.yaml ...
+# Note: W4A8 typically requires outlier suppression algorithms
+
+apiversion: modelslim_v1
+spec:
+  process:
+    - type: "smooth_quant"          # Outlier suppression (recommended)
+      alpha: 0.5                    # SmoothQuant alpha parameter
+    - type: "linear_quant"
+      qconfig:
+        act:
+          scope: "per_token"
+          dtype: "int8"
+          symmetric: true
+          method: "minmax"
+        weight:
+          scope: "per_group"
+          group_size: 128           # Group size for 4-bit quantization
+          dtype: "int4"
+          symmetric: true
+          method: "autoround"       # AutoRound for better 4-bit precision
+        include:
+          - "*"
+        exclude: []
+  save:
+    - type: "ascendv1_saver"
+      part_file_size: 4

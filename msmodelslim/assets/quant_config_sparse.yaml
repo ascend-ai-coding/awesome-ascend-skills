@@ -1,0 +1,30 @@
+# Sparse Quantization Configuration (W8A8S)
+# Usage: msmodelslim quant --config_path assets/quant_config_sparse.yaml ...
+# Note: Optimized for Atlas 300I Duo with hardware sparse support
+
+apiversion: modelslim_v1
+spec:
+  process:
+    - type: "smooth_quant"
+      alpha: 0.5
+    - type: "float_sparse"
+      sparsity_ratio: 0.5           # 2:4 sparsity pattern (50% sparse)
+      sparsity_pattern: "2:4"       # N:M sparse pattern
+    - type: "linear_quant"
+      qconfig:
+        act:
+          scope: "per_token"
+          dtype: "int8"
+          symmetric: true
+          method: "minmax"
+        weight:
+          scope: "per_channel"
+          dtype: "int8"
+          symmetric: true
+          method: "minmax"
+        include:
+          - "*"
+        exclude: []
+  save:
+    - type: "ascendv1_saver"
+      part_file_size: 4

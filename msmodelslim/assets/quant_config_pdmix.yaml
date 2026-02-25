@@ -1,0 +1,34 @@
+# PDMIX Quantization Configuration
+# Usage: msmodelslim quant --config_path assets/quant_config_pdmix.yaml ...
+# Note: PDMIX uses dynamic quantization for Prefilling, static for Decoding
+
+apiversion: modelslim_v1
+spec:
+  process:
+    - type: "smooth_quant"
+      alpha: 0.5
+    - type: "linear_quant"
+      qconfig:
+        act:
+          scope: "per_token"
+          dtype: "int8"
+          symmetric: true
+          method: "minmax"
+          # PDMIX specific: dynamic during prefill, static during decode
+          pdmix_enabled: true
+        weight:
+          scope: "per_channel"
+          dtype: "int8"
+          symmetric: true
+          method: "minmax"
+        include:
+          - "*"
+        exclude: []
+  save:
+    - type: "ascendv1_saver"
+      part_file_size: 4
+
+# PDMIX is particularly effective for:
+# - Large models (72B+)
+# - Long sequence inference
+# - Scenarios requiring balanced precision and performance

@@ -10,6 +10,7 @@ A streamlined knowledge base for Huawei Ascend NPU development, structured as AI
 | [hccl-test](hccl-test/SKILL.md) | HCCL collective communication performance testing and benchmarking |
 | [atc-model-converter](atc-model-converter/SKILL.md) | ATC model conversion: ONNX to .om format, OM inference with ais_bench, precision comparison, YOLO end-to-end deployment |
 | [ascend-docker](ascend-docker/SKILL.md) | Docker container setup for Ascend NPU development with device mappings and volume mounts |
+| [msmodelslim](msmodelslim/SKILL.md) | Ascend model compression tool: W4A8/W8A8/W8A8S quantization for LLM, MoE, multimodal models (Qwen, DeepSeek, GLM, Kimi), precision auto-tuning, custom model integration, vLLM-Ascend/MindIE deployment |
 
 ## Installation
 
@@ -59,6 +60,29 @@ awesome-ascend-skills/
 │       ├── infer_om.py
 │       ├── compare_precision.py
 │       └── yolo_om_infer.py
+├── ascend-docker/
+│   ├── SKILL.md                      # Docker setup guide
+│   ├── references/
+│   └── scripts/
+├── msmodelslim/
+│   ├── SKILL.md                      # Model compression guide
+│   ├── references/
+│   │   ├── installation.md
+│   │   ├── quantization-algorithms.md
+│   │   ├── model-support.md
+│   │   ├── model-integration.md
+│   │   ├── precision-tuning.md
+│   │   ├── deployment.md
+│   │   └── example-scripts.md
+│   ├── scripts/
+│   │   ├── check_env.sh
+│   │   ├── quantize_model.sh
+│   │   └── model_adapter_template.py
+│   └── assets/
+│       ├── quant_config_w8a8.yaml
+│       ├── quant_config_w4a8.yaml
+│       ├── quant_config_sparse.yaml
+│       └── quant_config_pdmix.yaml
 └── README.md
 ```
 

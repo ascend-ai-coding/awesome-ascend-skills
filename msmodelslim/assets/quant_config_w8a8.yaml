@@ -1,0 +1,25 @@
+# W8A8 Dynamic Quantization Configuration
+# Usage: msmodelslim quant --config_path assets/quant_config_w8a8.yaml ...
+
+apiversion: modelslim_v1
+spec:
+  process:
+    - type: "linear_quant"
+      qconfig:
+        act:
+          scope: "per_token"        # Dynamic per-token quantization
+          dtype: "int8"
+          symmetric: true
+          method: "minmax"
+        weight:
+          scope: "per_channel"      # Per-channel weight quantization
+          dtype: "int8"
+          symmetric: true
+          method: "minmax"
+        include:
+          - "*"                     # Quantize all linear layers
+        exclude:
+          - "*down_proj*"           # Fallback down_proj layers (optional)
+  save:
+    - type: "ascendv1_saver"
+      part_file_size: 4             # Max 4GB per safetensors file
