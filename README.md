@@ -11,6 +11,7 @@ A streamlined knowledge base for Huawei Ascend NPU development, structured as AI
 | [atc-model-converter](atc-model-converter/SKILL.md) | ATC model conversion: ONNX to .om format, OM inference with ais_bench, precision comparison, YOLO end-to-end deployment |
 | [ascend-docker](ascend-docker/SKILL.md) | Docker container setup for Ascend NPU development with device mappings and volume mounts |
 | [msmodelslim](msmodelslim/SKILL.md) | Ascend model compression tool: W4A8/W8A8/W8A8S quantization for LLM, MoE, multimodal models (Qwen, DeepSeek, GLM, Kimi), precision auto-tuning, custom model integration, vLLM-Ascend/MindIE deployment |
+| [ais-bench](ais-bench/SKILL.md) | AI model evaluation tool: accuracy evaluation (text, multimodal), performance evaluation (latency, throughput, stress testing), 15+ benchmarks (MMLU, GSM8K, MMMU, BFCL), multi-turn dialogue, Function Call |
 
 ## Installation
 
@@ -83,6 +84,10 @@ awesome-ascend-skills/
 │       ├── quant_config_w4a8.yaml
 │       ├── quant_config_sparse.yaml
 │       └── quant_config_pdmix.yaml
+├── ais-bench/
+│   ├── SKILL.md                      # AI model evaluation guide
+│   ├── references/
+│   └── scripts/
 └── README.md
 ```
 

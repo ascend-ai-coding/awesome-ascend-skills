@@ -1,0 +1,3 @@
+{"type": "image", "path": ["/path/to/image1.jpg"], "question": "Describe this image", "answer": ""}
+{"type": "image", "path": ["/path/to/image2.jpg"], "question": "What objects are in this image?", "answer": ""}
+{"type": "video", "path": ["/path/to/video.mp4"], "question": "Describe the action in this video", "answer": ""}

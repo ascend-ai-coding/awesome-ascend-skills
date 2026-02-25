@@ -1,0 +1,14 @@
+{
+    "output_config": {
+        "method": "percentage",
+        "params": {
+            "percentage_distribute": [
+                [100, 0.5],
+                [200, 0.3],
+                [400, 0.2]
+            ]
+        }
+    },
+    "request_count": "100",
+    "sampling_mode": "shuffle"
+}

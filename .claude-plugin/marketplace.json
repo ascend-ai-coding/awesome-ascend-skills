@@ -37,6 +37,12 @@
       "description": "Huawei Ascend NPU model compression tool for LLM, MoE, and multimodal models. Supports W4A8, W8A8, W8A8S, W8A16, W8A8C8 quantization and sparse quantization. Compatible with 20+ model families (Qwen, DeepSeek, LLaMA, GLM, Kimi, Baichuan, Yi, InternLM, Mistral, etc.). Includes precision auto-tuning, custom model integration guide, and vLLM-Ascend/MindIE deployment.",
       "source": "./msmodelslim",
       "category": "development"
+    },
+    {
+      "name": "ais-bench",
+      "description": "AI model evaluation tool for Ascend NPU. Supports accuracy evaluation (text, multimodal datasets), performance evaluation (latency, throughput, stress testing), vLLM/Triton inference, 15+ benchmarks (MMLU, GSM8K, MMMU, BFCL), multi-turn dialogue, Function Call, and custom datasets.",
+      "source": "./ais-bench",
+      "category": "testing"
     }
   ]
 }
