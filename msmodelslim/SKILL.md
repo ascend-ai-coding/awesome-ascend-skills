@@ -135,6 +135,9 @@ If this fails, your Docker image has compatibility issues. Try:
 1. Use a different/updated Docker image
 2. Reinstall torch_npu matching your CANN version
 3. Ensure CANN 8.3.RC1+ for BF16 support
+
+> **Container Setup**: See [ascend-docker](../ascend-docker/SKILL.md) for proper Docker container creation with NPU device mappings. Refer to [references/docker-setup.md](references/docker-setup.md) for msmodelslim-specific container configuration.
+
 ---
 
 ## Algorithm Selection
