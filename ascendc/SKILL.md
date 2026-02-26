@@ -539,3 +539,444 @@ If Python tests exist in the project (e.g., `op-plugin/test/test_custom_ops/test
   3. Copy the core class from `op_kernel/grouped_matmul_finalize_routing.h`, adjust GM tensors and dequantization flow according to new requirements
   4. Refer to related tiling/infershape files to ensure correct parameter mapping from Graph to kernel
   5. Refer to `test_aclnn_softmax_ops.cpp` to write a new `aclnn` example, and supplement unit tests if needed
+
+---
+
+## Generic Operator Example Generation
+
+### Overview
+
+This section provides a general guide for generating CANN `aclnn_*` examples for any AscendC operator, including how to automatically extract operator information from `op_host` or `op_kernel` files to create accurate example code.
+
+### How to Generate Generic Operator Examples
+
+#### Step 1: Locate Operator Definition Files
+
+1. **Find op_host files**: Look for `*_def.cpp` or similar files in the `op_host` directory of the operator.
+2. **Find op_kernel files**: Look for implementation files in the `op_kernel` directory.
+3. **Extract operator information**: From these files, extract:
+   - Input parameters (names, data types, shapes)
+   - Output parameters (names, data types, shapes)
+   - Attribute parameters (names, types, default values)
+   - Supported data types and formats
+
+#### Step 2: Generate Example Code Structure
+
+Use the following template to structure your example code:
+
+```cpp
+#include "acl/acl.h"
+#include "aclnnop/aclnn_[operator_name].h"
+#include <iostream>
+#include <vector>
+
+// Define data types based on operator requirements
+#define Kernel_dtype [appropriate_data_type]
+#define Acl_dtpe [corresponding_acl_data_type]
+
+// Error checking and logging macros
+#define CHECK_RET(cond, return_expr)                                           \
+  do {                                                                         \
+    if (!(cond)) {                                                             \
+      return_expr;                                                             \
+    }                                                                          \
+  } while (0)
+
+#define LOG_PRINT(message, ...)                                                \
+  do {                                                                         \
+    printf(message, ##__VA_ARGS__);                                            \
+  } while (0)
+
+// Utility functions
+int64_t GetShapeSize(const std::vector<int64_t> &shape) {
+  int64_t shapeSize = 1;
+  for (auto i : shape) {
+    shapeSize *= i;
+  }
+  return shapeSize;
+}
+
+template <typename T>
+void PrintOutResult(std::vector<int64_t> &shape, void **deviceAddr) {
+  auto size = GetShapeSize(shape);
+  std::vector<T> resultData(size, 0);
+
+  auto ret = aclrtMemcpy(
+      resultData.data(), resultData.size() * sizeof(T), *deviceAddr,
+      size * sizeof(T), ACL_MEMCPY_DEVICE_TO_HOST);
+  CHECK_RET(
+      ret == ACL_SUCCESS,
+      LOG_PRINT("copy result from device to host failed. ERROR: %d\n", ret);
+      return);
+  for (int64_t i = 0; i < size; i++) {
+    LOG_PRINT("idx[%ld] (offset: %ld Bytes) : %f\n", i, i * sizeof(T), resultData[i]);
+  }
+}
+
+int Init(int32_t deviceId, aclrtStream *stream) {
+  auto ret = aclInit(nullptr);
+  CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("aclInit failed. ERROR: %d\n", ret); return ret);
+  ret = aclrtSetDevice(deviceId);
+  CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("aclrtSetDevice failed. ERROR: %d\n", ret); return ret);
+  ret = aclrtCreateStream(stream);
+  CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("aclrtCreateStream failed. ERROR: %d\n", ret); return ret);
+  return 0;
+}
+
+template <typename T>
+int CreateAclTensor(const std::vector<T> &hostData,
+                    const std::vector<int64_t> &shape, void **deviceAddr,
+                    aclDataType dataType, aclTensor **tensor) {
+  auto size = GetShapeSize(shape) * sizeof(T);
+  auto ret = aclrtMalloc(deviceAddr, size, ACL_MEM_MALLOC_HUGE_FIRST);
+  CHECK_RET(ret == ACL_SUCCESS,
+            LOG_PRINT("aclrtMalloc failed. ERROR: %d\n", ret);
+            return ret);
+  ret = aclrtMemcpy(*deviceAddr, size, hostData.data(), size,
+                    ACL_MEMCPY_HOST_TO_DEVICE);
+  CHECK_RET(ret == ACL_SUCCESS,
+            LOG_PRINT("aclrtMemcpy failed. ERROR: %d\n", ret);
+            return ret);
+
+  std::vector<int64_t> strides(shape.size(), 1);
+  for (int64_t i = shape.size() - 2; i >= 0; i--) {
+    strides[i] = shape[i + 1] * strides[i + 1];
+  }
+
+  *tensor = aclCreateTensor(shape.data(), shape.size(), dataType,
+                            strides.data(), 0, aclFormat::ACL_FORMAT_ND,
+                            shape.data(), shape.size(), *deviceAddr);
+  return 0;
+}
+
+int main() {
+  // 1. Initialize ACL
+  int32_t deviceId = 0;
+  aclrtStream stream;
+  auto ret = Init(deviceId, &stream);
+  CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("Init acl failed. ERROR: %d\n", ret); return ret);
+
+  // 2. Construct inputs (based on operator definition)
+  // [Input tensor declarations and initializations]
+
+  // 3. Construct outputs (based on operator definition)
+  // [Output tensor declarations and initializations]
+
+  // 4. Get workspace size and executor
+  uint64_t workspaceSize = 0;
+  aclOpExecutor *executor;
+  ret = aclnn[OperatorName]GetWorkspaceSize([input_tensors], [output_tensors], &workspaceSize, &executor);
+  CHECK_RET(
+      ret == ACL_SUCCESS,
+      LOG_PRINT("aclnn[OperatorName]GetWorkspaceSize failed. ERROR: %d\n", ret);
+      return ret);
+
+  // 5. Allocate workspace if needed
+  void *workspaceAddr = nullptr;
+  if (workspaceSize > static_cast<uint64_t>(0)) {
+    std::cout << "workspaceSize: " << workspaceSize << " bytes" << std::endl;
+    ret = aclrtMalloc(&workspaceAddr, workspaceSize, ACL_MEM_MALLOC_HUGE_FIRST);
+    CHECK_RET(ret == ACL_SUCCESS,
+              LOG_PRINT("allocate workspace failed. ERROR: %d\n", ret);
+              return ret);
+  }
+
+  // 6. Execute the operator
+  ret = aclnn[OperatorName](workspaceAddr, workspaceSize, executor, stream);
+  CHECK_RET(ret == ACL_SUCCESS,
+            LOG_PRINT("aclnn[OperatorName] failed. ERROR: %d\n", ret);
+            return ret);
+
+  // 7. Synchronize stream
+  ret = aclrtSynchronizeStream(stream);
+  CHECK_RET(ret == ACL_SUCCESS,
+            LOG_PRINT("aclrtSynchronizeStream failed. ERROR: %d\n", ret);
+            return ret);
+
+  // 8. Print results
+  // [Print output tensors]
+
+  // 9. Clean up resources
+  // [Destroy tensors and free memory]
+
+  aclrtDestroyStream(stream);
+  aclrtResetDevice(deviceId);
+  aclFinalize();
+
+  return 0;
+}
+```
+
+#### Step 3: Extract Operator Information
+
+To automatically generate accurate examples, follow these steps to extract information from operator definition files:
+
+1. **From op_host files**:
+   - Look for `Input("name")` and `Output("name")` declarations
+   - Extract data types from `.DataType({...})`
+   - Extract formats from `.Format({...})`
+   - Extract attributes from `.Attr("name")`
+
+2. **From op_kernel files**:
+   - Look for parameter structures and data types
+   - Extract computation logic to understand input/output relationships
+   - Identify any special handling or requirements
+
+#### Step 4: Customize Example for Specific Operator
+
+Using the extracted information, customize the template by:
+
+1. **Updating includes**: Change `aclnnop/aclnn_[operator_name].h` to the correct header
+2. **Setting data types**: Adjust `Kernel_dtype` and `Acl_dtpe` based on supported types
+3. **Defining input tensors**: Create tensors for each input parameter
+4. **Defining output tensors**: Create tensors for each output parameter
+5. **Calling the API**: Update the function names and parameter lists
+6. **Printing results**: Add code to print output tensors
+7. **Cleaning up**: Ensure all resources are properly released
+
+### Example: moe_init_routing_grouped_matmul_grad
+
+#### Overview
+
+The `moe_init_routing_grouped_matmul_grad` operator is a specialized AscendC operator for Mixture-of-Experts (MoE) models, designed to compute gradients for the routing and grouped matrix multiplication operations in the backward pass.
+
+#### Implementation Principle
+
+This operator performs the following key computations:
+
+1. **Gradient Propagation**: Computes gradients with respect to the input tensor(s) and weight matrix based on the gradient of the output.
+2. **Grouped Matrix Multiplication**: Efficiently handles grouped matrix operations to support expert-specific computations.
+3. **Routing Gradient Handling**: Uses routing indices to properly aggregate gradients back to the original input space.
+
+#### Generated Example Code
+
+```cpp
+#include "acl/acl.h"
+#include "aclnnop/aclnn_[operator_name].h"
+#include <iostream>
+#include <vector>
+
+```#define Kernel_dtype float
+#define Acl_dtpe aclDataType::ACL_FLOAT
+#define Index_dtype int32_t
+#define Acl_index_dtpe aclDataType::ACL_INT32
+
+#define CHECK_RET(cond, return_expr)                                           \
+  do {                                                                         \
+    if (!(cond)) {                                                             \
+      return_expr;                                                             \
+    }                                                                          \
+  } while (0)
+
+#define LOG_PRINT(message, ...)                                                \
+  do {                                                                         \
+    printf(message, ##__VA_ARGS__);                                            \
+  } while (0)
+
+int64_t GetShapeSize(const std::vector<int64_t> &shape) {
+  int64_t shapeSize = 1;
+  for (auto i : shape) {
+    shapeSize *= i;
+  }
+  return shapeSize;
+}
+
+template <typename T>
+void PrintOutResult(std::vector<int64_t> &shape, void **deviceAddr) {
+  auto size = GetShapeSize(shape);
+  std::vector<T> resultData(size, 0);
+
+  auto ret = aclrtMemcpy(
+      resultData.data(), resultData.size() * sizeof(T), *deviceAddr,
+      size * sizeof(T), ACL_MEMCPY_DEVICE_TO_HOST);
+  CHECK_RET(
+      ret == ACL_SUCCESS,
+      LOG_PRINT("copy result from device to host failed. ERROR: %d\n", ret);
+      return);
+  for (int64_t i = 0; i < size; i++) {
+    LOG_PRINT("idx[%ld] (offset: %ld Bytes) : %f\n", i, i * sizeof(T), resultData[i]);
+  }
+}
+
+int Init(int32_t deviceId, aclrtStream *stream) {
+  auto ret = aclInit(nullptr);
+  CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("aclInit failed. ERROR: %d\n", ret); return ret);
+  ret = aclrtSetDevice(deviceId);
+  CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("aclrtSetDevice failed. ERROR: %d\n", ret); return ret);
+  ret = aclrtCreateStream(stream);
+  CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("aclrtCreateStream failed. ERROR: %d\n", ret); return ret);
+  return 0;
+}
+
+template <typename T>
+int CreateAclTensor(const std::vector<T> &hostData,
+                    const std::vector<int64_t> &shape, void **deviceAddr,
+                    aclDataType dataType, aclTensor **tensor) {
+  auto size = GetShapeSize(shape) * sizeof(T);
+  auto ret = aclrtMalloc(deviceAddr, size, ACL_MEM_MALLOC_HUGE_FIRST);
+  CHECK_RET(ret == ACL_SUCCESS,
+            LOG_PRINT("aclrtMalloc failed. ERROR: %d\n", ret);
+            return ret);
+  ret = aclrtMemcpy(*deviceAddr, size, hostData.data(), size,
+                    ACL_MEMCPY_HOST_TO_DEVICE);
+  CHECK_RET(ret == ACL_SUCCESS,
+            LOG_PRINT("aclrtMemcpy failed. ERROR: %d\n", ret);
+            return ret);
+
+  std::vector<int64_t> strides(shape.size(), 1);
+  for (int64_t i = shape.size() - 2; i >= 0; i--) {
+    strides[i] = shape[i + 1] * strides[i + 1];
+  }
+
+  *tensor = aclCreateTensor(shape.data(), shape.size(), dataType,
+                            strides.data(), 0, aclFormat::ACL_FORMAT_ND,
+                            shape.data(), shape.size(), *deviceAddr);
+  return 0;
+}
+
+int main() {
+  // 1. Initialize ACL
+  int32_t deviceId = 0;
+  aclrtStream stream;
+  auto ret = Init(deviceId, &stream);
+  CHECK_RET(ret == ACL_SUCCESS, LOG_PRINT("Init acl failed. ERROR: %d\n", ret); return ret);
+
+  // 2. Construct inputs (based on operator definition)
+  // Input 1: input_tensor_1
+  aclTensor *inputTensor1 = nullptr;
+  void *inputTensor1DeviceAddr = nullptr;
+  std::vector<int64_t> inputTensor1Shape = {1, 1, 1, 1}; // FILL IN actual shape
+  std::cout << "inputTensor1Shape: ";
+  for (size_t i = 0; i < inputTensor1Shape.size(); i++) {
+    std::cout << inputTensor1Shape[i] << " ";
+  }
+  std::cout << std::endl;
+  std::vector<Kernel_dtype> inputTensor1HostData(GetShapeSize(inputTensor1Shape), 0.0f);
+  // FILL IN actual data
+  ret = CreateAclTensor(inputTensor1HostData, inputTensor1Shape, &inputTensor1DeviceAddr, Acl_dtpe, &inputTensor1);
+  CHECK_RET(ret == ACL_SUCCESS, return ret);
+
+  // Input 2: input_tensor_2
+  aclTensor *inputTensor2 = nullptr;
+  void *inputTensor2DeviceAddr = nullptr;
+  std::vector<int64_t> inputTensor2Shape = {1, 1, 1, 1}; // FILL IN actual shape
+  std::cout << "inputTensor2Shape: ";
+  for (size_t i = 0; i < inputTensor2Shape.size(); i++) {
+    std::cout << inputTensor2Shape[i] << " ";
+  }
+  std::cout << std::endl;
+  std::vector<Kernel_dtype> inputTensor2HostData(GetShapeSize(inputTensor2Shape), 0.0f);
+  // FILL IN actual data
+  ret = CreateAclTensor(inputTensor2HostData, inputTensor2Shape, &inputTensor2DeviceAddr, Acl_dtpe, &inputTensor2);
+  CHECK_RET(ret == ACL_SUCCESS, return ret);
+
+  // Add more inputs as needed
+
+  // 3. Construct outputs (based on operator definition)
+  // Output 1: output_tensor_1
+  aclTensor *outputTensor1 = nullptr;
+  void *outputTensor1DeviceAddr = nullptr;
+  std::vector<int64_t> outputTensor1Shape = {1, 1, 1, 1}; // FILL IN actual shape
+  std::cout << "outputTensor1Shape: ";
+  for (size_t i = 0; i < outputTensor1Shape.size(); i++) {
+    std::cout << outputTensor1Shape[i] << " ";
+  }
+  std::cout << std::endl;
+  std::vector<Kernel_dtype> outputTensor1HostData(GetShapeSize(outputTensor1Shape), 0.0f);
+  ret = CreateAclTensor(outputTensor1HostData, outputTensor1Shape, &outputTensor1DeviceAddr, Acl_dtpe, &outputTensor1);
+  CHECK_RET(ret == ACL_SUCCESS, return ret);
+
+  // Add more outputs as needed
+
+  // 4. Get workspace size and executor
+  uint64_t workspaceSize = 0;
+  aclOpExecutor *executor;
+  ret = aclnn[OperatorName]GetWorkspaceSize([input_tensors], [output_tensors], &workspaceSize, &executor);
+  CHECK_RET(
+      ret == ACL_SUCCESS,
+      LOG_PRINT("aclnn[OperatorName]GetWorkspaceSize failed. ERROR: %d\n", ret);
+      return ret);
+
+  // 5. Allocate workspace if needed
+  void *workspaceAddr = nullptr;
+  if (workspaceSize > static_cast<uint64_t>(0)) {
+    std::cout << "workspaceSize: " << workspaceSize << " bytes" << std::endl;
+    ret = aclrtMalloc(&workspaceAddr, workspaceSize, ACL_MEM_MALLOC_HUGE_FIRST);
+    CHECK_RET(ret == ACL_SUCCESS,
+              LOG_PRINT("allocate workspace failed. ERROR: %d\n", ret);
+              return ret);
+  }
+
+  // 6. Execute the operator
+  ret = aclnn[OperatorName](workspaceAddr, workspaceSize, executor, stream);
+  CHECK_RET(ret == ACL_SUCCESS,
+            LOG_PRINT("aclnn[OperatorName] failed. ERROR: %d\n", ret);
+            return ret);
+
+  // 7. Synchronize stream
+  ret = aclrtSynchronizeStream(stream);
+  CHECK_RET(ret == ACL_SUCCESS,
+            LOG_PRINT("aclrtSynchronizeStream failed. ERROR: %d\n", ret);
+            return ret);
+
+  // 8. Print results
+  std::cout << "\n\n\noutputTensor1[after]: " << std::endl;
+  PrintOutResult<Kernel_dtype>(outputTensor1Shape, &outputTensor1DeviceAddr);
+  // Print other outputs as needed
+
+  // 9. Clean up resources
+  aclDestroyTensor(inputTensor1);
+  aclDestroyTensor(inputTensor2);
+  // Destroy other tensors as needed
+  aclDestroyTensor(outputTensor1);
+  // Destroy other output tensors as needed
+
+  aclrtFree(inputTensor1DeviceAddr);
+  aclrtFree(inputTensor2DeviceAddr);
+  // Free other input device addresses as needed
+  aclrtFree(outputTensor1DeviceAddr);
+  // Free other output device addresses as needed
+  if (workspaceSize > static_cast<uint64_t>(0)) {
+    aclrtFree(workspaceAddr);
+  }
+
+  aclrtDestroyStream(stream);
+  aclrtResetDevice(deviceId);
+  aclFinalize();
+
+  return 0;
+}
+```
+
+### Handling Missing Operator Information
+
+If the skill cannot find corresponding information in `op_host` or `op_kernel` files:
+
+1. **Check file paths**: Ensure you're looking in the correct directories
+2. **Look for alternative files**: Check for other files that might contain operator definitions
+3. **Use placeholder values**: If information is missing, use generic placeholder values in the example
+4. **Add comments**: Clearly mark sections where information is missing with comments
+5. **Provide instructions**: Add instructions for users to fill in the missing information
+
+#### Example of Placeholder Usage
+
+```cpp
+// Input tensors - FILL IN based on operator definition
+aclTensor *input1 = nullptr;
+void *input1DeviceAddr = nullptr;
+std::vector<int64_t> input1Shape = {1, 1, 1, 1}; // FILL IN actual shape
+std::vector<Kernel_dtype> input1HostData(input1Shape[0] * input1Shape[1] * input1Shape[2] * input1Shape[3], 0.0f);
+ret = CreateAclTensor(input1HostData, input1Shape, &input1DeviceAddr, Acl_dtpe, &input1);
+```
+
+### Best Practices for Example Generation
+
+1. **Start with a template**: Use the generic template as a starting point
+2. **Extract accurate information**: Carefully read operator definitions to get correct parameter names, types, and shapes
+3. **Use meaningful values**: Initialize tensors with values that make sense for the operator's functionality
+4. **Add comments**: Explain the purpose of each section and any assumptions made
+5. **Test the example**: Verify that the generated example compiles and runs correctly
+6. **Handle edge cases**: Consider different input shapes and data types
+7. **Follow existing patterns**: Maintain consistency with other examples in the codebase
+
+By following this guide, you can efficiently generate accurate CANN `aclnn_*` examples for any AscendC operator, whether it's a simple arithmetic operation or a complex transformer-related operator like `moe_init_routing_grouped_matmul_grad`.
