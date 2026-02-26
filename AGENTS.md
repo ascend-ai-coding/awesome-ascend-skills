@@ -22,6 +22,8 @@ awesome-ascend-skills/
 │   ├── SKILL.md
 │   ├── references/
 │   └── scripts/
+├── ascendc/                    # AscendC Develop Helper
+│   └── SKILL.md
 └── README.md
 ```
 
