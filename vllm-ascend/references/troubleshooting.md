@@ -62,6 +62,36 @@ python -c "import torch_npu; print(torch_npu.__version__)"
 - Check model path is correct
 - Verify tokenizer is accessible
 - Reduce `--max-model-len` if value exceeds NPU capability
+### Error: `RuntimeError: An attempt has been made to start a new process...`
+
+**Cause**: Python multiprocessing spawn mode requires code protection.
+
+**Solution**:
+```python
+import os
+os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
+
+def main():
+    from vllm import LLM
+    llm = LLM(...)
+
+if __name__ == "__main__":
+    main()
+```
+
+### Error: `RuntimeError: Cannot re-initialize NPU in forked subprocess`
+
+**Cause**: vLLM-Ascend requires spawn multiprocessing method.
+
+**Solution**:
+```bash
+# Set before running Python
+export VLLM_WORKER_MULTIPROC_METHOD=spawn
+
+# Or in Python before importing vllm
+import os
+os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
+```
 
 ---
 
@@ -147,7 +177,25 @@ vllm serve <model> --max-num-batched-tokens 2048
 
 #### Memory Optimization Tips
 
-**1. Enable Quantization**
+**1. Large Models (30B+ MoE)**
+
+For MoE models like Qwen3-30B-A3B, use conservative settings:
+```python
+import os
+os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
+
+from vllm import LLM
+
+llm = LLM(
+    model="Qwen3-30B-A3B",
+    tensor_parallel_size=2,  # Use multiple NPUs
+    gpu_memory_utilization=0.5,  # Lower for MoE models
+    max_model_len=2048,  # Reduce context length
+    max_num_seqs=128     # Reduce concurrent sequences
+)
+```
+
+**2. Enable Quantization**
 ```bash
 # INT8 quantization (recommended)
 vllm serve <model> --quantization w8a8
@@ -156,22 +204,24 @@ vllm serve <model> --quantization w8a8
 vllm serve <model> --quantization w4a16
 ```
 
-**2. Use Chunked Prefill**
+**3. Use Chunked Prefill**
 ```bash
 vllm serve <model> --enable-chunked-prefill
 ```
 
-**3. Limit GPU Memory Utilization**
+**4. Limit GPU Memory Utilization**
 ```bash
-# Reserve 10% memory for overhead
+# Default is 0.9, reduce if OOM during warmup
 vllm serve <model> --gpu-memory-utilization 0.85
+
+# For 30B+ MoE models, use 0.5 or lower
+vllm serve <model> --gpu-memory-utilization 0.5 --max-model-len 2048
 ```
 
-**4. Enable Prefix Caching**
+**5. Enable Prefix Caching**
 ```bash
 vllm serve <model> --enable-prefix-caching
 ```
-
 ### Checking NPU Memory Usage
 
 ```bash

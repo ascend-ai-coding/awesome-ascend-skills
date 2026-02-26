@@ -31,12 +31,16 @@ vLLM-Ascend is a plugin for vLLM that enables efficient LLM inference on Huawei 
 ### Offline Batch Inference
 
 ```python
+import os
+
+# Required for vLLM-Ascend: set multiprocessing method before importing vLLM
+os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
+
 from vllm import LLM, SamplingParams
 
-# Load model with Ascend NPU
+# Load model with Ascend NPU (device auto-detected when vllm-ascend is installed)
 llm = LLM(
     model="Qwen/Qwen2.5-7B-Instruct",
-    device="npu",
     max_model_len=4096
 )
 
@@ -61,7 +65,6 @@ for output in outputs:
 ```bash
 # Start the API server
 vllm serve Qwen/Qwen2.5-7B-Instruct \
-    --device npu \
     --max-model-len 4096 \
     --max-num-seqs 256 \
     --served-model-name "qwen2.5-7b"
@@ -69,7 +72,6 @@ vllm serve Qwen/Qwen2.5-7B-Instruct \
 # Or using Python
 python -m vllm.entrypoints.openai.api_server \
     --model Qwen/Qwen2.5-7B-Instruct \
-    --device npu \
     --max-model-len 4096
 ```
 
@@ -163,14 +165,14 @@ python -c "import torch; import torch_npu; print(torch_npu.npu.device_count())"
 ```bash
 # Basic server deployment
 vllm serve <model_path> \
-    --device npu \
+    \
     --served-model-name <name> \
     --host 0.0.0.0 \
     --port 8000
 
 # Production deployment with optimizations
 vllm serve /path/to/model \
-    --device npu \
+    \
     --served-model-name "qwen2.5-72b" \
     --max-model-len 8192 \
     --max-num-seqs 256 \
@@ -183,20 +185,23 @@ vllm serve /path/to/model \
 ### Python API
 
 ```python
+import os
+
+# Required: Set spawn method before importing vLLM
+os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
+
 from vllm import LLM, SamplingParams
 
 # Single NPU
 llm = LLM(
     model="Qwen/Qwen2.5-7B-Instruct",
-    device="npu",
     max_model_len=4096,
     dtype="bfloat16"
 )
 
-# Distributed inference
+# Distributed inference (multi-NPU)
 llm = LLM(
     model="Qwen/Qwen2.5-72B-Instruct",
-    device="npu",
     tensor_parallel_size=4,
     max_model_len=8192
 )
@@ -213,7 +218,6 @@ from vllm import LLMEngine, EngineArgs, SamplingParams
 
 engine_args = EngineArgs(
     model="Qwen/Qwen2.5-7B-Instruct",
-    device="npu",
     max_model_len=4096
 )
 engine = LLMEngine.from_engine_args(engine_args)
@@ -242,13 +246,13 @@ vLLM-Ascend supports models quantized with msModelSlim. For quantization details
 ```bash
 # W8A8 quantized model
 vllm serve /path/to/quantized-model-w8a8 \
-    --device npu \
+    \
     --quantization ascend \
     --max-model-len 4096
 
 # W4A8 quantized model
 vllm serve /path/to/quantized-model-w4a8 \
-    --device npu \
+    \
     --quantization ascend \
     --max-model-len 4096
 ```
@@ -260,7 +264,6 @@ from vllm import LLM, SamplingParams
 
 llm = LLM(
     model="/path/to/quantized-model",
-    device="npu",
     quantization="ascend",
     max_model_len=4096
 )
@@ -280,17 +283,18 @@ Distributes model layers across multiple NPUs for large models.
 ```bash
 # 4-way tensor parallelism
 vllm serve Qwen/Qwen2.5-72B-Instruct \
-    --device npu \
     --tensor-parallel-size 4 \
     --max-model-len 8192
 ```
 
 ```python
+import os
+os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
+
 from vllm import LLM
 
 llm = LLM(
     model="Qwen/Qwen2.5-72B-Instruct",
-    device="npu",
     tensor_parallel_size=4,
     max_model_len=8192
 )
@@ -303,7 +307,6 @@ from vllm import LLM
 
 llm = LLM(
     model="DeepSeek-V3",
-    device="npu",
     pipeline_parallel_size=2,
     tensor_parallel_size=4
 )
@@ -314,7 +317,7 @@ llm = LLM(
 ```bash
 # Node 0 (Rank 0)
 vllm serve <model> \
-    --device npu \
+    \
     --tensor-parallel-size 8 \
     --pipeline-parallel-size 2 \
     --distributed-init-method "tcp://192.168.1.10:29500" \
@@ -322,7 +325,7 @@ vllm serve <model> \
 
 # Node 1 (Rank 1)
 vllm serve <model> \
-    --device npu \
+    \
     --tensor-parallel-size 8 \
     --pipeline-parallel-size 2 \
     --distributed-init-method "tcp://192.168.1.10:29500" \
@@ -348,16 +351,16 @@ vllm serve <model> \
 
 ```bash
 # Small model (7B), single NPU
-vllm serve <model> --device npu --max-model-len 4096 --max-num-seqs 256
+vllm serve <model> --max-model-len 4096 --max-num-seqs 256
 
 # Medium model (32B), single NPU
-vllm serve <model> --device npu --max-model-len 8192 --max-num-seqs 128
+vllm serve <model> --max-model-len 8192 --max-num-seqs 128
 
 # Large model (72B), multi-NPU
-vllm serve <model> --device npu --tensor-parallel-size 4 --max-model-len 8192
+vllm serve <model> --tensor-parallel-size 4 --max-model-len 8192
 
 # Maximum throughput
-vllm serve <model> --device npu --max-num-seqs 512 --gpu-memory-utilization 0.95
+vllm serve <model> --max-num-seqs 512 --gpu-memory-utilization 0.95
 ```
 
 ---
@@ -373,19 +376,19 @@ npu-smi info
 # Ensure CANN >= 8.0.RC1
 
 # Try different dtype
-vllm serve <model> --device npu --dtype float16
+vllm serve <model> --dtype float16
 ```
 
 **Q: Out of Memory (OOM)?**
 ```bash
 # Reduce max model length
-vllm serve <model> --device npu --max-model-len 2048
+vllm serve <model> --max-model-len 2048
 
 # Lower memory utilization
-vllm serve <model> --device npu --gpu-memory-utilization 0.8
+vllm serve <model> --gpu-memory-utilization 0.8
 
 # Reduce concurrent sequences
-vllm serve <model> --device npu --max-num-seqs 128
+vllm serve <model> --max-num-seqs 128
 ```
 
 **Q: Model loading fails?**
@@ -397,19 +400,19 @@ ls /path/to/model
 python -c "from transformers import AutoTokenizer; tok = AutoTokenizer.from_pretrained('/path/to/model'); print('OK')"
 
 # Use trust_remote_code for custom models
-vllm serve <model> --device npu --trust-remote-code
+vllm serve <model> --trust-remote-code
 ```
 
 **Q: Slow inference?**
 ```bash
 # Enable bfloat16 for faster compute
-vllm serve <model> --device npu --dtype bfloat16
+vllm serve <model> --dtype bfloat16
 
 # Adjust block size
-vllm serve <model> --device npu --block-size 256
+vllm serve <model> --block-size 256
 
 # Enable prefix caching
-vllm serve <model> --device npu --enable-prefix-caching
+vllm serve <model> --enable-prefix-caching
 ```
 
 **Q: API server connection refused?**
@@ -421,12 +424,15 @@ curl http://localhost:8000/health
 lsof -i :8000
 
 # Use explicit host/port
-vllm serve <model> --device npu --host 0.0.0.0 --port 8000
+vllm serve <model> --host 0.0.0.0 --port 8000
 ```
 
 ### Environment Variables
 
 ```bash
+# Required: Set multiprocessing method for vLLM-Ascend
+export VLLM_WORKER_MULTIPROC_METHOD=spawn
+
 # Set Ascend device IDs
 export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3
 

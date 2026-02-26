@@ -146,7 +146,6 @@ from vllm import LLM, SamplingParams
 # Initialize LLM
 llm = LLM(
     model="Qwen/Qwen2.5-7B-Instruct",
-    device="npu",
     max_model_len=4096,
     dtype="bfloat16",
     tensor_parallel_size=1
@@ -214,7 +213,6 @@ from vllm.inputs import TokensPrompt
 # Configure engine
 engine_args = EngineArgs(
     model="Qwen/Qwen2.5-7B-Instruct",
-    device="npu",
     max_model_len=4096,
     dtype="bfloat16"
 )

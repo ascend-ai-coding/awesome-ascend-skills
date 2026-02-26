@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "skills": {
+    "github-to-skills": {
+      "source": "kkkkhazix/khazix-skills",
+      "sourceType": "github",
+      "computedHash": "867d960f917e8385d54a5fb80c0e1468cde36a1208698d6c0c194bb8ac3d1b8d"
+    },
+    "hccl-test": {
+      "source": "ascend-ai-coding/awesome-ascend-skills",
+      "sourceType": "github",
+      "computedHash": "50d6671e3adf58f4214f82552dd63fe3a1ac8d41b29a2cf89cde9d69cd1ff1ad"
+    }
+  }
+}
