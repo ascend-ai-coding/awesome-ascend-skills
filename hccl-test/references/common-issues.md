@@ -138,45 +138,129 @@ mpirun -hostfile hostfile -n 512 pkill -9 -f "all_reduce_test|openmpi"
 清理完成后，再次执行 HCCL Test 工具进行测试。
 
 ---
+## 5. CANN Version Mismatch (Multi-Node)
 
-## 5. Additional Tips
+### Problem
+Multi-node HCCL test fails with connection or initialization errors.
 
-### 检查 MPI 环境
+### Cause
+CANN versions are inconsistent across nodes.
+
+### Solution
+
+Check and unify CANN versions on all nodes:
 
 ```bash
-# 检查 MPI 是否安装
+# Check CANN versions on all nodes
+for node in 175.99.1.2 175.99.1.3; do
+    echo "=== $node ==="
+    ssh root@$node "cat /usr/local/Ascend/ascend-toolkit/latest/version.cfg | grep runtime_running_version"
+done
+```
+
+If versions differ, upgrade/downgrade to the same version on all nodes.
+
+---
+
+## 6. NPU Health Status (Alarm/Offline)
+
+### Problem
+HCCL test fails on specific NPUs or shows degraded performance.
+
+### Cause
+NPU hardware is in Alarm or Offline state.
+
+### Solution
+
+Check NPU health status:
+
+```bash
+# Check NPU health
+npu-smi info -t health -i 0
+```
+
+**NPU Status:**
+
+| Status | Meaning | Action |
+|--------|---------|--------|
+| OK | Normal | ✅ Can use |
+| Alarm | Warning | ⚠️ Investigate |
+| Offline | Offline | ❌ Do not use |
+
+If NPU is in Alarm/Offline state, exclude it from hostfile:
+
+```bash
+# Example: NPU 0 on 175.99.1.2 is faulty
+# hostfile:
+# 175.99.1.2:7  (exclude NPU 0)
+# 175.99.1.3:8
+```
+
+---
+
+## 7. Additional Tips
+
+### Check MPI Environment
+
+```bash
+# Check if MPI is installed
 which mpirun
 
-# 检查 MPI 版本
+# Check MPI version
 mpirun --version
 
-# 检查库路径
+# Check library paths
 ldconfig -p | grep mpi
 ```
 
-### 检查 CANN 环境
+### Check CANN Environment
 
 ```bash
-# 检查 CANN 安装路径
+# Check CANN installation path
 echo $INSTALL_DIR
 ls -la /usr/local/Ascend/ascend-toolkit/latest/
 
-# 检查 HCCL Test 工具
+# Check HCCL Test tools
 ls -la ${INSTALL_DIR}/tools/hccl_test/bin/
 ```
 
-### 检查网络连通性
+### Check Network Connectivity
 
 ```bash
-# 测试节点间网络
+# Test inter-node network
 ping ${remote_node_ip}
 
-# 测试 SSH 登录
+# Test SSH login
 ssh ${remote_node_ip} "hostname"
+```
+
+### Docker Container Testing
+
+**Important**: When running HCCL Test in Docker, you must use **host network mode**.
+
+```bash
+# ✅ Correct: use host network
+docker run --network host --privileged \
+  -v /usr/local/Ascend/driver:/usr/local/Ascend/driver \
+  -v /usr/local/Ascend/ascend-toolkit/latest:/usr/local/Ascend/ascend-toolkit/latest \
+  ascend-cann:latest
+
+# ❌ Wrong: bridge network mode
+docker run --network bridge ...
+```
+
+### View Debug Logs
+
+```bash
+# View Ascend logs
+cat ~/ascend/log/debug/plog/plog-*.log | tail -100
+
+# View HCCL specific logs
+cat ~/ascend/log/debug/plog/plog-*_hccl*.log
 ```
 
 ---
 
 ## Official References
 
-- [HCCL 性能测试工具 - 常见问题及解决方法](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/83RC1/devaids/hccltool/HCCLpertest_16_0008.html)
+- [HCCL Performance Test Tool - Common Issues](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/83RC1/devaids/hccltool/HCCLpertest_16_0008.html)

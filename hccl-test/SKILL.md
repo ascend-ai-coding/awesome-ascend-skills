@@ -1,11 +1,15 @@
 ---
 name: hccl-test
-description: HCCL (Huawei Collective Communication Library) performance testing for Ascend NPU clusters. Use for testing distributed communication bandwidth, verifying HCCL functionality, and benchmarking collective operations like AllReduce, AllGather, AlltoAll. Covers MPI installation, tool compilation, execution parameters, and result analysis.
+description: HCCL (Huawei Collective Communication Library) performance testing for Ascend NPU clusters. Use for testing distributed communication bandwidth, verifying HCCL functionality, and benchmarking collective operations like AllReduce, AllGather. Covers MPI installation, multi-node pre-flight checks (SSH/CANN version/NPU health), and production testing workflows.
 keywords:
     - hccl
     - 性能测试
     - 集合通信
     - 打流
+    - allreduce
+    - allgather
+    - 多机测试
+    - 910B
 ---
 
 # HCCL Performance Test
@@ -16,13 +20,7 @@ HCCL性能测试工具用于测试HCCL（Huawei Collective Communication Library
 
 - **适用场景**：分布式训练场景下的集合通信性能测试
 - **源码位置**：`${INSTALL_DIR}/tools/hccl_test`
-- **支持版本**：CANN 8.3.RC1, CANN 8.5
-
-### 查看产品型号
-
-```bash
-dmidecode -t system | head -20 | grep Product
-```
+- **支持版本**：CANN 8.3.RC1, CANN 8.5, CANN 25.RC
 
 ### 支持的产品型号
 
@@ -33,51 +31,112 @@ dmidecode -t system | head -20 | grep Product
 | Atlas A3 训练系列产品/Atlas A3 推理系列产品 | 32K | AlltoAll/AlltoAllV 最大 8K |
 | Atlas 300I Duo 推理卡 | - | - |
 
-### 支持的集合通信算子
+### 核心算子（推荐测试）
 
-HCCL Test 工具支持以下 10 种集合通信算子测试：
+分布式训练场景最常用：
 
-| 算子 | 可执行文件 | 通信模式 | 适用场景 |
-|------|-----------|---------|---------|
-| **AllReduce** | `all_reduce_test` | 多对多 | 梯度聚合、参数同步 |
-| **AllGather** | `all_gather_test` | 多对多 | 数据聚合、参数收集 |
-| **AllGatherV** | `all_gatherv_test` | 多对多 | 变长数据聚合 |
-| **AlltoAll** | `alltoall_test` | 多对多 | 数据重排、负载均衡 |
-| **AlltoAllV** | `alltoallv_test` | 多对多 | 变长数据全对全通信 |
-| **Broadcast** | `broadcast_test` | 一对多 | 配置分发、初始化 |
-| **Reduce** | `reduce_test` | 多对一 | 结果收集到根节点 |
-| **ReduceScatter** | `reduce_scatter_test` | 多对多 | 归约后分发 |
-| **ReduceScatterV** | `reduce_scatterv_test` | 多对多 | 变长归约后分发 |
-| **Scatter** | `scatter_test` | 一对多 | 数据分发 |
+| 算子 | 可执行文件 | 通信模式 | 适用场景 | 推荐度 |
+|------|-----------|---------|---------|--------|
+| **AllReduce** | `all_reduce_test` | 多对多 | 梯度聚合、参数同步 | ⭐⭐⭐ 必测 |
+| **AllGather** | `all_gather_test` | 多对多 | 数据聚合、参数收集 | ⭐⭐⭐ 必测 |
+| Broadcast | `broadcast_test` | 一对多 | 配置分发、初始化 | ⭐⭐ 可选 |
+| AlltoAll | `alltoall_test` | 多对多 | 数据重排、负载均衡 | ⭐⭐ 可选 |
 
-> **选择建议**: 分布式训练场景最常用的是 **AllReduce**（梯度聚合）和 **AllGather**（参数同步）。
+> **提示**: 完整算子列表见 [references/parameters.md](references/parameters.md)
+
+---
 
 ## Quick Reference
 
 ```bash
-# 1. 查看产品型号
-dmidecode -t system | head -20 | grep Product
+# 1. 前置检查（多机测试必需）
+./scripts/pre-test-check.sh 175.99.1.2 175.99.1.3
 
 # 2. 编译工具
 cd ${INSTALL_DIR}/tools/hccl_test
 make MPI_HOME=/usr/local/mpich ASCEND_DIR=${INSTALL_DIR}
 
-# 3. 单机测试（替换为本机 IP）
-echo "175.99.1.3:8" > hostfile
-mpirun -f hostfile -n 8 ./bin/all_reduce_test -p 8 -b 8K -e 256M -f 2 -d fp32 -o sum
+# 3. 快速连通性测试（单机）
+mpirun -n 8 ./bin/all_reduce_test -p 8 -b 8K -e 64M -f 2 -d fp32 -o sum
+
+# 4. 完整性能测试（多机，推荐）
+mpirun -f hostfile -n 16 ./bin/all_reduce_test -p 8 -b 8K -e 1G -f 2 -d fp32 -o sum
 ```
 
 ---
 
-## 1. MPI Installation
+## 1. Pre-test Checklist（多机测试必需）
+
+> ⚠️ **重要**: 多机测试前必须完成以下检查，否则可能出现建链超时或测试失败。
+
+### 1.1 SSH 免密登录配置
+
+所有节点间必须配置 SSH 免密登录：
+
+```bash
+# 1. 生成 SSH 密钥（如已存在可跳过）
+ssh-keygen -t rsa
+
+# 2. 将公钥复制到所有节点（包括本机）
+ssh-copy-id -i ~/.ssh/id_rsa.pub root@<node1_ip>
+ssh-copy-id -i ~/.ssh/id_rsa.pub root@<node2_ip>
+
+# 3. 验证免密登录
+ssh root@<node1_ip> "echo 'SSH OK'"
+ssh root@<node2_ip> "echo 'SSH OK'"
+```
+
+### 1.2 CANN 版本一致性检查
+
+多机 CANN 版本必须一致，否则会导致测试失败：
+
+```bash
+# 检查所有节点的 CANN 版本
+for node in 175.99.1.2 175.99.1.3; do
+    echo "=== $node ==="
+    ssh root@$node "cat /usr/local/Ascend/ascend-toolkit/latest/version.cfg | grep runtime_running_version"
+done
+```
+
+> **注意**: 版本不一致时需统一版本（建议统一为最新 RC 版本）。
+
+### 1.3 NPU 健康状态检查
+
+测试前需确认所有 NPU 状态正常：
+
+```bash
+# 检查所有节点的 NPU 健康状态
+for node in 175.99.1.2 175.99.1.3; do
+    echo "=== $node NPU Health ==="
+    ssh root@$node "npu-smi info -t health -i 0"
+done
+```
+
+**NPU 状态说明**：
+| 状态 | 说明 | 操作建议 |
+|-----|------|---------|
+| OK | 正常 | ✅ 可以使用 |
+| Alarm | 告警 | ⚠️ 需排查故障 |
+| Offline | 离线 | ❌ 不可使用 |
+
+> 如存在 Alarm 状态，需排除故障卡。例如 NPU 0 故障，使用 7 张卡测试。
+
+### 1.4 一键前置检查脚本
+
+```bash
+# 使用提供的检查脚本（推荐）
+./scripts/pre-test-check.sh 175.99.1.2 175.99.1.3
+```
+
+---
+
+## 2. MPI Installation
 
 HCCL性能测试工具依赖MPI拉起多个进程，默认使用 **MPICH**。
 
-### MPICH Installation (Recommended)
+### 2.1 MPICH Installation (Recommended)
 
-#### Download
-
-下载地址：https://www.mpich.org/static/downloads/
+**下载地址**：https://www.mpich.org/static/downloads/
 
 | 产品系列 | 推荐版本 |
 |----------|----------|
@@ -86,7 +145,7 @@ HCCL性能测试工具依赖MPI拉起多个进程，默认使用 **MPICH**。
 | Atlas 训练系列产品 | MPICH 3.2.1 |
 | Atlas 300I Duo 推理卡 | MPICH 3.2.1 |
 
-#### Installation Steps
+**安装步骤**：
 
 ```bash
 # 1. 解压
@@ -104,67 +163,18 @@ cd mpich-${version}
 make -j 32 && make install
 ```
 
-**参数说明**：
-- `--disable-fortran`：禁用 Fortran 语言支持
-- `--prefix`：MPI 安装路径（可自定义）
-- `--with-device=ch3:nemesis`：指定使用 TCP 协议（Atlas A3 必须配置）
-
-### Open MPI Installation (Alternative)
+### 2.2 Open MPI Installation (Alternative)
 
 适用于需要 IPv6 支持的场景。
 
-下载地址：https://www.open-mpi.org/software/ompi/v4.1/ (Open MPI 4.1.5)
-
 ```bash
-# 1. 解压
 tar -zxvf openmpi-4.1.5.tar.gz
 cd openmpi-4.1.5
-
-# 2. 修改支持的最大 Host 数量（大规模集群需要）
-# 修改 orte/mca/routed/radix/routed_radix_component.c
-# mca_routed_radix_component.radix = 集群中总卡数/单Server中卡数
-
-# 修改 orte/mca/plm/rsh/plm_rsh_component.c
-# mca_plm_rsh_component.num_concurrent = 集群中总卡数/单Server中卡数
-
-# 3. 配置
 ./configure --disable-fortran --enable-ipv6 --prefix=/usr/local/openmpi
-
-# 4. 编译安装
 make -j 32 && make install
 ```
 
-### Network Configuration
-
-配置网络节点信息（在每个参与通信的节点上执行）：
-
-```bash
-# 1. 添加主机信息到 /etc/hosts
-# 格式：IP地址 主机名
-echo "172.16.0.100 $(hostname)" >> /etc/hosts
-
-# EulerOS 需要刷新
-nmcli c reload
-```
-
-### SSH Trust Configuration
-
-```bash
-# 1. 生成密钥（如已存在可跳过）
-ssh-keygen -t rsa
-
-# 2. 复制公钥到其他节点
-ssh-copy-id -i /root/.ssh/id_rsa.pub ${node_ip}
-
-# 3. 验证 SSH 登录
-ssh ${node_ip}
-```
-
----
-
-## 2. Tool Compilation
-
-### Environment Variables
+### 2.3 环境配置
 
 ```bash
 # MPICH 环境
@@ -173,16 +183,9 @@ export PATH=/usr/local/mpich/bin:$PATH
 export LD_LIBRARY_PATH=/usr/local/mpich/lib:${INSTALL_DIR}/lib64:$LD_LIBRARY_PATH
 ```
 
-```bash
-# Open MPI 环境
-export INSTALL_DIR=/usr/local/Ascend/ascend-toolkit/latest
-export PATH=/usr/local/openmpi/bin:$PATH
-export LD_LIBRARY_PATH=/usr/local/openmpi/lib:${INSTALL_DIR}/lib64:$LD_LIBRARY_PATH
-```
+---
 
-> **Note**: `INSTALL_DIR` 是 CANN 软件安装路径。root 用户默认安装路径为 `/usr/local/Ascend/ascend-toolkit/latest`。
-
-### Compile
+## 3. Tool Compilation
 
 ```bash
 cd ${INSTALL_DIR}/tools/hccl_test
@@ -194,71 +197,58 @@ make MPI_HOME=/usr/local/mpich ASCEND_DIR=${INSTALL_DIR}
 make MPI_HOME=/usr/local/openmpi ASCEND_DIR=${INSTALL_DIR}
 ```
 
-编译成功后，在 `${INSTALL_DIR}/tools/hccl_test/bin` 目录下生成可执行文件：
-
-| 可执行文件 | 说明 |
-|-----------|------|
-| `all_reduce_test` | AllReduce 算子测试 |
-| `all_gather_test` | AllGather 算子测试 |
-| `all_gatherv_test` | AllGatherV 算子测试 |
-| `alltoall_test` | AlltoAll 算子测试 |
-| `alltoallv_test` | AlltoAllV 算子测试 |
-| `broadcast_test` | Broadcast 算子测试 |
-| `reduce_scatter_test` | ReduceScatter 算子测试 |
-| `reduce_test` | Reduce 算子测试 |
-| `scatter_test` | Scatter 算子测试 |
+编译成功后，在 `bin` 目录下生成 10 个可执行文件。
 
 ---
 
-## 3. Tool Execution
+## 4. Testing Scenarios
 
-### Pre-test Checklist
+### 4.1 快速连通性测试
 
-执行 HCCL Test 前，请确保完成以下检查：
-
-#### 1. 清理残余进程
-
-> **重要**: 如果之前测试异常退出，可能会有残余进程影响本次测试。
+用于验证 HCCL 基本连通性，数据量较小，执行速度快：
 
 ```bash
-# 检查是否有残余的 hccl_test 进程
-ps aux | grep -E "(all_reduce_test|all_gather_test|mpirun)"
+# 单机快速测试
+mpirun -n 8 ./bin/all_reduce_test -p 8 -b 8K -e 64M -f 2 -d fp32 -o sum
 
-# 清理残余进程（MPICH）
-mpirun -f hostfile -n 8 pkill -9 -f "all_reduce_test|all_gather_test|mpirun"
-
-# 清理残余进程（Open MPI）
-mpirun -hostfile hostfile -n 8 pkill -9 -f "all_reduce_test|all_gather_test|openmpi"
+# 多机快速测试
+mpirun -f hostfile -n 16 ./bin/all_reduce_test -p 8 -b 8K -e 64M -f 2 -d fp32 -o sum
 ```
 
-**常见问题**: 如果首次运行出现 `Process 0 HcclGetRootInfo failed` 或 `retcode: 7` 错误，通常是因为残余进程干扰，请先执行清理命令。
+### 4.2 完整性能测试（推荐）
 
-#### 2. 环境检查清单
-
-| 检查项 | 命令 | 预期结果 |
-|-------|------|---------|
-| NPU 状态 | `npu-smi info` | 所有 NPU 显示 OK |
-| MPI 环境 | `which mpirun` | 显示 mpirun 路径 |
-| HCCL Test 工具 | `ls ${INSTALL_DIR}/tools/hccl_test/bin/` | 显示 10 个可执行文件 |
-| 防火墙状态 | `systemctl status firewalld` | 建议关闭 |
-
-### Prerequisites
+用于测试大带宽网络性能，数据量到 1GB，更能反映实际训练场景：
 
 ```bash
-# 1. 关闭防火墙
-systemctl stop firewalld
+# 单机完整性能测试
+mpirun -n 8 ./bin/all_reduce_test -p 8 -b 8K -e 1G -f 2 -d fp32 -o sum
 
-# 2. 大规模集群调整内核参数（可选）
-sysctl -w net.core.somaxconn=65535
-sysctl -w net.ipv4.tcp_max_syn_backlog=65535
+# 多机完整性能测试（推荐）
+mpirun -f hostfile -n 16 ./bin/all_reduce_test -p 8 -b 8K -e 1G -f 2 -d fp32 -o sum
 ```
 
-### Hostfile Configuration
+**参数说明**：
+- `-b 8K`: 起始数据量 8KB
+- `-e 1G`: 结束数据量 1GB（64M 只能测试小数据量）
+- `-f 2`: 乘法因子，测试 8K, 16K, 32K, 64K, 128K, 256K, 512K, 1M, 2M, 4M, 8M, 16M, 32M, 64M, 128M, 256M, 512M, 1G
+
+### 4.3 核心算子测试
+
+```bash
+# 使用 quick-verify.sh 测试核心算子（推荐）
+./scripts/quick-verify.sh 8
+
+# 手动测试核心算子
+./bin/all_reduce_test -p 8 -b 8K -e 1G -f 2 -d fp32 -o sum
+./bin/all_gather_test -p 8 -b 8K -e 1G -f 2 -d fp32
+```
+
+### 4.4 Hostfile 配置
 
 **MPICH Format** (`节点IP:卡数`)：
 
 ```bash
-# 单机测试（本机 IP 为 175.99.1.3，8 卡）
+# 单机测试
 175.99.1.3:8
 
 # 双机测试
@@ -266,163 +256,45 @@ sysctl -w net.ipv4.tcp_max_syn_backlog=65535
 175.99.1.4:8
 ```
 
-**Open MPI Format** (`节点名 slots=卡数`)：
-
-```bash
-# 节点名与卡数
-node3 slots=8
-node4 slots=8
-```
-
-> **Important**: Hostfile 中请将属于同一超节点的 AI Server 信息配置在一起，不支持交叉配置。
-
-### Execution Commands
-
-```bash
-# MPICH 单机测试
-mpirun -n 8 ./bin/all_reduce_test -p 8 -b 8K -e 64M -f 2 -d fp32 -o sum
-
-# MPICH 多机测试
-mpirun -f hostfile -n 16 ./bin/all_reduce_test -p 8 -b 8K -e 64M -f 2 -d fp32 -o sum
-
-# Open MPI 单机测试
-mpirun --prefix /usr/local/openmpi -n 8 ./bin/all_reduce_test -p 8 -b 8K -e 64M -f 2 -d fp32 -o sum
-
-# Open MPI 多机测试
-mpirun --prefix /usr/local/openmpi -hostfile hostfile \
-  -x LD_LIBRARY_PATH -x HCCL_SOCKET_FAMILY -x HCCL_SOCKET_IFNAME \
-  --allow-run-as-root --mca btl_tcp_if_include eth0 --mca opal_set_max_sys_limits 1 \
-  -n 16 ./bin/all_reduce_test -p 8 -b 8K -e 64M -f 2 -d fp32 -o sum
-```
-
-### HCCL Environment Variables (Optional)
-
-> **Note**: 以下环境变量默认无需配置。如果测试无法正常运行，再根据实际情况配置。
-
-```bash
-# 通信网卡 IP 协议版本
-# AF_INET: IPv4 (默认)
-# AF_INET6: IPv6
-export HCCL_SOCKET_FAMILY=AF_INET
-
-# 通信网卡名配置（4种规格任选1种）
-# 精确匹配
-export HCCL_SOCKET_IFNAME=eth0,enp0           # 使用指定的 eth0 或 enp0 网卡
-export HCCL_SOCKET_IFNAME=^=eth0,enp0         # 不使用 eth0 与 enp0 网卡
-# 模糊匹配
-export HCCL_SOCKET_IFNAME=eth,enp             # 使用所有以 eth 或 enp 为前缀的网卡
-export HCCL_SOCKET_IFNAME=^eth,enp            # 不使用任何以 eth 或 enp 为前缀的网卡
-
-# Socket 建链超时时间（秒）
-# 大规模集群建议增加：3K卡建议240s，5K卡建议600s
-export HCCL_CONNECT_TIMEOUT=600
-
-# NPU 间共享缓冲区大小（MB）
-# 建议设置大于测试数据量以获得最佳性能
-export HCCL_BUFFSIZE=2048
-```
+> 请将属于同一超节点的 AI Server 信息配置在一起，不支持交叉配置。
 
 ---
 
-## 4. Parameters
+## 5. Parameters
 
-### MPI Parameters
+### 5.1 核心参数速查
 
-#### MPICH Parameters
-
-| 参数 | 必选 | 说明 |
+| 参数 | 说明 | 示例 |
 |------|------|------|
-| `-f <hostfile>` | 可选 | Hostfile 节点列表文件（多机必填） |
-| `-n <number>` | 必选 | 启动的 NPU 总数（节点数 × 每节点 NPU 数） |
+| `-p <npus>` | 单节点参与训练的 NPU 个数 | `-p 8` |
+| `-b <size>` | 测试数据量起始值 | `-b 8K` |
+| `-e <size>` | 测试数据量结束值 | `-e 1G` |
+| `-f <factor>` | 乘法因子 | `-f 2` |
+| `-d <type>` | 数据类型: fp32/fp16/int32 | `-d fp32` |
+| `-o <op>` | 操作类型: sum/prod/max/min | `-o sum` |
+| `-n <iters>` | 迭代次数（默认 20） | `-n 20` |
+| `-c <0/1>` | 是否开启结果校验（默认 1） | `-c 1` |
 
-#### Open MPI Parameters
+> 详细参数说明见 [references/parameters.md](references/parameters.md)
 
-| 参数 | 必选 | 说明 |
-|------|------|------|
-| `--prefix <path>` | 可选 | Open MPI 安装路径（多机建议配置） |
-| `-hostfile <file>` | 可选 | Hostfile 节点列表文件（多机必填） |
-| `-n <number>` | 必选 | 启动的 NPU 总数 |
-| `-x <env>` | 必选 | 传递给远程节点的环境变量 |
-| `--allow-run-as-root` | 可选 | 允许 root 用户执行 |
-| `--mca btl_tcp_if_include <nic>` | 可选 | 指定通信网卡 |
-| `--mca opal_set_max_sys_limits 1` | 可选 | 大规模集群建议配置 |
-
-### HCCL Test Parameters
-
-| 参数 | 长格式 | 必选 | 默认值 | 说明 |
-|------|--------|------|--------|------|
-| `-p <npus>` | `--npus` | 可选 | 节点NPU总数 | 单节点参与训练的 NPU 个数 |
-| `-b <size>` | `--minbytes` | 可选 | 64M | 测试数据量起始值（单位：K/M/G） |
-| `-e <size>` | `--maxbytes` | 可选 | 64M | 测试数据量结束值（单位：K/M/G） |
-| `-i <bytes>` | `--stepbytes` | 可选 | 计算 | 增量步长（单位：Bytes） |
-| `-f <factor>` | `--stepfactor` | 可选 | - | 乘法因子 |
-| `-o <op>` | `--op` | 可选 | sum | 操作类型：sum/prod/max/min |
-| `-r <root>` | `--root` | 可选 | 0 | 根节点 Device ID（broadcast/reduce/scatter） |
-| `-d <type>` | `--datatype` | 可选 | fp32 | 数据类型 |
-| `-n <iters>` | `--iters` | 可选 | 20 | 迭代次数 |
-| `-w <warmup>` | `--warmup_iters` | 可选 | 10 | 预热迭代次数 |
-| `-c <0/1>` | `--check` | 可选 | 1 | 是否开启结果校验 |
-| `-z <0/1>` | `--zero_copy` | 可选 | 0 | 是否开启零拷贝 |
-
-### Data Size Configuration Examples
+### 5.2 数据量配置示例
 
 ```bash
 # 固定数据量测试
 -b 100M -e 100M
 
-# 步长增量测试
--b 100M -e 400M -i 500
+# 乘法因子测试（测试 100M, 200M, 400M）
+-b 100M -e 400M -f 2
 
-# 乘法因子测试
--b 100M -e 400M -f 2  # 测试 100M, 200M, 400M
-
-# 持续测试（使用起始值）
--b 100M -e 400M -i 0  # 只测试 100M
+# 完整性能测试（推荐）
+-b 8K -e 1G -f 2
 ```
-
-### Supported Data Types
-
-| 算子 | 支持的数据类型 |
-|------|---------------|
-| all_reduce_test, reduce_scatter_test, reduce_test | int8, int16, int32, int64, fp16, fp32, bfp16 |
-| broadcast_test, all_gather_test, alltoall_test, scatter_test | int8, uint8, int16, uint16, int32, uint32, int64, uint64, fp16, fp32, fp64, bfp16 |
-
----
-
-## 5. Constraints
-
-### NPU Count per Node (`-p` parameter)
-
-| 产品系列 | `-p` 范围 | Device ID |
-|----------|-----------|-----------|
-| Atlas A3 训练系列产品/Atlas A3 推理系列产品 | 1~16 | [0, p-1] |
-| Atlas A2 训练系列产品 | 1~8 | [0, p-1] |
-| Atlas 训练系列产品 | 1, 2, 4, 8 | [0, p-1] |
-
-### Atlas 300I Duo Specific Constraints
-
-| 测试命令 | 最大 `-p` 值 |
-|----------|-------------|
-| all_gather_test | 32 |
-| all_gatherv_test | 4 |
-| all_reduce_test | 32 |
-| alltoall_test | 4 |
-| alltoallv_test | 4 |
-| reduce_scatter_test | 32 |
-| reduce_scatterv_test | 4 |
-
-### Zero Copy Constraints
-
-零拷贝功能（`-z 1`）生效条件：
-- 仅支持 Atlas A3 训练系列产品/Atlas A3 推理系列产品
-- 仅支持 reduce_scatter_test、all_gather_test、all_reduce_test、broadcast_test
-- 仅支持通信算法编排展开位置在 AI CPU 的场景
 
 ---
 
 ## 6. Results
 
-### Output Format
+### 6.1 输出格式
 
 ```
 data_size      avg_time(us)    alg_bandwidth(GB/s)    check_result
@@ -438,64 +310,107 @@ data_size      avg_time(us)    alg_bandwidth(GB/s)    check_result
 | `alg_bandwidth` | 算法带宽（GB/s），计算方式：集合通信数据量/耗时 |
 | `check_result` | 结果校验标识：success/failed/NULL |
 
-### Result Verification Limits
-
-归约类算子结果校验最大支持卡数：
-
-| 操作类型 | 算子 | INT8 | INT16 | INT32 | INT64 | FP32 | FP16 | BF16 |
-|----------|------|------|-------|-------|-------|------|------|------|
-| Prod | AllReduce, Reduce, ReduceScatter | 6 | 14 | 30 | 62 | 127 | 15 | 127 |
-| Sum | AllReduce, Reduce, ReduceScatter | 63 | 16383 | ~1e9 | ~1e18 | ~1e6 | 511 | 63 |
-| Sum | ReduceScatterV | 11 | 181 | 46340 | ~1e9 | 2896 | 31 | 11 |
-
-### Quick Verification Script
-
-使用快速验证脚本一次性测试所有算子：
+### 6.2 结果解析
 
 ```bash
-# 使用默认配置测试 4 卡
-./scripts/quick-verify.sh
-
-# 测试 8 卡
-./scripts/quick-verify.sh 8
-
-# 使用 Open MPI 测试 4 卡
-./scripts/quick-verify.sh 4 openmpi
-```
-
-脚本会自动：
-1. 检查环境（MPI、CANN、NPU）
-2. 清理残余进程
-3. 顺序测试所有 10 个算子
-4. 输出测试汇总结果
-
-### Parse Results
-
-使用结果解析脚本生成汇总表格：
-
-```bash
+# 解析结果文件
 ./scripts/parse-hccl-result.py output.log
+
+# 输出 Markdown 表格
+./scripts/parse-hccl-result.py output.log -f markdown
 ```
 
 ---
 
-## 7. Common Issues
+## 7. Actual Test Results
 
-See [references/common-issues.md](references/common-issues.md) for detailed troubleshooting:
+### 7.1 双机 16×910B3 测试数据
 
-- **gethostbyname failed** - 配置 /etc/hosts
-- **MPI 库文件链接错误** - 配置 LD_LIBRARY_PATH
-- **"bash:orted:未找到命令"** - 清理残余进程
-- **"retcode: 7" 错误** - 清理残余进程
+我们在双机 16×910B3 环境测试了全部 10 种算子：
 
-### Kill Residual Processes
+| 算子 | 结果 | 备注 |
+|------|------|------|
+| AllReduce | ✅ PASS | 最高带宽 48.59 GB/s (32MB) |
+| AllGather | ✅ PASS | - |
+| AllGatherV | ❌ FAIL | retcode: 5（变长参数问题） |
+| AlltoAll | ✅ PASS | - |
+| AlltoAllV | ✅ PASS | - |
+| Broadcast | ✅ PASS | - |
+| Reduce | ✅ PASS | - |
+| ReduceScatter | ✅ PASS | - |
+| ReduceScatterV | ❌ FAIL | retcode: 5（变长参数问题） |
+| Scatter | ✅ PASS | - |
+
+**通过率：8/10 (80%)**，核心算子全部通过。
+
+### 7.2 测试环境参考
+
+- **测试节点**：175.100.2.3, 175.100.2.4
+- **NPU**：910B3 × 8 每节点（共 16 卡）
+- **CANN**：25.3.rc1
+- **通信网卡**：enp189s0f0
+- **MPI**：MPICH 3.2.1
+
+---
+
+## 8. Common Issues
+
+### 8.1 前置条件问题
+
+| 问题 | 原因 | 解决方法 |
+|------|------|---------|
+| SSH 免密登录失败 | 未配置 SSH 密钥 | 执行 ssh-copy-id 配置免密登录 |
+| CANN 版本不一致 | 多机 CANN 版本不同 | 统一所有节点的 CANN 版本 |
+| NPU Alarm 状态 | NPU 硬件故障 | 检查 npu-smi info -t health，排除故障卡 |
+
+### 8.2 运行时问题
+
+| 问题 | 原因 | 解决方法 |
+|------|------|---------|
+| gethostbyname failed | 主机名无法解析 | 配置 /etc/hosts |
+| retcode: 7 | 残余进程干扰 | 执行清理命令：`mpirun -f hostfile -n 16 pkill -9 -f "all_reduce_test"` |
+| retcode: 5 | 变长参数配置错误 | AllGatherV/ReduceScatterV 需要特殊参数配置 |
+
+### 8.3 其他注意事项
+
+1. **Docker 容器**：如果使用 Docker 容器进行测试，需要使用 host 网络模式
+2. **日志查看**：测试失败时可查看 `~/ascend/log/debug/plog` 中的最新日志
+3. **进程清理**：测试前检查卡上是否有其他进程占用，如有需要手动清理
+
+> 详细故障排除见 [references/common-issues.md](references/common-issues.md)
+
+---
+
+## 9. Scripts
+
+### 9.1 前置检查脚本
 
 ```bash
-# MPICH
-mpirun -f hostfile -n 512 pkill -9 -f "all_reduce_test|mpirun"
+# 多机测试前置检查
+./scripts/pre-test-check.sh 175.99.1.2 175.99.1.3
+```
 
-# Open MPI
-mpirun -hostfile hostfile -n 512 pkill -9 -f "all_reduce_test|openmpi"
+检查内容：
+- SSH 免密登录
+- CANN 版本一致性
+- NPU 健康状态
+- 网络连通性
+
+### 9.2 快速验证脚本
+
+```bash
+# 测试核心算子
+./scripts/quick-verify.sh 8
+
+# 完整性能测试
+./scripts/quick-verify.sh 8 full
+```
+
+### 9.3 多机测试脚本
+
+```bash
+# 一键多机测试（自动前置检查 + 测试）
+./scripts/multi-node-test.sh --nodes 175.99.1.2,175.99.1.3 --npus 8 --mode full
 ```
 
 ---
@@ -504,3 +419,4 @@ mpirun -hostfile hostfile -n 512 pkill -9 -f "all_reduce_test|openmpi"
 
 - **CANN 8.3.RC1**: https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/83RC1/devaids/hccltool/HCCLpertest_16_0001.html
 - **CANN 8.5**: https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/850/devaids/hccltool/HCCLpertest_16_0001.html
+- **HCCL 常见问题**: https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/83RC1/devaids/hccltool/HCCLpertest_16_0008.html

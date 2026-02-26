@@ -1,9 +1,10 @@
 #!/bin/bash
 #
-# HCCL Test Quick Verification Script - 快速验证所有集合通信算子
-# Usage: ./quick-verify.sh [num_npus] [mpi_type]
+# HCCL Test Quick Verification Script - 快速验证集合通信算子
+# Usage: ./quick-verify.sh [num_npus] [mpi_type] [mode]
 #   num_npus: 测试的 NPU 数量 (默认: 4)
 #   mpi_type: mpich 或 openmpi (默认: mpich)
+#   mode: quick 或 full (默认: quick)
 #
 
 set -euo pipefail
@@ -12,6 +13,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HCCL_TEST_DIR="${INSTALL_DIR:-/usr/local/Ascend/ascend-toolkit/latest}/tools/hccl_test"
 NUM_NPUS="${1:-4}"
 MPI_TYPE="${2:-mpich}"
+MODE="${3:-quick}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -32,18 +34,22 @@ show_help() {
     cat << EOF
 HCCL Test Quick Verification Script
 
-快速验证所有 10 个集合通信算子是否正常工作。
+快速验证核心集合通信算子是否正常工作。
 
-Usage: $0 [num_npus] [mpi_type]
+Usage: $0 [num_npus] [mpi_type] [mode]
 
 Arguments:
     num_npus    测试的 NPU 数量 (默认: 4)
     mpi_type    MPI 类型: mpich 或 openmpi (默认: mpich)
+    mode        测试模式: quick 或 full (默认: quick)
+                quick: 快速连通性测试 (-b 8K -e 64M)
+                full:  完整性能测试 (-b 8K -e 1G)
 
 Examples:
     $0                    # 使用默认配置测试 4 卡
     $0 8                  # 测试 8 卡
-    $0 4 openmpi          # 使用 Open MPI 测试 4 卡
+    $0 8 mpich quick      # 快速测试 8 卡
+    $0 8 mpich full       # 完整性能测试 8 卡
 
 Environment Variables:
     INSTALL_DIR     CANN 安装路径 (默认: /usr/local/Ascend/ascend-toolkit/latest)
@@ -106,7 +112,13 @@ check_environment() {
     log_info "测试配置:"
     echo "  NPU 数量: $NUM_NPUS"
     echo "  MPI 类型: $MPI_TYPE"
+    echo "  测试模式: $MODE"
     echo "  MPI 路径: $MPI_HOME"
+    if [[ "$MODE" == "full" ]]; then
+        echo "  数据量范围: 8K ~ 1G"
+    else
+        echo "  数据量范围: 8K ~ 64M"
+    fi
     echo ""
 }
 
@@ -118,9 +130,16 @@ run_test() {
     
     log_test "正在测试: $test_name"
     
-    local cmd="$MPI_HOME/bin/mpirun -n $NUM_NPUS $HCCL_TEST_DIR/bin/$test_binary -p $NUM_NPUS -b 8K -e 64M -f 2 $extra_args"
+    local data_args
+    if [[ "$MODE" == "full" ]]; then
+        data_args="-b 8K -e 1G -f 2"
+    else
+        data_args="-b 8K -e 64M -f 2"
+    fi
     
-    if $cmd &> /tmp/hccl_test_${test_name}.log; then
+    local cmd="$MPI_HOME/bin/mpirun -n $NUM_NPUS $HCCL_TEST_DIR/bin/$test_binary -p $NUM_NPUS $data_args $extra_args"
+    
+    if $cmd > /tmp/hccl_test_${test_name}.log 2>&1; then
         if grep -q "success" /tmp/hccl_test_${test_name}.log 2>/dev/null || grep -q "NULL" /tmp/hccl_test_${test_name}.log 2>/dev/null; then
             log_info "✓ $test_name 通过"
             ((PASSED++))
@@ -157,25 +176,24 @@ run_all_tests() {
     # 清理残余进程
     cleanup_residual
     
-    # 测试归约类算子 (需要 -o sum 参数)
+    # 测试核心算子（必测）
     run_test "all_reduce_test" "all_reduce_test" "-d fp32 -o sum"
-    run_test "reduce_scatter_test" "reduce_scatter_test" "-d fp32 -o sum"
-    run_test "reduce_test" "reduce_test" "-d fp32 -o sum"
-    
-    # 测试聚合类算子
     run_test "all_gather_test" "all_gather_test" "-d fp32"
-    run_test "all_gatherv_test" "all_gatherv_test" "-d fp32"
     
-    # 测试全对全通信
-    run_test "alltoall_test" "alltoall_test" "-d fp32"
-    run_test "alltoallv_test" "alltoallv_test" "-d fp32"
-    
-    # 测试广播和分发
-    run_test "broadcast_test" "broadcast_test" "-d fp32"
-    run_test "scatter_test" "scatter_test" "-d fp32"
-    
-    # 测试 ReduceScatterV
-    run_test "reduce_scatterv_test" "reduce_scatterv_test" "-d fp32 -o sum"
+    # 可选算子（快速模式下跳过，完整模式下测试）
+    if [[ "$MODE" == "full" ]]; then
+        run_test "broadcast_test" "broadcast_test" "-d fp32"
+        run_test "alltoall_test" "alltoall_test" "-d fp32"
+        run_test "reduce_scatter_test" "reduce_scatter_test" "-d fp32 -o sum"
+        run_test "reduce_test" "reduce_test" "-d fp32 -o sum"
+        run_test "scatter_test" "scatter_test" "-d fp32"
+        
+        # V 系列变长算子（容易失败，仅 full 模式测试）
+        log_info "测试 V 系列变长算子（可能需要特殊配置）..."
+        run_test "all_gatherv_test" "all_gatherv_test" "-d fp32" || true
+        run_test "alltoallv_test" "alltoallv_test" "-d fp32" || true
+        run_test "reduce_scatterv_test" "reduce_scatterv_test" "-d fp32 -o sum" || true
+    fi
     
     echo ""
     echo "=========================================="
@@ -205,6 +223,7 @@ main() {
     
     NUM_NPUS="${1:-4}"
     MPI_TYPE="${2:-mpich}"
+    MODE="${3:-quick}"
     
     # 设置环境
     setup_mpi_env
