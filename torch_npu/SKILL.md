@@ -88,17 +88,8 @@ else:
 - **安装指引**：[installation_guide.md](references/installation/installation_guide.md)
 - **版本配套**：[version_compatibility.md](references/installation/version_compatibility.md)
 - **Flash Attention**：[flash_attention_guide.md](references/api_support/flash_attention_guide.md)
-- **量化算子**：[quantization_guide.md](references/api_support/quantization_guide.md)
 - **API 索引**：[api_index.md](references/api_support/api_index.md)
 - **官方文档**：[昇腾社区](https://www.hiascend.com/software/ai-frameworks?framework=pytorch)
 - **GitCode 仓库**：https://gitcode.com/Ascend/pytorch
 
-## 5. 参考资源
 
-- **安装指引**：[references/installation/installation_guide.md](references/installation/installation_guide.md)
-- **版本配套**：[references/installation/version_compatibility.md](references/installation/version_compatibility.md)
-- **Flash Attention**：[references/api_support/flash_attention_guide.md](references/api_support/flash_attention_guide.md)
-- **量化算子**：[references/api_support/quantization_guide.md](references/api_support/quantization_guide.md)
-- **完整文档索引**：[references/reference.md](references/reference.md)
-- **官方文档**：[昇腾社区](https://www.hiascend.com/software/ai-frameworks?framework=pytorch)
-- **GitCode 仓库**：https://gitcode.com/Ascend/pytorch
