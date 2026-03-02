@@ -29,25 +29,6 @@
 
 通过 op-plugin 扩展 NPU 算子支持，提供额外的自定义算子。
 
-## 快速查询
-
-**按版本查询：**
-```bash
-# 查询 2.7.1 版本支持的 API
-@torch_npu_doc 2.7.1
-```
-
-**按功能查询：**
-```bash
-# 查询确定性计算 API
-@torch_npu_doc deterministic
-
-# 查询黑名单 API
-@torch_npu_doc blocklist
-
-# 查询自定义算子
-@torch_npu_doc custom_ops
-```
 
 ## 常见问题
 

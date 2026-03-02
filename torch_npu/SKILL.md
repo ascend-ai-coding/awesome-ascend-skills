@@ -1,6 +1,6 @@
 ---
 name: torch_npu
-description: 华为昇腾 Ascend Extension for PyTorch (torch_npu) 的环境检查、部署与能力指引。在用户使用 @torch_npu、昇腾 NPU、CANN、或需要将 PyTorch 迁移到 NPU 时自动应用。支持：多版本安装指引、Flash Attention 和量化算子 API、精度验证模板。
+description: 华为昇腾 Ascend Extension for PyTorch (torch_npu) 的环境检查、部署与能力指引。在用户使用 @torch_npu、昇腾 NPU、CANN、或需要将 PyTorch 迁移到 NPU 时自动应用；当用户使用 @torch_npu_doc 时，基于本 skill 的 reference 文档提供项目内中文文档能力说明。
 ---
 
 # torch_npu 能力与使用指引
@@ -53,10 +53,10 @@ else:
 
 快速安装步骤：
 1. **安装 CANN**：按 [CANN 安装指南](https://www.hiascend.com/cann) 安装。
-2. **安装 PyTorch**：x86 用 `pip3 install torch==2.7.1+cpu`，aarch64 用 `pip3 install torch==2.7.1`。
+2. **安装 PyTorch**：x86 用 `pip3 install torch==2.7.1+cpu --index-url https://download.pytorch.org/whl/cpu`，aarch64 用 `pip3 install torch==2.7.1`。
 3. **安装依赖**：`pip3 install pyyaml setuptools`。
 4. **安装 torch_npu**：`pip3 install torch-npu==2.7.1`（版本需配套）。
-5. **验证**：`source set_env.sh` 后运行验证代码。
+5. **验证**: `pip show torch_npu` 确认安装成功。
 ---
 
 ## 2. torch_npu 能力目录（简略）
@@ -79,105 +79,19 @@ else:
 
 ## 2.1 子能力：torch_npu.npu_format_cast 代码提示
 
-当用户在代码中书写或询问 `torch_npu.npu_format_cast`、`npu_format_cast_`、NPU 张量格式转换时，应提供以下**代码提示与补全指引**，便于在 IDE 中完成各项提示。
+当用户在代码中书写或询问 `torch_npu.npu_format_cast`、`npu_format_cast_`、NPU 张量格式转换时，提供代码提示与补全指引。
 
-### API 签名与参数
+详细 API 签名、Format 枚举和代码提示规则参见：[npu_format_cast.md](references/api_support/npu_format_cast.md)
 
-- **`torch_npu.npu_format_cast(tensor, acl_format, customize_dtype=None)`**  
-  - `tensor`：NPU 上的 `torch.Tensor`（需先 `.npu()`）。  
-  - `acl_format`：目标存储格式，可为 **`int`** 或 **`torch_npu.Format`** 枚举成员。  
-  - `customize_dtype`：可选，用于 ONNX 等场景的自定义 dtype。  
-  - 返回：新张量（不修改原张量）。
+## 3. 参考资源
 
-- **`torch_npu.npu_format_cast_(tensor, acl_format)`**  
-  - 同上，但为 **in-place** 版本，直接修改 `tensor` 的格式。
-
-- **`torch_npu.get_npu_format(tensor)`**  
-  - 返回张量当前 NPU 存储格式（`torch_npu.Format` 或整型）。
-
-### 常用 Format 枚举（torch_npu.Format）
-
-在代码提示中可优先提示以下常用值（来自 `torch_npu.npu._format.Format`）：
-
-| 枚举名 | 值 | 常见用途 |
-|--------|----|----------|
-| `Format.NCHW` | 0 | 默认 4D 卷积布局 |
-| `Format.NHWC` | 1 | 通道在后的 4D 布局 |
-| `Format.ND` | 2 | 通用 ND 布局 |
-| `Format.NC1HWC0` | 3 | Conv/BatchNorm 等算子常用 |
-| `Format.FRACTAL_Z` | 4 | 3D 卷积等 |
-| `Format.FRACTAL_NZ` | 29 | 线性/矩阵乘、Attention 权重等 |
-| `Format.NDC1HWC0` | 32 | 5D |
-| `Format.FRACTAL_Z_3D` | 33 | 3D 卷积 |
-| `Format.UNDEFINED` | -1 | 未定义 |
-
-其他可选：`NC1HWC0_C04`(12)、`HWCN`(16)、`NDHWC`(27)、`NCDHW`(30)、`NC`(35)、`NCL`(47)、`FRACTAL_NZ_C0_*`(50–54) 等。
-
-### 代码提示与补全规则
-
-1. **补全第二参数**：当用户输入 `torch_npu.npu_format_cast(x, ` 时，提示 `acl_format` 可选为 `int` 或 `torch_npu.Format.xxx`，并列出常用枚举（如 `Format.NCHW`、`Format.NHWC`、`Format.FRACTAL_NZ`、`Format.NC1HWC0`）。  
-2. **补全 Format 枚举**：当用户输入 `torch_npu.Format.` 时，提示上述枚举成员列表。  
-3. **配对使用**：若代码中已有 `get_npu_format(t)`，在需要转成相同格式时，可提示 `torch_npu.npu_format_cast(other, torch_npu.get_npu_format(t))`。  
-4. **常见场景**：  
-   - 线性层权重量子化/迁移到 NPU：`torch_npu.npu_format_cast(weight.npu(), 29)`（FRACTAL_NZ）；  
-   - 与参数格式一致的梯度：`torch_npu.npu_format_cast(p.grad, torch_npu.get_npu_format(p))`；  
-   - 模块迁移时 BN/Conv 的 NC1HWC0：`torch_npu.npu_format_cast(tensor, 3)` 或 `Format.NC1HWC0`。
-
-### 文档来源说明
-
-详细 API 参考和示例请查阅以下文档：
-- **Flash Attention 算子**：[flash_attention_guide.md](references/api_support/flash_attention_guide.md)
+- **安装指引**：[installation_guide.md](references/installation/installation_guide.md)
+- **版本配套**：[version_compatibility.md](references/installation/version_compatibility.md)
+- **Flash Attention**：[flash_attention_guide.md](references/api_support/flash_attention_guide.md)
 - **量化算子**：[quantization_guide.md](references/api_support/quantization_guide.md)
-- **完整文档索引**：[reference.md](references/reference.md)
----
-
-## 3. API 支持查询
-
-当用户查询特定 API 在 NPU 上的支持情况时：
-- **Flash Attention**：`npu_prompt_flash_attention`（预填充）、`npu_incre_flash_attention`（增量推理）— 仅支持 Ascend910B
-- **量化算子**：`npu_quantize`、`npu_anti_quant`、`LinearQuant`（推荐）
-- **格式转换**：`npu_format_cast`、`npu_format_cast_`、`get_npu_format`
-
-详细用法和示例参见 [references/api_support/](references/api_support/) 目录下的文档。
-
----
-
-## 4. 精度验证模板
-
-当用户需要验证算子精度时，使用以下模板：
-
-```python
-import torch
-import torch_npu
-
-def verify_operator(op_func, inputs_spec, rtol=1e-4, atol=1e-5):
-    # 1. 构造输入数据
-    inputs_cpu = [torch.randn(**spec) for spec in inputs_spec]
-    inputs_npu = [inp.clone().npu() for inp in inputs_cpu]
-    
-    # 2. CPU 执行
-    output_cpu = op_func(*inputs_cpu)
-    
-    # 3. NPU 执行
-    output_npu = op_func(*inputs_npu).cpu()
-    
-    # 4. 精度对比
-    diff = torch.abs(output_cpu - output_npu)
-    rel_diff = diff / (torch.abs(output_cpu) + 1e-8)
-    passed = (diff < atol).all() and (rel_diff < rtol).all()
-    
-    print(f"Operator: {op_func.__name__}")
-    print(f"  Max abs diff: {diff.max().item():.6e}")
-    print(f"  Max rel diff: {rel_diff.max().item():.6e}")
-    print(f"  Result: {'✓ PASS' if passed else '✗ FAIL'}")
-    return passed
-```
-
-**精度标准**：
-- FP32: abs diff < 1e-5, relative diff < 1e-4
-- FP16: abs diff < 1e-3, relative diff < 1e-2
-- BF16: abs diff < 1e-2, relative diff < 5e-2
----
+- **API 索引**：[api_index.md](references/api_support/api_index.md)
+- **官方文档**：[昇腾社区](https://www.hiascend.com/software/ai-frameworks?framework=pytorch)
+- **GitCode 仓库**：https://gitcode.com/Ascend/pytorch
 
 ## 5. 参考资源
 

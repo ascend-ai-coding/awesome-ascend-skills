@@ -13,7 +13,7 @@
 pip install torch-npu
 
 # 检查 NPU 可用性
-python3 -c "import torch; print(torch.npu.is_available())"
+python3 -c "import torch; import torch_npu; print(torch.npu.is_available())"
 ```
 
 ### 2. 选择验证模板
