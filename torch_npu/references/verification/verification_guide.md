@@ -8,16 +8,28 @@
 
 ### 1. 环境检查清单
 
-在执行精度验证前，必须确认以下环境配置正确：
+在执行精度验证前，必须确认以下环境配置正确。
+
+#### 使用自动检测脚本（推荐）
+
+运行 CANN 环境检测脚本自动识别版本和配置：```bash
+bash references/verification/cann_environment_check.sh
+```
+
+#### 手动配置步骤
 
 ```bash
 # 1. 设置 CANN 环境
-source /usr/local/Ascend/nnae/set_env.sh
-# 或
+# 对于 CANN 8.5.0+:
+source /usr/local/Ascend/cann/set_env.sh
+
+# 对于 CANN 8.3.RC1 或更早版本:
 source /usr/local/Ascend/ascend-toolkit/set_env.sh
 
+# ⚠️ 注意：不要使用 nnae/set_env.sh，这可能导致算子找不到错误
+
 # 2. 检查 CANN 版本
-cat /usr/local/Ascend/nnae/version.info 2>/dev/null || ls -la /usr/local/Ascend/nnae/
+cat /usr/local/Ascend/ascend-toolkit/latest/version.cfg 2>/dev/null | head -20
 
 # 3. 检查 torch 和 torch_npu 版本
 python3 -c "import torch; import torch_npu; print(f'PyTorch: {torch.__version__}'); print(f'torch_npu: {torch_npu.__version__}')"
@@ -26,6 +38,10 @@ python3 -c "import torch; import torch_npu; print(f'PyTorch: {torch.__version__}
 python3 -c "import torch; import torch_npu; print(f'NPU available: {torch.npu.is_available()}'); print(f'Device count: {torch.npu.device_count()}')"
 ```
 
+**重要**: 使用正确的 `set_env.sh` 路径！参考：
+- CANN 8.5.0+: `/usr/local/Ascend/cann/set_env.sh`
+- CANN 8.3.RC1: `/usr/local/Ascend/ascend-toolkit/set_env.sh`
+- ❌ 错误路径: `/usr/local/Ascend/nnae/set_env.sh`
 ### 2. 版本配套检查
 
 **重要**: torch_npu 版本必须与 CANN 版本配套，否则会出现算子执行失败。
@@ -234,10 +250,22 @@ ls -la /usr/local/Ascend/nnae/
 
 - **基础模板**: `references/verification/templates/basic_operator.py`
 - **验证脚本**: `scripts/verify_operator_accuracy.py`
+- **CANN 环境检测脚本**: `references/verification/cann_environment_check.sh`
 
 ## 示例代码
 
-详细示例请参考 `basic_operator.py` 和 `verify_operator_accuracy.py`。
+## CANN 环境检测
+
+使用 `cann_environment_check.sh` 脚本自动检测 CANN 版本：```bash
+bash references/verification/cann_environment_check.sh
+```
+
+该脚本会：
+1. 自动检测 CANN 安装路径和版本
+2. 识别 CANN 8.5.0+ 或 8.3.RC1 结构
+3. 提供正确的环境配置命令
+4. 检查 opp 包是否安装
+5. 提供故障排查建议
 
 ## 技术支持
 
@@ -246,3 +274,12 @@ ls -la /usr/local/Ascend/nnae/
 - NPU 驱动版本
 - 验证错误日志
 - 输入数据和算子信息
+- CANN 版本（运行 cann_environment_check.sh 获取)
+## 技术支持
+
+如遇到验证问题，请联系技术支持并提供：
+- PyTorch 版本
+- NPU 驱动版本
+- 验证错误日志
+- 输入数据和算子信息
+- CANN 版本（运行 cann_environment_check.sh 获取）
