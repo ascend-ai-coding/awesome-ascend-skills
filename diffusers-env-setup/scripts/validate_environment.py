@@ -97,13 +97,14 @@ def check_torch_npu():
 def check_npu_visibility():
     """Check NPU device visibility."""
     try:
+        import torch
         import torch_npu
 
-        devices = torch_npu.npu.device_count()
+        devices = torch.npu.device_count()
         if devices > 0:
             # Try to access the first device
-            device = torch_npu.npu.device.current_device()
-            device_name = torch_npu.npu.get_device_name(device)
+            device = torch.npu.current_device()
+            device_name = torch.npu.get_device_name(device)
             return True, f"{devices} devices ({device_name})"
         else:
             return False, "No NPU devices found"
