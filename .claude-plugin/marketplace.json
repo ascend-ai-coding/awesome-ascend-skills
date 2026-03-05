@@ -67,6 +67,12 @@
       "description": "HuggingFace Diffusers 环境配置指南，用于华为昇腾 NPU。覆盖 CANN 版本检测、PyTorch + torch_npu 安装、Diffusers 库安装及环境验证。当用户需要在昇腾 NPU 上配置 Diffusers 环境时使用。",
       "source": "./diffusers-ascend/diffusers-ascend-env-setup",
       "category": "development"
+    },
+    {
+      "name": "wan-ascend-adaptation",
+      "description": "Comprehensive guide for adapting Wan series video generation models (Wan2.2/2.1/1.3) and similar diffusion-based video frameworks to Huawei Ascend NPU. ",
+      "source": "./wan-ascend-adaptation",
+      "category": "development"
     }
   ]
 }

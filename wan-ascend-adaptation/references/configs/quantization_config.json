@@ -1,0 +1,96 @@
+{
+  "$schema": "https://raw.githubusercontent.com/ascend-ai-coding/awesome-ascend-skills/main/schemas/quantization-schema.json",
+  "version": "wan22-w8a8",
+  "model_name": "Wan2.2",
+  "description": "W8A8 dynamic quantization configuration for Wan2.2 video generation model",
+  
+  "quantization": {
+    "weight_quantization": {
+      "dtype": "int8",
+      "method": "dynamic",
+      "calibration": "minmax",
+      "quantization_scheme": "symmetric",
+      "per_channel": true
+    },
+    "activation_quantization": {
+      "dtype": "int8",
+      "method": "dynamic",
+      "calibration": "minmax",
+      "quantization_scheme": "symmetric",
+      "per_tensor": false
+    },
+    "layers_to_skip": [
+      "vae.*",
+      "text_encoder.*",
+      "embedding.*",
+      "position_embedding.*",
+      " timestep_embedding.*"
+    ],
+    "quantizable_modules": [
+      "transformer.*",
+      "attention.*",
+      "ffn.*",
+      "mlp.*",
+      "norm.*",
+      "layer_norm.*",
+      "rms_norm.*"
+    ]
+  },
+  
+  "calibration": {
+    "num_samples": 512,
+    "batch_size": 16,
+    "skip_first_n": 2,
+    "max_samples_per_device": 128,
+    "calibration_dataset": "dummy_prompts",
+    "temperature": 1.0,
+    "top_p": 0.9,
+    "top_k": 50
+  },
+  
+  "anti_outlier": {
+    "enabled": true,
+    "method": "smoothquant",
+    "alpha": 0.5,
+    "scale_group_size": 1024
+  },
+  
+  "performance": {
+    "enable_fusion": true,
+    "enable_cache": true,
+    "compile_model": true,
+    "use_fast_kernels": true,
+    "memory_optimization": {
+      "enabled": true,
+      "gradient_checkpointing": false,
+      "offload_activations": false
+    }
+  },
+  
+  "accuracy": {
+    "target_loss_increase": 0.02,
+    "max_permissible_drift": 0.05,
+    "verification_samples": 100,
+    "tolerance": {
+      "mean_abs_error": 0.01,
+      "max_abs_error": 0.1,
+      "cosine_similarity": 0.99
+    }
+  },
+  
+  "output": {
+    "save_full_precision": false,
+    "save_scales": true,
+    "save_zero_points": true,
+    "output_format": "safetensors",
+    "compression_level": 0
+  },
+  
+  "compatibility": {
+    "pytorch_version": ">=2.1.0",
+    "torch_npu_version": ">=2.1.0",
+    "cann_version": ">=8.3.RC3",
+    "mindie_version": ">=0.2.0",
+    "msmodelslim_version": ">=1.0.0"
+  }
+}
