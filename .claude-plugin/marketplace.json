@@ -67,6 +67,12 @@
       "description": "HuggingFace Diffusers 环境配置指南，用于华为昇腾 NPU。覆盖 CANN 版本检测、PyTorch + torch_npu 安装、Diffusers 库安装及环境验证。当用户需要在昇腾 NPU 上配置 Diffusers 环境时使用。",
       "source": "./diffusers-ascend/diffusers-ascend-env-setup",
       "category": "development"
+    },
+    {
+      "name": "ascend-opplugin",
+      "description": "Installs op-plugin (torch_npu operator plugin) environment and guides custom NPU operator integration with PyTorch via two generic patterns (no workspace vs workspace+tiling), from kernel implementation through host registration, build, and test.",
+      "source": "./ascend-opplugin",
+      "category": "development"
     }
   ]
 }
