@@ -81,6 +81,12 @@ def generate_from_local_metadata(
             continue
 
         library_name, class_name = comp_info
+
+        # Handle None values (skip components with no library/class)
+        if library_name is None or class_name is None:
+            print(f"\n--- {comp_name}: None (skipped) ---")
+            continue
+
         comp_metadata_dir = os.path.join(metadata_dir, comp_name)
         comp_output_dir = os.path.join(output_dir, comp_name)
 
