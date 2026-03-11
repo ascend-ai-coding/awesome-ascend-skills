@@ -88,6 +88,11 @@ cp -r awesome-ascend-skills/npu-smi your-project/.agents/skills/
 | [ais-bench](ais-bench/SKILL.md) | 测试 | AI 模型评估工具：精度评估（MMLU/GSM8K/MMMU 等 15+ 基准）、性能压测、Function Call |
 | [ascendc](ascendc/SKILL.md) | 开发 | AscendC 算子开发：FFN/GMM/MoE 等 Transformer 算子实现、CANN API 示例 |
 | [torch_npu](torch_npu/SKILL.md) | 开发 | PyTorch 昇腾扩展：环境检查、部署指引、PyTorch 迁移到 NPU 的完整指南 |
+| [mindspeed-llm-pipeline](mindspeed-llm/mindspeed-llm-pipeline/SKILL.md) | 开发 | MindSpeed-LLM 端到端流水线：环境搭建→数据预处理→权重转换→训练→评估→导出 |
+| [mindspeed-llm-env-setup](mindspeed-llm/mindspeed-llm-env-setup/SKILL.md) | 开发 | MindSpeed-LLM 环境搭建：CANN + torch_npu + MindSpeed + Megatron-LM 安装配置 |
+| [mindspeed-llm-data-prep](mindspeed-llm/mindspeed-llm-data-prep/SKILL.md) | 开发 | MindSpeed-LLM 数据预处理：Alpaca/ShareGPT/预训练数据格式转换、分词打包 |
+| [mindspeed-llm-weight-prep](mindspeed-llm/mindspeed-llm-weight-prep/SKILL.md) | 开发 | MindSpeed-LLM 权重转换：HF↔Megatron 格式转换、LoRA 权重合并、TP/PP 切分 |
+| [mindspeed-llm-training](mindspeed-llm/mindspeed-llm-training/SKILL.md) | 开发 | MindSpeed-LLM 训练启动：预训练/SFT/LoRA/QLoRA 分布式训练、可选评估 |
 | [diffusers-ascend-env-setup](diffusers-ascend/diffusers-ascend-env-setup/SKILL.md) | 开发 | Diffusers 环境配置：CANN 版本检测、PyTorch + torch_npu 安装、Diffusers 安装验证 |
 | [ascend-opplugin](ascend-opplugin/SKILL.md) | 开发 | op-plugin 环境安装与 torch_npu 自定义算子接入：无 workspace / workspace+tiling 两种模式，从内核实现到 host 注册、构建与测试 |
 | [diffusers-ascend-weight-prep](diffusers-ascend/diffusers-ascend-weight-prep/SKILL.md) | 开发 | Diffusers 权重准备：HuggingFace/ModelScope 模型下载、基于 config.json 生成假权重用于验证 |
