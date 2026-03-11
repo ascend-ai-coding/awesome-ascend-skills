@@ -69,6 +69,12 @@
       "category": "development"
     },
     {
+      "name": "npu-op-benchmark",
+      "description": "Ascend NPU operator benchmark for repeat_interleave-style latency testing. Supports SSH remote, local Conda, and Docker environments with CANN toolkit detection and torch_npu runtime checks. Uses existing environments only and does not install or repair dependencies.",
+      "source": "./npu-op-benchmark",
+      "category": "testing"
+    },
+    {
       "name": "ascend-opplugin",
       "description": "Installs op-plugin (torch_npu operator plugin) environment and guides custom NPU operator integration with PyTorch via two generic patterns (no workspace vs workspace+tiling), from kernel implementation through host registration, build, and test.",
       "source": "./ascend-opplugin",
