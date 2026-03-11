@@ -3,6 +3,7 @@ import argparse, json, math, os, random, statistics, sys, time
 from pathlib import Path
 
 def parse_args():
+    """Parse command-line arguments for the benchmark runner."""
     p = argparse.ArgumentParser(description='Generic single-operator benchmark for Ascend NPU or CPU.')
     p.add_argument('--op', default='repeat_interleave')
     p.add_argument('--device', default='npu:0')
@@ -20,6 +21,7 @@ def parse_args():
     return p.parse_args()
 
 def percentile(v, p):
+    """Return the linear-interpolated percentile from a sorted list."""
     if len(v) == 1:
         return v[0]
     r = (len(v)-1) * p
@@ -30,22 +32,48 @@ def percentile(v, p):
     return v[lo] * (1 - w) + v[hi] * w
 
 def sync_if_needed(torch, use_npu):
+    """Synchronize the NPU stream when benchmarking on Ascend devices."""
     if use_npu:
         torch.npu.synchronize()
 
 def resolve_dtype(torch, name):
+    """Resolve a dtype alias to a torch dtype object."""
     m = {'float16': torch.float16, 'fp16': torch.float16, 'float32': torch.float32, 'fp32': torch.float32, 'bfloat16': torch.bfloat16, 'bf16': torch.bfloat16}
     return m[name.lower()]
 
+def validate_positive_args(args):
+    """Reject non-positive benchmark dimensions and loop counts."""
+    values = {
+        'spatial_h': args.spatial_h,
+        'spatial_w': args.spatial_w,
+        'embed_dim': args.embed_dim,
+        'temporal_size': args.temporal_size,
+        'iters': args.iters,
+        'warmup': args.warmup,
+    }
+    for name, value in values.items():
+        if value <= 0:
+            raise ValueError(f'--{name} must be a positive integer, got {value}')
+
 def main():
+    """Run the benchmark and optionally write the JSON result to disk."""
     args = parse_args()
+    validate_positive_args(args)
     random.seed(args.seed)
     os.environ['PYTHONHASHSEED'] = str(args.seed)
-    import torch
+    try:
+        import torch
+    except ImportError as exc:
+        print(f'ERROR: failed to import torch: {exc}', file=sys.stderr)
+        return 1
     use_npu = args.device.startswith('npu')
     torch_npu_version = None
     if use_npu:
-        import torch_npu
+        try:
+            import torch_npu
+        except ImportError as exc:
+            print(f'ERROR: failed to import torch_npu: {exc}', file=sys.stderr)
+            return 1
         torch_npu_version = getattr(torch_npu, '__version__', 'unknown')
     dtype = resolve_dtype(torch, args.dtype)
     if use_npu and not torch.npu.is_available():
