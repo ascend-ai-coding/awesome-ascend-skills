@@ -1,0 +1,23 @@
+{
+  "skill_name": "ascend-diffusion-adapt",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I have a Stable Diffusion XL pipeline that works on CUDA with flash_attn. I need to port it to run on our Huawei Ascend 910B cluster with 8 NPUs. The model uses flash_attn_func for self-attention and flash_attn_varlen_func for cross-attention with T5 text encoder. Walk me through the full migration plan and show me the attention replacement code.",
+      "expected_output": "Should provide: 1) Device migration steps (cuda→npu, nccl→hccl, compilation flags), 2) Complete attention replacement code with mindiesd/torch_npu tiered fallback, 3) Both standard and varlen attention replacements, 4) bf16 casting for attention, 5) Multi-NPU setup with at minimum FSDP and CFG parallelism for 8 devices, 6) Environment variable dispatch pattern",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "I'm adapting a video generation model (similar to CogVideoX) for Ascend NPU. It uses CausalConv3d layers, RMSNorm, and rotary position embeddings. The model is about 12B parameters and I need to run inference on 4 Ascend 910B cards. What operator replacements should I make and how do I set up the distributed inference?",
+      "expected_output": "Should provide: 1) CausalConv3d padding optimization (spatial→kernel), 2) RMSNorm replacement with torch_npu.npu_rms_norm, 3) RoPE replacement with mindiesd.rotary_position_embedding or torch_npu.npu_apply_rotary_pos_emb, 4) Pre-computed cos/sin decomposition for RoPE, 5) 4-device parallel config (e.g., cfg_size=2 x ulysses_size=2), 6) FSDP setup with HCCL backend, 7) Warmup steps and compilation flags",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "We need to quantize our DiT (Diffusion Transformer) model for Ascend deployment to reduce memory usage. The model currently uses 30GB in bf16 and we need it to fit on a single 910B with 64GB HBM while leaving room for KV cache and activations. Also, can we use attention caching to speed up the 50-step denoising?",
+      "expected_output": "Should provide: 1) mindiesd.quantize() usage with W8A8 config, 2) Quant config JSON format with per-layer specifications, 3) Sensitive layer exclusion (time embedding, final projection), 4) FSDP + quantization integration with float8 buffer patching, 5) Attention caching setup with CacheConfig/CacheAgent, 6) Recommended caching parameters (ratio, start/end step, interval), 7) Memory estimation showing ~15GB for W8A8 quantized model",
+      "files": []
+    }
+  ]
+}

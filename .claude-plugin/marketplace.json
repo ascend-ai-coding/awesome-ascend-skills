@@ -63,6 +63,12 @@
       "category": "development"
     },
     {
+      "name": "ascend-diffusion-adapt",
+      "description": "Comprehensive guide for adapting HuggingFace Diffusers and custom diffusion models (Stable Diffusion, SDXL, FLUX, Wan2.1/2.2, CogVideoX, HunyuanVideo) from CUDA/GPU to Huawei Ascend NPU. Covers device migration, attention replacement (flash_attn/xformers → torch_npu/mindiesd), operator swaps (RMSNorm, RoPE, LayerNorm, Conv3d), distributed parallelism (CFG/Ulysses/Ring/TP/FSDP), VAE optimization, quantization (W8A8/W4A8), and attention caching.",
+      "source": "./ascend-diffusion-adapt",
+      "category": "development"
+    },
+    {
       "name": "diffusers-ascend-skills",
       "description": "Diffusers 昇腾 NPU 技能集，包括环境配置、权重准备、Pipeline 推理等。当用户需要在昇腾 NPU 上运行 Diffusers 推理时使用。",
       "source": "./",
