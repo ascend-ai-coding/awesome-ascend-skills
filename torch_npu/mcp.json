@@ -1,9 +1,0 @@
-{
-  "mcpServers": {
-    "torch-npu-docs": {
-      "command": "node",
-      "args": ["./mcp/index.js"],
-      "disabled": false
-    }
-  }
-}
