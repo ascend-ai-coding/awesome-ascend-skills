@@ -71,28 +71,26 @@ python3 -c "import numpy; print(numpy.__version__)"  # Should be 1.x.x
 
 **Solution - Export with correct opset:**
 ```python
-from ultralytics import YOLO
-
-model = YOLO('model.pt')
-# Use opset 11 for maximum compatibility
-model.export(format='onnx', imgsz=640, dynamic=True, opset=11)
-```
-
-**Or using PyTorch directly:**
-```python
 import torch
 
-model = torch.load('model.pt')
-dummy_input = torch.randn(1, 3, 640, 640)
+model = torch.load('model.pt', map_location='cpu')
+model.eval()
+dummy_input = torch.randn(1, 3, 224, 224)  # Adjust shape to your model
 
 torch.onnx.export(
     model,
     dummy_input,
     'model.onnx',
     opset_version=11,  # Use 11 for CANN 8.1.RC1
-    input_names=['images'],
-    output_names=['output0']
+    input_names=['input'],
+    output_names=['output']
 )
+```
+
+**Or using the provided export script:**
+```bash
+python3 scripts/export_onnx.py --pt_model model.pt --output model.onnx \
+    --input_shape 1,3,224,224 --opset 11
 ```
 
 ---
@@ -121,7 +119,7 @@ conda create -n atc_py310 python=3.10 -y
 conda activate atc_py310
 
 # Install PyTorch and ONNX tools
-pip install torch torchvision ultralytics onnx onnxruntime
+pip install torch torchvision onnx onnxruntime
 
 # Install CANN-compatible NumPy
 pip install "numpy<2.0" --force-reinstall
@@ -452,7 +450,7 @@ conda activate atc_py310
 ### Step 2: Install Compatible Dependencies
 ```bash
 # Core ML libraries
-pip install torch torchvision ultralytics onnx onnxruntime
+pip install torch torchvision onnx onnxruntime
 
 # CANN-compatible NumPy (CRITICAL: must be < 2.0)
 pip install "numpy<2.0" --force-reinstall
@@ -462,19 +460,13 @@ pip install decorator attrs absl-py psutil protobuf sympy
 ```
 
 ### Step 3: Export ONNX with Correct Opset
-```python
-from ultralytics import YOLO
-
-# Load model
-model = YOLO('yolo26n.pt')
-
-# Export with opset 11 for CANN 8.1.RC1 compatibility
-model.export(
-    format='onnx',
-    imgsz=640,
-    dynamic=True,
-    opset=11  # CRITICAL: Use opset 11 for CANN 8.1.RC1
-)
+```bash
+# Use the provided export script (works with any PyTorch model)
+python3 scripts/export_onnx.py \
+    --pt_model model.pt \
+    --output model.onnx \
+    --input_shape 1,3,224,224 \
+    --opset 11  # CRITICAL: Use opset 11 for CANN 8.1.RC1
 ```
 
 ### Step 4: Set CANN Environment
@@ -489,11 +481,15 @@ source /usr/local/Ascend/ascend-toolkit/set_env.sh
 
 ### Step 5: Run ATC Conversion
 ```bash
-atc --model=yolo26n.onnx \
+# Get input names and shapes first
+python3 scripts/get_onnx_info.py model.onnx
+
+# Convert (use the input name and shape from get_onnx_info.py output)
+atc --model=model.onnx \
     --framework=5 \
-    --output=yolo26n_om \
-    --soc_version=Ascend910B \
-    --input_shape="images:1,3,640,640" \
+    --output=model_om \
+    --soc_version=Ascend910B3 \
+    --input_shape="input:1,3,224,224" \
     --log=info
 ```
 

@@ -22,7 +22,7 @@
     },
     {
       "name": "atc-model-converter",
-      "description": "Complete toolkit for Huawei Ascend NPU model conversion and inference. Convert ONNX models to .om format using ATC tool, run Python inference on OM models using ais_bench, compare precision between CPU ONNX and NPU OM outputs, and end-to-end YOLO inference with Ultralytics.",
+      "description": "Complete toolkit for Huawei Ascend NPU model conversion and inference. Export PyTorch to ONNX, convert ONNX to .om via ATC, run OM inference with ais_bench, and compare ONNX vs OM precision. Supports any standard PyTorch/ONNX model.",
       "source": "./atc-model-converter",
       "category": "development"
     },
