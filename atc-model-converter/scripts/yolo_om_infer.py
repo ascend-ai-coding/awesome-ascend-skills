@@ -3,11 +3,14 @@
 YOLO End-to-End OM Inference Script
 
 Provides Ultralytics-like inference interface for YOLO OM models on Ascend NPU.
-Supports multiple YOLO task types: Detection, Pose, Segmentation, OBB.
+Supports multiple YOLO task types: Detection, Pose, Segmentation, OBB, Classification.
 
 Usage:
-    # Detection task (default)
+    # Detection task (default, imgsz=640)
     python3 yolo_om_infer.py --model yolo.om --source image.jpg --task detect
+
+    # Classification (imgsz=224)
+    python3 yolo_om_infer.py --model yolo-cls.om --source image.jpg --task classify --imgsz 224
 
     # Pose estimation
     python3 yolo_om_infer.py --model yolo-pose.om --source image.jpg --task pose
@@ -174,11 +177,11 @@ def postprocess_detect(
         elif output.shape[2] == 7:
             # OBB format: (1, 300, 7) - with angle
             predictions = output[0]  # (300, 7)
-        elif output.shape[1] > output.shape[2]:
-            # Raw format: (1, 84, 8400) - need transpose
+        elif output.shape[1] < output.shape[2]:
+            # Raw format: (1, 84, 8400) - channels < anchors, need transpose
             predictions = output[0].T  # (8400, 84)
         else:
-            # Assume processed format
+            # Processed format: (1, 300, 84) or similar
             predictions = output[0]
     else:
         predictions = output
@@ -340,8 +343,8 @@ def postprocess_segment(
             mask = scores >= conf_thres
             return boxes[mask], scores[mask], class_ids[mask], mask_coeffs[mask]
 
-        elif pred_output.shape[1] > pred_output.shape[2]:
-            # Raw format: (1, 116, 8400) - need transpose
+        elif pred_output.shape[1] < pred_output.shape[2]:
+            # Raw format: (1, 116, 8400) - channels < anchors, need transpose
             predictions = pred_output[0].T  # (8400, 116)
         else:
             predictions = pred_output[0]
@@ -424,8 +427,8 @@ def postprocess_obb(
                 class_ids[mask],
                 angles[mask],
             )
-        elif output.shape[1] > output.shape[2]:
-            # Raw format: (1, 20, 8400) - need transpose
+        elif output.shape[1] < output.shape[2]:
+            # Raw format: (1, 20, 8400) - channels < anchors, need transpose
             predictions = output[0].T  # (8400, 20)
         else:
             predictions = output[0]
@@ -456,6 +459,42 @@ def postprocess_obb(
     keep = nms_boxes(boxes_xyxy, scores, iou_thres)
 
     return boxes_cxcywh[keep], scores[keep], class_ids[keep], angles[keep]
+
+
+def postprocess_classify(
+    output: np.ndarray,
+    top_k: int = 5,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Postprocess YOLO Classification output.
+
+    Input shape: (1, num_classes) e.g., (1, 1000) for ImageNet
+    Output: top_k class indices and their probabilities
+    """
+    if isinstance(output, (list, tuple)):
+        output = output[0]
+
+    # Squeeze batch dimension
+    if output.ndim == 2:
+        values = output[0]  # (num_classes,)
+    elif output.ndim == 1:
+        values = output
+    else:
+        values = output.flatten()
+
+    # Check if already softmaxed (sum ≈ 1.0 and all non-negative)
+    if values.min() >= 0 and abs(values.sum() - 1.0) < 0.01:
+        probs = values
+    else:
+        # Apply softmax (numerically stable)
+        exp_logits = np.exp(values - np.max(values))
+        probs = exp_logits / exp_logits.sum()
+
+    # Get top-k
+    top_indices = np.argsort(probs)[::-1][:top_k]
+    top_probs = probs[top_indices]
+
+    return top_indices, top_probs
 
 
 # =============================================================================
@@ -724,6 +763,26 @@ def draw_obb(
     return img
 
 
+def draw_classify(
+    img: np.ndarray,
+    top_indices: np.ndarray,
+    top_probs: np.ndarray,
+    classes: Optional[List[str]] = None,
+) -> np.ndarray:
+    """Draw classification results as text overlay on image."""
+    y_offset = 30
+    for i in range(len(top_indices)):
+        cls_idx = int(top_indices[i])
+        prob = top_probs[i]
+        label = f"#{i+1}: {classes[cls_idx] if classes and cls_idx < len(classes) else cls_idx} ({prob:.4f})"
+        cv2.putText(
+            img, label, (10, y_offset),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2, cv2.LINE_AA,
+        )
+        y_offset += 30
+    return img
+
+
 # =============================================================================
 # Main Inferencer Class
 # =============================================================================
@@ -734,10 +793,11 @@ class YoloOMInferencer:
     YOLO OM Model Inferencer supporting multiple task types.
 
     Supported tasks:
-    - detect: Object detection
-    - pose: Keypoint detection
-    - segment: Instance segmentation
-    - obb: Oriented bounding box detection
+    - detect: Object detection (imgsz=640)
+    - classify: Image classification (imgsz=224)
+    - pose: Keypoint detection (imgsz=640)
+    - segment: Instance segmentation (imgsz=640)
+    - obb: Oriented bounding box detection (imgsz=640)
     """
 
     def __init__(
@@ -947,6 +1007,24 @@ class YoloOMInferencer:
 
             return {"obbs": obbs, "num_obbs": len(obbs)}
 
+        elif self.task == "classify":
+            top_indices, top_probs = postprocess_classify(outputs[0], top_k=5)
+
+            predictions = []
+            for i in range(len(top_indices)):
+                cls_idx = int(top_indices[i])
+                predictions.append(
+                    {
+                        "cls": cls_idx,
+                        "cls_name": classes[cls_idx]
+                        if classes and cls_idx < len(classes)
+                        else str(cls_idx),
+                        "prob": float(top_probs[i]),
+                    }
+                )
+
+            return {"predictions": predictions, "num_predictions": len(predictions)}
+
         return {}
 
     def __call__(self, image_path: str, classes: Optional[List[str]] = None) -> Dict:
@@ -1028,6 +1106,12 @@ def draw_results(result: Dict, output_path: str, classes: Optional[List[str]] = 
             scores = np.array([o["conf"] for o in result["obbs"]])
             class_ids = np.array([o["cls"] for o in result["obbs"]])
             img = draw_obb(img, boxes, angles, scores, class_ids, classes)
+
+    elif task == "classify":
+        if result.get("predictions"):
+            top_indices = np.array([p["cls"] for p in result["predictions"]])
+            top_probs = np.array([p["prob"] for p in result["predictions"]])
+            img = draw_classify(img, top_indices, top_probs, classes)
 
     cv2.imwrite(output_path, img)
     print(f"Saved result to: {output_path}")
@@ -1146,7 +1230,7 @@ def main():
     parser.add_argument("--output", help="Path to output image or directory")
     parser.add_argument(
         "--task",
-        choices=["detect", "pose", "segment", "obb"],
+        choices=["detect", "classify", "pose", "segment", "obb"],
         default="detect",
         help="YOLO task type (default: detect)",
     )
@@ -1169,6 +1253,21 @@ def main():
         classes = args.classes
     elif args.task == "obb":
         classes = DOTA_CLASSES
+    elif args.task == "classify":
+        # Try to load ImageNet class names from ultralytics
+        try:
+            from ultralytics.utils import ASSETS
+            import json
+            imagenet_path = Path(ASSETS).parent / "cfg" / "datasets" / "ImageNet.yaml"
+            if imagenet_path.exists():
+                import yaml
+                with open(imagenet_path) as f:
+                    data = yaml.safe_load(f)
+                classes = list(data.get("names", {}).values())
+            else:
+                classes = None
+        except Exception:
+            classes = None
     else:
         classes = COCO_CLASSES
 
@@ -1181,11 +1280,17 @@ def main():
         iou_thres=args.iou,
     )
 
-    # Get input files
+    # Get input files and determine output mode
+    single_output_file = None  # If set, use this exact path for single-image output
     if os.path.isfile(args.source):
         input_files = [args.source]
-        output_dir = os.path.dirname(args.output) if args.output else "."
-        output_dir = output_dir if output_dir else "."  # Handle empty dirname
+        if args.output and os.path.splitext(args.output)[1]:
+            # --output has a file extension -> treat as exact output file path
+            single_output_file = args.output
+            output_dir = os.path.dirname(args.output) or "."
+        else:
+            # --output is a directory or not specified
+            output_dir = args.output or "."
     elif os.path.isdir(args.source):
         input_files = (
             list(Path(args.source).glob("*.jpg"))
@@ -1210,9 +1315,10 @@ def main():
         result = inferencer(img_path, classes=classes)
 
         num_dets = result.get(
-            "num_detections", result.get("num_poses", result.get("num_obbs", 0))
+            "num_detections",
+            result.get("num_poses", result.get("num_obbs", result.get("num_predictions", 0))),
         )
-        print(f"  Detections: {num_dets}")
+        print(f"  Results: {num_dets}")
         print(
             f"  Timing: pre={result['timing']['preprocess_ms']:.1f}ms, "
             f"infer={result['timing']['infer_ms']:.1f}ms, "
@@ -1220,26 +1326,34 @@ def main():
             f"total={result['timing']['total_ms']:.1f}ms"
         )
 
-        # Print detections based on task type
-        detections = (
-            result.get("detections") or result.get("poses") or result.get("obbs") or []
-        )
-        if detections:
-            print("  Objects:")
-            for det in detections[:5]:
-                if "keypoints" in det:
-                    print(f"    - person: {det['conf']:.2f} at {det['box'][:4]}")
-                else:
-                    box = det["box"]
-                    print(
-                        f"    - {det.get('cls_name', det.get('cls', '?'))}: {det['conf']:.2f} at {box}"
-                    )
-            if len(detections) > 5:
-                print(f"    ... and {len(detections) - 5} more")
+        # Print results based on task type
+        if args.task == "classify" and result.get("predictions"):
+            print("  Top-5 predictions:")
+            for p in result["predictions"]:
+                print(f"    - {p['cls_name']}: {p['prob']:.4f}")
+        else:
+            detections = (
+                result.get("detections") or result.get("poses") or result.get("obbs") or []
+            )
+            if detections:
+                print("  Objects:")
+                for det in detections[:5]:
+                    if "keypoints" in det:
+                        print(f"    - person: {det['conf']:.2f} at {det['box'][:4]}")
+                    else:
+                        box = det["box"]
+                        print(
+                            f"    - {det.get('cls_name', det.get('cls', '?'))}: {det['conf']:.2f} at {box}"
+                        )
+                if len(detections) > 5:
+                    print(f"    ... and {len(detections) - 5} more")
 
         # Save output
-        base_name = Path(img_path).stem
-        output_path = os.path.join(output_dir, f"{base_name}_result.jpg")
+        if single_output_file and len(input_files) == 1:
+            output_path = single_output_file
+        else:
+            base_name = Path(img_path).stem
+            output_path = os.path.join(output_dir, f"{base_name}_result.jpg")
 
         if not args.no_draw:
             draw_results(result, output_path, classes)
