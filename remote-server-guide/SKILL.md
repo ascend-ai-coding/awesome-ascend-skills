@@ -135,15 +135,35 @@ Ask the user where commands will run:
 
 #### Connecting to an Existing Container
 
+**Important: tmux vs other tools behave very differently for container work.**
+
+**tmux (persistent session):** Enter the container shell once, then send all subsequent commands directly — they execute inside the container automatically. The session maintains state (working directory, environment variables, shell context).
+
 ```bash
-# List containers on remote host
-ssh <user>@<host> "docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'"
+# List containers
+tmux send-keys -t remote_session "docker ps" Enter
+tmux capture-pane -t remote_session -p
 
-# Execute command in container
-ssh <user>@<host> "docker exec <container-name> <command>"
+# Enter container ONCE — all subsequent commands run inside the container
+tmux send-keys -t remote_session "docker exec -it <container-name> bash" Enter
 
-# Interactive shell in container
-ssh <user>@<host> -t "docker exec -it <container-name> bash"
+# Now you are INSIDE the container — just send commands directly, no need to repeat docker exec
+tmux send-keys -t remote_session "cd /workspace" Enter
+tmux send-keys -t remote_session "python inference.py" Enter
+tmux send-keys -t remote_session "cat result.txt" Enter
+tmux capture-pane -t remote_session -p
+
+# Exit container when done (returns to host shell)
+tmux send-keys -t remote_session "exit" Enter
+```
+
+**Other tools (stateless):** Each command is a separate SSH connection with no shared state. You must prefix every command with `docker exec`:
+
+```bash
+# Every command needs the full docker exec prefix
+ssh <user>@<host> "docker exec <container-name> ls /workspace"
+ssh <user>@<host> "docker exec <container-name> python inference.py"
+ssh <user>@<host> "docker exec <container-name> cat result.txt"
 ```
 
 ### Phase 5: Execute Commands
@@ -152,12 +172,21 @@ Use the selected SSH tool consistently for all operations.
 
 #### Single Command
 
-| Tool | Command |
-|------|---------|
-| SSH key | `ssh -i <key> <user>@<host> "<command>"` |
-| sshpass | `sshpass -p '<pwd>' ssh <user>@<host> "<command>"` |
-| paramiko | `client.exec_command("<command>")` |
-| fabric | `conn.run("<command>")` |
+**tmux:** Since tmux maintains a persistent shell session, just send the command directly. If you previously entered a container, the command runs inside the container.
+
+```bash
+tmux send-keys -t remote_session "<command>" Enter
+tmux capture-pane -t remote_session -p
+```
+
+**Other tools (stateless, each command is independent):**
+
+| Tool | On host | In container |
+|------|---------|--------------|
+| SSH key | `ssh -i <key> <user>@<host> "<command>"` | `ssh -i <key> <user>@<host> "docker exec <container> <command>"` |
+| sshpass | `sshpass -p '<pwd>' ssh <user>@<host> "<command>"` | `sshpass -p '<pwd>' ssh <user>@<host> "docker exec <container> <command>"` |
+| paramiko | `client.exec_command("<command>")` | `client.exec_command("docker exec <container> <command>")` |
+| fabric | `conn.run("<command>")` | `conn.run("docker exec <container> <command>")` |
 
 #### File Transfer
 
