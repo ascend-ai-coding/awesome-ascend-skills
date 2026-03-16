@@ -1,6 +1,6 @@
 ---
 name: atc-model-converter
-description: Complete toolkit for Huawei Ascend NPU model conversion and inference. (0) Auto-discover input shapes and parameters from user source code via static analysis and dynamic probing. (1) Export PyTorch models to ONNX format with configurable opset and dynamic axes. (2) Convert ONNX models to .om format using ATC tool with multi-CANN version support (8.3.RC1, 8.5.0+). (3) Run Python inference on OM models using ais_bench. (4) Compare precision between CPU ONNX and NPU OM outputs. Supports any standard PyTorch/ONNX model with static or dynamic shapes. Use when converting, testing, or deploying models on Ascend AI processors.
+description: Complete toolkit for Huawei Ascend NPU model conversion and end-to-end inference adaptation. (0) Auto-discover input shapes and parameters from user source code via static analysis and dynamic probing. (1) Export PyTorch models to ONNX format with configurable opset and dynamic axes. (2) Convert ONNX models to .om format using ATC tool with multi-CANN version support (8.3.RC1, 8.5.0+). (3) Run Python inference on OM models using ais_bench. (4) Compare precision between CPU ONNX and NPU OM outputs. (5) End-to-end inference adaptation — clone user's code repo, analyze its full inference pipeline (preprocessing + model + postprocessing), and produce a complete NPU inference script that reuses the original repo's pre/post-processing with OM model replacement. Supports any standard PyTorch/ONNX model with static or dynamic shapes. Use when converting, testing, or deploying models on Ascend AI processors.
 keywords:
     - ATC
     - inference
@@ -22,6 +22,41 @@ keywords:
 
 > **⚠️ 环境兼容性警告：** Python **必须 ≤ 3.10**（推荐 3.10），NumPy **必须 < 2.0**，ONNX opset **推荐 11**。
 > 违反这三条是最常见的转换失败原因。详见 [FAQ.md](references/FAQ.md)。
+
+---
+
+## 开始之前：用户必须提供的信息
+
+> **Agent 在执行本 Skill 的任何 Workflow 之前，必须先向用户收集以下信息。**
+> 缺少任何一项时，Agent 应主动询问用户，而不是猜测或跳过。
+
+| 必需信息 | 说明 | 示例 |
+|---------|------|------|
+| **模型权重路径** | `.pt` / `.pth` / `.onnx` 文件的本地路径或下载地址 | `/home/user/models/yolo26n.pt` |
+| **代码仓库地址** | 模型所属项目的 Git 仓库 URL 或本地路径 | `https://github.com/ultralytics/ultralytics` |
+
+| 可选信息 | 说明 | 默认行为 |
+|---------|------|---------|
+| 目标任务类型 | 分类/检测/分割/姿态/OBB 等 | Agent 从代码仓中自动识别 |
+| 目标输入尺寸 | 模型推理时的输入分辨率 | Agent 通过 Workflow 0 自动发现 |
+| 测试图片/数据 | 用于验证端到端推理的样例输入 | Agent 使用随机数据或从仓库中寻找 |
+
+**Agent 收集信息后的标准开场白模板：**
+
+```
+收到以下信息：
+- 模型权重：<path>
+- 代码仓库：<url_or_path>
+- 任务类型：<type_or_待确认>
+
+我将按以下流程执行：
+1. 克隆/分析代码仓库，发现模型参数 (Workflow 0)
+2. 导出 ONNX (Workflow 1)
+3. ATC 转换为 OM (Workflow 2)
+4. 端到端推理适配 (Workflow 5)
+5. 精度对比验证 (Workflow 4)
+6. 生成可复现 README (Workflow 6)
+```
 
 ---
 
@@ -226,18 +261,13 @@ python3 scripts/get_onnx_info.py model.onnx
 > - 探针执行完毕后，Agent 应向用户报告发现结果并请求确认
 > - 如果探针也无法确定 shape，Agent **必须明确询问用户**，而不是猜测
 
-### Phase 3: 后处理逻辑对齐 (Post-processing Alignment)
+### Phase 3: 后处理类型识别 (Post-processing Identification)
 
-OM 推理 (`infer_om.py`) 输出的是原始浮点张量。Agent 必须识别用户项目中的后处理逻辑，并帮助用户将其适配到 OM 推理输出上，确保最终产出可用的业务结果。
-
-**3.1 识别后处理类型**
-
-Agent 应搜索用户代码中的后处理模式：
+Agent 应识别用户项目中的后处理类型，为后续 Workflow 5（端到端推理适配）做准备。
 
 ```bash
 # 搜索后处理关键词
 grep -rn "nms\|non_max_suppression\|softmax\|argmax\|sigmoid\|postprocess\|decode" /path/to/project --include="*.py"
-grep -rn "draw\|visualize\|plot\|imshow\|save_image\|putText\|rectangle" /path/to/project --include="*.py"
 ```
 
 | 任务类型 | 典型后处理 | 搜索关键词 |
@@ -248,13 +278,7 @@ grep -rn "draw\|visualize\|plot\|imshow\|save_image\|putText\|rectangle" /path/t
 | 关键点 (Pose) | decode -> keypoints | `keypoint`, `heatmap`, `joint`, `skeleton` |
 | 生成 (Generation) | denormalize -> image | `denormalize`, `clamp`, `to_pil`, `save_image` |
 
-**3.2 生成适配后的推理脚本**
-
-Agent 应基于用户的后处理逻辑，生成一个完整的端到端推理脚本。脚本结构：初始化 OM Session → 预处理（从用户代码复用）→ 推理 → 后处理（从用户代码复用）→ 输出结果。
-
-> **关键原则：** Agent 生成的推理脚本必须引用用户项目中已有的预处理和后处理函数（import 复用），
-> 而非重新实现。仅当用户代码中的后处理与原始框架强耦合（如依赖 GPU tensor）时，
-> 才将其改写为 NumPy 等价实现。
+> **注意：** 此阶段仅做识别和记录，实际的推理脚本生成在 **Workflow 5** 中完成。
 
 ---
 
@@ -456,7 +480,151 @@ python3 scripts/compare_precision.py \
 
 ---
 
-## Workflow 5: 端到端可复现 README 生成
+## Workflow 5: 端到端推理适配 (End-to-End Inference Adaptation)
+
+> **目标：** 基于用户提供的代码仓库，生成一个完整的端到端 NPU 推理脚本。
+> 该脚本复用原始仓库的预处理和后处理逻辑，仅将模型推理部分替换为 OM 模型。
+> 最终用户获得的是一个**可以直接输入原始数据（图片/文本/音频）并输出业务结果**的脚本，
+> 而非仅输出原始张量的 `infer_om.py`。
+
+### 前置条件
+
+- Workflow 0 已完成（参数已发现）
+- Workflow 1-2 已完成（OM 模型已生成）
+- 用户代码仓已克隆到本地
+
+### Step 1: 分析原始推理流程
+
+Agent 需要从用户仓库中找到完整的推理入口，理解其三段式结构：
+
+```bash
+# 搜索推理入口文件
+grep -rn "def predict\|def infer\|def forward\|def __call__\|def run\b" /path/to/repo --include="*.py"
+grep -rn "if __name__\|argparse\|click\|typer" /path/to/repo --include="*.py" | grep -i "infer\|predict\|detect\|demo\|test"
+```
+
+Agent 应识别以下三个阶段并记录其代码位置：
+
+| 阶段 | 需识别的内容 | 搜索关键词 |
+|------|------------|-----------|
+| **预处理** | 输入数据 → 模型输入张量 | `preprocess`, `transform`, `resize`, `normalize`, `letterbox`, `pad` |
+| **模型推理** | 张量 → 原始输出张量 | `model(`, `forward(`, `session.run`, `torch.no_grad` |
+| **后处理** | 原始输出 → 业务结果 | `postprocess`, `nms`, `decode`, `softmax`, `argmax`, `draw`, `visualize` |
+
+**输出要求：** Agent 必须生成推理流程分析报告：
+
+```
+=== Inference Pipeline Analysis ===
+
+入口文件: ultralytics/engine/predictor.py
+预处理: ultralytics/data/augment.py :: LetterBox (line 420)
+  - resize to imgsz with letterbox padding
+  - BGR→RGB, HWC→CHW, /255.0 normalize
+模型推理: ultralytics/nn/autobackend.py :: AutoBackend.forward() (line 180)
+  - input: (1, 3, 640, 640) float32
+  - output: (1, 84, 8400) float32
+后处理: ultralytics/utils/ops.py :: non_max_suppression (line 200)
+  - transpose if shape[1] < shape[2]
+  - conf threshold + NMS
+  - scale boxes back to original image size
+```
+
+### Step 2: 构建端到端推理脚本
+
+Agent 基于分析结果，生成 `e2e_infer_om.py` 脚本，遵循以下原则：
+
+**核心原则：最大化复用，最小化重写**
+
+```python
+#!/usr/bin/env python3
+"""End-to-end OM inference script — reuses <repo_name> pre/post-processing."""
+import sys
+import numpy as np
+from ais_bench.infer.interface import InferSession
+
+# ===== 复用原始仓库的预处理/后处理 =====
+# Agent 应优先 import 用户仓库中的函数
+# 仅当原始代码与 GPU/特定框架强耦合时，才改写为 NumPy 版本
+sys.path.insert(0, '/path/to/repo')
+# from <repo>.preprocess import preprocess_fn   # 优先复用
+# from <repo>.postprocess import postprocess_fn  # 优先复用
+
+def main():
+    # 1. 加载输入数据（使用原始仓库的方式）
+    # img = load_image(input_path)
+
+    # 2. 预处理（复用原始仓库逻辑）
+    # input_tensor = preprocess_fn(img)
+
+    # 3. OM 推理（替换原始模型推理）
+    session = InferSession(device_id=0, model_path="model.om")
+    outputs = session.infer([input_tensor], mode='static')
+
+    # 4. 后处理（复用原始仓库逻辑）
+    # results = postprocess_fn(outputs, original_shape=img.shape)
+
+    # 5. 输出业务结果
+    # visualize(img, results, save_path="result.jpg")
+
+if __name__ == "__main__":
+    main()
+```
+
+**Agent 生成脚本时的决策树：**
+
+```
+原始仓库的预处理/后处理函数能否直接 import？
+├── YES → 直接 import 并调用（首选）
+├── 需要少量修改（如 GPU→CPU）→ 复制函数并修改 tensor → numpy
+└── 与框架深度耦合 → 基于原始逻辑用 numpy/opencv 重写，保留注释标注来源
+```
+
+### Step 3: 验证端到端结果
+
+Agent 必须验证端到端推理脚本的输出与原始推理流程的输出一致：
+
+```bash
+# 1. 使用原始仓库运行推理，保存结果
+python3 original_infer.py --input test.jpg --save-result original_result.json
+
+# 2. 使用 e2e_infer_om.py 运行推理，保存结果
+python3 e2e_infer_om.py --input test.jpg --save-result om_result.json
+
+# 3. 对比业务结果（不是张量对比，是最终输出对比）
+# 检测任务：对比 bounding box 坐标、类别、置信度
+# 分类任务：对比 top-K 类别和概率
+# 分割任务：对比 mask IoU
+```
+
+**验证通过标准：**
+
+| 任务类型 | 验证指标 | 通过阈值 |
+|---------|---------|---------|
+| 检测 | box坐标差 / 类别一致 / 检出数一致 | 坐标差 < 1px, 类别100%一致 |
+| 分类 | Top-1一致 / 概率差 | Top-1一致, 概率差 < 0.01 |
+| 分割 | mask IoU | > 0.99 |
+| 姿态 | 关键点坐标差 | < 2px |
+
+### Step 4: 性能基准
+
+```bash
+# 端到端延迟（含预处理+推理+后处理）
+python3 e2e_infer_om.py --input test.jpg --benchmark --warmup 5 --loops 100
+```
+
+Agent 应报告：
+
+```
+=== End-to-End Performance ===
+Preprocess:  X.XX ms
+OM Inference: X.XX ms
+Postprocess: X.XX ms
+Total E2E:   X.XX ms (X.X FPS)
+```
+
+---
+
+## Workflow 6: 端到端可复现 README 生成
 
 > **在完成 Workflow 0–4 的全部步骤后，Agent 必须生成一份用户可直接跟随复现的 README 文档。**
 > 这是 Skill 执行的最后一步，不可跳过。
@@ -481,23 +649,9 @@ python3 scripts/compare_precision.py \
 
 ---
 
-## 常见问题排查（Top 3）
+## 常见问题排查
 
-### 1. `[tbe-custom] Conv2D not found` 或 `op type XXX is not found`
-
-**根因：Python ≥ 3.11。** 切到 Python 3.10 的 conda 环境即可解决。
-
-### 2. `np.float_` / NumPy 2.0 不兼容
-
-```bash
-pip install "numpy<2.0" --force-reinstall
-```
-
-### 3. `Opname not found in model`
-
-`--input_shape` 中的输入名与 ONNX 模型不匹配。先用 `python3 scripts/get_onnx_info.py model.onnx` 查看正确的输入名。
-
-更多问题排查见 [FAQ.md](references/FAQ.md)。
+详见 [FAQ.md](references/FAQ.md)，涵盖 Python 版本、NumPy 兼容性、opset 版本、算子缺失等常见问题的完整排查决策树。
 
 ---
 
@@ -508,10 +662,8 @@ pip install "numpy<2.0" --force-reinstall
 **导出 & 转换：**
 - **`export_onnx.py`** - 通用 PyTorch → ONNX 导出工具
 - `get_onnx_info.py` - 查看 ONNX 模型输入输出信息
-- `convert_onnx.sh` - 交互式批量转换助手
 - `setup_env.sh` - 自动配置 CANN 环境
 - `check_env_enhanced.sh` - 全面环境兼容性检查
-- `check_env.sh` - 基本环境验证
 
 **推理 & 测试：**
 - **`infer_om.py`** - 通用 OM 模型推理（基于 ais_bench）

@@ -432,70 +432,14 @@ atc --model=model.onnx --op_debug_level=1 ...
 
 ```bash
 # Use provided check script
-./scripts/check_env.sh
-```
-
----
-
-## Complete Working Workflow (Tested on Ascend 910B3)
-
-This is the complete workflow verified on 175.99.1.3 with CANN 8.1.RC1:
-
-### Step 1: Create Python 3.10 Environment
-```bash
-conda create -n atc_py310 python=3.10 -y
-conda activate atc_py310
-```
-
-### Step 2: Install Compatible Dependencies
-```bash
-# Core ML libraries
-pip install torch torchvision onnx onnxruntime
-
-# CANN-compatible NumPy (CRITICAL: must be < 2.0)
-pip install "numpy<2.0" --force-reinstall
-
-# CANN required Python modules
-pip install decorator attrs absl-py psutil protobuf sympy
-```
-
-### Step 3: Export ONNX with Correct Opset
-```bash
-# Use the provided export script (works with any PyTorch model)
-python3 scripts/export_onnx.py \
-    --pt_model model.pt \
-    --output model.onnx \
-    --input_shape 1,3,224,224 \
-    --opset 11  # CRITICAL: Use opset 11 for CANN 8.1.RC1
-```
-
-### Step 4: Set CANN Environment
-```bash
-# Use Python 3.10 from conda
-export PATH=/home/miniconda3/envs/atc_py310/bin:$PATH
-export PYTHONPATH=/home/miniconda3/envs/atc_py310/lib/python3.10/site-packages:$PYTHONPATH
-
-# Source CANN environment
-source /usr/local/Ascend/ascend-toolkit/set_env.sh
-```
-
-### Step 5: Run ATC Conversion
-```bash
-# Get input names and shapes first
-python3 scripts/get_onnx_info.py model.onnx
-
-# Convert (use the input name and shape from get_onnx_info.py output)
-atc --model=model.onnx \
-    --framework=5 \
-    --output=model_om \
-    --soc_version=Ascend910B3 \
-    --input_shape="input:1,3,224,224" \
-    --log=info
+./scripts/check_env_enhanced.sh
 ```
 
 ---
 
 ## Pre-Conversion Checklist
+
+> **完整的端到端转换流程请参考 SKILL.md 中的 Workflow 0-2。**
 
 Before running ATC, verify:
 
@@ -538,14 +482,7 @@ ATC Failed?
 
 ## Version Compatibility Matrix
 
-| CANN Version | Python Version | NumPy Version | ONNX Opset | Status |
-|--------------|----------------|---------------|------------|---------|
-| 8.1.RC1 | 3.7 - 3.10 | < 2.0 | 11, 13 | ✅ Tested |
-| 8.3.RC1 | 3.7 - 3.10 | < 2.0 | 11, 13, 17 | ✅ Supported |
-| 8.5.0 | 3.7 - 3.10 | >= 1.21 | 11, 13, 17, 19 | ✅ Supported |
-| 8.1.RC1 | 3.11+ | Any | Any | ❌ Failed |
-| 8.1.RC1 | Any | >= 2.0 | Any | ❌ Failed |
-| 8.1.RC1 | Any | Any | >= 18 | ❌ Failed |
+详见 [CANN_VERSIONS.md](CANN_VERSIONS.md) 中的完整版本兼容性矩阵。
 
 ---
 
