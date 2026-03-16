@@ -228,10 +228,15 @@ Display generated config, confirm with user, then execute.
 
 ### Execution Methods by Platform
 
+**Persistent session (tmux):** If you connected via tmux and are already inside the target environment (remote host / container / both), execute commands directly — same as bare metal.
+
+**Stateless (SSH key / sshpass / paramiko / fabric):**
+
 | Platform | Method |
 |----------|--------|
 | Bare metal | Execute directly in shell |
 | Existing container | `docker exec` to run command |
+| Remote | SSH → run command |
 | Remote container | SSH → `docker exec -d` for background |
 
 ### Container Background Launch
@@ -239,26 +244,31 @@ Display generated config, confirm with user, then execute.
 **For containers, start vLLM in background with logging:**
 
 ```bash
-# Inside container (interactive)
+# Inside container (bare metal / tmux already in container)
 nohup vllm serve /model ... > /tmp/vllm.log 2>&1 &
 
-# From host (background in container)
+# From host (stateless, background in container)
 docker exec -d <container> bash -c 'cd /workspace && vllm serve /model ... 2>&1 | tee /tmp/vllm.log'
 
-# Remote via SSH
+# Remote via SSH (stateless)
 ssh user@host "docker exec -d <container> bash -c 'vllm serve /model ... 2>&1 | tee /tmp/vllm.log'"
 ```
 
 ### Check Service Status
 
+**Inside container (bare metal / tmux already in container):**
+
 ```bash
-# Check if vLLM process is running
+ps aux | grep vllm
+tail -50 /tmp/vllm.log
+tail -f /tmp/vllm.log
+```
+
+**From host or remote (stateless, each command needs `docker exec`):**
+
+```bash
 docker exec <container> ps aux | grep vllm
-
-# View startup logs
 docker exec <container> tail -50 /tmp/vllm.log
-
-# Follow logs in real-time
 docker exec <container> tail -f /tmp/vllm.log
 ```
 
