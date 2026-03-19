@@ -1,6 +1,6 @@
 ---
 name: atc-model-converter
-description: Complete toolkit for Huawei Ascend NPU model conversion and end-to-end inference adaptation. (0) Auto-discover input shapes and parameters from user source code via static analysis and dynamic probing. (1) Export PyTorch models to ONNX format with configurable opset and dynamic axes. (2) Convert ONNX models to .om format using ATC tool with multi-CANN version support (8.3.RC1, 8.5.0+). (3) Run Python inference on OM models using ais_bench. (4) Compare precision between CPU ONNX and NPU OM outputs. (5) End-to-end inference adaptation — clone user's code repo, analyze its full inference pipeline (preprocessing + model + postprocessing), and produce a complete NPU inference script that reuses the original repo's pre/post-processing with OM model replacement. Supports any standard PyTorch/ONNX model with static or dynamic shapes. Use when converting, testing, or deploying models on Ascend AI processors.
+description: Complete toolkit for Huawei Ascend NPU model conversion and end-to-end inference adaptation. Workflow 1 auto-discovers input shapes and parameters from user source code. Workflow 2 exports PyTorch models to ONNX. Workflow 3 converts ONNX to .om via ATC with multi-CANN version support. Workflow 4 adapts the user's full inference pipeline (preprocessing + model + postprocessing) to run end-to-end on NPU. Workflow 5 verifies precision between ONNX and OM outputs. Workflow 6 generates a reproducible README. Supports any standard PyTorch/ONNX model. Use when converting, testing, or deploying models on Ascend AI processors.
 keywords:
     - ATC
     - inference
@@ -16,7 +16,7 @@ keywords:
 
 # ATC Model Converter
 
-华为昇腾 NPU 上完整的 **PT -> ONNX -> OM** 模型转换工具链。支持任意标准 PyTorch 或 ONNX 模型。
+华为昇腾 NPU 上完整的 **PT -> ONNX -> OM** 模型转换与端到端推理适配工具链。支持任意标准 PyTorch 或 ONNX 模型。
 
 **支持的 CANN 版本：** 8.1.RC1, 8.3.RC1, 8.5.0+
 
@@ -38,7 +38,7 @@ keywords:
 | 可选信息 | 说明 | 默认行为 |
 |---------|------|---------|
 | 目标任务类型 | 分类/检测/分割/姿态/OBB 等 | Agent 从代码仓中自动识别 |
-| 目标输入尺寸 | 模型推理时的输入分辨率 | Agent 通过 Workflow 0 自动发现 |
+| 目标输入尺寸 | 模型推理时的输入分辨率 | Agent 通过 Workflow 1 自动发现 |
 | 测试图片/数据 | 用于验证端到端推理的样例输入 | Agent 使用随机数据或从仓库中寻找 |
 
 **Agent 收集信息后的标准开场白模板：**
@@ -50,43 +50,17 @@ keywords:
 - 任务类型：<type_or_待确认>
 
 我将按以下流程执行：
-1. 克隆/分析代码仓库，发现模型参数 (Workflow 0)
-2. 导出 ONNX (Workflow 1)
-3. ATC 转换为 OM (Workflow 2)
-4. 端到端推理适配 (Workflow 5)
-5. 精度对比验证 (Workflow 4)
+1. 分析代码仓库，发现模型参数 (Workflow 1)
+2. 导出 ONNX (Workflow 2)
+3. ATC 转换为 OM (Workflow 3)
+4. 端到端推理适配 (Workflow 4)
+5. 精度与推理验证 (Workflow 5)
 6. 生成可复现 README (Workflow 6)
 ```
 
 ---
 
-## SoC Version — 必须精确匹配
-
-> **ATC 转换中的 `--soc_version` 必须与目标设备完全一致！**
->
-> ```bash
-> # 查询设备的 SoC 版本
-> npu-smi info | grep Name
-> # 输出: Name: 910B3  -> 使用: --soc_version=Ascend910B3
-> # 输出: Name: 310P3  -> 使用: --soc_version=Ascend310P3
-> ```
->
-> **常见报错：**
-> ```
-> [ACL ERROR] EE1001: supported socVersion=Ascend910B3,
-> but the model socVersion=Ascend910B
-> ```
-> **修复：** 使用 `npu-smi info` 输出的精确 SoC 版本，不要使用缩写。
-
-| 设备 | SoC Version | 查询方式 |
-|--------|-------------|--------------|
-| Atlas 910B3 | Ascend910B3 | `npu-smi info \| grep Name` |
-| Atlas 310P | Ascend310P1/P3 | `npu-smi info \| grep Name` |
-| Atlas 200I DK A2 | Ascend310B4 | `npu-smi info \| grep Name` |
-
----
-
-## Workflow 0: Source Code Analysis & Parameter Discovery (自动参数侦测)
+## Workflow 1: 代码分析与参数发现 (Source Code Analysis & Parameter Discovery)
 
 > **Anti-Hardcoding Rule (反硬编码铁律):**
 > Agent 在执行本 Skill 时，**绝对禁止**猜测或使用任何"常见默认值"（如 640x640、224x224、batch_size=1）作为转换参数。
@@ -263,7 +237,7 @@ python3 scripts/get_onnx_info.py model.onnx
 
 ### Phase 3: 后处理类型识别 (Post-processing Identification)
 
-Agent 应识别用户项目中的后处理类型，为后续 Workflow 5（端到端推理适配）做准备。
+Agent 应识别用户项目中的后处理类型，为后续 Workflow 4（端到端推理适配）做准备。
 
 ```bash
 # 搜索后处理关键词
@@ -278,11 +252,11 @@ grep -rn "nms\|non_max_suppression\|softmax\|argmax\|sigmoid\|postprocess\|decod
 | 关键点 (Pose) | decode -> keypoints | `keypoint`, `heatmap`, `joint`, `skeleton` |
 | 生成 (Generation) | denormalize -> image | `denormalize`, `clamp`, `to_pil`, `save_image` |
 
-> **注意：** 此阶段仅做识别和记录，实际的推理脚本生成在 **Workflow 5** 中完成。
+> **注意：** 此阶段仅做识别和记录，实际的推理脚本生成在 **Workflow 4** 中完成。
 
 ---
 
-## Workflow 1: PyTorch -> ONNX 导出
+## Workflow 2: PyTorch → ONNX 导出
 
 使用 `export_onnx.py` 将任意标准 PyTorch 模型导出为 ONNX 格式。
 
@@ -342,7 +316,7 @@ torch.onnx.export(model, dummy, "bert.onnx", opset_version=13,
 
 ---
 
-## Workflow 2: ONNX 检查 & ATC 转换
+## Workflow 3: ONNX 检查 & ATC 转换
 
 ### 第 1 步：检查 ONNX 模型
 
@@ -363,7 +337,31 @@ python3 scripts/get_onnx_info.py model.onnx
 
 手动配置及多版本共存请参考 [CANN_VERSIONS.md](references/CANN_VERSIONS.md)。
 
-### 第 3 步：ATC 转换
+### 第 3 步：确认 SoC 版本
+
+> **ATC 转换中的 `--soc_version` 必须与目标设备完全一致！**
+
+```bash
+# 查询设备的 SoC 版本
+npu-smi info | grep Name
+# 输出: Name: 910B3  -> 使用: --soc_version=Ascend910B3
+# 输出: Name: 310P3  -> 使用: --soc_version=Ascend310P3
+```
+
+| 设备 | SoC Version | 查询方式 |
+|--------|-------------|--------------|
+| Atlas 910B3 | Ascend910B3 | `npu-smi info \| grep Name` |
+| Atlas 310P | Ascend310P1/P3 | `npu-smi info \| grep Name` |
+| Atlas 200I DK A2 | Ascend310B4 | `npu-smi info \| grep Name` |
+
+> **常见报错：**
+> ```
+> [ACL ERROR] EE1001: supported socVersion=Ascend910B3,
+> but the model socVersion=Ascend910B
+> ```
+> **修复：** 使用 `npu-smi info` 输出的精确 SoC 版本，不要使用缩写。
+
+### 第 4 步：ATC 转换
 
 ```bash
 # 基本转换（ONNX 中为静态 shape 时可自动推断）
@@ -397,90 +395,7 @@ export TE_PARALLEL_COMPILER=16  # 并行编译
 
 ---
 
-## Workflow 3: OM 模型推理
-
-转换完成后，使用 `infer_om.py` 配合 ais_bench 进行推理。
-
-### 基本推理
-
-```bash
-# 仅打印模型信息
-python3 scripts/infer_om.py --model model.om --info
-
-# 使用随机输入推理（shape 从模型元数据获取）
-python3 scripts/infer_om.py --model model.om
-
-# 使用实际输入数据推理
-python3 scripts/infer_om.py --model model.om --input test.npy --output result.npy
-
-# 性能基准测试（预热 + 多次迭代）
-python3 scripts/infer_om.py --model model.om --warmup 5 --loop 100
-```
-
-### Python API（快速参考）
-
-```python
-from ais_bench.infer.interface import InferSession
-import numpy as np
-
-session = InferSession(device_id=0, model_path="model.om")
-input_data = np.random.randn(*session.get_inputs()[0].shape).astype(np.float32)
-outputs = session.infer([input_data], mode='static')
-for i, out in enumerate(outputs):
-    print(f"Output[{i}]: shape={out.shape}, dtype={out.dtype}")
-session.free_resource()
-```
-
-详细的 ais_bench API 用法和参数说明见 [INFERENCE.md](references/INFERENCE.md)。
-
----
-
-## Workflow 4: 精度对比
-
-通过比较 ONNX（CPU）与 OM（NPU）的推理输出，验证转换精度。
-
-### 基本用法
-
-```bash
-# 使用默认容差对比
-python3 scripts/compare_precision.py \
-    --onnx model.onnx --om model.om --input test.npy
-
-# 自定义容差
-python3 scripts/compare_precision.py \
-    --onnx model.onnx --om model.om --input test.npy \
-    --atol 1e-3 --rtol 1e-2
-
-# 保存对比报告为 JSON
-python3 scripts/compare_precision.py \
-    --onnx model.onnx --om model.om --input test.npy \
-    --output precision_report.json
-
-# 保存差异数组用于分析
-python3 scripts/compare_precision.py \
-    --onnx model.onnx --om model.om --input test.npy \
-    --save-diff diff_output/
-```
-
-### 指标说明
-
-| 指标 | 说明 | 良好值 |
-|--------|-------------|------------|
-| `cosine_similarity` | 1.0 = 完全一致 | > 0.99 |
-| `max_abs_diff` | 最大绝对误差 | < 1e-3 (FP32) |
-| `mean_abs_diff` | 平均绝对误差 | < 1e-5 (FP32) |
-| `outlier_ratio` | 超出容差的元素占比 | < 1% |
-| `is_close` | 基于 atol/rtol 的通过/失败判定 | True |
-
-### 结果解读
-
-- **cosine_sim > 0.999, outlier_ratio < 0.1%**：转换质量优秀
-- **cosine_sim > 0.99, outlier_ratio < 1%**：良好，适用于大多数场景
-- **cosine_sim < 0.99**：需排查——尝试在 ATC 转换中使用 `--precision_mode=force_fp32`
-
----
-
-## Workflow 5: 端到端推理适配 (End-to-End Inference Adaptation)
+## Workflow 4: 端到端推理适配 (End-to-End Inference Adaptation)
 
 > **目标：** 基于用户提供的代码仓库，生成一个完整的端到端 NPU 推理脚本。
 > 该脚本复用原始仓库的预处理和后处理逻辑，仅将模型推理部分替换为 OM 模型。
@@ -489,8 +404,8 @@ python3 scripts/compare_precision.py \
 
 ### 前置条件
 
-- Workflow 0 已完成（参数已发现）
-- Workflow 1-2 已完成（OM 模型已生成）
+- Workflow 1 已完成（参数已发现）
+- Workflow 2-3 已完成（OM 模型已生成）
 - 用户代码仓已克隆到本地
 
 ### Step 1: 分析原始推理流程
@@ -624,9 +539,93 @@ Total E2E:   X.XX ms (X.X FPS)
 
 ---
 
+## Workflow 5: 精度与推理验证
+
+本 Workflow 包含两个验证层面：原始张量级精度对比（ONNX vs OM）和 OM 模型推理冒烟测试。
+
+### 5.1 OM 推理冒烟测试
+
+转换完成后，使用 `infer_om.py` 配合 ais_bench 快速验证 OM 模型可正常推理：
+
+```bash
+# 仅打印模型信息
+python3 scripts/infer_om.py --model model.om --info
+
+# 使用随机输入推理（shape 从模型元数据获取）
+python3 scripts/infer_om.py --model model.om
+
+# 使用实际输入数据推理
+python3 scripts/infer_om.py --model model.om --input test.npy --output result.npy
+
+# 性能基准测试（预热 + 多次迭代）
+python3 scripts/infer_om.py --model model.om --warmup 5 --loop 100
+```
+
+**Python API（快速参考）：**
+
+```python
+from ais_bench.infer.interface import InferSession
+import numpy as np
+
+session = InferSession(device_id=0, model_path="model.om")
+input_data = np.random.randn(*session.get_inputs()[0].shape).astype(np.float32)
+outputs = session.infer([input_data], mode='static')
+for i, out in enumerate(outputs):
+    print(f"Output[{i}]: shape={out.shape}, dtype={out.dtype}")
+session.free_resource()
+```
+
+详细的 ais_bench API 用法和参数说明见 [INFERENCE.md](references/INFERENCE.md)。
+
+### 5.2 ONNX vs OM 精度对比
+
+通过比较 ONNX（CPU）与 OM（NPU）的推理输出，验证转换精度：
+
+```bash
+# 使用默认容差对比
+python3 scripts/compare_precision.py \
+    --onnx model.onnx --om model.om --input test.npy
+
+# 自定义容差
+python3 scripts/compare_precision.py \
+    --onnx model.onnx --om model.om --input test.npy \
+    --atol 1e-3 --rtol 1e-2
+
+# 保存对比报告为 JSON
+python3 scripts/compare_precision.py \
+    --onnx model.onnx --om model.om --input test.npy \
+    --output precision_report.json
+
+# 保存差异数组用于分析
+python3 scripts/compare_precision.py \
+    --onnx model.onnx --om model.om --input test.npy \
+    --save-diff diff_output/
+```
+
+**指标说明：**
+
+| 指标 | 说明 | 良好值 |
+|--------|-------------|------------|
+| `cosine_similarity` | 1.0 = 完全一致 | > 0.99 |
+| `max_abs_diff` | 最大绝对误差 | < 1e-3 (FP32) |
+| `mean_abs_diff` | 平均绝对误差 | < 1e-5 (FP32) |
+| `outlier_ratio` | 超出容差的元素占比 | < 1% |
+| `is_close` | 基于 atol/rtol 的通过/失败判定 | True |
+
+**结果解读：**
+
+- **cosine_sim > 0.999, outlier_ratio < 0.1%**：转换质量优秀
+- **cosine_sim > 0.99, outlier_ratio < 1%**：良好，适用于大多数场景
+- **cosine_sim < 0.99**：需排查——尝试在 ATC 转换中使用 `--precision_mode=force_fp32`
+
+> **注意：** 对于 end2end 模型（如 YOLOv10 输出 `(1,300,6)`），原始张量对比可能显示较低的 cosine_similarity，
+> 因为低置信度占位槽的值在 CPU 和 NPU 间存在差异。此时应以 Workflow 4 Step 3 的业务结果对比为准。
+
+---
+
 ## Workflow 6: 端到端可复现 README 生成
 
-> **在完成 Workflow 0–4 的全部步骤后，Agent 必须生成一份用户可直接跟随复现的 README 文档。**
+> **在完成 Workflow 1–5 的全部步骤后，Agent 必须生成一份用户可直接跟随复现的 README 文档。**
 > 这是 Skill 执行的最后一步，不可跳过。
 
 生成的 README 面向**没有参与当前会话的用户**，他们只需照着文档从头到尾执行，即可复现整个模型转换与推理流程。

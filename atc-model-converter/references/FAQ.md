@@ -439,7 +439,7 @@ atc --model=model.onnx --op_debug_level=1 ...
 
 ## Pre-Conversion Checklist
 
-> **完整的端到端转换流程请参考 SKILL.md 中的 Workflow 0-2。**
+> **完整的端到端转换流程请参考 SKILL.md 中的 Workflow 1-3。**
 
 Before running ATC, verify:
 
