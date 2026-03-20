@@ -70,7 +70,7 @@
     },
     {
       "name": "ascend-opplugin",
-      "description": "指导 PyTorch 自定义 NPU 算子接入：Plan A/B 工程落点、Pattern A/B/C、可选 op-plugin 环境、OpCommand 复用图算子、容器场景、Pybind 快速验证、构建测试与排障。适用于 torch_npu、op-plugin、xpu_kernel、AscendC 等场景。",
+      "description": "指导 Ascend C（CANN/xpu_kernel）算子开发完成后接入 PyTorch：与 torch_npu 对接、Host 侧注册与构建、Python 暴露与冒烟测试。涵盖工程内轻量化接入、必要时参考 op-plugin、Pybind 快速联调、复用图算子封装、容器场景与排障。适用于 Ascend C、算子接入、torch_npu、xpu_kernel、自定义算子等场景。",
       "source": "./ascend-opplugin",
       "category": "development"
     },

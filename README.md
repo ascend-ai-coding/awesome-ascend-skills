@@ -94,7 +94,7 @@ cp -r awesome-ascend-skills/npu-smi your-project/.agents/skills/
 | [mindspeed-llm-weight-prep](mindspeed-llm/mindspeed-llm-weight-prep/SKILL.md) | 开发 | MindSpeed-LLM 权重转换：HF↔Megatron 格式转换、LoRA 权重合并、TP/PP 切分 |
 | [mindspeed-llm-training](mindspeed-llm/mindspeed-llm-training/SKILL.md) | 开发 | MindSpeed-LLM 训练启动：预训练/SFT/LoRA/QLoRA 分布式训练、可选评估 |
 | [diffusers-ascend-env-setup](diffusers-ascend/diffusers-ascend-env-setup/SKILL.md) | 开发 | Diffusers 环境配置：CANN 版本检测、PyTorch + torch_npu 安装、Diffusers 安装验证 |
-| [ascend-opplugin](ascend-opplugin/SKILL.md) | 开发 | PyTorch 自定义 NPU 算子接入：Plan A/B 落点、Pattern A/B/C、OpCommand 复用图算子、容器外驱动容器、Pybind 快速验证、构建排障与 prompt 示例 |
+| [ascend-opplugin](ascend-opplugin/SKILL.md) | 开发 | Ascend C（CANN/xpu_kernel）算子完成后接入 PyTorch：与 torch_npu 对接、Host 注册与构建、Python 暴露与冒烟测试；工程内轻量化接入、必要时 op-plugin、Pybind 联调、图算子封装、容器外驱动与排障 |
 | [diffusers-ascend-weight-prep](diffusers-ascend/diffusers-ascend-weight-prep/SKILL.md) | 开发 | Diffusers 权重准备：HuggingFace/ModelScope 模型下载、基于 config.json 生成假权重用于验证 |
 | [diffusers-ascend-pipeline](diffusers-ascend/diffusers-ascend-pipeline/SKILL.md) | 开发 | Diffusers Pipeline 推理：环境预检、通用推理（图像/视频）、内存优化、LoRA 集成 |
 | [training-mfu-calculator](training-mfu-calculator/SKILL.md) | 测试 | MFU 计算工具：Dense/MoE 模型 FLOPs 计算、Ascend NPU 硬件峰值参考、性能分析报告 |
