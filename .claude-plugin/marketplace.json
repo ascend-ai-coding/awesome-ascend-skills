@@ -75,6 +75,19 @@
       "category": "development"
     },
     {
+      "name": "mindspeed-llm-skills",
+      "description": "MindSpeed-LLM skill set for Huawei Ascend NPU, covering the full training pipeline: environment setup, data preprocessing, weight conversion, distributed training, and end-to-end orchestration. Use when deploying MindSpeed-LLM training on Ascend NPU.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./mindspeed-llm/mindspeed-llm-pipeline",
+        "./mindspeed-llm/mindspeed-llm-env-setup",
+        "./mindspeed-llm/mindspeed-llm-data-prep",
+        "./mindspeed-llm/mindspeed-llm-weight-prep",
+        "./mindspeed-llm/mindspeed-llm-training"
+      ]
+    },
+    {
       "name": "diffusers-ascend-skills",
       "description": "Diffusers 昇腾 NPU 技能集，包括环境配置、权重准备、Pipeline 推理等。当用户需要在昇腾 NPU 上运行 Diffusers 推理时使用。",
       "source": "./",
