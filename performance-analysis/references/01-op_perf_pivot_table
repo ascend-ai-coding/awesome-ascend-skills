@@ -1,0 +1,26 @@
+# 制作算子数据透视表
+
+## 分析步骤
+
+1. 文件读取：读取op_summary_*.csv文件。如果输入是op_summary_*.csv文件，直接读取；如果输入不是单个文件，则搜索并读取所有op_summary_*.csv文件，这些文件位于\*_ascend_pt/PROF_\*/mindstudio_profiler_output文件夹中。
+2. 算子耗时统计：基于“Op Type”列对算子分类，不同“Op Type”就是不同算子。根据“Task Duration”列统计各个算子的总耗时。
+3. 筛选高耗时算子：根据算子总耗时对算子降序排序。如果用户指定，则选取指定数量的高耗时算子；否则取总耗时最高的前3个算子。记录算子的“Op Type”。
+4. 数据透视：对于每个算子，统计它的“Input Shapes”，并计算各个“Input Shapes”下，以下各列的平均值：aic_mac_ratio、aic_saclar_ratio、aic_mte1_ratio、aic_mte2_ratio、aic_fixpipe_ratio、aiv_vec_ratio、aiv_saclar_ratio、aiv_mte2_ratio、aiv_mte3_ratio。
+5. 结果输出：以表格形式输出各个“Op Types”和“Input Shapes”组合中，指定列的均值，并用红色标记每行中的最大值。
+
+### profiling文档结构
+└─*_ascend_pt
+    ├─ASCEND_PROFILER_OUTPUT
+    ├─FRAMEWORK
+    ├─logs
+    └─PROF_*
+        ├─device_*
+        │  └─data
+        ├─host
+        │  └─data
+        ├─mindstudio_profiler_log
+        └─mindstudio_profiler_output
+op_summary_*.csv文件位于mindstudio_profiler_output文件夹内。
+
+## 官方文档
+- [性能数据文件参考/op_summary（算子详细信息）](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/81RC1alpha001/devaids/devtools/profiling/atlasprofiling_16_0067.html)
