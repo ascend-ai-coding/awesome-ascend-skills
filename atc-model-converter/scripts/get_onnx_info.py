@@ -59,12 +59,14 @@ def get_onnx_info(model_path):
         base_name = os.path.splitext(os.path.basename(model_path))[0]
         input_shape_param = ";".join(input_shapes)
         
-        print(f"""atc \\
-    --model={model_path} \\
-    --framework=5 \\
-    --output={base_name}_om \\
-    --soc_version=Ascend310P3 \\
-    --input_shape="{input_shape_param}"""")
+        print(
+            f'atc \\\n'
+            f'    --model={model_path} \\\n'
+            f'    --framework=5 \\\n'
+            f'    --output={base_name}_om \\\n'
+            f'    --soc_version=Ascend310P3 \\\n'
+            f'    --input_shape="{input_shape_param}"'
+        )
         print()
         
     except Exception as e:

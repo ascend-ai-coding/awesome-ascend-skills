@@ -37,9 +37,9 @@ PYTHON_MINOR=$(echo $PYTHON_VERSION | cut -d. -f2)
 echo "Python version: $PYTHON_VERSION"
 
 if [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -ge 7 ] && [ "$PYTHON_MINOR" -le 10 ]; then
-    print_status 0 "Python version is compatible (3.7-3.10)"
+    print_status 0 "Python version is compatible (3.7-3.10 recommended)"
 elif [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -ge 11 ]; then
-    print_status 1 "Python 3.11+ is NOT compatible with CANN 8.1.RC1"
+    print_status 1 "Python 3.11+ may cause TBE operator compilation failures"
     echo "  Solution: Create Python 3.10 conda environment:"
     echo "    conda create -n atc_py310 python=3.10 -y"
     echo "    conda activate atc_py310"
@@ -59,8 +59,8 @@ if python3 -c "import numpy" 2>/dev/null; then
     if [ "$NUMPY_MAJOR" -lt 2 ]; then
         print_status 0 "NumPy version is compatible (< 2.0)"
     else
-        print_status 1 "NumPy 2.0+ is NOT compatible with CANN 8.1.RC1"
-        echo "  Solution: pip install \"numpy<2.0\" --force-reinstall"
+        print_status 2 "NumPy 2.0+ may cause compatibility issues with some CANN versions"
+        echo "  If you encounter errors: pip install \"numpy<2.0\" --force-reinstall"
     fi
 else
     print_status 1 "NumPy is not installed"
@@ -103,12 +103,22 @@ elif [ -f "/usr/local/Ascend/cann/latest/version.cfg" ]; then
     CANN_VERSION=$(cat $CANN_PATH/latest/version.cfg | grep "Version=" | head -1 | cut -d'=' -f2)
     echo "CANN Path: $CANN_PATH"
     echo "CANN Version: $CANN_VERSION"
-    print_status 0 "CANN cann found"
+    print_status 0 "CANN installation found"
+elif [ -d "/usr/local/Ascend/cann-8.5.0" ] || [ -d "/usr/local/Ascend/cann-8.3.RC1" ]; then
+    # CANN 8.5.0+ uses versioned directory without version.cfg at expected path
+    CANN_PATH=$(ls -d /usr/local/Ascend/cann-* 2>/dev/null | sort -V | tail -1)
+    echo "CANN Path: $CANN_PATH (versioned directory)"
+    print_status 0 "CANN installation found (versioned layout)"
+elif command -v atc &>/dev/null; then
+    # atc is available — CANN env was already sourced
+    echo "CANN env already sourced (atc is in PATH)"
+    print_status 0 "CANN environment active (detected via atc in PATH)"
 else
     print_status 1 "CANN installation not found"
     echo "  Checked:"
     echo "    /usr/local/Ascend/ascend-toolkit/latest/version.cfg"
     echo "    /usr/local/Ascend/cann/latest/version.cfg"
+    echo "    /usr/local/Ascend/cann-8.5.0/"
 fi
 echo
 

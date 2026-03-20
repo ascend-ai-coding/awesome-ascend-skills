@@ -71,28 +71,26 @@ python3 -c "import numpy; print(numpy.__version__)"  # Should be 1.x.x
 
 **Solution - Export with correct opset:**
 ```python
-from ultralytics import YOLO
-
-model = YOLO('model.pt')
-# Use opset 11 for maximum compatibility
-model.export(format='onnx', imgsz=640, dynamic=True, opset=11)
-```
-
-**Or using PyTorch directly:**
-```python
 import torch
 
-model = torch.load('model.pt')
-dummy_input = torch.randn(1, 3, 640, 640)
+model = torch.load('model.pt', map_location='cpu')
+model.eval()
+dummy_input = torch.randn(1, 3, 224, 224)  # Adjust shape to your model
 
 torch.onnx.export(
     model,
     dummy_input,
     'model.onnx',
     opset_version=11,  # Use 11 for CANN 8.1.RC1
-    input_names=['images'],
-    output_names=['output0']
+    input_names=['input'],
+    output_names=['output']
 )
+```
+
+**Or using the provided export script:**
+```bash
+python3 scripts/export_onnx.py --pt_model model.pt --output model.onnx \
+    --input_shape 1,3,224,224 --opset 11
 ```
 
 ---
@@ -121,7 +119,7 @@ conda create -n atc_py310 python=3.10 -y
 conda activate atc_py310
 
 # Install PyTorch and ONNX tools
-pip install torch torchvision ultralytics onnx onnxruntime
+pip install torch torchvision onnx onnxruntime
 
 # Install CANN-compatible NumPy
 pip install "numpy<2.0" --force-reinstall
@@ -434,72 +432,14 @@ atc --model=model.onnx --op_debug_level=1 ...
 
 ```bash
 # Use provided check script
-./scripts/check_env.sh
-```
-
----
-
-## Complete Working Workflow (Tested on Ascend 910B3)
-
-This is the complete workflow verified on 175.99.1.3 with CANN 8.1.RC1:
-
-### Step 1: Create Python 3.10 Environment
-```bash
-conda create -n atc_py310 python=3.10 -y
-conda activate atc_py310
-```
-
-### Step 2: Install Compatible Dependencies
-```bash
-# Core ML libraries
-pip install torch torchvision ultralytics onnx onnxruntime
-
-# CANN-compatible NumPy (CRITICAL: must be < 2.0)
-pip install "numpy<2.0" --force-reinstall
-
-# CANN required Python modules
-pip install decorator attrs absl-py psutil protobuf sympy
-```
-
-### Step 3: Export ONNX with Correct Opset
-```python
-from ultralytics import YOLO
-
-# Load model
-model = YOLO('yolo26n.pt')
-
-# Export with opset 11 for CANN 8.1.RC1 compatibility
-model.export(
-    format='onnx',
-    imgsz=640,
-    dynamic=True,
-    opset=11  # CRITICAL: Use opset 11 for CANN 8.1.RC1
-)
-```
-
-### Step 4: Set CANN Environment
-```bash
-# Use Python 3.10 from conda
-export PATH=/home/miniconda3/envs/atc_py310/bin:$PATH
-export PYTHONPATH=/home/miniconda3/envs/atc_py310/lib/python3.10/site-packages:$PYTHONPATH
-
-# Source CANN environment
-source /usr/local/Ascend/ascend-toolkit/set_env.sh
-```
-
-### Step 5: Run ATC Conversion
-```bash
-atc --model=yolo26n.onnx \
-    --framework=5 \
-    --output=yolo26n_om \
-    --soc_version=Ascend910B \
-    --input_shape="images:1,3,640,640" \
-    --log=info
+./scripts/check_env_enhanced.sh
 ```
 
 ---
 
 ## Pre-Conversion Checklist
+
+> **完整的端到端转换流程请参考 SKILL.md 中的 Workflow 1-3。**
 
 Before running ATC, verify:
 
@@ -542,14 +482,7 @@ ATC Failed?
 
 ## Version Compatibility Matrix
 
-| CANN Version | Python Version | NumPy Version | ONNX Opset | Status |
-|--------------|----------------|---------------|------------|---------|
-| 8.1.RC1 | 3.7 - 3.10 | < 2.0 | 11, 13 | ✅ Tested |
-| 8.3.RC1 | 3.7 - 3.10 | < 2.0 | 11, 13, 17 | ✅ Supported |
-| 8.5.0 | 3.7 - 3.10 | >= 1.21 | 11, 13, 17, 19 | ✅ Supported |
-| 8.1.RC1 | 3.11+ | Any | Any | ❌ Failed |
-| 8.1.RC1 | Any | >= 2.0 | Any | ❌ Failed |
-| 8.1.RC1 | Any | Any | >= 18 | ❌ Failed |
+详见 [CANN_VERSIONS.md](CANN_VERSIONS.md) 中的完整版本兼容性矩阵。
 
 ---
 
