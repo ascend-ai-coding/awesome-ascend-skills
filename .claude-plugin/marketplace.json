@@ -70,7 +70,7 @@
     },
     {
       "name": "ascend-opplugin",
-      "description": "Installs op-plugin (torch_npu operator plugin) environment and guides custom NPU operator integration with PyTorch via two generic patterns (no workspace vs workspace+tiling), from kernel implementation through host registration, build, and test.",
+      "description": "指导 PyTorch 自定义 NPU 算子接入：Plan A/B 工程落点、Pattern A/B/C、可选 op-plugin 环境、OpCommand 复用图算子、容器场景、Pybind 快速验证、构建测试与排障。适用于 torch_npu、op-plugin、xpu_kernel、AscendC 等场景。",
       "source": "./ascend-opplugin",
       "category": "development"
     },
