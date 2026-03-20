@@ -97,6 +97,18 @@
         "./diffusers-ascend/diffusers-ascend-weight-prep",
         "./diffusers-ascend/diffusers-ascend-pipeline"
       ]
+    },
+    {
+      "name": "training-mfu-calculator",
+      "description": "大模型训练 MFU (Model FLOPs Utilization) 计算工具。支持 Dense 和 MoE 模型，GQA 和 SwiGLU FFN。包含 NVIDIA GPU 和 Ascend NPU 硬件峰值 FLOPS 参考，默认使用 Ascend910B2 (353 TFLOPS)。提供详细的 FLOPs 分析和性能报告。",
+      "source": "./training-mfu-calculator",
+      "category": "development"
+    },
+    {
+      "name": "github-issue-summary",
+      "description": "Analyze closed GitHub issues to create troubleshooting case studies with root cause analysis and lessons learned. Use when summarizing resolved issue troubleshooting process, creating issue case studies, documenting problem-solving methodology, extracting lessons from closed issues, or building knowledge base from issue history.",
+      "source": "./github-issue-summary",
+      "category": "development"
     }
   ]
 }
