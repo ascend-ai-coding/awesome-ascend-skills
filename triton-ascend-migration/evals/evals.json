@@ -1,0 +1,89 @@
+{
+  "skill_name": "triton-ascend-migration",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "请把一个基于 GPU/CUDA 的 Triton 向量加法算子迁移为可在 Ascend NPU 上运行的 Triton-Ascend 实现，并给出最小验证脚本。\n\n参考 `triton-ascend` 的向量加法示例风格，要求：\n1. 先做最小迁移，优先保证先跑通。\n2. 明确执行 `cuda -> npu`、补充 `torch_npu`、移除 GPU 专属设备逻辑。\n3. grid 优先使用 1D。\n4. 输出最终 Triton-Ascend kernel、Python 调用包装代码、最小验证脚本。\n5. 用 PyTorch reference 对比，并输出 `allclose` 或最大误差。\n6. 如果发现有明确优化空间，再直接给出优化后的版本，但不要一开始过度重写。\n\n输入代码如下：\n\n```python\nimport torch\nimport triton\nimport triton.language as tl\n\n@triton.jit\ndef add_kernel(x_ptr, y_ptr, output_ptr, n_elements, BLOCK_SIZE: tl.constexpr):\n    pid = tl.program_id(axis=0)\n    block_start = pid * BLOCK_SIZE\n    offsets = block_start + tl.arange(0, BLOCK_SIZE)\n    mask = offsets < n_elements\n    x = tl.load(x_ptr + offsets, mask=mask)\n    y = tl.load(y_ptr + offsets, mask=mask)\n    output = x + y\n    tl.store(output_ptr + offsets, output, mask=mask)\n\ndef add(x: torch.Tensor, y: torch.Tensor):\n    output = torch.empty_like(x)\n    n_elements = output.numel()\n    grid = lambda meta: (triton.cdiv(n_elements, meta[\"BLOCK_SIZE\"]),)\n    add_kernel[grid](x, y, output, n_elements, BLOCK_SIZE=1024)\n    return output\n```",
+      "expected_output": "应识别这是 GPU Triton 到 Triton-Ascend 的最小迁移任务，输出中应包含 `cuda -> npu`、`torch_npu`、1D grid、最终 Triton-Ascend 实现和最小验证脚本，并使用 PyTorch reference 对比正确性。",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "请把下面这个 Python/PyTorch 写法的 unary 算子改写为可在 Ascend NPU 上运行的 Triton-Ascend 实现，并给出最小验证脚本。\n\n要求：\n1. 先识别这是 Python/PyTorch -> Triton-Ascend 的改写任务，不是简单设备替换。\n2. 先提炼计算语义，再写 Triton kernel。\n3. 优先给出可运行版本，再判断是否需要 `XBLOCK` / `XBLOCK_SUB` 两级切分。\n4. 如果发现输入规模增大后存在明显优化空间，请直接给出优化后的实现，而不只是建议。\n5. 输出内容必须包含：\n   - 迁移结论\n   - Triton-Ascend 实现\n   - 最小验证脚本\n   - 优化说明\n   - 风险与限制\n\nPyTorch 参考实现如下：\n\n```python\nimport torch\n\ndef standard_unary(x0):\n    return x0 * 0.5 * (1.0 + torch.erf(x0 / torch.sqrt(torch.tensor(2.0, device=x0.device))))\n```\n\n验证要求：\n- 在 NPU 上构造输入\n- 与 PyTorch reference 对比\n- 至少测试 `torch.float16` 和 `torch.float32`\n- 输出 `allclose` 或最大误差",
+      "expected_output": "应识别这是 Python/PyTorch 到 Triton-Ascend 的语义改写任务，输出中应包含 Triton kernel、调用包装代码、最小验证脚本，并在需要时给出 `XBLOCK/XBLOCK_SUB` 两级切分的优化版。",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "请把下面这个 PyTorch / Triton 风格的 where-mask 类算子整理为可在 Ascend NPU 上运行的 Triton-Ascend 实现，并重点检查是否存在可直接落地的优化空间；如果有，请直接输出优化后的版本。\n\n要求：\n1. 识别这是带 mask、`tl.where`、block 切分的 NPU 优化场景。\n2. 先保证语义正确，再检查：\n   - grid 是否适合 1D\n   - 是否需要物理核绑定思路\n   - `BLOCK_SIZE/XBLOCK`\n   - `BLOCK_SIZE_SUB/XBLOCK_SUB`\n   - mask 导致的性能下降\n   - dtype 是否可能导致 scalar 退化\n3. 如果发现写法还能继续优化，请直接修改实现。\n4. 输出最终实现、最小验证脚本、优化说明。\n5. 明确说明是否需要关注 `care_padding=False`、`TRITON_ALL_BLOCKS_PARALLEL`、`multibuffer`。\n\n参考语义如下：\n\n```python\nimport torch\n\ndef torch_where_lt_case2(x0, x1):\n    return torch.where(x0 < x1, x0, x1)\n```\n\n请基于下面这个 Triton 版本进行迁移/优化分析：\n\n```python\nimport triton\nimport triton.language as tl\n\n@triton.jit\ndef triton_where_lt_case2(in_ptr0, in_ptr1, out_ptr0, xnumel, XBLOCK: tl.constexpr, XBLOCK_SUB: tl.constexpr):\n    xoffset = tl.program_id(0) * XBLOCK\n    for xoffset_sub in range(0, XBLOCK, XBLOCK_SUB):\n        xindex = xoffset + xoffset_sub + tl.arange(0, XBLOCK_SUB)[:]\n        xmask = xindex < xnumel\n        tmp0 = tl.load(in_ptr0 + xindex, xmask)\n        tmp1 = tl.load(in_ptr1 + xindex, xmask)\n        tmp2 = tmp0 < tmp1\n        tmp3 = tl.where(tmp2, tmp0, tmp1)\n        tl.store(out_ptr0 + xindex, tmp3, xmask)\n```\n\n验证要求：\n- 构造 NPU 输入\n- 与 `torch.where` reference 对比\n- 至少覆盖一组非整除 block 的输入\n- 输出正确性结果",
+      "expected_output": "应识别这是带 mask 和两级切分的优化场景，输出中不仅要给出可运行的 Triton-Ascend 版本，还要主动检查并直接落地可行优化，同时解释 `care_padding=False`、`TRITON_ALL_BLOCKS_PARALLEL`、`multibuffer` 是否适用。",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "请严格参考官方迁移文档的写法，把下面这个 GPU Triton 向量加法示例迁移到 Ascend NPU。这个题目只需要文档风格的最小迁移，不要默认改成工程增强版。\n\n要求：\n1. 输出必须尽量保持原函数名、原 wrapper 名、原 `BLOCK_SIZE`、原 grid 写法不变。\n2. 只做必要改动：\n   - 增加 `import torch_npu`\n   - 删除 GPU 专属设备获取逻辑\n   - 删除依赖该设备对象的显式断言\n   - 把 `device='cuda'` 改成 `device='npu'`\n3. 不要默认加入这些内容，除非你明确说明它们只是可选增强项：\n   - `contiguous()`\n   - 大量 shape/dtype/device 断言\n   - 函数重命名，如 `add_npu`\n   - 额外的工程封装\n4. 仍然需要给出最小验证脚本和正确性对比。\n\n输入代码如下：\n\n```python\nimport torch\nimport triton\nimport triton.language as tl\n\nDEVICE = triton.runtime.driver.active.get_active_torch_device()\n\n@triton.jit\ndef add_kernel(x_ptr, y_ptr, output_ptr, n_elements, BLOCK_SIZE: tl.constexpr):\n    pid = tl.program_id(axis=0)\n    block_start = pid * BLOCK_SIZE\n    offsets = block_start + tl.arange(0, BLOCK_SIZE)\n    mask = offsets < n_elements\n    x = tl.load(x_ptr + offsets, mask=mask)\n    y = tl.load(y_ptr + offsets, mask=mask)\n    output = x + y\n    tl.store(output_ptr + offsets, output, mask=mask)\n\ndef add(x: torch.Tensor, y: torch.Tensor):\n    output = torch.empty_like(x)\n    assert x.device == DEVICE and y.device == DEVICE and output.device == DEVICE\n    n_elements = output.numel()\n    grid = lambda meta: (triton.cdiv(n_elements, meta[\"BLOCK_SIZE\"]),)\n    add_kernel[grid](x, y, output, n_elements, BLOCK_SIZE=1024)\n    return output\n\ntorch.manual_seed(0)\nsize = 98432\nx = torch.rand(size, device='cuda')\ny = torch.rand(size, device='cuda')\noutput_torch = x + y\noutput_triton = add(x, y)\n```\n\n请在答案里明确说明：这是“文档风格最小迁移版”，增强版仅可选。",
+      "expected_output": "应识别这是官方文档风格的最小迁移题，默认输出最小 diff 迁移版，保持原函数名和主体结构，不应直接答成工程增强版；同时给出最小验证脚本和正确性对比。",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "请分析并迁移下面这个已经切到 NPU 的 Triton 算子。现在它在大输入规模下会触发 `coreDim` 超限，请不要只给建议，而是直接给出优化后的实现。\n\n要求：\n1. 识别这是 `Vector-only` 场景。\n2. 先解释为什么会出现 `coreDim=xxxx can't be greater than UINT16_MAX`。\n3. 直接修改实现，至少覆盖：\n   - 调整 `BLOCK_SIZE`\n   - 重新计算 1D grid\n   - 说明何时考虑 `TRITON_ALL_BLOCKS_PARALLEL`\n4. 给出最小验证脚本。\n5. 在优化说明里明确说明当前是否存在 UB 风险。\n\n代码如下：\n\n```python\nimport torch\nimport torch_npu\nimport triton\nimport triton.language as tl\n\n@triton.jit\ndef zeros_kernel(output_ptr, n_elements, BLOCK_SIZE: tl.constexpr):\n    pid = tl.program_id(axis=0)\n    offsets = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)\n    mask = offsets < n_elements\n    tl.store(output_ptr + offsets, 0.0, mask=mask)\n\ndef zeros_like_npu(x):\n    out = torch.empty_like(x)\n    n_elements = x.numel()\n    grid = lambda meta: (triton.cdiv(n_elements, meta['BLOCK_SIZE']),)\n    zeros_kernel[grid](out, n_elements, BLOCK_SIZE=1024)\n    return out\n```\n\n已知场景：\n- `n_elements = 1073741824`\n- 当前报错：`coreDim=1048576 can't be greater than UINT16_MAX`\n\n请直接给出可运行的优化版，而不是停留在分析。",
+      "expected_output": "应识别这是 `coreDim` 超限优化题，直接给出增大主块后的可运行版本，保证 `coreDim <= 65535`，并说明何时考虑 `TRITON_ALL_BLOCKS_PARALLEL`，同时检查是否引入新的 UB 风险。",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "请把下面这个 Triton 数据搬运场景迁移到 Ascend NPU，并重点检查 `shape/stride/block_ptr/order` 是否合理。如果发现现在的写法把二维连续访问错误建模成了一维离散访问，请直接改成更适合 Ascend 的版本。\n\n要求：\n1. 识别这是访存布局和 `block_ptr` 重建问题，不只是简单 `cuda -> npu`。\n2. 先说明原始访问为什么可能导致离散访存和低效映射。\n3. 直接给出优化后的 `make_block_ptr` 写法。\n4. 说明是否满足连续/对齐访存要求。\n5. 给出一个最小验证思路或脚本框架，用于对比参考 PyTorch 结果。\n\n示例片段如下：\n\n```python\nblock_ptr = tl.make_block_ptr(\n    base=input_ptr,\n    shape=(1024,),\n    strides=(32,),\n    offsets=(i_t * 16,),\n    block_shape=(BT,),\n    order=(0,)\n)\n```\n\n已知真实数据语义更接近一个连续的二维矩阵 `(1024, 32)`，最低维度 32 连续。请直接给出更合适的 NPU 版本，并说明原因。",
+      "expected_output": "应识别这是 `block_ptr/stride/order` 的布局重建题，直接把一维离散访问重构成更符合真实二维连续布局的版本，例如按 `(1024, 32)` 和 `(32, 1)` 建模，并解释连续访存与对齐方面的考虑。",
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "请参考官方迁移文档的“单核数据搬运”思路，把下面这个已经能在 GPU 上运行的 Triton broadcast 1D kernel 迁移到 Ascend NPU。当前目标是先跑通，不要一开始就展开复杂优化。\n\n要求：\n1. 识别这是简单的数据搬运 / broadcast 场景。\n2. 优先做最小迁移，先尝试把 `device='cuda'` 改成 `device='npu'`。\n3. 保持原 kernel 和原测试结构尽量不变。\n4. 给出最小验证方式，并和 PyTorch reference 对比。\n5. 如果当前题目没有暴露 `coreDim`、UB 或布局问题，不要硬展开这些优化。\n\n代码如下：\n\n```python\nimport pytest\nimport torch\nimport triton\nimport triton.language as tl\n\n@triton.jit\ndef fn_broadcast_1d(output_ptr, x_ptr, XS: tl.constexpr, YS: tl.constexpr):\n    xidx = tl.arange(0, XS)[None, :]\n    base = tl.load(x_ptr + xidx)\n    out = base.broadcast_to((YS, XS))\n    oidx = tl.arange(0, YS)[:, None] * XS + tl.arange(0, XS)[None, :]\n    tl.store(output_ptr + oidx, out)\n\n@pytest.mark.parametrize('shape', [(1,), (2,), (4,)])\n@pytest.mark.parametrize('dtype', [torch.int32])\ndef test_gpu_1d(shape, dtype):\n    XS = shape[0]\n    YS = 4\n    x = torch.randint(-1000, 1000, (XS,), dtype=dtype, device='cuda')\n    std = torch.broadcast_to(x, (YS, XS))\n    output = torch.randint(-1000, 1000, (YS, XS), dtype=dtype, device='cuda')\n    fn_broadcast_1d[(1,)](output, x, XS, YS)\n    assert torch.allclose(std, output)\n```\n\n请按“先跑通，再优化”的风格作答。",
+      "expected_output": "应识别这是简单 broadcast / 数据搬运迁移题，先做 `device='cuda' -> device='npu'` 的最小替换，保留原 kernel 和测试结构，不应一上来展开复杂优化。",
+      "files": []
+    },
+    {
+      "id": 8,
+      "prompt": "请把给定文件中的 GPU Triton `l2norm` 算子迁移为可在 Ascend NPU 上运行的 Triton-Ascend 实现，并给出最小验证脚本。\n\n输入方式：文件路径。\n输入文件：`/home/c00914347/example/triton-adapt-examples/l2norm/vllm_l2norm.py`\n\n要求：\n1. 识别这是完整文件级的 GPU Triton 迁移任务，不是 Python/PyTorch 改写。\n2. 识别这是 `Vector-only` 的归一化算子。\n3. 优先判断哪些分支是 GPU 性能分支，必要时收敛实现，不要机械保留多 kernel、`autotune` 和环境变量路径。\n4. 优先考虑 Ascend 侧的物理核绑定思路，例如 `grid = (num_core,)`、主块 + chunk 循环。\n5. 如果复用工程内 helper，检查独立脚本是否需要额外初始化步骤。\n6. 输出最终实现、最小验证脚本，并明确是否实际执行过验证。\n\n验证要求：\n- 使用 PyTorch reference 对比\n- 至少覆盖一组非整除块输入\n- 至少测试 `float32` 和 `float16`",
+      "expected_output": "应识别这是 `Vector-only` 归一化迁移题，优先收敛多 kernel 与 `autotune`，考虑 `grid=(num_core,)` 和 chunk loop；若复用工程 helper，应兼顾独立脚本初始化；输出中应包含最终实现、最小验证脚本和实际验证结果。",
+      "files": [
+        "/home/c00914347/example/triton-adapt-examples/l2norm/vllm_l2norm.py"
+      ],
+      "expectations": [
+        "明确识别这是 `Vector-only` 的归一化 / reduce 算子，而不是含 `tl.dot` 的路径。",
+        "生成了迁移实现、最小验证脚本，并且实际执行验证通过。",
+        "明确说明原始多 kernel / `autotune` / 环境变量分支被收敛，而不是机械保留。",
+        "迁移策略体现了 Ascend 侧的物理核绑定或等价的 1D grid + chunk loop 设计。"
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "请把给定文件中的 GPU Triton `chunk_local_cumsum` 算子迁移为可在 Ascend NPU 上运行的 Triton-Ascend 实现，并给出最小验证脚本。\n\n输入方式：文件路径。\n输入文件：`/home/c00914347/example/triton-adapt-examples/cumsum/vllm_cumsum.py`\n\n要求：\n1. 识别这是完整文件级的 GPU Triton 迁移任务。\n2. 识别这是带 chunk / prefix-sum / varlen / `head_first` / `reverse` 的 `Vector-only` 算子，而不是简单 elementwise。\n3. 先区分哪些分支是语义必需，哪些只是 GPU 上的性能策略；不要机械保留所有分支。\n4. 如果原始实现依赖复杂 `block_ptr`、多版本 kernel 或 `autotune`，优先评估是否更适合在 Ascend 上做布局重组后再算。\n5. 输出最终实现、最小验证脚本，并明确是否实际执行过验证。\n\n验证要求：\n- 使用 PyTorch reference 对比\n- 至少覆盖 `reverse`、`head_first`、varlen 三类差异化场景\n- 至少覆盖一组非整除块输入",
+      "expected_output": "应识别这是 `Vector-only` 的 chunk/prefix-sum 迁移题，不能只做最小 device 替换；应审视多分支、`autotune`、布局和 chunk 组织方式，并给出包含 `reverse`、`head_first`、varlen 的最小验证脚本与实际验证结果。",
+      "files": [
+        "/home/c00914347/example/triton-adapt-examples/cumsum/vllm_cumsum.py"
+      ],
+      "expectations": [
+        "明确识别这是带 `reverse`、`head_first`、varlen 的 chunk / prefix-sum `Vector-only` 算子。",
+        "生成了迁移实现、最小验证脚本，并且实际执行验证通过。",
+        "明确区分了语义分支和 GPU 性能分支，并解释了哪些分支被收敛或保留。",
+        "迁移结果包含布局重组、调度收敛或等价的实现简化，而不是只做机械 device 替换。"
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "请把给定文件中的 GPU Triton `chunk_o` 算子迁移为可在 Ascend NPU 上运行的 Triton-Ascend 实现，并给出最小验证脚本。\n\n输入方式：文件路径。\n输入文件：`/home/c00914347/example/triton-adapt-examples/chunk_o/vllm_chunk_o.py`\n\n要求：\n1. 识别这是完整文件级的 GPU Triton 迁移任务。\n2. 识别这是含 `tl.dot` 的算子，应按 AI Core / Cube 路径思考，而不是按 `Vector-only` 场景处理。\n3. 先区分语义分支和 GPU 性能分支；必要时移除 `autotune`、固定 tile 大小，但不要破坏语义。\n4. 不要把“grid 收敛”简单理解为把多维 grid 压平；要判断哪些逻辑维度更适合移入 kernel 内部循环。\n5. 如果主循环被重排，继续检查辅助张量与状态张量的布局、`block_ptr` 和 base pointer 是否需要联动重建。\n6. 输出最终实现、最小验证脚本，并明确是否实际执行过验证。\n\n验证要求：\n- 使用小尺寸 PyTorch reference 对比\n- 至少覆盖 `g=None`、`g!=None`、varlen 三类场景\n- 输出 `allclose` 或最大误差",
+      "expected_output": "应识别这是含 `tl.dot` 的复杂迁移题，不能按 `Vector-only` 套路处理；应考虑固定 `BK/BV`、减少调度维度、必要时把逻辑 chunk 维移入 kernel 循环，并同步检查 gate/state 布局与状态视图；输出中应包含最终实现、最小验证脚本和实际验证结果。",
+      "files": [
+        "/home/c00914347/example/triton-adapt-examples/chunk_o/vllm_chunk_o.py"
+      ],
+      "expectations": [
+        "明确识别这是含 `tl.dot` 的 AI Core / Cube 路径，而不是按 `Vector-only` 模式处理。",
+        "生成了迁移实现、最小验证脚本，并且验证覆盖 `g=None`、`g!=None`、varlen 这三类场景。",
+        "明确讨论了 grid / 调度维度收敛，不把问题简单处理成机械压平。",
+        "明确讨论了 gate、state、`h` 或相关辅助张量的布局 / `block_ptr` / 视图联动问题。"
+      ]
+    }
+  ]
+}

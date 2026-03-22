@@ -75,6 +75,12 @@
       "category": "development"
     },
     {
+      "name": "triton-ascend-migration",
+      "description": "将 GPU/CUDA Triton 算子迁移为 Triton-Ascend，或将 Python/PyTorch 算子改写为可在 Ascend NPU 上运行的 Triton-Ascend 实现，并在发现明确优化空间时直接输出优化后的代码、最小验证脚本和排障说明。用户只要提到 昇腾、Ascend、NPU、triton-ascend、Triton 算子迁移、PyTorch 算子改写、coreDim、UB overflow、1D grid、物理核绑定、block_ptr、stride、访存对齐、mask 性能、dtype 退化、算子优化，或者直接问“这个 skill 怎么用”“怎么在命令行里跑”“怎么在容器里执行迁移/验证”，就应优先使用本 skill，即使用户没有明确说“写 skill”或“做迁移”。",
+      "source": "./triton-ascend-migration",
+      "category": "development"
+    },
+    {
       "name": "mindspeed-llm-skills",
       "description": "MindSpeed-LLM skill set for Huawei Ascend NPU, covering the full training pipeline: environment setup, data preprocessing, weight conversion, distributed training, and end-to-end orchestration. Use when deploying MindSpeed-LLM training on Ascend NPU.",
       "source": "./",
