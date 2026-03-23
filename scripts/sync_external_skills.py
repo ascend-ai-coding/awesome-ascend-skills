@@ -44,6 +44,7 @@ def load_config(config_path: str) -> List[ExternalSource]:
             url=source_data["url"],
             branch=source_data.get("branch", "main"),
             enabled=source_data.get("enabled", True),
+            skills_path=source_data.get("skills_path", ""),
         )
         sources.append(source)
 
@@ -80,13 +81,13 @@ def detect_config_changes(old_config: str, new_config: str) -> List[ExternalSour
     # Check for new sources
     for name, new_source_data in new_sources_dict.items():
         if name not in old_sources_dict:
-            # New source detected
             changes.append(
                 ExternalSource(
                     name=name,
                     url=new_source_data["url"],
                     branch=new_source_data.get("branch", "main"),
                     enabled=new_source_data.get("enabled", True),
+                    skills_path=new_source_data.get("skills_path", ""),
                 )
             )
 
@@ -211,7 +212,12 @@ def find_skills(repo_path: Path, source: ExternalSource) -> List[Skill]:
         List of Skill objects for directories containing SKILL.md.
     """
     skills = []
-    for item in repo_path.iterdir():
+    search_path = repo_path
+    if source.skills_path:
+        search_path = repo_path / source.skills_path
+    if not search_path.exists():
+        return skills
+    for item in search_path.iterdir():
         if item.is_dir() and (item / "SKILL.md").exists():
             skills.append(
                 Skill(

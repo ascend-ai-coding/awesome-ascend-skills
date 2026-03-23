@@ -15,12 +15,14 @@ class ExternalSource:
         url: Git repository URL (HTTPS or SSH).
         branch: Branch name to clone (default: "main").
         enabled: Whether this source is active (default: True).
+        skills_path: Subdirectory path where skills are located (default: "" for root).
     """
 
     name: str
     url: str
     branch: str = "main"
     enabled: bool = True
+    skills_path: str = ""
 
 
 @dataclass
