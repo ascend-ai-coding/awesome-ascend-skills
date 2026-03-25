@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 
 import argparse
@@ -64,29 +63,48 @@ def parse_matmul_shapes(shapes):
     left = parse_dims(pieces[0])
     right = parse_dims(pieces[1])
 
+    # ===================== 2x2 标准矩阵（自适应顺序）=====================
     if len(left) == 2 and len(right) == 2:
         m = left[0]
-        k = left[1]
-        n = right[0]
-        if right[1] != k:
-            raise ValueError(f"k mismatch between groups: {k} != {right[1]}")
-        return {"m": m, "n": n, "k": k, "rule": "basic-2x2"}
+        k_left = left[1]
 
+        # 自适应：右边两个维度任意一个等于 k_left，都判定为 K
+        if right[0] == k_left:
+            n = right[1]
+            k = k_left
+        elif right[1] == k_left:
+            n = right[0]
+            k = k_left
+        else:
+            raise ValueError(f"k mismatch: {k_left} not found in right dims {right}")
+
+        return {"m": m, "n": n, "k": k, "rule": "basic-2x2-auto"}
+
+    # ===================== 2x4 打包矩阵（仅保留你要的两种）=====================
     if len(left) == 2 and len(right) == 4:
         m = left[0]
         k = left[1]
-        derived_k = right[1] * right[2]
-        if derived_k != k:
-            raise ValueError(f"packed k mismatch: {k} != {derived_k}")
-        n = right[0] * right[3]
-        return {"m": m, "n": n, "k": k, "rule": "packed-2x4"}
+        a, b, c, d = right
 
-    if len(left) == 1 and len(right) == 4:
-        m = left[0]
-        k = right[1] * right[2]
-        n = right[0] * right[3]
-        return {"m": m, "n": n, "k": k, "rule": "legacy-1x4"}
+        # 只保留这两种组合！
+        candidates = [
+            (b * c, a * d, "bc=k,ad=n"),
+            (a * d, b * c, "ad=k,bc=n"),
+        ]
 
+        found = False
+        for calc_k, calc_n, desc in candidates:
+            if calc_k == k:
+                n = calc_n
+                rule = f"packed-2x4-auto:{desc}"
+                found = True
+                break
+        if not found:
+            raise ValueError(f"packed k mismatch: {k} cannot be derived from {right}")
+
+        return {"m": m, "n": n, "k": k, "rule": rule}
+
+    # 不支持其他格式
     raise ValueError(
         f"unsupported shape layout: left has {len(left)} dims, right has {len(right)} dims"
     )
@@ -96,15 +114,10 @@ def parse_shapes(op_type, shapes, target_op=None):
     op_type_norm = normalize_type(op_type)
     target_op_norm = normalize_type(target_op) if target_op else None
     
-    # MatMul 分支: 如果 CSV 中的类型包含 matmul，或者指定的 target_op 是 matmul
     if "matmul" in op_type_norm or (target_op_norm and "matmul" in target_op_norm):
         return parse_matmul_shapes(shapes)
     
-    # 以后可以在这里添加其他算子的分支，例如:
-    # if "fia" in op_type_norm or (target_op_norm and "fia" in target_op_norm):
-    #     return parse_fia_shapes(shapes)
-    
-    raise ValueError(f"no parser defined for operator type: {op_type} (target_op: {target_op})")
+    raise ValueError(f"no parser defined for operator type: {op_type}")
 
 
 def require_openpyxl():
@@ -172,8 +185,7 @@ def is_target_type(value, target_op=None):
     if target_op:
         return target_op.lower() in op_type_norm
         
-    # 支持的算子列表
-    supported_ops = ("matmul", "fia", "rmsnorm")
+    supported_ops = ("matmul",)
     return any(op in op_type_norm for op in supported_ops)
 
 
@@ -235,7 +247,7 @@ def parse_text_rows(text):
         dialect = csv.Sniffer().sniff(sample, delimiters=",\t|")
     except csv.Error:
         dialect = csv.excel
-    return list(csv.reader(text.splitlines(), dialect))
+    return list(csv.reader(text.splitlines()))
 
 
 def load_text_rows(path):
@@ -243,7 +255,6 @@ def load_text_rows(path):
     for encoding in CSV_ENCODINGS:
         try:
             text = path.read_text(encoding=encoding)
-            # handle triple-quoted fields which are common in some exports
             if '"""' in text:
                 text = text.replace('"""', '"')
             return parse_text_rows(text)
@@ -381,8 +392,7 @@ def build_parser():
     parser = argparse.ArgumentParser(
         description=(
             "Given a file path or directory path, find files whose names contain "
-            "kernel_details or op_analysis_details and extract shape information "
-            "from supported operator rows (e.g., MatMul)."
+            "kernel_details or op_analysis_details and extract M, N, K from matmul op shapes."
         )
     )
     parser.add_argument(
@@ -406,7 +416,8 @@ def build_parser():
     )
     parser.add_argument(
         "--op",
-        help="Specify the operator type to extract (e.g., matmul, fia, rmsnorm). If not provided, all supported operators are extracted.",
+        help="Operator to extract (default: matmul)",
+        default="matmul",
     )
     return parser
 
@@ -432,4 +443,3 @@ def main():
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

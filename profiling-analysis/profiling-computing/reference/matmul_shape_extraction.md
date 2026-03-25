@@ -19,7 +19,7 @@ python ./awesome-ascend-skills/profiling-analysis/profiling-computing/scripts/ex
 
 ### 规则 `basic-2x2`
 
-输入:
+输入case1:
 
 ```text
 a,b;c,b
@@ -31,9 +31,21 @@ a,b;c,b
 - 右边部分是 `[n, k]`
 - 结果是 `m=a`, `n=c`, `k=b`
 
+输入case2:
+
+```text
+a,b;b,c
+```
+
+解释:
+
+- 左边部分是 `[m, k]`
+- 右边部分是 `[k, n]`
+- 结果是 `m=a`, `n=c`, `k=b`
+
 ### 规则 `packed-2x4`
 
-输入:
+输入case1:
 
 ```text
 a,b;c,d,e,f
@@ -47,3 +59,19 @@ a,b;c,d,e,f
   - `m = a`
   - `k = d * e = b`
   - `n = c * f`
+
+输入case2:
+
+```text
+a,b;c,d,e,f
+```
+
+解释:
+
+- 第一部分是 `[m, k]`
+- 第二部分是 `[k_因子_1, n_因子_1, n_因子_2, k_因子_2]`
+- 结果是:
+  - `m = a`
+  - `n = d * e`
+  - `k = c * f = b`
+
