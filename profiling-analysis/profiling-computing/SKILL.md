@@ -19,6 +19,9 @@ keywords:
 
 同时提供整合版本**op_perf_pivot_table.py**，用于保持向后兼容性，自动调用上述两个脚本。
 
+3. **extract_op_shapes.py**：从op_analysis_details.csv文件中提取算子形状信息
+
+
 ## 输入参数
 
 ### 高耗时算子筛选脚本 (op_high_time_selector.py)
@@ -74,6 +77,16 @@ python scripts/op_perf_pivot_table.py --input-path "./p-perf-huawei-05_110439_20
 # 指定分析前5个高耗时算子
 python scripts/op_perf_pivot_table.py --input-path "./p-perf-huawei-05_110439_20250728062428118_ascend_pt" --output-path "./output" --top-n 5
 ```
+
+### 4. 专项算子分析
+
+如果在分析结果（如 `op_total_duration.csv` 或 `op_analysis_details.csv`）中识别到了特定的算子（例如 `MatMul`、`FIA` 或 `RmsNorm`），请按照以下步骤进行深入的维度提取分析：
+
+1.  **识别算子**：在分析报告中确认是否存在目标算子。
+2.  **查看参考文档**：在 `reference/` 目录下找到对应算子的参考文档（例如 [MatMul Shape 提取](./reference/matmul_shape_extraction.md)）。
+3.  **运行提取脚本**：根据参考文档中的说明，运行 `extract_op_shapes.py` 脚本并指定 `--op` 参数。
+
+详情请参考[参考文档](#参考文档)中的相应算子链接。
 
 ## 分析内容
 
@@ -137,6 +150,8 @@ python scripts/op_perf_pivot_table.py --input-path "./p-perf-huawei-05_110439_20
 - **算子性能数据透视表**：op_analysis_combined.html - 带可视化标记的算子性能数据透视表
 
 ## 参考文档
+
+- [MatMul Shape 提取](./reference/matmul_shape_extraction.md)
 
 **官方文档**：
 - [性能数据文件参考/op_summary（算子详细信息）](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/81RC1alpha001/devaids/devtools/profiling/atlasprofiling_16_0067.html)
