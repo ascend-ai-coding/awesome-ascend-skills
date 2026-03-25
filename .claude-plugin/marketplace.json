@@ -109,6 +109,12 @@
       "description": "Analyze closed GitHub issues to create troubleshooting case studies with root cause analysis and lessons learned. Use when summarizing resolved issue troubleshooting process, creating issue case studies, documenting problem-solving methodology, extracting lessons from closed issues, or building knowledge base from issue history.",
       "source": "./github-issue-summary",
       "category": "development"
+    },
+    {
+      "name": "github-issue-rca",
+      "description": "GitHub Issue root cause analysis skill. Analyze specified GitHub issues to identify possible root causes by examining issue content, code repository, and related resources. Use when user asks to analyze issue root cause, investigate issue, RCA analysis, or troubleshoot GitHub issues.",
+      "source": "./github-issue-rca",
+      "category": "development"
     }
   ]
 }
