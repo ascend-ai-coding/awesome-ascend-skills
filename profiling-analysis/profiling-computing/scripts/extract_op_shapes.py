@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 
 import argparse
@@ -50,7 +51,7 @@ def parse_dims(part):
     return dims
 
 
-def parse_shapes(shapes):
+def parse_matmul_shapes(shapes):
     normalized = normalize_shapes(shapes)
     pieces = [piece.strip() for piece in normalized.split(";") if piece.strip()]
     
@@ -89,6 +90,21 @@ def parse_shapes(shapes):
     raise ValueError(
         f"unsupported shape layout: left has {len(left)} dims, right has {len(right)} dims"
     )
+
+
+def parse_shapes(op_type, shapes, target_op=None):
+    op_type_norm = normalize_type(op_type)
+    target_op_norm = normalize_type(target_op) if target_op else None
+    
+    # MatMul 分支: 如果 CSV 中的类型包含 matmul，或者指定的 target_op 是 matmul
+    if "matmul" in op_type_norm or (target_op_norm and "matmul" in target_op_norm):
+        return parse_matmul_shapes(shapes)
+    
+    # 以后可以在这里添加其他算子的分支，例如:
+    # if "fia" in op_type_norm or (target_op_norm and "fia" in target_op_norm):
+    #     return parse_fia_shapes(shapes)
+    
+    raise ValueError(f"no parser defined for operator type: {op_type} (target_op: {target_op})")
 
 
 def require_openpyxl():
@@ -148,8 +164,17 @@ def find_required_columns(headers):
     return header_map[type_key], header_map[HEADER_INPUT_SHAPES]
 
 
-def is_target_type(value):
-    return "matmul" in normalize_type(value)
+def is_target_type(value, target_op=None):
+    if value is None:
+        return False
+    op_type_norm = normalize_type(value)
+    
+    if target_op:
+        return target_op.lower() in op_type_norm
+        
+    # 支持的算子列表
+    supported_ops = ("matmul", "fia", "rmsnorm")
+    return any(op in op_type_norm for op in supported_ops)
 
 
 def get_cell(row, index):
@@ -175,14 +200,14 @@ def build_entry(source_path, file_name, sheet_name, row_num, type_column, type_v
     }
 
 
-def extract_from_table(headers, rows, source_path, file_name, sheet_name):
+def extract_from_table(headers, rows, source_path, file_name, sheet_name, target_op=None):
     type_index, shapes_index = find_required_columns(headers)
     type_column = "Op Type" if normalize_header(headers[type_index]) == "optype" else "Type"
     results = []
 
     for row_num, row in enumerate(rows, start=2):
         type_value = get_cell(row, type_index)
-        if not is_target_type(type_value):
+        if not is_target_type(type_value, target_op):
             continue
 
         shapes_value = get_cell(row, shapes_index)
@@ -196,7 +221,7 @@ def extract_from_table(headers, rows, source_path, file_name, sheet_name):
             shapes_value=shapes_value,
         )
         try:
-            entry.update(parse_shapes(entry["input_shapes"]))
+            entry.update(parse_shapes(type_value, entry["input_shapes"], target_op=target_op))
         except Exception as exc:
             entry["error"] = str(exc)
         results.append(entry)
@@ -227,7 +252,7 @@ def load_text_rows(path):
     raise RuntimeError(f"failed to decode text table file {path}: {last_error}")
 
 
-def extract_from_text_table(path):
+def extract_from_text_table(path, target_op=None):
     rows = load_text_rows(path)
     if not rows:
         return []
@@ -237,10 +262,11 @@ def extract_from_text_table(path):
         source_path=path.resolve(),
         file_name=path.name,
         sheet_name="",
+        target_op=target_op,
     )
 
 
-def extract_from_excel(path):
+def extract_from_excel(path, target_op=None):
     _, load_workbook = require_openpyxl()
     with path.open("rb") as handle:
         workbook = load_workbook(handle, data_only=True)
@@ -259,6 +285,7 @@ def extract_from_excel(path):
                         source_path=path.resolve(),
                         file_name=path.name,
                         sheet_name=sheet.title,
+                        target_op=target_op,
                     )
                 )
             return results
@@ -279,13 +306,13 @@ def is_excel_workbook(path):
     return "[Content_Types].xml" in names and "xl/workbook.xml" in names
 
 
-def extract_rows(input_path, patterns):
+def extract_rows(input_path, patterns, target_op=None):
     results = []
     for path in iter_candidate_files(input_path, patterns):
         if is_excel_workbook(path):
-            results.extend(extract_from_excel(path))
+            results.extend(extract_from_excel(path, target_op))
         else:
-            results.extend(extract_from_text_table(path))
+            results.extend(extract_from_text_table(path, target_op))
     return results
 
 
@@ -354,8 +381,8 @@ def build_parser():
     parser = argparse.ArgumentParser(
         description=(
             "Given a file path or directory path, find files whose names contain "
-            "kernel_details or op_analysis_details and extract M, N, and K from "
-            "rows whose op type contains matmul."
+            "kernel_details or op_analysis_details and extract shape information "
+            "from supported operator rows (e.g., MatMul)."
         )
     )
     parser.add_argument(
@@ -377,6 +404,10 @@ def build_parser():
         "--output",
         help="Optional output path ending in .json, .csv, .xlsx, or .xlsm. Default is JSON to stdout.",
     )
+    parser.add_argument(
+        "--op",
+        help="Specify the operator type to extract (e.g., matmul, fia, rmsnorm). If not provided, all supported operators are extracted.",
+    )
     return parser
 
 
@@ -386,7 +417,7 @@ def main():
     patterns = tuple(pattern.lower() for pattern in (list(DEFAULT_NAME_PATTERNS) + args.pattern))
 
     try:
-        rows = extract_rows(input_path, patterns)
+        rows = extract_rows(input_path, patterns, target_op=args.op)
         if args.output:
             output_path = Path(args.output).expanduser().resolve()
             write_output(output_path, rows)
@@ -401,3 +432,4 @@ def main():
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

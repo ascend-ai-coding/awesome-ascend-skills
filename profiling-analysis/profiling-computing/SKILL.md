@@ -12,12 +12,14 @@ keywords:
 
 ## 功能概述
 
-该Skill用于分析Ascend NPU系统中的计算瓶颈问题，当主分析Skill检测到计算耗时占比超过85%时自动触发。包含三个独立的脚本：
+该Skill用于分析Ascend NPU系统中的计算瓶颈问题，当主分析Skill检测到计算耗时占比超过85%时自动触发。包含两个独立的脚本：
 
 1. **op_high_time_selector.py**：从op_statistic_*.csv、op_summary_*.csv或kernel_details.csv文件中筛选高耗时算子
 2. **op_pivot_table_analyzer.py**：基于高耗时算子列表，生成数据透视表
-3. 提供整合版本**op_perf_pivot_table.py**，用于保持向后兼容性，自动调用上述两个脚本。
-4. **extract_matmul_mnk.py**：从分析报告中提取 Matmul 算子的 M、N、K 维度，为性能分析提供数据支撑
+
+同时提供整合版本**op_perf_pivot_table.py**，用于保持向后兼容性，自动调用上述两个脚本。
+
+3. **extract_op_shapes.py**：从op_analysis_details.csv文件中提取算子形状信息
 
 
 ## 输入参数
@@ -37,14 +39,6 @@ keywords:
 | input_path | string | 是       | Profiling文件路径，包含PROF_*目录的根路径。当skill由主分析Skill触发时，优先分析主Skill提供的profiling文件，以确保性能分析使用同源数据 |
 | output_path | string | 否       | 输出结果目录，用于保存分析报告。若不指定，将在输入路径下自动创建output文件夹 |
 | top_n      | int    | 否       | 选取的高耗时算子数量，默认3个                                 |
-
-### Matmul算子shape提取脚本 (extract_matmul_mnk.py)
-
-| 参数名称 | 类型   | 是否必填 | 描述                                                         |
-| -------- | ------ | -------- | ------------------------------------------------------------ |
-| input    | string | 是       | 报告文件或目录路径。支持递归搜索文件名包含 `kernel_details` 或 `op_analysis_details` 的文件（支持 CSV 和 Excel 格式）。当由主分析 Skill 触发时，确保数据同源 |
-| output   | string | 否       | 输出结果路径，支持 `.json`、`.csv`、`.xlsx`、`.xlsm` 格式。若不指定，结果将以 JSON 格式打印至标准输出 |
-
 
 ## 使用方式
 
@@ -84,23 +78,20 @@ python scripts/op_perf_pivot_table.py --input-path "./p-perf-huawei-05_110439_20
 python scripts/op_perf_pivot_table.py --input-path "./p-perf-huawei-05_110439_20250728062428118_ascend_pt" --output-path "./output" --top-n 5
 ```
 
-### 4. Matmul算子shape提取
+### 4. 专项算子分析
 
-```bash
-# 基本用法：将结果打印至终端（默认 JSON 格式）
-python scripts/extract_matmul_mnk.py --input "./p-perf-huawei-05_110439_ascend_pt"
+如果在分析结果（如 `op_total_duration.csv` 或 `op_analysis_details.csv`）中识别到了特定的算子（例如 `MatMul`、`FIA` 或 `RmsNorm`），请按照以下步骤进行深入的维度提取分析：
 
-# 将结果保存为 Excel 文件
-python scripts/extract_matmul_mnk.py --input "./p-perf-huawei-05_110439_ascend_pt" --output "./output/matmul_shapes.xlsx"
+1.  **识别算子**：在分析报告中确认是否存在目标算子。
+2.  **查看参考文档**：在 `reference/` 目录下找到对应算子的参考文档（例如 [MatMul Shape 提取](./reference/matmul_shape_extraction.md)）。
+3.  **运行提取脚本**：根据参考文档中的说明，运行 `extract_op_shapes.py` 脚本并指定 `--op` 参数。
 
-
-```
+详情请参考[参考文档](#参考文档)中的相应算子链接。
 
 ## 分析内容
 
 - **识别高耗时算子**：识别计算耗时最高的N个算子（N=3或由用户指定）
 - **统计高耗时算子瓶颈**：根据筛选出的高耗时算子，分析各类型指令占比和瓶颈
-- **提取关键算子维度**：从报告中自动解析 Matmul 算子的 M、N、K 核心维度
 
 ## 准备工作
 
@@ -148,47 +139,19 @@ python scripts/extract_matmul_mnk.py --input "./p-perf-huawei-05_110439_ascend_p
 
 2. **数据透视分析**：对于每个筛选出的高耗时算子，统计它在各个"Input Shapes"下以下各列的平均值：aic_mac_ratio、aic_saclar_ratio、aic_mte1_ratio、aic_mte2_ratio、aic_fixpipe_ratio、aiv_vec_ratio、aiv_saclar_ratio、aiv_mte2_ratio、aiv_mte3_ratio。
 
-3. **结果输出**：以表格形式输出各个"Op Types" and "Input Shapes"组合中，指定列的均值，并用红色标记每行中的最大值。
+3. **结果输出**：以表格形式输出各个"Op Types"和"Input Shapes"组合中，指定列的均值，并用红色标记每行中的最大值。
     - 输出文件：op_total_duration.csv、op_analysis_details.csv、op_analysis_combined.html
     - 输出路径：用户指定路径，或在输入csv文件所在的文件夹下自动创建output文件夹
-
-### 3. Matmul 维度提取
-
-1. **文件搜索**：递归搜索指定目录，寻找文件名包含 `kernel_details` 或 `op_analysis_details` 的文件（支持 CSV、Excel）。
-2. **数据解析**：针对 `matmul` 类型的算子，智能解析其 `Input Shapes` 列。
-3. **维度推导**：支持多种布局规则（如 `basic-2x2`、`packed-2x4`），自动推导出核心维度 `M`、`N`、`K`。
-
-#### 形状规则
-
-**规则 `basic-2x2`**
-
-输入示例: `a,b;c,b`
-
-解释:
-- 左边部分是 `[m, k]`
-- 右边部分是 `[n, k]`
-- 结果是 `m=a`, `n=c`, `k=b`
-
-**规则 `packed-2x4`**
-
-输入示例: `a,b;c,d,e,f`
-
-解释:
-- 第一部分是 `[m, k]`
-- 第二部分是 `[n_因子_1, k_因子_1, k_因子_2, n_因子_2]`
-- 结果是:
-    - `m = a`
-    - `k = d * e = b`
-    - `n = c * f`
 
 ## 输出结果
 
 - **算子耗时统计表**：op_total_duration.csv - 按耗时排序的算子列表
 - **高耗时算子指令占比透视表**：op_analysis_details.csv - 各算子在不同输入形状下的指令占比
 - **算子性能数据透视表**：op_analysis_combined.html - 带可视化标记的算子性能数据透视表
-- **Matmul维度提取表**：matmul_shapes.csv (或 .json/.xlsx) - 包含 Matmul 算子 M、N、K 维度的详细数据
 
 ## 参考文档
+
+- [MatMul Shape 提取](./reference/matmul_shape_extraction.md)
 
 **官方文档**：
 - [性能数据文件参考/op_summary（算子详细信息）](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/81RC1alpha001/devaids/devtools/profiling/atlasprofiling_16_0067.html)
