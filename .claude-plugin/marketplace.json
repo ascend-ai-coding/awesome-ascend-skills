@@ -135,6 +135,27 @@
       ]
     },
     {
+      "name": "ai-for-science",
+      "description": "AI for Science skill set for Huawei Ascend NPU. Includes a main routing skill for profiling collection, model migration, and TensorFlow route selection, plus specialized leaf skills for Boltz2, BoltzGen, DeepFRI, DiffSBDD, GENERator, OligoFormer, ProteinBERT, TensorFlow Community deployment, TF-to-PyTorch conversion, and torch_npu profiling workflows.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./ai-for-science/ai4s-main",
+        "./ai-for-science/models/ai4s-basic",
+        "./ai-for-science/models/boltz2",
+        "./ai-for-science/models/boltzgen",
+        "./ai-for-science/models/deepfri",
+        "./ai-for-science/models/deepfri-tf-npu",
+        "./ai-for-science/models/diffsbdd",
+        "./ai-for-science/models/generator",
+        "./ai-for-science/models/oligoformer",
+        "./ai-for-science/models/proteinbert",
+        "./ai-for-science/tf-framework/ascend-tf-community",
+        "./ai-for-science/tf-framework/tf-to-pytorch",
+        "./ai-for-science/ai4s-profiling"
+      ]
+    },
+    {
       "name": "wan-ascend-adaptation",
       "description": "Comprehensive guide for adapting Wan series video generation models (Wan2.2/2.1/1.3) and similar diffusion-based video frameworks to Huawei Ascend NPU. ",
       "source": "./wan-ascend-adaptation",
