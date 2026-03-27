@@ -2,6 +2,8 @@
 
 Detailed reference for npu-smi device query commands.
 
+> **Validation note**: The examples below were corrected against a real 910B3 host (`npu-smi` software version `25.5.1`). Older output snippets based on `NPU : 0` / `Name : 910B3` were removed because current hosts expose different fields.
+
 ## Table of Contents
 
 1. [Platform Identification](#platform-identification)
@@ -62,15 +64,19 @@ npu-smi info -l
 **Output Fields**:
 | Field | Description |
 |-------|-------------|
+| Total Count | Number of visible NPUs |
 | NPU ID | Device identifier |
-| Name | Device name (e.g., 910B3) |
+| Chip Count | Number of chips exposed under that card |
 
 **Example Output**:
 ```
-Total        : 8 NPU in system
-NPU          : 0
-Name         : 910B3
-...
+Total Count                    : 8
+
+NPU ID                         : 0
+Chip Count                     : 1
+
+NPU ID                         : 1
+Chip Count                     : 1
 ```
 
 ### Query Device Health
@@ -101,22 +107,28 @@ npu-smi info -t board -i <id>
 | Firmware Version | Current firmware |
 | Software Version | Driver version |
 
-### Query Chip Details
+### List Card / Chip Mapping
 
 ```bash
-npu-smi info -t npu -i <id> -c <chip_id>
+npu-smi info -m
 ```
 
 **Output Fields**:
 | Field | Description |
 |-------|-------------|
+| NPU ID | Parent device |
 | Chip ID | Chip identifier |
-| Name | Chip name |
-| Health | Health status |
-| Power Usage | Power consumption |
-| Temperature | Chip temperature |
-| Memory Usage | Memory utilization |
-| AI Core Usage | AI Core utilization |
+| Chip Logic ID | Logical device id used by runtime |
+| Chip Name | Chip name (for example `Ascend 910B3`, `Mcu`) |
+
+**Example Output**:
+```
+NPU ID                         Chip ID                        Chip Logic ID                  Chip Name
+0                              0                              0                              Ascend 910B3
+0                              1                              -                              Mcu
+```
+
+> `npu-smi info -t npu` was rejected by the validated host with `Error parameter of -t`; use `info -m` plus specific metric queries instead.
 
 ### List All Chips
 
@@ -165,9 +177,22 @@ npu-smi info -t memory -i <id> -c <chip_id>
 ```
 
 **Output**:
-- Memory Usage (MB)
-- Memory Total (MB)
-- Memory Usage Rate (%)
+- DDR Capacity / Clock (platform-dependent, can be `0`)
+- HBM Capacity / Clock
+- HBM Temperature
+- HBM Manufacturer ID
+
+**Validated Example**:
+```
+DDR Capacity(MB)               : 0
+DDR Clock Speed(MHz)           : 0
+HBM Capacity(MB)               : 65536
+HBM Clock Speed(MHz)           : 1600
+HBM Temperature(C)             : 52
+HBM Manufacturer ID            : 0x56
+```
+
+> On the validated host, usage percentage is exposed by `npu-smi info -t usages`, not `npu-smi info -t memory`.
 
 ---
 
@@ -176,10 +201,10 @@ npu-smi info -t memory -i <id> -c <chip_id>
 ### Running Processes
 
 ```bash
-npu-smi info proc -i <id> -c <chip_id>
+npu-smi info -t proc-mem -i <id> -c <chip_id>
 ```
 
-**Note**: Not supported on all platforms (e.g., Ascend 910B).
+**Note**: `npu-smi info proc -i <id> -c <chip_id>` was **not supported** on the validated host, but `-t proc-mem` worked.
 
 **Output Fields**:
 | Field | Description |
@@ -187,7 +212,11 @@ npu-smi info proc -i <id> -c <chip_id>
 | PID | Process ID |
 | Process Name | Application name |
 | Memory Usage | Memory used |
-| AI Core Usage | AI Core utilization |
+
+**Validated Example**:
+```
+Process id:207795  Process name:VLLMEngineCor     Process memory(MB):55436
+```
 
 ### ECC Errors
 
@@ -210,25 +239,36 @@ npu-smi info -t usages -i <id> -c <chip_id>
 - Memory Usage (%)
 - Bandwidth Usage (%)
 
-### PCIe Info
+### PCIe Errors
 
 ```bash
-npu-smi info -t pcie-info -i <id> -c <chip_id>
+npu-smi info -t pcie-err -i <id> -c <chip_id>
 ```
 
 **Output**:
-- PCIe Speed (GT/s)
-- PCIe Width (x16, x8, etc.)
+- TX Error Count
+- RX Error Count
+- LCRC Error Count
+- ECRC Error Count
+- Retry Count
 
-### P2P Status
+### Topology
 
 ```bash
-npu-smi info -t p2p -i <id> -c <chip_id>
+npu-smi info -t topo -i <id> -c <chip_id>
 ```
 
 **Output**:
-- P2P Status
-- P2P Mode
+- NPU-to-NPU connectivity matrix
+- CPU affinity mapping
+
+### P2P Capability
+
+```bash
+npu-smi info -t p2p-enable -i <id> -c <chip_id>
+```
+
+**Note**: Some devices return `This device does not support querying p2p-enable.`
 
 ### Product Info
 
@@ -239,6 +279,8 @@ npu-smi info -t product -i <id> -c <chip_id>
 **Output**:
 - Product Name
 - Product Serial Number
+
+**Note**: Some server products return `This device does not support querying product.` even though the command exists.
 
 ---
 
@@ -261,9 +303,8 @@ Always verify output format on your specific system.
 #!/bin/bash
 
 # Check health of all devices
-npu-smi info -l | grep -E '^\|\s+[0-9]+' | while read line; do
-    npu=$(echo $line | awk '{print $2}')
-    health=$(npu-smi info -t health -i $npu | grep Healthy | awk '{print $2}')
+npu-smi info -l | grep -oP 'NPU ID\s*:\s*\K[0-9]+' | while read -r npu; do
+    health=$(npu-smi info -t health -i "$npu" | grep -oP 'Health\s*:\s*\K\w+' | head -n1)
     echo "NPU $npu: $health"
 done
 ```
@@ -280,10 +321,14 @@ echo "=== Device $NPU Summary ==="
 npu-smi info -t health -i $NPU
 npu-smi info -t board -i $NPU
 echo ""
+echo "=== Mapping ==="
+npu-smi info -m
+echo ""
 echo "=== Metrics ==="
 npu-smi info -t temp -i $NPU -c $CHIP
 npu-smi info -t power -i $NPU -c $CHIP
 npu-smi info -t memory -i $NPU -c $CHIP
+npu-smi info -t usages -i $NPU -c $CHIP
 ```
 
 ### Resource Monitoring Script
@@ -293,15 +338,15 @@ npu-smi info -t memory -i $NPU -c $CHIP
 
 echo "=== NPU Resource Monitor $(date) ==="
 
-for npu in $(npu-smi info -l 2>/dev/null | grep -oP 'NPU\s*:\s*\K[0-9]+'); do
+for npu in $(npu-smi info -l 2>/dev/null | grep -oP 'NPU ID\s*:\s*\K[0-9]+'); do
     echo ""
     echo "--- NPU $npu ---"
-    temp=$(npu-smi info -t temp -i $npu -c 0 2>/dev/null | grep -oP 'NPU Temperature\s*:\s*\K[0-9]+' || echo "N/A")
-    power=$(npu-smi info -t power -i $npu -c 0 2>/dev/null | grep -oP 'Power Usage\s*:\s*\K[0-9.]+' || echo "N/A")
-    mem=$(npu-smi info -t memory -i $npu -c 0 2>/dev/null | grep -oP 'Memory Usage Rate\s*:\s*\K[0-9]+' || echo "N/A")
+    temp=$(npu-smi info -t temp -i $npu -c 0 2>/dev/null | grep -oP 'NPU Temperature \(C\)\s*:\s*\K[0-9]+' || echo "N/A")
+    power=$(npu-smi info -t power -i $npu -c 0 2>/dev/null | grep -oP 'NPU Real-time Power\(W\)\s*:\s*\K[0-9.]+' || echo "N/A")
+    mem=$(npu-smi info -t usages -i $npu -c 0 2>/dev/null | grep -oP 'HBM Usage Rate\(%\)\s*:\s*\K[0-9]+' || echo "N/A")
     echo "  Temperature: ${temp}°C"
     echo "  Power: ${power}W"
-    echo "  Memory Usage: ${mem}%"
+    echo "  HBM Usage: ${mem}%"
 done
 ```
 
@@ -332,8 +377,8 @@ CHIP=0
 
 echo "=== Advanced System Report ==="
 echo ""
-echo "Processes:"
-npu-smi info proc -i $NPU -c $CHIP 2>/dev/null || echo "Process info not available"
+echo "Process memory:"
+npu-smi info -t proc-mem -i $NPU -c $CHIP 2>/dev/null || echo "Process memory info not available"
 
 echo ""
 echo "ECC Status:"
@@ -344,10 +389,10 @@ echo "Utilization:"
 npu-smi info -t usages -i $NPU -c $CHIP
 
 echo ""
-echo "PCIe Info:"
-npu-smi info -t pcie-info -i $NPU -c $CHIP
+echo "PCIe Errors:"
+npu-smi info -t pcie-err -i $NPU -c $CHIP
 
 echo ""
-echo "Product Info:"
-npu-smi info -t product -i $NPU -c $CHIP
+echo "Topology:"
+npu-smi info -t topo -i $NPU -c $CHIP
 ```
