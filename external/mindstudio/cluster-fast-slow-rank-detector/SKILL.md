@@ -4,7 +4,7 @@ description: 专门用于 Ascend 集群 Profiling 性能数据的“快慢卡”
   Host 下发瓶颈、算子计算劣化）。
 original-name: cluster-fast-slow-rank-detector
 synced-from: https://github.com/kali20gakki/mindstudio-skills
-synced-date: '2026-03-25'
+synced-date: '2026-03-26'
 synced-commit: 266c7821de7b51b683d4605960d0d86f7d631e03
 license: UNKNOWN
 ---

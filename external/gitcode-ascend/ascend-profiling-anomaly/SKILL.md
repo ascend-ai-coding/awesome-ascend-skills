@@ -14,7 +14,7 @@ description: 'Analyze Huawei Ascend NPU profiling data to discover hidden perfor
   '
 original-name: ascend-profiling-anomaly
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-03-25'
+synced-date: '2026-03-26'
 synced-commit: 0a97c6e3999cf97425ca5ab07678e48089d79ff5
 license: UNKNOWN
 ---

@@ -3,7 +3,7 @@ name: external-gitcode-ascend-simple-vector-triton-gpu-to-npu
 description: 将简单Vector类型Triton算子从GPU迁移到昇腾NPU。当用户需要迁移Triton代码到NPU、提到GPU到NPU迁移、Triton迁移、昇腾适配时使用。注意：无法自动迁移存在编译问题的算子。
 original-name: simple-vector-triton-gpu-to-npu
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-03-25'
+synced-date: '2026-03-26'
 synced-commit: 0a97c6e3999cf97425ca5ab07678e48089d79ff5
 license: UNKNOWN
 ---
