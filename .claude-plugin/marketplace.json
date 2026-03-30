@@ -39,6 +39,12 @@
       "category": "operations"
     },
     {
+      "name": "verl-quickstart",
+      "description": "VERL reinforcement learning quickstart for Ascend/NPU. Covers docker image selection with default 910B/A3 tags, dataset preprocessing, ModelScope model path conventions, main_ppo training skeleton, examples run_*.sh selection, and mandatory smoke-run log reporting after script changes.",
+      "source": "./verl-quickstart",
+      "category": "development"
+    },
+    {
       "name": "msmodelslim",
       "description": "Huawei Ascend NPU model compression tool for LLM, MoE, and multimodal models. Supports W4A8, W8A8, W8A8S, W8A16, W8A8C8 quantization and sparse quantization. Compatible with 20+ model families (Qwen, DeepSeek, LLaMA, GLM, Kimi, Baichuan, Yi, InternLM, Mistral, etc.). Includes precision auto-tuning, custom model integration guide, and vLLM-Ascend/MindIE deployment.",
       "source": "./msmodelslim",
