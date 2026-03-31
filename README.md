@@ -81,6 +81,7 @@ cp -r awesome-ascend-skills/npu-smi your-project/.agents/skills/
 |-------|------|------|
 | [npu-smi](npu-smi/SKILL.md) | 运维 | NPU 设备管理：健康状态查询、温度/功耗监控、固件升级、虚拟化配置、证书管理 |
 | [hccl-test](hccl-test/SKILL.md) | 测试 | HCCL 集合通信性能测试：带宽测试、AllReduce/AllGather 等集合操作基准测试 |
+| [torch-npu-comm-test](torch-npu-comm-test/SKILL.md) | 测试 | 通过 torch.distributed 测试通信算子性能：支持任意 tensor shape、dtype，torchrun 启动，贴近真实训练场景 |
 | [atc-model-converter](atc-model-converter/SKILL.md) | 开发 | ATC 模型转换：ONNX 转 .om 格式、OM 推理、精度对比、YOLO 端到端部署 |
 | [ascend-docker](ascend-docker/SKILL.md) | 运维 | Docker 容器配置：NPU 设备映射、卷挂载、开发环境隔离 |
 | [msmodelslim](msmodelslim/SKILL.md) | 开发 | 模型压缩量化：W4A8/W8A8/W8A8S 量化、MoE/多模态模型支持、精度自动调优 |
@@ -94,11 +95,36 @@ cp -r awesome-ascend-skills/npu-smi your-project/.agents/skills/
 | [mindspeed-llm-weight-prep](mindspeed-llm/mindspeed-llm-weight-prep/SKILL.md) | 开发 | MindSpeed-LLM 权重转换：HF↔Megatron 格式转换、LoRA 权重合并、TP/PP 切分 |
 | [mindspeed-llm-training](mindspeed-llm/mindspeed-llm-training/SKILL.md) | 开发 | MindSpeed-LLM 训练启动：预训练/SFT/LoRA/QLoRA 分布式训练、可选评估 |
 | [diffusers-ascend-env-setup](diffusers-ascend/diffusers-ascend-env-setup/SKILL.md) | 开发 | Diffusers 环境配置：CANN 版本检测、PyTorch + torch_npu 安装、Diffusers 安装验证 |
-| [ascend-opplugin](ascend-opplugin/SKILL.md) | 开发 | Ascend C（CANN/xpu_kernel）算子完成后接入 PyTorch：与 torch_npu 对接、Host 注册与构建、Python 暴露与冒烟测试；工程内轻量化接入、必要时 op-plugin、Pybind 联调、图算子封装、容器外驱动与排障 |
+| [npu-op-benchmark](npu-op-benchmark/SKILL.md) | 测试 | 昇腾 NPU 算子性能基准测试：支持 SSH/Conda/Docker，测 算子 100 次平均耗时 |
+| [ascend-opplugin](ascend-opplugin/SKILL.md) | 开发 | op-plugin 环境安装与 torch_npu 自定义算子接入：无 workspace / workspace+tiling 两种模式，从内核实现到 host 注册、构建与测试，优先在工程内轻量化接入 |
 | [diffusers-ascend-weight-prep](diffusers-ascend/diffusers-ascend-weight-prep/SKILL.md) | 开发 | Diffusers 权重准备：HuggingFace/ModelScope 模型下载、基于 config.json 生成假权重用于验证 |
 | [diffusers-ascend-pipeline](diffusers-ascend/diffusers-ascend-pipeline/SKILL.md) | 开发 | Diffusers Pipeline 推理：环境预检、通用推理（图像/视频）、内存优化、LoRA 集成 |
 | [training-mfu-calculator](training-mfu-calculator/SKILL.md) | 测试 | MFU 计算工具：Dense/MoE 模型 FLOPs 计算、Ascend NPU 硬件峰值参考、性能分析报告 |
 | [github-issue-summary](github-issue-summary/SKILL.md) | 开发 | GitHub Issue 分析：从已关闭 issue 生成故障排查案例、根因分析、经验总结 |
+| [github-issue-rca](github-issue-rca/SKILL.md) | 开发 | GitHub Issue 根因分析：分析 issue 内容和代码仓库，识别可能的根本原因，提供调查方向和概率评估 |
+| [profiling-analysis](profiling-analysis/profiling-main/SKILL.md) | 分析 | Profiling 性能分析技能集：分析 step_trace_time.csv 识别下发、通信、计算瓶颈 |
+| [mindspeed-llm-train-profiler](mindspeed-llm-train-profiler/SKILL.md) | 分析 | 自动化完成昇腾 NPU 上 MindSpeed-LLM 训练的 Profiling 数据采集 |
+| [ai-for-science](ai-for-science/ai4s-main/SKILL.md) | 开发 | AI for Science 总入口：负责 Profiling 采集、模型迁移、TensorFlow/Keras 路线选择，并分流到对应子 skill。 |
+
+## 外部 Skills (External Skills)
+
+> 以下 skills 从外部仓库自动同步，请勿手动修改。
+
+| Skill | 来源 | 描述 |
+|-------|------|------|
+| [ascend-inference-repos-copilot](external/gitcode-ascend/ascend-inference-repos-copilot/SKILL.md) | [gitcode-ascend](https://gitcode.com/Ascend/agent-skills) | 昇腾（Ascend）推理生态开源代码仓库智能问答专家旨在为 vLLM、vLLM-Ascend、MindIE-LLM、MindIE-SD、MindIE-Motor、MindIE-Turbo 以及 ... |
+| [ascend-profiling-anomaly](external/gitcode-ascend/ascend-profiling-anomaly/SKILL.md) | [gitcode-ascend](https://gitcode.com/Ascend/agent-skills) | Analyze Huawei Ascend NPU profiling data to discover hidden performance anomalies and produce a d... |
+| [npu-adapter-reviewer](external/gitcode-ascend/npu-adapter-reviewer/SKILL.md) | [gitcode-ascend](https://gitcode.com/Ascend/agent-skills) | GPU代码到昇腾NPU适配审查专家。当用户需要将GPU上的代码（特别是深度学习、模型推理相关）迁移到华为昇腾NPU时，必须使用此skill进行全面审查。此skill能识别GPU到NPU迁移的堵点... |
+| [simple-vector-triton-gpu-to-npu](external/gitcode-ascend/simple-vector-triton-gpu-to-npu/SKILL.md) | [gitcode-ascend](https://gitcode.com/Ascend/agent-skills) | 将简单Vector类型Triton算子从GPU迁移到昇腾NPU。当用户需要迁移Triton代码到NPU、提到GPU到NPU迁移、Triton迁移、昇腾适配时使用。注意：无法自动迁移存在编译问题的算子。 |
+| [skill-auditor](external/gitcode-ascend/skill-auditor/SKILL.md) | [gitcode-ascend](https://gitcode.com/Ascend/agent-skills) | Comprehensive security auditor for AI agent skills, prompts, and instructions. Checks for typosqu... |
+| [vLLM-ascend_FAQ_Generator](external/gitcode-ascend/vLLM-ascend_FAQ_Generator/SKILL.md) | [gitcode-ascend](https://gitcode.com/Ascend/agent-skills) | 为 vLLM-ascend 项目构建自动化工作流，处理已关闭的Issue并生成Debug FAQ。Use when users want to process closed issues fro... |
+| [vector-triton-ascend-ops-optimizer](external/gitcode-ascend/vector-triton-ascend-ops-optimizer/SKILL.md) | [gitcode-ascend](https://gitcode.com/Ascend/agent-skills) | 昇腾（Ascend） NPU 上 Triton 算子深度性能优化技能（Skill），致力于实现用户要求的 Triton 算子性能提升。核心技术包括但不限于 Unified Buffer (UB)... |
+| [ascend-profiler-db-explorer](external/mindstudio/ascend-profiler-db-explorer/SKILL.md) | [mindstudio](https://github.com/kali20gakki/mindstudio-skills) | 面向 Ascend PyTorch Profiler / msprof DB（如 ascend_pytorch_profiler*.db、msprof_*.db）的 SQL 分析技能。将自然语言... |
+| [cluster-fast-slow-rank-detector](external/mindstudio/cluster-fast-slow-rank-detector/SKILL.md) | [mindstudio](https://github.com/kali20gakki/mindstudio-skills) | 专门用于 Ascend 集群 Profiling 性能数据的“快慢卡”诊断专家技能。当用户提供【集群性能数据目录/路径】并要求分析【快慢卡】、【慢节点】、【负载不均衡】或【集群瓶颈】时，必须触发... |
+| [document-ux-review](external/mindstudio/document-ux-review/SKILL.md) | [mindstudio](https://github.com/kali20gakki/mindstudio-skills) | 当用户希望你像第一次接触项目的人一样，真实按仓库的 README、安装文档或 quick start 跑一遍，并判断“新人能不能走通”“文档是否可用”“哪里会卡住”“安装/启动说明是否对新手友好... |
+| [github-raw-fetch](external/mindstudio/github-raw-fetch/SKILL.md) | [mindstudio](https://github.com/kali20gakki/mindstudio-skills) | 当用户提供 GitHub 文件页面链接，或希望读取某个仓库中的源码、配置、README、Markdown、docs 内容时，使用此技能。技能不仅支持将 `github.com/<owner>/<... |
+| [mindstudio_profiler_data_check](external/mindstudio/mindstudio_profiler_data_check/SKILL.md) | [mindstudio](https://github.com/kali20gakki/mindstudio-skills) | 当用户提供 MindStudio profiler 采集的性能数据（框架 profiler、msprof 命令行）时，对数据完整性、采集状态及关键配置进行校验，确保后续分析工具能正常运行。 |
+| [op-mfu-calculator](external/mindstudio/op-mfu-calculator/SKILL.md) | [mindstudio](https://github.com/kali20gakki/mindstudio-skills) | 计算算子（如 matmul/GEMM）的 MFU（Machine FLOP Utilization），并给出清晰的公式和推导过程。 |
 
 ---
 
@@ -200,6 +226,43 @@ skill-name/                          # 目录名：小写 + 连字符
 - [ ] 已添加到 `.claude-plugin/marketplace.json`
 - [ ] 已添加到 README.md 的 Skill 列表
 - [ ] 运行 `python3 scripts/validate_skills.py` 通过
+
+---
+
+## 外部 Skills 同步
+
+本仓库支持自动同步外部 Ascend skills 仓库，实现技能共享和更新。
+
+### 同步机制
+
+同步由 GitHub Actions 自动完成，支持三种触发方式：
+
+1. **定时同步**：每天 UTC 00:00 自动执行
+2. **手动触发**：通过 GitHub Actions 页面手动运行
+3. **PR 触发**：修改 `.github/external-sources.yml` 配置文件时自动触发
+
+### 添加外部源
+
+编辑 `.github/external-sources.yml` 文件添加新的外部仓库：
+
+```yaml
+sources:
+  - name: mindstudio                    # 唯一标识，用于 external/{name}/ 目录
+    url: https://github.com/kali20gakki/mindstudio-skills
+    branch: main                        # 可选，默认 main
+    enabled: true                       # 可选，默认 true
+```
+
+### 同步规则
+
+- **存储位置**：`external/{source-name}/{skill-name}/`
+- **冲突策略**：同名 skill 以本仓为准，外部 skill 被跳过
+- **来源标记**：同步的 skill 会自动添加 `synced-from`、`synced-date`、`synced-commit` 等属性
+- **PR 审核**：同步结果生成 PR，需人工审核后合并
+
+### 查看外部 Skills
+
+已同步的外部 skills 会显示在本 README 的"外部 Skills"表格中。
 
 ---
 

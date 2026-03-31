@@ -21,6 +21,12 @@
       "category": "testing"
     },
     {
+      "name": "torch-npu-comm-test",
+      "description": "通过 PyTorch torch.distributed 接口测试昇腾 NPU 通信算子性能。支持指定任意 tensor shape、dtype，使用 torchrun 启动，贴近真实训练场景的通信算子测试与性能分析。Test collective communication operators with specific tensor shapes via torch.distributed on Ascend NPU.",
+      "source": "./torch-npu-comm-test",
+      "category": "testing"
+    },
+    {
       "name": "atc-model-converter",
       "description": "Complete toolkit for Huawei Ascend NPU model conversion and inference. Convert ONNX models to .om format using ATC tool, run Python inference on OM models using ais_bench, compare precision between CPU ONNX and NPU OM outputs, and end-to-end YOLO inference with Ultralytics.",
       "source": "./atc-model-converter",
@@ -69,6 +75,12 @@
       "category": "development"
     },
     {
+      "name": "npu-op-benchmark",
+      "description": "Ascend NPU operator benchmark for repeat_interleave-style latency testing. Supports SSH remote, local Conda, and Docker environments with CANN toolkit detection and torch_npu runtime checks. Uses existing environments only and does not install or repair dependencies.",
+      "source": "./npu-op-benchmark",
+      "category": "testing"
+    },
+    {
       "name": "ascend-opplugin",
       "description": "指导 Ascend C（CANN/xpu_kernel）算子开发完成后接入 PyTorch：与 torch_npu 对接、Host 侧注册与构建、Python 暴露与冒烟测试。涵盖工程内轻量化接入、必要时参考 op-plugin、Pybind 快速联调、复用图算子封装、容器场景与排障。适用于 Ascend C、算子接入、torch_npu、xpu_kernel、自定义算子等场景。",
       "source": "./ascend-opplugin",
@@ -109,6 +121,92 @@
       "description": "Analyze closed GitHub issues to create troubleshooting case studies with root cause analysis and lessons learned. Use when summarizing resolved issue troubleshooting process, creating issue case studies, documenting problem-solving methodology, extracting lessons from closed issues, or building knowledge base from issue history.",
       "source": "./github-issue-summary",
       "category": "development"
+    },
+    {
+      "name": "github-issue-rca",
+      "description": "GitHub Issue root cause analysis skill. Analyze specified GitHub issues to identify possible root causes by examining issue content, code repository, and related resources. Use when user asks to analyze issue root cause, investigate issue, RCA analysis, or troubleshoot GitHub issues. Provides investigation directions with probability estimates and explicitly states when root cause cannot be determined.",
+      "source": "./github-issue-rca",
+      "category": "development"
+    },
+    {
+      "name": "profiling-analysis",
+      "description": "Profiling skill set for Huawei Ascend NPU performance analysis. Analyzes step_trace_time.csv files to identify hostbound, computing, and communication bottlenecks. Use when performing performance analysis and optimization on Ascend NPU.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./profiling-analysis/profiling-main",
+        "./profiling-analysis/profiling-hostbound",
+        "./profiling-analysis/profiling-computing",
+        "./profiling-analysis/profiling-communication"
+      ]
+    },
+    {
+      "name": "ai-for-science",
+      "description": "AI for Science skill set for Huawei Ascend NPU. Includes a main routing skill for profiling collection, model migration, and TensorFlow route selection, plus specialized leaf skills for Boltz2, BoltzGen, DeepFRI, DiffSBDD, GENERator, OligoFormer, ProteinBERT, TensorFlow Community deployment, TF-to-PyTorch conversion, and torch_npu profiling workflows.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./ai-for-science/ai4s-main",
+        "./ai-for-science/models/ai4s-basic",
+        "./ai-for-science/models/boltz2",
+        "./ai-for-science/models/boltzgen",
+        "./ai-for-science/models/deepfri",
+        "./ai-for-science/models/deepfri-tf-npu",
+        "./ai-for-science/models/diffsbdd",
+        "./ai-for-science/models/generator",
+        "./ai-for-science/models/oligoformer",
+        "./ai-for-science/models/proteinbert",
+        "./ai-for-science/tf-framework/ascend-tf-community",
+        "./ai-for-science/tf-framework/tf-to-pytorch",
+        "./ai-for-science/ai4s-profiling"
+      ]
+    },
+    {
+      "name": "wan-ascend-adaptation",
+      "description": "Comprehensive guide for adapting Wan series video generation models (Wan2.2/2.1/1.3) and similar diffusion-based video frameworks to Huawei Ascend NPU. ",
+      "source": "./wan-ascend-adaptation",
+      "category": "development"
+    },
+    {
+      "name": "external-gitcode-ascend-skills",
+      "description": "从 gitcode-ascend 同步的 Ascend 技能集，包含 7 个技能：\n- ascend-inference-repos-copilot: 昇腾（Ascend）推理生态开源代码仓库智能问答专家旨在为 vLLM、vLLM-Ascend、MindIE-LLM、MindIE-SD、MindIE-Motor、MindIE-Turbo 以及 msM\n- ascend-profiling-anomaly: Analyze Huawei Ascend NPU profiling data to discover hidden performance anomalies and produce a deta\n- npu-adapter-reviewer: GPU代码到昇腾NPU适配审查专家。当用户需要将GPU上的代码（特别是深度学习、模型推理相关）迁移到华为昇腾NPU时，必须使用此skill进行全面审查。此skill能识别GPU到NPU迁移的堵点、编写\n- ... 等 4 个技能",
+      "source": "./",
+      "strict": false,
+      "external": true,
+      "source-url": "https://gitcode.com/Ascend/agent-skills",
+      "source-branch": "master",
+      "skills": [
+        "./external/gitcode-ascend/ascend-inference-repos-copilot",
+        "./external/gitcode-ascend/ascend-profiling-anomaly",
+        "./external/gitcode-ascend/npu-adapter-reviewer",
+        "./external/gitcode-ascend/simple-vector-triton-gpu-to-npu",
+        "./external/gitcode-ascend/skill-auditor",
+        "./external/gitcode-ascend/vLLM-ascend_FAQ_Generator",
+        "./external/gitcode-ascend/vector-triton-ascend-ops-optimizer"
+      ]
+    },
+    {
+      "name": "external-mindstudio-skills",
+      "description": "从 mindstudio 同步的 Ascend 技能集，包含 6 个技能：\n- ascend-profiler-db-explorer: 面向 Ascend PyTorch Profiler / msprof DB（如 ascend_pytorch_profiler*.db、msprof_*.db）的 SQL 分析技能。将自然语言问题（\n- cluster-fast-slow-rank-detector: 专门用于 Ascend 集群 Profiling 性能数据的“快慢卡”诊断专家技能。当用户提供【集群性能数据目录/路径】并要求分析【快慢卡】、【慢节点】、【负载不均衡】或【集群瓶颈】时，必须触发此技能\n- document-ux-review: 当用户希望你像第一次接触项目的人一样，真实按仓库的 README、安装文档或 quick start 跑一遍，并判断“新人能不能走通”“文档是否可用”“哪里会卡住”“安装/启动说明是否对新手友好”时，\n- ... 等 3 个技能",
+      "source": "./",
+      "strict": false,
+      "external": true,
+      "source-url": "https://github.com/kali20gakki/mindstudio-skills",
+      "source-branch": "main",
+      "skills": [
+        "./external/mindstudio/ascend-profiler-db-explorer",
+        "./external/mindstudio/cluster-fast-slow-rank-detector",
+        "./external/mindstudio/document-ux-review",
+        "./external/mindstudio/github-raw-fetch",
+        "./external/mindstudio/mindstudio_profiler_data_check",
+        "./external/mindstudio/op-mfu-calculator"
+      ]
+    },
+    {
+        "name": "mindspeed-llm-train-profiler",
+        "description": "指导并自动化完成昇腾 NPU 上 MindSpeed-LLM 训练的 Profiling 数据采集。支持配置并运行带 Profiling 的模型训练，包括 CPU 采集、内存采集、不同采集级别（level0/level1/level2）和自定义 step 范围。生成的 Profiling 数据可用 MindStudio Insight 进行性能分析。当用户需要在模型训练中采集 Profiling 数据、进行训练性能分析、或执行 性能数据采集/Profiling采集 时触发。触发关键词：profiling、性能分析、性能数据采集、Profiling采集、训练框架profiling、MindSpeed-LLM profiling。",
+        "source": "./mindspeed-llm-train-profiler",
+        "category": "development"
     }
   ]
 }

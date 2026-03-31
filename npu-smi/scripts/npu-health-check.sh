@@ -17,7 +17,7 @@ if ! command -v npu-smi &> /dev/null; then
 fi
 
 # Get list of NPUs
-NPUS=$(npu-smi info -l 2>/dev/null | grep -oP 'NPU\s*:\s*\K[0-9]+' || echo "")
+NPUS=$(npu-smi info -l 2>/dev/null | grep -oP 'NPU ID\s*:\s*\K[0-9]+' || echo "")
 
 if [ -z "$NPUS" ]; then
     echo "ERROR: No NPU devices found"
@@ -36,7 +36,7 @@ for npu in $NPUS; do
     echo "----------------------------------------"
     
     # Health check
-    HEALTH=$(npu-smi info -t health -i $npu 2>/dev/null | grep -oP 'Healthy\s*:\s*\K\w+' || echo "Unknown")
+    HEALTH=$(npu-smi info -t health -i "$npu" 2>/dev/null | grep -oP 'Health\s*:\s*\K\w+' | head -n1 || echo "Unknown")
     echo "Health Status: $HEALTH"
     
     if [ "$HEALTH" != "OK" ] && [ "$HEALTH" != "Unknown" ]; then
@@ -45,14 +45,20 @@ for npu in $NPUS; do
     fi
     
     # Get chips for this NPU
-    CHIPS=$(npu-smi info -m 2>/dev/null | grep "NPU $npu" | grep -oP 'Chip\s*:\s*\K[0-9]+' || echo "0")
+    CHIPS=$(npu-smi info -m 2>/dev/null | awk -v npu="$npu" '$1 == npu && $4 ~ /^Ascend/ {print $2}')
+
+    if [ -z "$CHIPS" ]; then
+        echo "  WARNING: Could not detect runtime chips from npu-smi info -m"
+        ((ISSUES++))
+        continue
+    fi
     
     for chip in $CHIPS; do
         echo ""
         echo "  Chip $chip:"
         
         # Temperature
-        TEMP=$(npu-smi info -t temp -i $npu -c $chip 2>/dev/null | grep -oP 'NPU Temperature\s*:\s*\K[0-9]+' || echo "N/A")
+        TEMP=$(npu-smi info -t temp -i "$npu" -c "$chip" 2>/dev/null | grep -oP 'NPU Temperature \(C\)\s*:\s*\K[0-9]+' || echo "N/A")
         echo "    Temperature: ${TEMP}°C"
         
         if [ "$TEMP" != "N/A" ] && [ "$TEMP" -gt 80 ]; then
@@ -61,21 +67,20 @@ for npu in $NPUS; do
         fi
         
         # Power
-        POWER=$(npu-smi info -t power -i $npu -c $chip 2>/dev/null | grep -oP 'Power Usage\s*:\s*\K[0-9.]+' || echo "N/A")
-        POWER_LIMIT=$(npu-smi info -t power -i $npu -c $chip 2>/dev/null | grep -oP 'Power Limit\s*:\s*\K[0-9.]+' || echo "N/A")
-        echo "    Power: ${POWER}W / ${POWER_LIMIT}W"
-        
-        # Memory
-        MEM_USAGE=$(npu-smi info -t memory -i $npu -c $chip 2>/dev/null | grep -oP 'Memory Usage Rate\s*:\s*\K[0-9]+' || echo "N/A")
-        echo "    Memory Usage: ${MEM_USAGE}%"
-        
+        POWER=$(npu-smi info -t power -i "$npu" -c "$chip" 2>/dev/null | grep -oP 'NPU Real-time Power\(W\)\s*:\s*\K[0-9.]+' || echo "N/A")
+        echo "    Power: ${POWER}W"
+
+        MEM_USAGE=$(npu-smi info -t usages -i "$npu" -c "$chip" 2>/dev/null | grep -oP 'HBM Usage Rate\(%\)\s*:\s*\K[0-9]+' || echo "N/A")
+        echo "    HBM Usage: ${MEM_USAGE}%"
+
         # ECC Errors
-        ECC=$(npu-smi info -t ecc -i $npu -c $chip 2>/dev/null | grep -oP 'ECC Error Count\s*:\s*\K[0-9]+' || echo "0")
-        if [ "$ECC" != "0" ] && [ "$ECC" != "N/A" ]; then
-            echo "    WARNING: ECC errors detected: $ECC"
+        ECC_SBE=$(npu-smi info -t ecc -i "$npu" -c "$chip" 2>/dev/null | grep -oP 'HBM Single Bit Error Count\s*:\s*\K[0-9]+' || echo "0")
+        ECC_DBE=$(npu-smi info -t ecc -i "$npu" -c "$chip" 2>/dev/null | grep -oP 'HBM Double Bit Error Count\s*:\s*\K[0-9]+' || echo "0")
+        if [ "$ECC_SBE" != "0" ] || [ "$ECC_DBE" != "0" ]; then
+            echo "    WARNING: ECC errors detected: single-bit=$ECC_SBE double-bit=$ECC_DBE"
             ((ISSUES++))
         else
-            echo "    ECC Errors: 0"
+            echo "    ECC Errors: single-bit=0 double-bit=0"
         fi
     done
     
