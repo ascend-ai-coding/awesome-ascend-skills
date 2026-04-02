@@ -148,6 +148,7 @@
       "skills": [
         "./ai-for-science/ai4s-main",
         "./ai-for-science/models/ai4s-basic",
+        "./ai-for-science/models/ankh",
         "./ai-for-science/models/boltz2",
         "./ai-for-science/models/boltzgen",
         "./ai-for-science/models/deepfri",
