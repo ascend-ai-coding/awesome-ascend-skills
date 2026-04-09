@@ -105,6 +105,9 @@ cp -r awesome-ascend-skills/npu-smi your-project/.agents/skills/
 | [profiling-analysis](profiling-analysis/profiling-main/SKILL.md) | 分析 | Profiling 性能分析技能集：分析 step_trace_time.csv 识别下发、通信、计算瓶颈 |
 | [mindspeed-llm-train-profiler](mindspeed-llm-train-profiler/SKILL.md) | 分析 | 自动化完成昇腾 NPU 上 MindSpeed-LLM 训练的 Profiling 数据采集 |
 | [ai-for-science](ai-for-science/ai4s-main/SKILL.md) | 开发 | AI for Science 总入口：负责 Profiling 采集、模型迁移、TensorFlow/Keras 路线选择，并分流到对应子 skill。 |
+| [hiascend-forum-fetcher](hiascend-forum/hiascend-forum-fetcher/SKILL.md) | 开发 | 支持根据给定的时间范围，读取昇腾社区论坛在该范围内的帖子。 |
+| [hiascend-forum-analyzer](hiascend-forum/hiascend-forum-analyzer/SKILL.md) | 开发 | 支持基于hiascend-forum-fetcher获取的文档，根据给定的内容，识别论坛上开发者反馈的相关问题帖子。 |
+
 
 ## 外部 Skills (External Skills)
 
