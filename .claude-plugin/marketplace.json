@@ -214,6 +214,19 @@
         "description": "指导并自动化完成昇腾 NPU 上 MindSpeed-LLM 训练的 Profiling 数据采集。支持配置并运行带 Profiling 的模型训练，包括 CPU 采集、内存采集、不同采集级别（level0/level1/level2）和自定义 step 范围。生成的 Profiling 数据可用 MindStudio Insight 进行性能分析。当用户需要在模型训练中采集 Profiling 数据、进行训练性能分析、或执行 性能数据采集/Profiling采集 时触发。触发关键词：profiling、性能分析、性能数据采集、Profiling采集、训练框架profiling、MindSpeed-LLM profiling。",
         "source": "./mindspeed-llm-train-profiler",
         "category": "development"
+    },
+    {
+      "name": "mindspeed-mm-skills",
+      "description": "MindSpeed-MM 多模态大模型训练技能集，用于华为昇腾 NPU。覆盖环境搭建、权重转换（mm-convert）、多模态理解模型（VLM：Qwen2.5VL/InternVL/GLM4V）训练、多模态生成模型（Wan/HunyuanVideo/CogVideoX/FLUX）训练、端到端流水线。Use when deploying MindSpeed-MM multimodal training on Ascend NPU.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./mindspeed-mm/mindspeed-mm-pipeline",
+        "./mindspeed-mm/mindspeed-mm-env-setup",
+        "./mindspeed-mm/mindspeed-mm-weight-prep",
+        "./mindspeed-mm/mindspeed-mm-vlm",
+        "./mindspeed-mm/mindspeed-mm-generative"
+      ]
     }
   ]
 }

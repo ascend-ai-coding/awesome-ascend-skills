@@ -105,6 +105,11 @@ cp -r awesome-ascend-skills/npu-smi your-project/.agents/skills/
 | [profiling-analysis](profiling-analysis/profiling-main/SKILL.md) | 分析 | Profiling 性能分析技能集：分析 step_trace_time.csv 识别下发、通信、计算瓶颈 |
 | [mindspeed-llm-train-profiler](mindspeed-llm-train-profiler/SKILL.md) | 分析 | 自动化完成昇腾 NPU 上 MindSpeed-LLM 训练的 Profiling 数据采集 |
 | [ai-for-science](ai-for-science/ai4s-main/SKILL.md) | 开发 | AI for Science 总入口：负责 Profiling 采集、模型迁移、TensorFlow/Keras 路线选择，并分流到对应子 skill。 |
+| [mindspeed-mm-pipeline](mindspeed-mm/mindspeed-mm-pipeline/SKILL.md) | 开发 | MindSpeed-MM 模型路由：根据模型类型（VLM/生成/全模态/音频）引导至对应 Skill |
+| [mindspeed-mm-env-setup](mindspeed-mm/mindspeed-mm-env-setup/SKILL.md) | 开发 | MindSpeed-MM 环境搭建：CANN + torch_npu + MindSpeed + Megatron-LM + MindSpeed-MM 安装 |
+| [mindspeed-mm-weight-prep](mindspeed-mm/mindspeed-mm-weight-prep/SKILL.md) | 开发 | MindSpeed-MM 权重转换：mm-convert CLI 工具，HF↔MM/DCP 格式转换，PP 重切分 |
+| [mindspeed-mm-vlm](mindspeed-mm/mindspeed-mm-vlm/SKILL.md) | 开发 | MindSpeed-MM VLM 训练：Qwen2.5VL/InternVL/GLM4V 等理解模型，支持 Megatron/FSDP2/Custom 三种后端 |
+| [mindspeed-mm-generative](mindspeed-mm/mindspeed-mm-generative/SKILL.md) | 开发 | MindSpeed-MM 生成模型训练：Wan/HunyuanVideo/CogVideoX/FLUX 等视频/图像生成，含特征提取 |
 
 ## 外部 Skills (External Skills)
 
