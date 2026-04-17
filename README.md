@@ -96,7 +96,7 @@ cp -r awesome-ascend-skills/npu-smi your-project/.agents/skills/
 | [mindspeed-llm-training](mindspeed-llm/mindspeed-llm-training/SKILL.md) | 开发 | MindSpeed-LLM 训练启动：预训练/SFT/LoRA/QLoRA 分布式训练、可选评估 |
 | [diffusers-ascend-env-setup](diffusers-ascend/diffusers-ascend-env-setup/SKILL.md) | 开发 | Diffusers 环境配置：CANN 版本检测、PyTorch + torch_npu 安装、Diffusers 安装验证 |
 | [npu-op-benchmark](npu-op-benchmark/SKILL.md) | 测试 | 昇腾 NPU 算子性能基准测试：支持 SSH/Conda/Docker，测 算子 100 次平均耗时 |
-| [ascend-opplugin](ascend-opplugin/SKILL.md) | 开发 | op-plugin 环境安装与 torch_npu 自定义算子接入：无 workspace / workspace+tiling 两种模式，从内核实现到 host 注册、构建与测试 |
+| [ascend-opplugin](ascend-opplugin/SKILL.md) | 开发 | op-plugin 环境安装与 torch_npu 自定义算子接入：无 workspace / workspace+tiling 两种模式，从内核实现到 host 注册、构建与测试，优先在工程内轻量化接入 |
 | [diffusers-ascend-weight-prep](diffusers-ascend/diffusers-ascend-weight-prep/SKILL.md) | 开发 | Diffusers 权重准备：HuggingFace/ModelScope 模型下载、基于 config.json 生成假权重用于验证 |
 | [diffusers-ascend-pipeline](diffusers-ascend/diffusers-ascend-pipeline/SKILL.md) | 开发 | Diffusers Pipeline 推理：环境预检、通用推理（图像/视频）、内存优化、LoRA 集成 |
 | [remote-server-guide](remote-server-guide/SKILL.md) | 运维 | 远程服务器连接指南：SSH 多认证方式、Docker 容器管理、文件传输、故障排查 |
