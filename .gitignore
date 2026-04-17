@@ -39,3 +39,11 @@ venv/
 
 # Agent
 .sisyphus
+
+# Git worktrees
+.worktrees/
+
+# Local overrides
+CLAUDE.md
+_*
+.local/*

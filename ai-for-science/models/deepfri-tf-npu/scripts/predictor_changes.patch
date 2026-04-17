@@ -1,0 +1,129 @@
+diff --git a/deepfrier/Predictor.py b/deepfrier/Predictor.py
+index 3381d73..da0e1a3 100644
+--- a/deepfrier/Predictor.py
++++ b/deepfrier/Predictor.py
+@@ -6,12 +6,111 @@ import gzip
+ import secrets
+ 
+ import numpy as np
++import h5py
+ import tensorflow as tf
+ 
+ from .utils import load_catalogue, load_FASTA, load_predicted_PDB, seq2onehot
+ from .layers import MultiGraphConv, GraphConv, FuncPredictor, SumPooling
+ 
+ 
++class _CuDNNLSTMWrapper(tf.keras.layers.LSTM):
++    """Drop-in replacement that accepts CuDNNLSTM serialized config."""
++    def __init__(self, units, **kwargs):
++        for k in ['return_state', 'implementation', 'go_backwards',
++                   'stateful', 'time_major']:
++            kwargs.pop(k, None)
++        kwargs['return_sequences'] = kwargs.get('return_sequences', True)
++        kwargs['recurrent_activation'] = 'sigmoid'
++        kwargs['activation'] = 'tanh'
++        super().__init__(units, **kwargs)
++
++    @classmethod
++    def from_config(cls, config):
++        for k in ['return_state', 'implementation', 'go_backwards',
++                   'stateful', 'time_major']:
++            config.pop(k, None)
++        config['return_sequences'] = config.get('return_sequences', True)
++        return cls(**config)
++
++
++def _convert_cudnn_weights_to_lstm(cudnn_kernel, cudnn_recurrent, cudnn_bias):
++    """Convert CuDNNLSTM weights to standard Keras LSTM weights.
++
++    CuDNNLSTM gate order: [i, f, g, o]  (same as Keras LSTM)
++    CuDNNLSTM bias: (8*H,) = [input_bias(4*H), recurrent_bias(4*H)]
++    Keras LSTM bias: (4*H,) = input_bias + recurrent_bias
++    """
++    h = cudnn_bias.shape[0] // 8
++    bias = cudnn_bias[:4*h] + cudnn_bias[4*h:]
++    return [cudnn_kernel, cudnn_recurrent, bias]
++
++
++def _load_model_with_cudnn_compat(model_path):
++    """Load HDF5 model, replacing CuDNNLSTM with standard LSTM."""
++    custom_objects = {
++        'MultiGraphConv': MultiGraphConv,
++        'GraphConv': GraphConv,
++        'FuncPredictor': FuncPredictor,
++        'SumPooling': SumPooling,
++    }
++
++    has_cudnn = False
++    with h5py.File(model_path, 'r') as f:
++        mw = f['model_weights']
++        if 'model' in mw and 'LSTM1' in mw['model']:
++            bias_shape = mw['model']['LSTM1']['bias:0'].shape[0]
++            if bias_shape % 8 == 0:
++                has_cudnn = True
++
++    if not has_cudnn:
++        return tf.keras.models.load_model(model_path, custom_objects=custom_objects)
++
++    original_cudnn = tf.compat.v1.keras.layers.CuDNNLSTM
++    tf.compat.v1.keras.layers.CuDNNLSTM = _CuDNNLSTMWrapper
++    try:
++        import keras.layers.cudnn_recurrent as _cr
++        _orig_cr = _cr.CuDNNLSTM
++        _cr.CuDNNLSTM = _CuDNNLSTMWrapper
++    except Exception:
++        _cr = None
++
++    custom_objects['CuDNNLSTM'] = _CuDNNLSTMWrapper
++
++    with h5py.File(model_path, 'r') as f:
++        model_config = f.attrs.get('model_config')
++        if isinstance(model_config, bytes):
++            model_config = model_config.decode('utf-8')
++        config = json.loads(model_config)
++
++    model = tf.keras.models.model_from_config(config, custom_objects=custom_objects)
++
++    tf.compat.v1.keras.layers.CuDNNLSTM = original_cudnn
++    if _cr is not None:
++        _cr.CuDNNLSTM = _orig_cr
++
++    model.load_weights(model_path, by_name=True, skip_mismatch=True)
++
++    with h5py.File(model_path, 'r') as f:
++        lm_grp = f['model_weights']['model']
++        for lstm_name in ['LSTM1', 'LSTM2']:
++            if lstm_name not in lm_grp:
++                continue
++            grp = lm_grp[lstm_name]
++            kernel = grp['kernel:0'][()]
++            recurrent = grp['recurrent_kernel:0'][()]
++            bias = grp['bias:0'][()]
++            converted = _convert_cudnn_weights_to_lstm(kernel, recurrent, bias)
++
++            for layer in model.layers:
++                if not hasattr(layer, 'layers'):
++                    continue
++                for sub in layer.layers:
++                    if sub.name == lstm_name:
++                        sub.set_weights(converted)
++
++    return model
++
++
+ class GradCAM(object):
+     """
+     GradCAM for protein sequences.
+@@ -56,11 +155,7 @@ class Predictor(object):
+         self._load_model()
+ 
+     def _load_model(self):
+-        self.model = tf.keras.models.load_model(self.model_prefix + '.hdf5',
+-                                                custom_objects={'MultiGraphConv': MultiGraphConv,
+-                                                                'GraphConv': GraphConv,
+-                                                                'FuncPredictor': FuncPredictor,
+-                                                                'SumPooling': SumPooling})
++        self.model = _load_model_with_cudnn_compat(self.model_prefix + '.hdf5')
+         # load parameters
+         with open(self.model_prefix + "_model_params.json") as json_file:
+             metadata = json.load(json_file)

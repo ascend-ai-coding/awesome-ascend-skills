@@ -30,7 +30,20 @@ npu-smi supports TLS certificate management for secure device communication:
 npu-smi info -t tls-csr-get -i <id> -c <chip_id>
 ```
 
-**Output**: CSR in PEM format
+**Interactive behavior**: the command first prompts for `country|province|city|organization|department`, then generates the CSR.
+
+**Validated non-interactive example**:
+
+```bash
+printf 'CN|ZHEJIANG|HANGZHOU|Huawei|Lab\n' | \
+  npu-smi info -t tls-csr-get -i 0 -c 0
+```
+
+**Validated output**:
+
+```text
+Message                        : The tls csr file of the chip is obtained successfully.
+```
 
 **Usage**:
 1. Generate CSR using npu-smi
@@ -139,7 +152,7 @@ THRESHOLD=30
 
 echo "=== Certificate Expiration Check ==="
 
-npus=$(npu-smi info -l 2>/dev/null | grep -oP 'NPU\s*:\s*\K[0-9]+' || echo "")
+npus=$(npu-smi info -l 2>/dev/null | grep -oP 'NPU ID\s*:\s*\K[0-9]+' || echo "")
 
 if [ -z "$npus" ]; then
     echo "ERROR: No NPU devices found or npu-smi not available"
@@ -147,7 +160,7 @@ if [ -z "$npus" ]; then
 fi
 
 for npu in $npus; do
-    chips=$(npu-smi info -m 2>/dev/null | grep "NPU $npu" | grep -oP 'Chip\s*:\s*\K[0-9]+' || echo "")
+    chips=$(npu-smi info -m 2>/dev/null | awk -v npu="$npu" '$1 == npu && $4 ~ /^Ascend/ {print $2}')
     if [ -z "$chips" ]; then
         echo "INFO: NPU $npu - No chips found"
         continue
@@ -227,10 +240,11 @@ CHIP=0
 
 echo "=== Certificate Import Process ==="
 
-# Step 1: Generate CSR
+# Step 1: Generate CSR (interactive subject string)
 echo "1. Generating CSR..."
-npu-smi info -t tls-csr-get -i $NPU -c $CHIP > device.csr
-echo "CSR saved to device.csr"
+printf 'CN|ZHEJIANG|HANGZHOU|Huawei|Lab\n' | \
+  npu-smi info -t tls-csr-get -i $NPU -c $CHIP > device.csr
+echo "CSR request written to device.csr"
 echo ""
 
 # Step 2: Submit CSR to CA (manual step)
@@ -275,7 +289,8 @@ echo "=== Certificate Rotation ==="
 
 # Step 1: Generate new CSR
 echo "1. Generating new CSR..."
-npu-smi info -t tls-csr-get -i $NPU -c $CHIP > device_new.csr
+printf 'CN|ZHEJIANG|HANGZHOU|Huawei|Lab\n' | \
+  npu-smi info -t tls-csr-get -i $NPU -c $CHIP > device_new.csr
 
 # Step 2: Get new certificate from CA (manual step)
 echo "2. Submit device_new.csr to CA and get new certificates"
