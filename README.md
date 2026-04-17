@@ -110,6 +110,7 @@ cp -r awesome-ascend-skills/npu-smi your-project/.agents/skills/
 | [mindspeed-mm-weight-prep](mindspeed-mm/mindspeed-mm-weight-prep/SKILL.md) | 开发 | MindSpeed-MM 权重转换：mm-convert CLI 工具，HF↔MM/DCP 格式转换，PP 重切分 |
 | [mindspeed-mm-vlm](mindspeed-mm/mindspeed-mm-vlm/SKILL.md) | 开发 | MindSpeed-MM VLM 训练：Qwen2.5VL/InternVL/GLM4V 等理解模型，支持 Megatron/FSDP2/Custom 三种后端 |
 | [mindspeed-mm-generative](mindspeed-mm/mindspeed-mm-generative/SKILL.md) | 开发 | MindSpeed-MM 生成模型训练：Wan/HunyuanVideo/CogVideoX/FLUX 等视频/图像生成，含特征提取 |
+| [ascend-avi-vnpu](ascend-avi-vnpu/SKILL.md) | 运维 | vNPU算力切分：用于查询/设置AVI模式、管理vNPU实例（创建/销毁）、查询vNPU配置恢复状态等操作 |
 
 ## 外部 Skills (External Skills)
 
