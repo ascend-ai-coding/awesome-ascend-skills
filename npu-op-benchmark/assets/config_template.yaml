@@ -1,0 +1,5 @@
+# Example only: replace with the operator you actually want to benchmark.
+op: repeat_interleave
+device: npu:0
+iters: 100
+warmup: 20

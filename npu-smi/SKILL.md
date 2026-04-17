@@ -20,6 +20,8 @@ keywords:
 
 Quick reference for Huawei Ascend NPU device management commands.
 
+> **Validated on real host**: Ascend 910B3 server (`npu-smi` software version `25.5.1`) on 2026-03-27. Command availability and output fields can differ by platform / firmware.
+
 ## Quick Start
 
 ```bash
@@ -38,8 +40,7 @@ npu-smi info -t memory -i 0 -c 0          # Check memory
 npu-smi info -l                           # List devices
 npu-smi info -t health -i <id>            # Health status (OK/Warning/Error)
 npu-smi info -t board -i <id>             # Board details (firmware, software version)
-npu-smi info -t npu -i <id> -c <chip>     # Chip details (name, health, usage)
-npu-smi info -m                           # List all chips
+npu-smi info -m                           # List card/chip mapping and chip names
 ```
 
 ### Real-time Metrics
@@ -53,13 +54,16 @@ npu-smi info -t memory -i <id> -c <chip>  # Memory usage, total, rate
 ### Advanced Queries
 
 ```bash
-npu-smi info proc -i <id> -c <chip>       # Running processes (PID, memory, AI Core usage)
 npu-smi info -t ecc -i <id> -c <chip>     # ECC errors and mode
 npu-smi info -t usages -i <id> -c <chip>  # Utilization (AI Core, memory, bandwidth)
-npu-smi info -t pcie-info -i <id> -c <chip>  # PCIe speed and width
-npu-smi info -t p2p -i <id> -c <chip>     # P2P status and mode
+npu-smi info -t proc-mem -i <id> -c <chip>   # Per-process memory usage
+npu-smi info -t pcie-err -i <id> -c <chip>   # PCIe error counters
+npu-smi info -t topo -i <id> -c <chip>       # Inter-NPU topology / affinity
+npu-smi info -t p2p-enable -i <id> -c <chip> # P2P capability (if supported)
 npu-smi info -t product -i <id> -c <chip> # Product name and serial
 ```
+
+> **Note**: `npu-smi info -t npu` was **not** accepted on the validated host; use `npu-smi info -m` for chip mapping and `health/temp/power/usages/memory` for per-chip runtime data.
 
 > **See**: [references/device-queries.md](references/device-queries.md) for output formats, examples, monitoring scripts, and **platform identification** (A2 vs A3).
 
@@ -68,17 +72,18 @@ npu-smi info -t product -i <id> -c <chip> # Product name and serial
 ### Temperature and Power Thresholds
 
 ```bash
-npu-smi set -t temperature -i <id> -c <chip> -d <value>   # Temperature threshold (°C)
-npu-smi set -t power-limit -i <id> -c <chip> -d <value>   # Power limit (W)
+npu-smi set -h                                             # Show supported configurable types on this host
+npu-smi set -t pwm-mode -d <0|1>                           # Fan control mode
+npu-smi set -t pwm-duty-ratio -d <0-100>                   # Fan duty ratio
 ```
 
 ### Mode Configuration
 
 ```bash
-npu-smi set -t ecc-mode -i <id> -c <chip> -d <0|1>        # 0=Disable, 1=Enable
-npu-smi set -t compute-mode -i <id> -c <chip> -d <mode>   # 0=Default, 1=Exclusive, 2=Prohibited
-npu-smi set -t persistence-mode -i <id> -d <0|1>          # Persistence mode
-npu-smi set -t p2p-mem-cfg -i <id> -c <chip> -d <0|1>     # P2P configuration
+npu-smi set -t ecc-enable -i <id> -c <chip> -d <0|1>      # ECC enable switch
+npu-smi set -t p2p-mem-cfg -i <id> -c <chip> -d <0|1>     # P2P memory configuration
+npu-smi set -t vnpu-mode -d <0|1>                          # vNPU mode
+npu-smi set -t cpu-freq-up -i <id> -d <0|1>               # CPU frequency profile
 ```
 
 ### Fan Control
@@ -180,7 +185,7 @@ npu-smi clear -t tls-cert-period -i <id> -c <chip>        # Restore default (90 
 | Parameter | Description | How to Get |
 |-----------|-------------|------------|
 | `id` | Device ID (NPU ID) | `npu-smi info -l` |
-| `chip_id` | Chip ID | `npu-smi info -m` |
+| `chip_id` | Runtime chip ID | `npu-smi info -m` (usually `0` for Ascend chip, `1` for MCU on validated host) |
 | `vnpu_id` | vNPU ID | Auto-assigned or specified in range |
 | `mac_id` | MAC interface | 0=eth0, 1=eth1, 2=eth2, 3=eth3 |
 
@@ -203,6 +208,8 @@ npu-smi clear -t tls-cert-period -i <id> -c <chip>        # Restore default (90 
 - VRD upgrades require **power cycle** (30+ seconds off)
 - MAC/boot changes require **restart**
 - Command availability varies by hardware platform
+- `npu-smi info proc` was **not supported** on the validated 910B3 host; `npu-smi info -t proc-mem` worked
+- `npu-smi info -t product` may return `This device does not support querying product.` on some server SKUs
 
 ## Scripts
 
