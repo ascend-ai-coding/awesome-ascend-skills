@@ -87,6 +87,12 @@
       "category": "development"
     },
     {
+      "name": "npu-docker-launcher",
+      "description": "在昇腾 NPU 服务器上一键启动 Docker 容器。收集用户需求并执行 docker run 命令，自动配置 NPU 设备挂载、网络、卷挂载和环境变量。",
+      "source": "./npu-docker-launcher",
+      "category": "operations"
+    },
+    {
       "name": "ascend-dmi",
       "description": "昇腾 NPU 硬件管理、诊断与性能测试。查看 NPU 状态/温度/利用率、测试内存带宽（h2d/d2h/d2d/p2p）、算力/功耗基准测试（TFLOPS/TOPS）、硬件故障诊断、压力测试、复位异常 NPU 卡。",
       "source": "./ascend-dmi",

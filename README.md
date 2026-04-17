@@ -99,6 +99,7 @@ cp -r awesome-ascend-skills/npu-smi your-project/.agents/skills/
 | [ascend-opplugin](ascend-opplugin/SKILL.md) | 开发 | op-plugin 环境安装与 torch_npu 自定义算子接入：无 workspace / workspace+tiling 两种模式，从内核实现到 host 注册、构建与测试 |
 | [diffusers-ascend-weight-prep](diffusers-ascend/diffusers-ascend-weight-prep/SKILL.md) | 开发 | Diffusers 权重准备：HuggingFace/ModelScope 模型下载、基于 config.json 生成假权重用于验证 |
 | [diffusers-ascend-pipeline](diffusers-ascend/diffusers-ascend-pipeline/SKILL.md) | 开发 | Diffusers Pipeline 推理：环境预检、通用推理（图像/视频）、内存优化、LoRA 集成 |
+| [npu-docker-launcher](npu-docker-launcher/SKILL.md) | 运维 | NPU Docker 容器一键启动：自动配置设备挂载、网络、卷挂载和环境变量 |
 | [ascend-dmi](ascend-dmi/SKILL.md) | 运维 | 昇腾 NPU 硬件管理与诊断：状态/温度/利用率查询、内存带宽测试、算力/功耗基准、压力测试、卡复位 |
 | [training-mfu-calculator](training-mfu-calculator/SKILL.md) | 测试 | MFU 计算工具：Dense/MoE 模型 FLOPs 计算、Ascend NPU 硬件峰值参考、性能分析报告 |
 | [github-issue-summary](github-issue-summary/SKILL.md) | 开发 | GitHub Issue 分析：从已关闭 issue 生成故障排查案例、根因分析、经验总结 |
