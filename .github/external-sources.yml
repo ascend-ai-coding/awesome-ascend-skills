@@ -1,0 +1,24 @@
+# External Skills Sources Configuration
+# 外部 Skills 仓库配置文件
+#
+# 修改此文件会自动触发同步 workflow（PR 触发模式）
+# 同步结果会生成新的 PR，需要人工审核后合并
+#
+# 字段说明：
+#   name        - 必填：唯一标识符，用于 external/{name}/ 目录命名
+#   url         - 必填：外部仓库的 Git URL（支持 GitHub/GitCode 仓库）
+#   branch      - 可选：要同步的分支，默认 main
+#   enabled     - 可选：是否启用同步，默认 true
+#   skills_path - 可选：skills 所在的子目录路径，默认为根目录
+
+sources:
+  - name: mindstudio                    # MindStudio Profiler 诊断工具集
+    url: https://github.com/kali20gakki/mindstudio-skills
+    branch: main
+    enabled: true
+
+  - name: gitcode-ascend                # 华为昇腾官方 Skills 仓库
+    url: https://gitcode.com/Ascend/agent-skills
+    branch: master
+    skills_path: skills                 # skills 在 skills/ 子目录下
+    enabled: true

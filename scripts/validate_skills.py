@@ -82,6 +82,9 @@ def main():
 
     skill_files = list(repo_root.glob("**/SKILL.md"))
 
+    # Exclude .worktrees directory (git worktrees should not be validated)
+    skill_files = [f for f in skill_files if ".worktrees" not in f.parts]
+
     if not skill_files:
         print("❌ No SKILL.md files found!")
         sys.exit(1)

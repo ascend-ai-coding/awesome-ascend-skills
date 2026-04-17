@@ -1,0 +1,77 @@
+# GLM-4.x Best Practice Configuration
+# Last updated: 2026-02-27
+
+model:
+  name: "GLM-4"
+  category: dense
+  description: "GLM-4 series models for general-purpose text generation"
+  hf_path: "THUDM/glm-4-9b"
+  architectures: ["Glm4ForCausalLM", "ChatGLMModel"]
+
+deployment:
+  recommended_tp: 1
+  min_npu_count: 1
+  recommended_memory_gb: 32
+
+performance:
+  max_model_len: 32768
+  max_num_seqs: 256
+  max_num_batched_tokens: 4096
+  block_size: 128
+  gpu_memory_utilization: 0.9
+
+env_vars:
+  TASK_QUEUE_ENABLE: 1
+  VLLM_ASCEND_ENABLE_DENSE_OPTIMIZE: 1
+  VLLM_ASCEND_ENABLE_PREFETCH_MLP: 1
+  ASCEND_RT_VISIBLE_DEVICES: "0"
+
+vllm_args:
+  trust_remote_code: true
+  quantization: ascend
+  async_scheduling: true
+  no_enable_prefix_caching: true
+  distributed_executor_backend: mp
+
+additional_config:
+  enable_cpu_binding: true
+
+compilation_config:
+  cudagraph_mode: "FULL_DECODE_ONLY"
+
+# Feature support
+features:
+  chunked_prefill: true
+  automatic_prefix_cache: false
+  speculative_decoding: false
+  lora: true
+
+# Quantization support
+quantization:
+  ascend: true
+  gptq: false
+  awq: false
+
+# GLM-specific settings
+glm_config:
+  use_cache: true
+  rope_ratio: 1.0
+
+# Example launch command
+example_command: |
+  vllm serve /path/to/glm-4-9b \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --served-model-name glm-4-9b \
+    --trust-remote-code \
+    --max-num-seqs 256 \
+    --max-model-len 32768 \
+    --max-num-batched-tokens 4096 \
+    --tensor-parallel-size 1 \
+    --quantization ascend \
+    --gpu-memory-utilization 0.9 \
+    --block-size 128 \
+    --no-enable-prefix-caching \
+    --async-scheduling \
+    --additional-config '{"enable_cpu_binding":true}' \
+    --compilation-config '{"cudagraph_mode": "FULL_DECODE_ONLY"}'

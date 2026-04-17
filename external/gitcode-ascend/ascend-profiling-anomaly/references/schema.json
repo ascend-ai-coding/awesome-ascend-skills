@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Ascend Profiling Anomaly Discovery Schema",
+  "type": "object",
+  "required": [
+    "enabled",
+    "dominant_group_id",
+    "global_device_gap_analysis",
+    "step_group_anomalies",
+    "bubble_windows",
+    "wait_anchor_ops",
+    "soft_root_cause_summary",
+    "requires_host_followup",
+    "confidence"
+  ],
+  "properties": {
+    "enabled": {"type": "boolean"},
+    "dominant_group_id": {"type": ["string", "null"]},
+    "global_device_gap_analysis": {
+      "type": "object",
+      "required": [
+        "capture_span_ms",
+        "device_busy_union_ms",
+        "device_gap_ms",
+        "device_gap_ratio",
+        "largest_gap_ms",
+        "top_gap_windows"
+      ],
+      "properties": {
+        "capture_span_ms": {"type": "number"},
+        "device_busy_union_ms": {"type": "number"},
+        "device_gap_ms": {"type": "number"},
+        "device_gap_ratio": {"type": "number"},
+        "largest_gap_ms": {"type": "number"},
+        "top_gap_windows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["start_us", "end_us", "duration_ms"],
+            "properties": {
+              "start_us": {"type": "number"},
+              "end_us": {"type": "number"},
+              "duration_ms": {"type": "number"}
+            }
+          }
+        }
+      }
+    },
+    "step_group_anomalies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "group_id",
+          "group_size",
+          "service_ms_avg",
+          "device_busy_union_ms_avg",
+          "underfeed_ratio_avg",
+          "prelaunch_gap_ms_avg",
+          "tail_gap_ms_avg",
+          "internal_bubble_total_ms_avg",
+          "dominant_idle_pattern",
+          "dominant_anomaly_tags",
+          "requires_followup"
+        ],
+        "properties": {
+          "group_id": {"type": "string"},
+          "group_size": {"type": "integer"},
+          "service_ms_avg": {"type": "number"},
+          "device_busy_union_ms_avg": {"type": "number"},
+          "underfeed_ratio_avg": {"type": "number"},
+          "prelaunch_gap_ms_avg": {"type": "number"},
+          "tail_gap_ms_avg": {"type": "number"},
+          "internal_bubble_total_ms_avg": {"type": "number"},
+          "largest_internal_bubble_ms_p95": {"type": "number"},
+          "recurring_bubble_pattern": {"type": "boolean"},
+          "dominant_idle_pattern": {
+            "type": "string",
+            "enum": ["prelaunch", "internal_bubble", "tail", "inter_step", "mixed", "none"]
+          },
+          "dominant_anomaly_tags": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "requires_followup": {"type": "boolean"}
+        }
+      }
+    },
+    "bubble_windows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "bubble_id",
+          "scope",
+          "step_id",
+          "group_id",
+          "start_us",
+          "end_us",
+          "duration_ms",
+          "candidate_labels"
+        ],
+        "properties": {
+          "bubble_id": {"type": "string"},
+          "scope": {
+            "type": "string",
+            "enum": ["global", "step_internal", "prelaunch", "tail"]
+          },
+          "step_id": {"type": "string"},
+          "group_id": {"type": ["string", "null"]},
+          "start_us": {"type": "number"},
+          "end_us": {"type": "number"},
+          "duration_ms": {"type": "number"},
+          "host_visible_coverage_ratio": {"type": ["number", "null"]},
+          "sync_marker_overlap_ratio": {"type": ["number", "null"]},
+          "comm_marker_overlap_ratio": {"type": ["number", "null"]},
+          "candidate_labels": {"type": "array", "items": {"type": "string"}},
+          "evidence_ops": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "wait_anchor_ops": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "op_name",
+          "duration_us_avg",
+          "wait_us_avg",
+          "total_cost_us_avg",
+          "wait_ratio",
+          "is_false_hotspot_risk"
+        ],
+        "properties": {
+          "op_name": {"type": "string"},
+          "location": {"type": ["string", "null"]},
+          "duration_us_avg": {"type": "number"},
+          "wait_us_avg": {"type": "number"},
+          "total_cost_us_avg": {"type": "number"},
+          "wait_ratio": {"type": "number"},
+          "is_false_hotspot_risk": {"type": "boolean"},
+          "evidence": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "soft_root_cause_summary": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["label", "confidence", "scope"],
+        "properties": {
+          "label": {"type": "string"},
+          "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
+          "scope": {"type": "string", "enum": ["global", "group", "step"]},
+          "target_id": {"type": ["string", "null"]},
+          "evidence": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "requires_host_followup": {"type": "boolean"},
+    "confidence": {"type": "string", "enum": ["high", "medium", "low"]}
+  }
+}

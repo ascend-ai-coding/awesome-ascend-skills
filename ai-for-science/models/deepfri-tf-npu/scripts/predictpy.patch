@@ -1,0 +1,29 @@
+diff --git a/predict.py b/predict.py
+index 55b62d4..639dd64 100644
+--- a/predict.py
++++ b/predict.py
+@@ -1,10 +1,12 @@
+ import json
+ import argparse
++import os
+ from deepfrier.Predictor import Predictor
+ 
+ 
+ if __name__ == "__main__":
+     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
++    parser.add_argument('--npu', action='store_true', help="Run inference on Ascend NPU.")
+     parser.add_argument('-s', '--seq', type=str,  help="Protein sequence to be annotated.")
+     parser.add_argument('-cm', '--cmap', type=str,  help="Protein contact map to be annotated (in *npz file format).")
+     parser.add_argument('-pdb', '--pdb_fn', type=str,  help="Protein PDB file to be annotated.")
+@@ -20,6 +22,11 @@ if __name__ == "__main__":
+     parser.add_argument('--saliency', help="Compute saliency maps for every protein and every MF-GO term/EC number.", action="store_true")
+     args = parser.parse_args()
+ 
++    if args.npu:
++        import npu_device
++        npu_device.open().as_default()
++        print("### Running on Ascend NPU")
++
+     with open(args.model_config) as json_file:
+         params = json.load(json_file)
+ 
