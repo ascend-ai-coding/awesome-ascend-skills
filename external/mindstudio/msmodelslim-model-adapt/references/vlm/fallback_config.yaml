@@ -1,0 +1,22 @@
+apiversion: multimodal_vlm_modelslim_v1
+spec:
+  process:
+    - type: "linear_quant"
+      qconfig:
+        act:
+          scope: "per_token"
+          dtype: "int8"
+          symmetric: True
+          method: "minmax"
+        weight:
+          scope: "per_channel"
+          dtype: "int8"
+          symmetric: True
+          method: "minmax"
+      include: ["*"]
+      exclude: ["*"]  # 全部回退，不实际量化任何层
+  save:
+    - type: "ascendv1_saver"
+      part_file_size: 4
+  dataset: "calibImages"
+  default_text: "Describe this image in detail."
