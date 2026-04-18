@@ -1,0 +1,29 @@
+[
+  {
+    "path": "src/main.py",
+    "line": 42,
+    "severity": "严重",
+    "problem": "此处可能存在空指针异常。",
+    "reason": "变量 `data` 可能为 `None`，在没有判空的情况下直接访问其属性会导致 `AttributeError`，尤其在异步场景下更容易暴露出来。",
+    "fix": "```python\n# 修改前\nresult = data.value\n\n# 修改后\nif data is not None:\n    result = data.value\nelse:\n    result = default_value  # 或抛出有意义的异常\n```\n\n或者使用更 Pythonic 的方式：\n```python\nresult = data.value if data else default_value\n```",
+    "side": "RIGHT"
+  },
+  {
+    "path": "src/utils.py",
+    "line": 15,
+    "severity": "建议",
+    "problem": "算法时间复杂度过高。",
+    "reason": "当前使用双重循环实现查找，时间复杂度为 `O(n²)`。当数据量较大时，性能会明显下降，容易导致响应超时。",
+    "fix": "```python\n# 修改前 - O(n²)\nfor item in list_a:\n    for target in list_b:\n        if item.id == target.id:\n            result.append(item)\n\n# 修改后 - O(n)\ntarget_dict = {t.id: t for t in list_b}\nfor item in list_a:\n    if item.id in target_dict:\n        result.append(item)\n```",
+    "side": "RIGHT"
+  },
+  {
+    "path": "src/config.py",
+    "line": 8,
+    "severity": "提示",
+    "problem": "变量命名不够描述性。",
+    "reason": "单字母变量 `x` 无法表达真实含义，会增加阅读和维护成本，后续开发者需要额外追溯上下文。",
+    "fix": "```python\n# 修改前\nx = 100\n\n# 修改后\nMAX_RETRY_COUNT = 100\n```",
+    "side": "RIGHT"
+  }
+]

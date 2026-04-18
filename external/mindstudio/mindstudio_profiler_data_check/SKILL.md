@@ -7,11 +7,10 @@ keywords:
 - 数据检查
 original-name: mindstudio_profiler_data_check
 synced-from: https://github.com/kali20gakki/mindstudio-skills
-synced-date: '2026-03-26'
-synced-commit: 266c7821de7b51b683d4605960d0d86f7d631e03
+synced-date: '2026-04-18'
+synced-commit: f6695da3cfa864a100db5a94f594b638aeff6389
 license: UNKNOWN
 ---
-
 
 # MindStudio Profiler 数据校验
 

@@ -1,6 +1,6 @@
 ---
 name: external-gitcode-ascend-ascend-profiling-anomaly
-description: 'Analyze Huawei Ascend NPU profiling data to discover hidden performance
+description: Analyze Huawei Ascend NPU profiling data to discover hidden performance
   anomalies and produce a detailed model architecture report reverse-engineered from
   profiling. Trigger on Ascend profiling traces, NPU bottlenecks, device idle gaps,
   host-device issues, kernel_details.csv / trace_view.json / op_summary / communication.json.
@@ -10,15 +10,12 @@ description: 'Analyze Huawei Ascend NPU profiling data to discover hidden perfor
   discovery (bubble detection, wait-anchor, AICPU exposure) alongside model architecture
   analysis (layer classification, per-layer sub-structure, communication pipeline).
   Outputs a separate Markdown architecture report alongside anomaly analysis.
-
-  '
 original-name: ascend-profiling-anomaly
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-03-26'
-synced-commit: 0a97c6e3999cf97425ca5ab07678e48089d79ff5
+synced-date: '2026-04-18'
+synced-commit: 9f4c6c19a042f03239a07ac2f3196fb590d0a114
 license: UNKNOWN
 ---
-
 
 # Ascend Profiling Anomaly Discovery Skill
 
