@@ -307,6 +307,16 @@
       "description": "昇腾虚拟化实例（AVI）和vNPU管理技能。用于查询/设置AVI模式、管理vNPU实例（创建/销毁）、查询vNPU配置恢复状态等操作。支持安全确认机制，在执行修改操作前检查设备状态。",
       "source": "./ascend-avi-vnpu",
       "category": "operations"
+    },
+    {
+      "name": "hiascend-forum",
+      "description": "基于华为昇腾社区论坛上开发者反馈的内容，识别特定领域的易用性问题，用于做产品改进分析。",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./hiascend-forum/hiascend-forum-fetcher",
+        "./hiascend-forum/hiascend-forum-analyzer"
+      ]
     }
   ]
 }
