@@ -1,5 +1,5 @@
 ---
-name: ankh-ascend-npu-skill
+name: ai-for-science-ankh
 description: Ankh 蛋白质语言模型昇腾 NPU 迁移 Skill，适用于 Ankh base/large、Ankh3 large/XL 以及同类基于 HuggingFace Transformers 与 PyTorch 的蛋白模型从 CUDA/GPU 到华为 Ascend NPU 的环境检查、代码适配、权重加载、验证脚本补齐与文档沉淀。
 keywords:
     - ankh

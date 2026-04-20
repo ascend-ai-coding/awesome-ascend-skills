@@ -28,7 +28,7 @@
     },
     {
       "name": "atc-model-converter",
-      "description": "Complete toolkit for Huawei Ascend NPU model conversion and inference. Convert ONNX models to .om format using ATC tool, run Python inference on OM models using ais_bench, compare precision between CPU ONNX and NPU OM outputs, and end-to-end YOLO inference with Ultralytics.",
+      "description": "Complete toolkit for Huawei Ascend NPU model conversion and inference. Export PyTorch to ONNX, convert ONNX to .om via ATC, run OM inference with ais_bench, and compare ONNX vs OM precision. Supports any standard PyTorch/ONNX model.",
       "source": "./atc-model-converter",
       "category": "development"
     },
@@ -37,6 +37,12 @@
       "description": "Create Docker containers for Huawei Ascend NPU development with proper device mappings (davinci_manager, devmm_svm, hisi_hdc) and volume mounts (driver, sbin, home). Use when setting up Ascend development environments in Docker, running CANN applications in containers, or creating isolated NPU development workspaces.",
       "source": "./ascend-docker",
       "category": "operations"
+    },
+    {
+      "name": "verl-quickstart",
+      "description": "VERL reinforcement learning quickstart for Ascend/NPU. Covers docker image selection with default 910B/A3 tags, dataset preprocessing, ModelScope model path conventions, main_ppo training skeleton, examples run_*.sh selection, and mandatory smoke-run log reporting after script changes.",
+      "source": "./verl-quickstart",
+      "category": "development"
     },
     {
       "name": "msmodelslim",
@@ -82,9 +88,39 @@
     },
     {
       "name": "ascend-opplugin",
-      "description": "Installs op-plugin (torch_npu operator plugin) environment and guides custom NPU operator integration with PyTorch via two generic patterns (no workspace vs workspace+tiling), from kernel implementation through host registration, build, and test.",
+      "description": "指导 Ascend C（CANN/xpu_kernel）算子开发完成后接入 PyTorch：与 torch_npu 对接、Host 侧注册与构建、Python 暴露与冒烟测试。涵盖工程内轻量化接入、必要时参考 op-plugin、Pybind 快速联调、复用图算子封装、容器场景与排障。适用于 Ascend C、算子接入、torch_npu、xpu_kernel、自定义算子等场景。",
       "source": "./ascend-opplugin",
       "category": "development"
+    },
+    {
+      "name": "remote-server-guide",
+      "description": "远程服务器 SSH 连接、容器管理与命令远程执行指南。覆盖多种认证方式（SSH key、sshpass、Paramiko、Fabric、tmux 交互）、Docker 容器连接、文件传输与故障排查。",
+      "source": "./remote-server-guide",
+      "category": "operations"
+    },
+    {
+      "name": "vllm-ascend-server",
+      "description": "在昇腾 NPU 上部署 vLLM 推理服务。支持本地/远程部署、裸金属/容器/Docker 镜像，自动模型发现、量化检测、张量并行配置、graph/eager 模式选择和服务健康检查。",
+      "source": "./vllm-ascend-server",
+      "category": "development"
+    },
+    {
+      "name": "vllm-bench-serve",
+      "description": "vLLM 推理服务在线性能压测与自动寻优。支持单次/批量/自动寻优模式，结果聚合对比，在 TTFT/TPOT/P99/成功率等 SLO 约束下搜索最优并发/吞吐。",
+      "source": "./vllm-bench-serve",
+      "category": "testing"
+    },
+    {
+      "name": "npu-docker-launcher",
+      "description": "在昇腾 NPU 服务器上一键启动 Docker 容器。收集用户需求并执行 docker run 命令，自动配置 NPU 设备挂载、网络、卷挂载和环境变量。",
+      "source": "./npu-docker-launcher",
+      "category": "operations"
+    },
+    {
+      "name": "ascend-dmi",
+      "description": "昇腾 NPU 硬件管理、诊断与性能测试。查看 NPU 状态/温度/利用率、测试内存带宽（h2d/d2h/d2d/p2p）、算力/功耗基准测试（TFLOPS/TOPS）、硬件故障诊断、压力测试、复位异常 NPU 卡。",
+      "source": "./ascend-dmi",
+      "category": "operations"
     },
     {
       "name": "triton-ascend-migration",
@@ -140,10 +176,10 @@
       "source": "./",
       "strict": false,
       "skills": [
-        "./profiling-analysis/profiling-main",
-        "./profiling-analysis/profiling-hostbound",
-        "./profiling-analysis/profiling-computing",
-        "./profiling-analysis/profiling-communication"
+        "./profiling-analysis",
+        "./profiling-analysis/profiling-analysis-hostbound",
+        "./profiling-analysis/profiling-analysis-computing",
+        "./profiling-analysis/profiling-analysis-communication"
       ]
     },
     {
@@ -176,7 +212,7 @@
     },
     {
       "name": "external-gitcode-ascend-skills",
-      "description": "从 gitcode-ascend 同步的 Ascend 技能集，包含 7 个技能：\n- ascend-inference-repos-copilot: 昇腾（Ascend）推理生态开源代码仓库智能问答专家旨在为 vLLM、vLLM-Ascend、MindIE-LLM、MindIE-SD、MindIE-Motor、MindIE-Turbo 以及 msM\n- ascend-profiling-anomaly: Analyze Huawei Ascend NPU profiling data to discover hidden performance anomalies and produce a deta\n- npu-adapter-reviewer: GPU代码到昇腾NPU适配审查专家。当用户需要将GPU上的代码（特别是深度学习、模型推理相关）迁移到华为昇腾NPU时，必须使用此skill进行全面审查。此skill能识别GPU到NPU迁移的堵点、编写\n- ... 等 4 个技能",
+      "description": "从 gitcode-ascend 同步的 Ascend 技能集，包含 42 个技能：\n- ascend-inference-repos-copilot: 昇腾（Ascend）推理生态开源代码仓库智能问答专家旨在为 vLLM、vLLM-Ascend、MindIE-LLM、MindIE-SD、MindIE-Motor、MindIE-Turbo 以及 msM\n- ascend-npu-driver-install: 能完成昇腾NPU驱动和固件安装部署，实现安装包正则匹配提取、按需添加可执行权限、Python+Shell双重包校验、系统依赖先验后装、适配CentOS/RHEL/Ubuntu/Debian系统，适用于\n- ascend-profiling-anomaly: Analyze Huawei Ascend NPU profiling data to discover hidden performance anomalies and produce a deta\n- ... 等 39 个技能",
       "source": "./",
       "strict": false,
       "external": true,
@@ -184,17 +220,52 @@
       "source-branch": "master",
       "skills": [
         "./external/gitcode-ascend/ascend-inference-repos-copilot",
+        "./external/gitcode-ascend/ascend-npu-driver-install",
         "./external/gitcode-ascend/ascend-profiling-anomaly",
+        "./external/gitcode-ascend/ascendc-operator-code-gen",
+        "./external/gitcode-ascend/ascendc-operator-code-review",
+        "./external/gitcode-ascend/ascendc-operator-compile-debug",
+        "./external/gitcode-ascend/ascendc-operator-design",
+        "./external/gitcode-ascend/ascendc-operator-dev",
+        "./external/gitcode-ascend/ascendc-operator-doc-gen",
+        "./external/gitcode-ascend/ascendc-operator-performance-eval",
+        "./external/gitcode-ascend/ascendc-operator-performance-optim",
+        "./external/gitcode-ascend/ascendc-operator-precision-debug",
+        "./external/gitcode-ascend/ascendc-operator-precision-eval",
+        "./external/gitcode-ascend/ascendc-operator-project-init",
+        "./external/gitcode-ascend/ascendc-operator-testcase-gen",
+        "./external/gitcode-ascend/auto-bug-fixer",
+        "./external/gitcode-ascend/auto-develop-test-gen",
+        "./external/gitcode-ascend/cann-operator-env-config",
+        "./external/gitcode-ascend/catlass-operator-code-gen",
+        "./external/gitcode-ascend/catlass-operator-design",
+        "./external/gitcode-ascend/catlass-operator-dev",
+        "./external/gitcode-ascend/catlass-operator-performance-optim",
+        "./external/gitcode-ascend/megatron-change-analyzer",
+        "./external/gitcode-ascend/megatron-commit-tracker",
+        "./external/gitcode-ascend/megatron-impact-mapper",
+        "./external/gitcode-ascend/megatron-migration-generator",
+        "./external/gitcode-ascend/msverl-daily-regression-triage",
         "./external/gitcode-ascend/npu-adapter-reviewer",
+        "./external/gitcode-ascend/python-refactoring",
         "./external/gitcode-ascend/simple-vector-triton-gpu-to-npu",
         "./external/gitcode-ascend/skill-auditor",
+        "./external/gitcode-ascend/triton-operator-code-gen",
+        "./external/gitcode-ascend/triton-operator-code-review",
+        "./external/gitcode-ascend/triton-operator-design",
+        "./external/gitcode-ascend/triton-operator-dev",
+        "./external/gitcode-ascend/triton-operator-doc-gen",
+        "./external/gitcode-ascend/triton-operator-env-config",
+        "./external/gitcode-ascend/triton-operator-performance-eval",
+        "./external/gitcode-ascend/triton-operator-performance-optim",
+        "./external/gitcode-ascend/triton-operator-precision-eval",
         "./external/gitcode-ascend/vLLM-ascend_FAQ_Generator",
         "./external/gitcode-ascend/vector-triton-ascend-ops-optimizer"
       ]
     },
     {
       "name": "external-mindstudio-skills",
-      "description": "从 mindstudio 同步的 Ascend 技能集，包含 6 个技能：\n- ascend-profiler-db-explorer: 面向 Ascend PyTorch Profiler / msprof DB（如 ascend_pytorch_profiler*.db、msprof_*.db）的 SQL 分析技能。将自然语言问题（\n- cluster-fast-slow-rank-detector: 专门用于 Ascend 集群 Profiling 性能数据的“快慢卡”诊断专家技能。当用户提供【集群性能数据目录/路径】并要求分析【快慢卡】、【慢节点】、【负载不均衡】或【集群瓶颈】时，必须触发此技能\n- document-ux-review: 当用户希望你像第一次接触项目的人一样，真实按仓库的 README、安装文档或 quick start 跑一遍，并判断“新人能不能走通”“文档是否可用”“哪里会卡住”“安装/启动说明是否对新手友好”时，\n- ... 等 3 个技能",
+      "description": "从 mindstudio 同步的 Ascend 技能集，包含 9 个技能：\n- ascend-profiler-db-explorer: 面向 Ascend PyTorch Profiler / msprof DB（如 ascend_pytorch_profiler*.db、msprof_*.db）的 SQL 分析技能。将自然语言问题（\n- cluster-fast-slow-rank-detector: 专门用于 Ascend 集群 Profiling 性能数据的“快慢卡”诊断专家技能。当用户提供【集群性能数据目录/路径】并要求分析【快慢卡】、【慢节点】、【负载不均衡】或【集群瓶颈】时，必须触发此技能\n- document-ux-review: 当用户希望你像第一次接触项目的人一样，真实按仓库的 README、安装文档或 quick start 跑一遍，并判断“新人能不能走通”“文档是否可用”“哪里会卡住”“安装/启动说明是否对新手友好”时，\n- ... 等 6 个技能",
       "source": "./",
       "strict": false,
       "external": true,
@@ -204,16 +275,38 @@
         "./external/mindstudio/ascend-profiler-db-explorer",
         "./external/mindstudio/cluster-fast-slow-rank-detector",
         "./external/mindstudio/document-ux-review",
+        "./external/mindstudio/gitcode-code-reviewer",
         "./external/mindstudio/github-raw-fetch",
         "./external/mindstudio/mindstudio_profiler_data_check",
+        "./external/mindstudio/msmodelslim-model-adapt",
+        "./external/mindstudio/msmodelslim-model-analysis",
         "./external/mindstudio/op-mfu-calculator"
       ]
     },
     {
-        "name": "mindspeed-llm-train-profiler",
-        "description": "指导并自动化完成昇腾 NPU 上 MindSpeed-LLM 训练的 Profiling 数据采集。支持配置并运行带 Profiling 的模型训练，包括 CPU 采集、内存采集、不同采集级别（level0/level1/level2）和自定义 step 范围。生成的 Profiling 数据可用 MindStudio Insight 进行性能分析。当用户需要在模型训练中采集 Profiling 数据、进行训练性能分析、或执行 性能数据采集/Profiling采集 时触发。触发关键词：profiling、性能分析、性能数据采集、Profiling采集、训练框架profiling、MindSpeed-LLM profiling。",
-        "source": "./mindspeed-llm-train-profiler",
-        "category": "development"
+      "name": "mindspeed-llm-train-profiler",
+      "description": "指导并自动化完成昇腾 NPU 上 MindSpeed-LLM 训练的 Profiling 数据采集。支持配置并运行带 Profiling 的模型训练，包括 CPU 采集、内存采集、不同采集级别（level0/level1/level2）和自定义 step 范围。生成的 Profiling 数据可用 MindStudio Insight 进行性能分析。当用户需要在模型训练中采集 Profiling 数据、进行训练性能分析、或执行 性能数据采集/Profiling采集 时触发。触发关键词：profiling、性能分析、性能数据采集、Profiling采集、训练框架profiling、MindSpeed-LLM profiling。",
+      "source": "./mindspeed-llm-train-profiler",
+      "category": "development"
+    },
+    {
+      "name": "mindspeed-mm-skills",
+      "description": "MindSpeed-MM 多模态大模型训练技能集，用于华为昇腾 NPU。覆盖环境搭建、权重转换（mm-convert）、多模态理解模型（VLM：Qwen2.5VL/InternVL/GLM4V）训练、多模态生成模型（Wan/HunyuanVideo/CogVideoX/FLUX）训练、端到端流水线。Use when deploying MindSpeed-MM multimodal training on Ascend NPU.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./mindspeed-mm/mindspeed-mm-pipeline",
+        "./mindspeed-mm/mindspeed-mm-env-setup",
+        "./mindspeed-mm/mindspeed-mm-weight-prep",
+        "./mindspeed-mm/mindspeed-mm-vlm",
+        "./mindspeed-mm/mindspeed-mm-generative"
+      ]
+    },
+    {
+      "name": "ascend-avi-vnpu",
+      "description": "昇腾虚拟化实例（AVI）和vNPU管理技能。用于查询/设置AVI模式、管理vNPU实例（创建/销毁）、查询vNPU配置恢复状态等操作。支持安全确认机制，在执行修改操作前检查设备状态。",
+      "source": "./ascend-avi-vnpu",
+      "category": "operations"
     },
     {
       "name": "hiascend-forum",

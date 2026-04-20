@@ -5,11 +5,10 @@ description: 为 vLLM-ascend 项目构建自动化工作流，处理已关闭的
 name: external-gitcode-ascend-vLLM-ascend_FAQ_Generator
 original-name: vLLM-ascend_FAQ_Generator
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-03-26'
-synced-commit: 0a97c6e3999cf97425ca5ab07678e48089d79ff5
+synced-date: '2026-04-18'
+synced-commit: 9f4c6c19a042f03239a07ac2f3196fb590d0a114
 license: UNKNOWN
 ---
-
 
 # Issue Solver Skill
 

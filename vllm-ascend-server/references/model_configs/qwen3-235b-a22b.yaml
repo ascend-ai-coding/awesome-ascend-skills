@@ -1,0 +1,86 @@
+# Qwen3-235B-A22B Best Practice Configuration (MoE)
+# Last updated: 2026-02-27
+
+model:
+  name: "Qwen3-235B-A22B"
+  category: moe
+  description: "Qwen3 235B MoE model with 22B active parameters"
+  hf_path: "Qwen/Qwen3-235B-A22B"
+  architectures: ["Qwen3MoeForCausalLM"]
+
+deployment:
+  recommended_tp: 4
+  min_npu_count: 4
+  recommended_memory_gb: 256
+
+performance:
+  max_model_len: 32768
+  max_num_seqs: 128
+  max_num_batched_tokens: 4096
+  block_size: 128
+  gpu_memory_utilization: 0.85
+
+env_vars:
+  VLLM_USE_V1: 1
+  OMP_PROC_BIND: false
+  OMP_NUM_THREADS: 10
+  CPU_AFFINITY_CONF: 2
+  TASK_QUEUE_ENABLE: 1
+  ASCEND_RT_VISIBLE_DEVICES: "0,1,2,3"
+  PYTORCH_NPU_ALLOC_CONF: "expandable_segments:True"
+  HCCL_BUFFSIZE: 2048
+  HCCL_CONNECT_TIMEOUT: 1200
+  HCCL_EXEC_TIMEOUT: 1200
+  VLLM_ASCEND_ENABLE_MOE_OPTIMIZE: 1
+
+vllm_args:
+  trust_remote_code: true
+  quantization: ascend
+  async_scheduling: true
+  no_enable_prefix_caching: true
+  distributed_executor_backend: mp
+
+additional_config:
+  enable_cpu_binding: true
+
+compilation_config:
+  cudagraph_mode: "FULL_DECODE_ONLY"
+
+# Feature support
+features:
+  chunked_prefill: true
+  automatic_prefix_cache: false
+  speculative_decoding: false
+  lora: false
+  expert_parallel: true
+
+# Quantization support
+quantization:
+  ascend: true
+  gptq: false
+  awq: false
+
+# MoE-specific settings
+moe_config:
+  num_experts: 64
+  num_experts_per_tok: 8
+  expert_parallel_size: 4
+
+# Example launch command
+example_command: |
+  vllm serve /path/to/Qwen3-235B-A22B \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --served-model-name Qwen3-235B-A22B \
+    --trust-remote-code \
+    --max-num-seqs 128 \
+    --max-model-len 32768 \
+    --max-num-batched-tokens 4096 \
+    --tensor-parallel-size 4 \
+    --distributed-executor-backend mp \
+    --quantization ascend \
+    --gpu-memory-utilization 0.85 \
+    --no-enable-prefix-caching \
+    --async-scheduling \
+    --additional-config '{"enable_cpu_binding":true}' \
+    --compilation-config '{"cudagraph_mode": "FULL_DECODE_ONLY"}'

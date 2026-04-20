@@ -58,8 +58,8 @@ check_npu_device() {
         if [ -n "$npu_info" ]; then
             echo "$npu_info"
             
-            # Extract SoC name
-            local soc_name=$(npu-smi info 2>/dev/null | grep "Name" | awk '{print $NF}')
+            # Extract SoC name (e.g. "910B3" from lines like "| 0     910B3  | OK |...")
+            local soc_name=$(npu-smi info 2>/dev/null | grep -E "^\|\s+[0-9]+\s+[0-9A-Z]" | awk '{print $3}' | head -1)
             if [ -n "$soc_name" ]; then
                 echo -e "\n${YELLOW}⚠️  IMPORTANT: SoC Version Matching${NC}"
                 echo "   Your device SoC: Ascend$soc_name"

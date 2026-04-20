@@ -39,11 +39,11 @@ jobs:
       - name: Install dependencies
         run: pip install pyyaml
       
+      - name: Validate external sync config
+        run: python3 scripts/validate_config.py .github/external-sources.yml
+
       - name: Run sync script
         run: python3 scripts/sync_external_skills.py
-      
-      - name: Validate skills
-        run: python3 scripts/validate_skills.py
       
       - name: Check for changes
         id: check_changes

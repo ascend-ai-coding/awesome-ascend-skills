@@ -1,5 +1,41 @@
 # 故障排查指南
 
+## CUDA到NPU API转换规则
+
+在迁移过程中，需要将以下GPU API替换为对应的NPU API：
+
+| GPU API | NPU API | 说明 |
+|---------|---------|------|
+| `torch.cuda.is_available()` | `torch.npu.is_available()` | 检查设备是否可用 |
+| `torch.cuda.empty_cache()` | `torch.npu.empty_cache()` | 清空缓存 |
+| `torch.cuda.synchronize()` | `torch.npu.synchronize()` | 同步设备 |
+| `torch.cuda.mem_get_info()` | `torch.npu.mem_get_info()` | 获取内存信息 |
+| `device="cuda"` | `device="npu"` | 设备指定 |
+| `@torch.compile` | **删除该装饰器** | NPU暂不支持torch.compile训练 |
+
+**示例**：
+```python
+# ❌ GPU代码
+if torch.cuda.is_available():
+    x = torch.randn(100, device='cuda')
+    torch.cuda.empty_cache()
+    torch.cuda.synchronize()
+
+@torch.compile
+def my_function(x):
+    return x * 2
+
+# ✅ NPU代码
+if torch.npu.is_available():
+    x = torch.randn(100, device='npu')
+    torch.npu.empty_cache()
+    torch.npu.synchronize()
+
+# 删除@torch.compile装饰器
+def my_function(x):
+    return x * 2
+```
+
 ## 常见错误及解决方案
 
 ### 1. coreDim超限问题
@@ -132,15 +168,48 @@ compilation failed
 # from flag_gems import runtime  # 删除，自行实现
 ```
 
+### 4.1. NPU设备属性访问错误
+
+**错误信息**:
+```
+TypeError: unsupported operand type(s) for *: 'NoneType' and 'int'
+```
+
+**原因**: NPU设备属性与GPU不同，直接访问 `multi_processor_count` 返回None
+
+**解决方案**:
+```python
+# ❌ 错误：直接访问GPU属性
+sm_count = torch.cuda.get_device_properties(x.device).multi_processor_count
+
+# ✅ 正确：使用NPU属性
+props = torch_npu.npu.get_device_properties(x.device)
+sm_count = props.vector_core_num  # Ascend910为48
+```
+
+**NPU设备属性对照表**:
+| GPU属性 | NPU属性 | 说明 |
+|---------|---------|------|
+| multi_processor_count | vector_core_num | 向量核心数（Ascend910为48） |
+| total_memory | total_memory | 总内存（相同） |
+| name | name | 设备名称（如'Ascend910_9392'） |
+| - | cube_core_num | Cube核心数（Ascend910为24） |
+| - | L2_cache_size | L2缓存大小（如'192MB'） |
+
 ### 5. 性能问题
 
 **现象**: 运行速度慢
 
 **优化方案**:
 
-#### 优化1: 添加care_padding=False
+#### 优化1: 添加care_padding=False（⚠️ 谨慎使用）
 ```python
+# ⚠️ 警告：care_padding=False可能导致精度问题，建议先确保功能正确
+# ❌ 错误做法：直接添加可能导致输出全为0
 x = tl.load(x_ptr + offsets, mask=mask, care_padding=False)
+
+# ✅ 正确做法：先不添加，确保功能正确后再考虑性能优化
+x = tl.load(x_ptr + offsets, mask=mask, other=0.)
 ```
 
 #### 优化2: 使用Tiling策略

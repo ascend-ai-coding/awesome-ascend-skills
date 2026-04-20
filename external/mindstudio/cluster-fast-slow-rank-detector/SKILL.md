@@ -4,11 +4,10 @@ description: 专门用于 Ascend 集群 Profiling 性能数据的“快慢卡”
   Host 下发瓶颈、算子计算劣化）。
 original-name: cluster-fast-slow-rank-detector
 synced-from: https://github.com/kali20gakki/mindstudio-skills
-synced-date: '2026-03-26'
-synced-commit: 266c7821de7b51b683d4605960d0d86f7d631e03
+synced-date: '2026-04-18'
+synced-commit: f6695da3cfa864a100db5a94f594b638aeff6389
 license: UNKNOWN
 ---
-
 
 # 集群快慢卡诊断
 

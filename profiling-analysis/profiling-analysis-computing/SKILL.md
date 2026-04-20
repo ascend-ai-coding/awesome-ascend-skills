@@ -1,0 +1,215 @@
+---
+name: profiling-analysis-computing
+description: 用于分析Ascend NPU系统中计算性能瓶颈的技能，专注于算子效率和计算优化
+keywords:
+    - profiling
+    - 计算瓶颈
+    - 算子分析
+    - Ascend NPU
+---
+
+# Profiling 计算瓶颈分析 Skill
+
+## 功能概述
+
+该Skill用于分析Ascend NPU系统中的计算瓶颈问题，当主分析Skill检测到计算耗时占比超过85%时自动触发。包含完整的分析流程：
+
+### 核心分析步骤
+1. **高耗时算子筛选**：从op_statistic_*.csv、op_summary_*.csv或kernel_details.csv文件中筛选Top-N高耗时算子
+2. **数据透视表分析**：基于高耗时算子列表，生成性能数据透视表，分析各类型指令占比和瓶颈
+3. **算子形状解析**：提取MatMul等常用算子的输入形状，提供更直观的性能分析视角
+
+### 脚本组成
+- **op_high_time_selector.py**：高耗时算子筛选脚本
+- **op_pivot_table_analyzer.py**：数据透视表分析脚本
+- **extract_op_shapes.py**：算子形状解析脚本
+- **op_perf_analysis_combine.py**：整合脚本，自动执行完整分析流程（主技能调用时使用）
+
+
+## 输入参数
+
+### 高耗时算子筛选脚本 (op_high_time_selector.py)
+
+| 参数名称   | 类型   | 是否必填 | 描述                                                         |
+| ---------- | ------ | -------- | ------------------------------------------------------------ |
+| input_path | string | 是       | Profiling文件路径，包含PROF_*目录的根路径，例如：./profiling/p-perf-huawei-05_110439_20250728062428118_ascend_pt。当skill由主分析Skill触发时，优先分析主Skill提供的profiling文件，以确保性能分析使用同源数据 |
+| output_path | string | 否       | 输出结果目录，用于保存生成的算子列表。若不指定，将在输入路径下自动创建output文件夹 |
+| top_n      | int    | 否       | 选取的高耗时算子数量，默认3个                                 |
+
+### 数据透视表分析脚本 (op_pivot_table_analyzer.py)
+
+| 参数名称   | 类型   | 是否必填 | 描述                                                         |
+| ---------- | ------ | -------- | ------------------------------------------------------------ |
+| input_path | string | 是       | Profiling文件路径，包含PROF_*目录的根路径。当skill由主分析Skill触发时，优先分析主Skill提供的profiling文件，以确保性能分析使用同源数据 |
+| output_path | string | 否       | 输出结果目录，用于保存分析报告。若不指定，将在输入路径下自动创建output文件夹 |
+| top_n      | int    | 否       | 选取的高耗时算子数量，默认3个                                 |
+
+### 算子形状解析脚本 (extract_op_shapes.py)
+
+| 参数名称   | 类型   | 是否必填 | 描述                                                         |
+| ---------- | ------ | -------- | ------------------------------------------------------------ |
+| --input    | string | 是       | Profiling文件路径或目录路径，支持递归查找kernel_details或op_analysis_details文件 |
+| --output   | string | 否       | 形状解析结果输出路径，支持.json、.csv、.xlsx等格式             |
+| --op       | string | 否       | 要解析的算子类型，默认matmul                                 |
+| --html-file | string | 否       | 可选的HTML文件路径，用于将解析后的形状替换到HTML报告中        |
+| --pattern  | string | 否       | 可选的额外文件名匹配模式，可重复指定                         |
+
+## 使用方式
+
+### 1. 由主分析Skill自动调用
+
+该Skill通常由主分析Skill `/profiling-analysis` 自动触发。当主Skill检测到计算耗时占比超过85%时，会自动调用该Skill的整合脚本 `op_perf_analysis_combine.py`，执行完整的分析流程：
+
+1. **高耗时算子筛选**：自动筛选Top-5高耗时算子
+2. **数据透视表分析**：生成性能数据透视表，分析各类型指令占比
+3. **算子形状解析**：自动解析MatMul等算子的形状信息
+
+无需手动执行后续步骤，系统会自动完成从筛选到分析的全流程。
+
+### 2. 单独使用（分步骤）
+
+**第一步：筛选高耗时算子**
+
+```bash
+# 基本用法
+python scripts/op_high_time_selector.py --input-path "./p-perf-huawei-05_110439_20250728062428118_ascend_pt" --output-path "./output"
+
+# 指定分析前5个高耗时算子
+python scripts/op_high_time_selector.py --input-path "./p-perf-huawei-05_110439_20250728062428118_ascend_pt" --output-path "./output" --top-n 5
+```
+
+**第二步：数据透视表分析与瓶颈定位**
+
+```bash
+# 基本用法
+python scripts/op_pivot_table_analyzer.py --input-path "./p-perf-huawei-05_110439_20250728062428118_ascend_pt" --output-path "./output"
+
+# 指定分析前5个高耗时算子
+python scripts/op_pivot_table_analyzer.py --input-path "./p-perf-huawei-05_110439_20250728062428118_ascend_pt" --output-path "./output" --top-n 5
+```
+
+### 3. 单独使用（整合版本）
+
+```bash
+# 基本用法
+python scripts/op_perf_analysis_combine.py --input-path "./p-perf-huawei-05_110439_20250728062428118_ascend_pt" --output-path "./output"
+
+# 指定分析前5个高耗时算子
+python scripts/op_perf_analysis_combine.py --input-path "./p-perf-huawei-05_110439_20250728062428118_ascend_pt" --output-path "./output" --top-n 5
+```
+
+### 4. 专项算子分析
+
+如果在分析结果（如 `op_total_duration.csv` 或 `op_analysis_details.csv`）中识别到了特定的算子（例如 `MatMul`、`FIA` 或 `RmsNorm`），请按照以下步骤进行深入的维度提取分析：
+
+1.  **识别算子**：在分析报告中确认是否存在目标算子。
+2.  **查看参考文档**：在 `reference/` 目录下找到对应算子的参考文档（例如 [MatMul Shape 提取](./reference/matmul_shape_extraction.md)）。
+3.  **运行提取脚本**：根据参考文档中的说明，运行 `extract_op_shapes.py` 脚本并指定参数。
+
+#### 专项分析示例
+
+**基本用法**：
+```bash
+python scripts/extract_op_shapes.py --input "./p-perf-huawei-05_110439_20250728062428118_ascend_pt" --output "./output/matmul_shapes.csv" --op "matmul"
+```
+
+**带HTML形状替换功能**：
+```bash
+python scripts/extract_op_shapes.py --input "./p-perf-huawei-05_110439_20250728062428118_ascend_pt" --output "./output/matmul_shapes.csv" --op "matmul" --html-file "./output/op_analysis_combined.html"
+```
+
+详情请参考[参考文档](#参考文档)中的相应算子链接。
+
+## 分析内容
+
+- **识别高耗时算子**：识别计算耗时最高的N个算子（N=3或由用户指定）
+- **统计高耗时算子瓶颈**：根据筛选出的高耗时算子，分析各类型指令占比和瓶颈
+- **解析常用算子形状**：提取MatMul等常用算子的输入形状
+
+## 准备工作
+
+### 数据文件结构
+
+分析所需的op_statistic_*.csv、op_summary_*.csv、kernel_details.csv文件位于以下目录结构中：
+
+```
+└─*_ascend_pt
+    ├─ASCEND_PROFILER_OUTPUT
+    ├─FRAMEWORK
+    ├─logs
+    └─PROF_*
+        ├─device_*
+        │  └─data
+        ├─host
+        │  └─data
+        ├─mindstudio_profiler_log
+        └─mindstudio_profiler_output  # op_statistic_*.csv、op_summary_*.csv、kernel_details.csv文件位于此目录
+```
+
+## 分析步骤详解
+
+### 1. 高耗时算子筛选
+
+根据输入文件类型的不同，采用不同的筛选策略：
+
+#### 1.1 使用op_statistic_*.csv文件筛选
+
+1. **文件读取**：搜索并读取所有op_statistic_*.csv文件。
+2. **数据验证**：确保文件包含必要的"OP Type"和"Ratio(%)"列。
+3. **筛选高耗时算子**：根据"Ratio(%)"列对算子进行降序排序，选取前N个（N=3或由用户指定）高耗时算子。
+4. **读取详细数据**：搜索并读取对应的op_summary_*.csv或kernel_details.csv文件，用于后续分析。
+
+#### 1.2 使用op_summary_*.csv或kernel_details.csv文件筛选
+
+1. **文件读取**：搜索并读取所有op_summary_*.csv或kernel_details.csv文件。
+2. **数据验证**：确保文件包含必要的列，如op_summary_*.csv中的"OP Type"、"Task Duration(us)"、"Input Shapes"或kernel_details.csv中的"Type"、"Duration(us)"、"Input Shapes"。
+3. **算子耗时统计**：基于"OP Type"（op_summary_*.csv）或"Type"（kernel_details.csv）列对算子分类，统计各个算子的总耗时。
+4. **筛选高耗时算子**：根据算子总耗时对算子降序排序，选取前N个（N=3或由用户指定）高耗时算子。
+
+### 2. 数据透视表分析
+
+1. **数据读取**：搜索并读取所有op_summary_*.csv或kernel_details.csv文件。
+
+2. **平均耗时统计**：对于每个筛选出的高耗时算子，统计它在各个"Input Shapes"下的平均耗时，并按平均耗时从高到低排列。
+
+3. **数据透视分析**：基于排序后的结果，进一步统计每个"Input Shapes"下以下各列的平均值：aic_mac_ratio、aic_saclar_ratio、aic_mte1_ratio、aic_mte2_ratio、aic_fixpipe_ratio、aiv_vec_ratio、aiv_saclar_ratio、aiv_mte2_ratio、aiv_mte3_ratio。
+
+4. **结果输出**：以表格形式输出各个"Op Types"和"Input Shapes"组合中，包含平均耗时在内的所有指定列的均值，并用红色标记每行中的最大值。
+    - 输出文件：op_total_duration.csv、op_analysis_details.csv、op_analysis_combined.html
+    - 输出路径：用户指定路径，或在输入csv文件所在的文件夹下自动创建output文件夹
+
+### 3. 算子形状解析与替换
+
+当高耗时算子中包含支持形状解析的算子类型（如MatMul、MatMulV2、MatMulV3等）时，自动执行以下步骤：
+
+1. **检测支持的算子类型**：扫描高耗时算子列表，识别所有支持形状解析的算子类型。
+
+2. **调用形状解析脚本**：使用`extract_op_shapes.py`脚本从`op_analysis_details.csv`或`kernel_details.csv`文件中提取算子的形状维度信息：
+   ```bash
+   python scripts/extract_op_shapes.py --input <profiling数据目录> --output <输出目录>/<op_type>_shapes.csv --op <op_type>
+   ```
+
+3. **形状解析规则**：针对不同算子类型使用不同的形状解析规则。详细规则说明请参考对应的参考文档（见[算子形状分析参考文档](#参考文档)）
+
+4. **结果替换**：将解析得到的形状维度信息替换`op_analysis_combined.html`文件中对应算子的"Input Shapes"列，使输出结果更易读和分析：
+   - 原始形状：`16384,1024;1024,1024`
+   - 替换后：`M=16384, K=1024, N=1024`（以MatMul为例）
+
+## 输出结果
+
+- **算子耗时统计表**：op_total_duration.csv - 按耗时排序的算子列表
+- **高耗时算子指令占比透视表**：op_analysis_details.csv - 各算子在不同输入形状下的指令占比
+- **算子性能数据透视表**：op_analysis_combined.html - 带可视化标记的算子性能数据透视表，包含支持形状解析的算子的解析结果
+- **算子形状解析表**：<op_type>_shapes.csv - 各支持形状解析的算子的维度解析结果
+
+## 参考文档
+
+### 算子形状分析参考文档
+
+| 算子类型 | 参考文档 | 描述 |
+|---------|---------|------|
+| MatMul/MatMulV2/MatMulV3 | [MatMul Shape 提取](./reference/matmul_shape_extraction.md) | MatMul系列算子的M、N、K维度解析规则和示例 |
+
+**官方文档**：
+- [性能数据文件参考/op_summary（算子详细信息）](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/81RC1alpha001/devaids/devtools/profiling/atlasprofiling_16_0067.html)
+- [Ascend Profiler用户指南](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/81RC1alpha001/devaids/devtools/profiling/atlasprofiling_16_0001.html)
