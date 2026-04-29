@@ -1,84 +1,112 @@
 ---
 name: external-gitcode-ascend-triton-operator-dev
-description: 昇腾Triton 算子全流程开发任务编排。当用户需要开发 Triton 算子时使用，覆盖环境配置→需求设计→代码生成→静态检视→精度验证→性能评估→文档生成→性能优化完整流程。
+description: 昇腾 Triton 算子全流程开发编排。当用户需要从零开发 Triton 算子、进行端到端开发流程、或不确定该用哪个子 skill 时使用。自动编排：环境配置→需求设计→代码生成→静态检视→精度验证→性能评估→性能优化。关键词：全流程、开发编排、端到端、workflow
+  orchestration。
 original-name: triton-operator-dev
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-04-18'
-synced-commit: 9f4c6c19a042f03239a07ac2f3196fb590d0a114
+synced-date: '2026-04-29'
+synced-commit: 8faee0275e457955c8f50989aef8972c0838db31
 license: UNKNOWN
 ---
 
 # Triton 算子全流程开发
 
-## 任务编排
+## 工作流概览
 
-| 阶段 | Skill | 产出 |
-|------|-------|------|
-| 1 | [triton-operator-env-config](triton-operator-env-config/SKILL.md) | 可用的开发环境 |
-| 2 | [triton-operator-design](triton-operator-design/SKILL.md) | 算子需求文档 |
-| 3 | [triton-operator-code-gen](triton-operator-code-gen/SKILL.md) | 可执行代码 |
-| 4 | [triton-operator-code-review](triton-operator-code-review/SKILL.md) | 代码检视报告 |
-| 5 | [triton-operator-precision-eval](triton-operator-precision-eval/SKILL.md) | 精度验证报告 |
-| 6 | [triton-operator-performance-eval](triton-operator-performance-eval/SKILL.md) | 性能评估报告 |
-| 7 | [triton-operator-doc-gen](triton-operator-doc-gen/SKILL.md) | 接口文档 |
-| 8 | [triton-operator-performance-optim](triton-operator-performance-optim/SKILL.md) | 优化后代码 |
+构建 Triton 算子分 7 个阶段（含 1 个条件阶段）：
 
-## 子 Skill 概览
+| # | 阶段 | 产出 | Skill | 是否可跳过 |
+|---|------|------|-------|-----------|
+| 1 | 环境配置 | 环境验证报告 | `triton-operator-env-config` | 是：torch/torch_npu/triton 已可用 |
+| 2 | 需求设计 | 设计文档 | `triton-operator-design` | 是：用户已提供完整设计文档 |
+| 3 | 代码生成 | kernel + smoke test | `triton-operator-code-gen` | **否** |
+| 4 | 静态检视 | 检视报告 | `triton-operator-code-review` | **否** |
+| 5 | 精度验证 | 精度报告 | `triton-operator-precision-eval` | **否** |
+| 6 | 性能评估 | 性能报告 + ratio | `triton-operator-performance-eval` | **否** |
+| 7 | 性能优化 | 优化后代码 | `triton-operator-performance-optim` | 条件：ratio ≥ 目标则跳过 |
 
-### 1. triton-operator-env-config
-- **触发**: 首次开发或环境异常
-- **核心**: 依次检查 CANN → Python → torch → triton-ascend
-- **验证**: 运行 `01-vector-add.py`
+## ⚠️ 核心约束
 
-### 2. triton-operator-design
-- **触发**: 需要设计新算子
-- **核心**: 需求分析 → 原型设计 → 规格约束 → 特性实现
-- **关键**: 必须包含 Tiling 策略具体计算方法
+1. **必须走完全流程**：阶段 3-6 不可跳过，不可在代码生成后停止
+2. **用 TaskCreate 跟踪进度**：每阶段一个 Task，进入时 `in_progress`，完成后 `completed`
+3. **精度通过前不做性能优化**（precision-eval 的核心原则）
+4. **输出最终报告**：精度结果 + 性能 ratio + 优化历史 + 结论
 
-### 3. triton-operator-code-gen
-- **触发**: 已有需求文档，需要生成代码
-- **流程**: 确认计算逻辑 → 设计 Tiling → 生成 Kernel → 生成测试
-- **依赖**: 必须先阅读 `references/hardware-architecture.md` 和 `references/templates.md`
+## 场景路由
 
-### 4. triton-operator-code-review
-- **触发**: 代码生成完成后，进入精度验证前
-- **核心**: Host 侧检视 → Device 侧检视 → 性能隐患检视
-- **关键**: 静态分析 Ascend API 约束合规性、Mask 完整性、精度处理
+| 用户意图 | 正确做法 |
+|---------|---------|
+| "开发一个算子"、"从零开发" | 本 skill 全流程 |
+| "帮我写算子代码" | **不用本 skill**，直接 `triton-operator-code-gen` |
+| "优化算子性能" | **不用本 skill**，直接 `triton-operator-performance-optim` |
+| "检查算子精度" | **不用本 skill**，直接 `triton-operator-precision-eval` |
 
-### 5. triton-operator-precision-eval
-- **触发**: 代码检视通过后，进入性能评估前
-- **核心**: 与 PyTorch 参考实现对比 → 计算误差指标 → 生成精度报告
-- **关键**: 归约操作必须使用 FP32，确保 rtol/atol 满足阈值
+## 阶段执行要点
 
-### 6. triton-operator-performance-eval
-- **触发**: 精度验证通过后，进入性能优化前
-- **核心**: msprof 性能采集 → 瓶颈诊断 → 硬件利用率分析 → 性能报告
-- **关键**: 必须使用 msprof/msprof op，不接受其他计时方式
+### 阶段 1-2：环境 + 设计（可跳过）
 
-### 7. triton-operator-doc-gen
-- **触发**: 需要生成接口文档
-- **产出**: 标准化的昇腾 NPU 接口文档（产品支持表、参数说明、调用示例）
+**跳过判断**：
+- 阶段 1 跳过条件：能 `import torch, torch_npu, triton` 且 `torch.npu.is_available()`
+- 阶段 2 跳过条件：用户已提供设计文档（如 `docs/context/*.md`）或直接给出算子 API 规格
 
-### 8. triton-operator-performance-optim
-- **触发**: 性能不达标
-- **流程**: 性能诊断 → 基础调优 → 硬件特化 → 高级优化
-- **关键**: 必须先用 msprof 定位瓶颈，优化后重新验证精度
+### 阶段 3：代码生成
 
-## 快速决策
+调用 `Skill(triton-operator-code-gen)`。此阶段**只生成代码和 smoke test，不运行**。
 
-| 场景 | 跳过阶段 |
-|------|----------|
-| 环境已配置 | 1 |
-| 已有设计文档 | 2 |
-| 只需文档 | 1,2,3,4,5,6,8 |
-| 只需代码 | 1,2,4,5,6,7,8 |
-| 只需优化 | 1,2,3,4,5,6,7 |
-| 跳过检视和验证 | 4,5,6 |
+**进入下一阶段前**：kernel 代码 + 测试文件已写入磁盘
 
-## 通用反模式
+### 阶段 4：静态检视
 
-- ❌ 忽略 UB 大小（192KB）
-- ❌ 归约操作不使用 FP32
-- ❌ BLOCK 非 16 倍数（Cube 单元）
-- ❌ 忘记 Mask（Ascend 零容错）
-- ❌ 混淆 Vector Core 和 Cube Core 用途
+调用 `Skill(triton-operator-code-review)`。此阶段**只静态分析，不运行**。
+
+**进入下一阶段前**：P0/P1 问题已修复
+
+### 阶段 5：精度验证（MANDATORY 运行）
+
+调用 `Skill(triton-operator-precision-eval)`。
+
+**此阶段必须在 NPU 上运行测试。** 关键产出：
+- 多 shape × dtype 的误差指标
+- 通过/失败判定
+
+**进入下一阶段前**：所有精度测试通过
+
+### 阶段 6：性能评估（MANDATORY 运行）
+
+调用 `Skill(triton-operator-performance-eval)`。
+
+**此阶段必须在 NPU 上运行 benchmark。** 关键产出：
+- Triton vs torch_npu 的 ratio
+- 瓶颈类型诊断
+
+### 阶段 7：性能优化（条件执行）
+
+**触发条件**：阶段 6 的 ratio < 用户要求的性能目标。
+
+调用 `Skill(triton-operator-performance-optim)`。优化后**必须重新运行精度验证**确认无回归。
+
+## 常见陷阱
+
+| 陷阱 | 症状 | 正确做法 |
+|------|------|---------|
+| 代码生成后停止 | 用户以为开发完成但无验证 | 强制执行阶段 5-6 |
+| 精度未通过就优化 | 优化了错误的代码 | 精度通过是优化的前提 |
+| 跳过 TaskCreate | 阶段遗漏无法追溯 | 每阶段创建 Task |
+| 混淆"生成测试"和"运行测试" | 只有测试文件但从未执行 | 阶段 5-6 必须实际运行 |
+
+## 反模式清单（NEVER）
+
+- ❌ 代码生成后停止，不执行精度验证和性能评估
+- ❌ 精度未通过就做性能优化
+- ❌ 不创建任务跟踪就开始执行
+- ❌ 跳过阶段但不更新任务状态
+- ❌ 只生成代码就说"开发完成"
+- ❌ 用"只需代码"的借口跳过验证流程
+
+## 检查清单（最终输出前确认）
+
+- [ ] 代码已生成并通过静态检视（P0/P1 清零）
+- [ ] **精度测试已在 NPU 上运行**，所有 dtype/shape 通过
+- [ ] **性能测试已在 NPU 上运行**，有 ratio 数据
+- [ ] ratio < 目标时已尝试优化并重新验证精度
+- [ ] 输出完整报告（精度 + 性能 + 结论）

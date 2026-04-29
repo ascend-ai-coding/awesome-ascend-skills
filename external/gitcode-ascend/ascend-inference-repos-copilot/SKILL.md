@@ -15,8 +15,8 @@ description: 昇腾（Ascend）推理生态开源代码仓库智能问答专家�
   context-aware, evidence-based responses.
 original-name: ascend-inference-repos-copilot
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-04-18'
-synced-commit: 9f4c6c19a042f03239a07ac2f3196fb590d0a114
+synced-date: '2026-04-29'
+synced-commit: 8faee0275e457955c8f50989aef8972c0838db31
 license: UNKNOWN
 ---
 

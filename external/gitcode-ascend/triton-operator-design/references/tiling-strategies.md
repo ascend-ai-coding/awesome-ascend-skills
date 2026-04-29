@@ -399,16 +399,36 @@ mean_buffer = allocate_ub(mean_buffer_size)  # 分配 32 字节
 
 ### 错误 1：UB 空间不足
 
-**症状**：运行时错误，提示 UB 溢出
+**症状**：编译时报 `ub overflow, requires X bits while Y bits available`
 
 **原因**：
 - 缓冲区总大小超过 UB 容量
 - 忘记考虑对齐开销
+- **2D Tiling 时忽略了 offset 数组和 mask 数组的开销**（见下方补充）
 
 **解决**：
 1. 重新计算所有缓冲区大小
 2. 减少单次循环处理的数据量
 3. 考虑缓冲区复用
+
+### 补充：2D Tiling 的 UB 预算计算
+
+使用 2D Tiling 时，除了数据 buffer 外，还必须计算 offset 数组和 mask 数组的 UB 开销：
+
+```python
+# 2D Tiling UB 预算公式
+# 以 RoPE half mode 为例：ROWS_PER_TILE rows × half_D cols
+
+data_buffers = 8 * ROWS * half_D * elem_size  # x1,x2,cos1,cos2,sin1,sin2,out1,out2
+offset_arrays = 2 * ROWS * half_D * 4          # off_first, off_second (int32)
+mask_arrays = ROWS * half_D                     # half_mask (bool)
+index_arrays = 6 * ROWS * 4                     # global_rows, b, n, s, c_base, s_base
+
+total_ub = data_buffers + offset_arrays + mask_arrays + index_arrays
+assert total_ub < 192 * 1024, f"UB overflow: {total_ub/1024:.1f} KB"
+```
+
+**关键**：offset 数组可能是 UB 开销的大头（如 ROWS=128, half_D=64 时 offset 就占 64KB）。在决定 ROWS_PER_TILE 时必须预留这部分空间。
 
 ### 错误 2：对齐错误
 

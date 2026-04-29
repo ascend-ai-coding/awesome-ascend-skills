@@ -127,8 +127,12 @@ def matmul_kernel(
     NUM_BLOCKS_M = triton.cdiv(M, BLOCK_M)
     NUM_BLOCKS_N = triton.cdiv(N, BLOCK_N)
     NUM_BLOCKS = NUM_BLOCKS_M * NUM_BLOCKS_N
+    
+    blocks_per_core = triton.cdiv(NUM_BLOCKS, num_cores)
+    block_start = pid * blocks_per_core
+    block_end = triton.minimum(block_start + blocks_per_core, NUM_BLOCKS)
 
-    for block_idx in range(pid, NUM_BLOCKS, num_cores):
+    for block_idx in range(block_start, block_end):
         task_m_idx = block_idx // NUM_BLOCKS_N
         task_n_idx = block_idx % NUM_BLOCKS_N
         m_start = task_m_idx * BLOCK_M
@@ -197,23 +201,28 @@ def silu(x):
 @triton.jit
 def swiglu_forward_kernel(
     a_ptr, b_ptr, c_ptr, stride,
-    n_cols: tl.constexpr, BLOCK_SIZE: tl.constexpr
+    n_rows, n_cols: tl.constexpr,
+    rows_per_core: tl.constexpr,
+    BLOCK_SIZE: tl.constexpr
 ):
-    program_id = tl.program_id(0).to(tl.int64)
-
-    a_ptr += program_id * stride
-    b_ptr += program_id * stride
-    c_ptr += program_id * stride
-
+    pid = tl.program_id(0)
+    
+    row_start = pid * rows_per_core
+    row_end = tl.minimum(row_start + rows_per_core, n_rows)
+    
     base_offsets = tl.arange(0, BLOCK_SIZE)
-    for i in range(0, n_cols, BLOCK_SIZE):
-        col_offsets = base_offsets + i
-        mask = col_offsets < n_cols
-
-        a_row = tl.load(a_ptr + col_offsets, mask=mask, other=0).to(tl.float32)
-        b_row = tl.load(b_ptr + col_offsets, mask=mask, other=0)
-        c_row = silu(a_row).cast(b_row.dtype) * b_row
-        tl.store(c_ptr + col_offsets, c_row, mask=mask)
+    
+    for row_idx in range(row_start, row_end):
+        row_offset = row_idx * stride
+        
+        for i in range(0, n_cols, BLOCK_SIZE):
+            col_offsets = base_offsets + i
+            mask = col_offsets < n_cols
+            
+            a_row = tl.load(a_ptr + row_offset + col_offsets, mask=mask, other=0).to(tl.float32)
+            b_row = tl.load(b_ptr + row_offset + col_offsets, mask=mask, other=0)
+            c_row = silu(a_row).cast(b_row.dtype) * b_row
+            tl.store(c_ptr + row_offset + col_offsets, c_row, mask=mask)
 
 def swiglu_forward(a: torch.Tensor, b: torch.Tensor):
     ori_shape = a.shape
@@ -224,10 +233,20 @@ def swiglu_forward(a: torch.Tensor, b: torch.Tensor):
     n_rows = a.shape[0]
 
     BLOCK_SIZE = min(5120, triton.next_power_of_2(n_cols))
+    
+    core_num = get_npu_vectorcore_num()
+    
+    if n_rows <= core_num:
+        grid = (n_rows,)
+        rows_per_core = 1
+    else:
+        grid = (core_num,)
+        rows_per_core = triton.cdiv(n_rows, core_num)
 
-    swiglu_forward_kernel[(n_rows,)](
+    swiglu_forward_kernel[grid](
         a, b, c, c.stride(-2),
-        n_cols=n_cols, BLOCK_SIZE=BLOCK_SIZE,
+        n_rows, n_cols,
+        rows_per_core, BLOCK_SIZE,
     )
     return c.view(*ori_shape)
 ```
@@ -247,6 +266,11 @@ def swiglu_forward(a: torch.Tensor, b: torch.Tensor):
 import torch
 import triton
 import triton.language as tl
+import triton.runtime.driver as driver
+
+def get_npu_vectorcore_num():
+    device = torch.npu.current_device()
+    return driver.active.utils.get_device_properties(device)["num_vectorcore"]
 
 MAX_FUSED_SIZE = 3840
 
@@ -255,48 +279,52 @@ def cross_entropy_kernel(
     X_ptr, X_stride,
     Y_ptr, Y_stride,
     loss_ptr,
-    n_cols,
+    n_rows, n_cols,
     n_non_ignore,
     ignore_index,
+    rows_per_core: tl.constexpr,
     reduction: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
 ):
-    program_id = tl.program_id(0).to(tl.int64)
-
-    Y_ptr += program_id * Y_stride
-    y = tl.load(Y_ptr).to(tl.int32)
-
-    X_ptr += program_id * X_stride
-
-    if y == ignore_index:
-        for i in range(0, n_cols, BLOCK_SIZE):
-            X_offsets = i + tl.arange(0, BLOCK_SIZE)
-            tl.store(X_ptr + X_offsets, 0.0, mask=X_offsets < n_cols)
-        return
-
-    loss_ptr += program_id
-
-    m = float("-inf")
-    d = 0.0
-    ori_X_y = tl.load(X_ptr + y).cast(tl.float32)
-
-    for i in range(0, n_cols, BLOCK_SIZE):
-        X_offsets = i + tl.arange(0, BLOCK_SIZE)
-        X_block = tl.load(
-            X_ptr + X_offsets, mask=X_offsets < n_cols, other=float("-inf")
-        ).cast(tl.float32)
-        block_max = tl.max(X_block)
-        m_new = tl.maximum(m, block_max)
-        d = d * tl.exp(m - m_new) + tl.sum(tl.exp(X_block - m_new))
-        m = m_new
-
-    lse = m + tl.log(d)
-    loss = lse - ori_X_y
-
-    if reduction == "mean":
-        loss = loss / n_non_ignore
-
-    tl.store(loss_ptr, loss)
+    pid = tl.program_id(0)
+    
+    row_start = pid * rows_per_core
+    row_end = tl.minimum(row_start + rows_per_core, n_rows)
+    
+    for row_idx in range(row_start, row_end):
+        Y_ptr_row = Y_ptr + row_idx * Y_stride
+        y = tl.load(Y_ptr_row).to(tl.int32)
+        
+        X_ptr_row = X_ptr + row_idx * X_stride
+        
+        if y == ignore_index:
+            for i in range(0, n_cols, BLOCK_SIZE):
+                X_offsets = i + tl.arange(0, BLOCK_SIZE)
+                tl.store(X_ptr_row + X_offsets, 0.0, mask=X_offsets < n_cols)
+        else:
+            loss_ptr_row = loss_ptr + row_idx
+            
+            m = float("-inf")
+            d = 0.0
+            ori_X_y = tl.load(X_ptr_row + y).cast(tl.float32)
+            
+            for i in range(0, n_cols, BLOCK_SIZE):
+                X_offsets = i + tl.arange(0, BLOCK_SIZE)
+                X_block = tl.load(
+                    X_ptr_row + X_offsets, mask=X_offsets < n_cols, other=float("-inf")
+                ).cast(tl.float32)
+                block_max = tl.max(X_block)
+                m_new = tl.maximum(m, block_max)
+                d = d * tl.exp(m - m_new) + tl.sum(tl.exp(X_block - m_new))
+                m = m_new
+            
+            lse = m + tl.log(d)
+            loss = lse - ori_X_y
+            
+            if reduction == "mean":
+                loss = loss / n_non_ignore
+            
+            tl.store(loss_ptr_row, loss)
 
 def cross_entropy_forward(_input: torch.Tensor, target: torch.Tensor,
                           ignore_index: int = -100, reduction: str = "mean"):
@@ -308,13 +336,23 @@ def cross_entropy_forward(_input: torch.Tensor, target: torch.Tensor,
 
     target_mask = target != ignore_index
     n_non_ignore = target_mask.sum().item()
+    
+    core_num = get_npu_vectorcore_num()
+    
+    if n_rows <= core_num:
+        grid = (n_rows,)
+        rows_per_core = 1
+    else:
+        grid = (core_num,)
+        rows_per_core = triton.cdiv(n_rows, core_num)
 
-    cross_entropy_kernel[(n_rows,)](
+    cross_entropy_kernel[grid](
         X_ptr=_input, X_stride=_input.stride(-2),
         Y_ptr=target, Y_stride=target.stride(-1),
         loss_ptr=loss_1d,
-        n_cols=V, n_non_ignore=n_non_ignore,
+        n_rows=n_rows, n_cols=V, n_non_ignore=n_non_ignore,
         ignore_index=ignore_index,
+        rows_per_core=rows_per_core,
         reduction=reduction,
         BLOCK_SIZE=BLOCK_SIZE,
     )
@@ -627,3 +665,33 @@ def expand_batch_to_tokens(
 - 状态索引计算
 - 边界处理（padding）
 - 条件分支（IS_CONTINUOUS_BATCHING）
+
+---
+
+## 模板 10：Broadcast 辅助张量的逐元素算子（Contiguous Expand 模式）
+
+**代表**：RoPE (Rotary Position Embedding)、位置编码乘法
+
+**核心模式**：当辅助张量（cos/sin 等）需要 broadcast 到主张量形状时，**host 侧 expand+contiguous 展平为 (total_rows, D)**，kernel 内所有张量使用统一 `row * D + col` 偏移。比 kernel 内 broadcast stride 快 45%（连续访存触发大块 DMA burst）。
+
+**适用条件**：辅助张量原始大小 << 主张量大小。
+
+```python
+# ── Host 侧：expand + contiguous，消除 broadcast stride ──
+cos_flat = cos.expand(x.shape).contiguous().reshape(total_rows, D)
+sin_flat = sin.expand(x.shape).contiguous().reshape(total_rows, D)
+x_flat = x.contiguous().reshape(total_rows, D)
+out_flat = torch.empty_like(x_flat)
+
+# ── Kernel 内：所有张量用相同偏移，完全连续 ──
+row_off = global_rows * D
+off_first = row_off[:, None] + col_off_first[None, :]    # x, cos, sin, out 通用
+off_second = row_off[:, None] + col_off_second[None, :]
+
+x1 = tl.load(x_ptr + off_first, mask=half_mask)
+cos1 = tl.load(cos_ptr + off_first, mask=half_mask)      # 与 x 相同偏移
+out1 = x1 * cos1 - x2 * sin1
+tl.store(out_ptr + off_first, out1, mask=half_mask)
+```
+
+详细踩坑记录见 [`optimization-patterns.md`](../../triton-operator-performance-optim/references/optimization-patterns.md) 踩坑 7。
