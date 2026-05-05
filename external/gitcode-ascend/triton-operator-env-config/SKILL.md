@@ -3,8 +3,8 @@ name: external-gitcode-ascend-triton-operator-env-config
 description: 在 Ascend 昇腾平台上校验并构建triton算子开发所需环境,包括CANN、Python/torch/torch_npu/triton-ascend依赖和PATH环境变量等设置。当用户需要配置triton算子开发环境、检查CANN/torch/triton-ascend安装、验证环境是否可用时使用。
 original-name: triton-operator-env-config
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-04-29'
-synced-commit: 8faee0275e457955c8f50989aef8972c0838db31
+synced-date: '2026-05-05'
+synced-commit: 03b4bbd870d13fcd48044b285e84dd80e955214f
 license: UNKNOWN
 ---
 
@@ -27,14 +27,16 @@ license: UNKNOWN
 
 以文档中的版本要求为准，更新后续步骤中的版本号。
 
-**当前已知版本对应关系（截止 2026-03-26）：**
+**以下版本对应关系仅供参考（截止 2026-03-26），以在线文档为准：**
 
 | Triton-Ascend 版本 | CANN 版本 | 发布日期 |
 |-------------------|----------|---------|
 | 3.2.0 | 8.5.0（推荐） | 2026/01/16 |
 | 3.2.0rc4 | 8.3.RC2 | 2025/11/20 |
 
-**torch_npu 版本：2.7.1**
+**torch_npu 版本（仅供参考）：2.7.1**
+
+⚠️ 如果在线文档中的版本与上表不一致，**必须以在线文档为准**。
 
 ## 环境检查与配置流程
 

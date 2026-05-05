@@ -4,8 +4,8 @@ description: 'Ascend C 代码检视技能。基于假设检验方法论对代码
   用户要求代码检视、代码review、询问代码安全问题、检查编码规范、或需要检查特定代码问题（如内存泄漏、整数溢出、空指针等）。关键词：Ascend C、代码检视、代码review、安全规范、内存、指针、溢出、泄漏、编码规范。'
 original-name: ascendc-operator-code-review
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-04-29'
-synced-commit: 8faee0275e457955c8f50989aef8972c0838db31
+synced-date: '2026-05-05'
+synced-commit: 03b4bbd870d13fcd48044b285e84dd80e955214f
 license: UNKNOWN
 ---
 

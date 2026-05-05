@@ -4,8 +4,8 @@ description: 完成AscendC算子设计 - 帮助用户完成算子的架构设计
   kernel设计、两级tiling、核间切分、核内切分时，使用此skill。
 original-name: ascendc-operator-design
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-04-29'
-synced-commit: 8faee0275e457955c8f50989aef8972c0838db31
+synced-date: '2026-05-05'
+synced-commit: 03b4bbd870d13fcd48044b285e84dd80e955214f
 license: UNKNOWN
 ---
 
@@ -53,6 +53,8 @@ license: UNKNOWN
 2. **按算子类型选读**:
    - 逐元素操作（add/relu/acosh/sigmoid...）→ `references/elementwise-tiling.md`
    - 归约操作（softmax/layernorm...）→ `references/reduction-tiling.md`
+   - 索引操作（gather/index_select/scatter...）→ `references/index-tiling.md`
+   - 排序操作（sort/topk...）→ `references/sort-tiling.md`
 3. **通用参考**: `references/general-tiling-principles.md`
 
 **绝对不要跳过参考文档的阅读。**
@@ -143,6 +145,8 @@ Ln(y, tmp, len);             // y = ln(x + sqrt(x² - 1))
 **参考文档**:
 - **逐元素操作**: 阅读 `references/elementwise-tiling.md`（包含完整两级 Tiling 实现）
 - **归约操作**: 阅读 `references/reduction-tiling.md`
+- **索引操作**: 阅读 `references/index-tiling.md`
+- **排序操作**: 阅读 `references/sort-tiling.md`
 - **通用原则**: 参考 `references/general-tiling-principles.md`
 
 #### 3.3 硬件约束说明

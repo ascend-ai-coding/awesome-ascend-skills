@@ -111,9 +111,11 @@
 
 ## 精度验证参考容差
 
-| 数据类型 | rtol | atol |
-|----------|------|------|
-| float16 | 1e-3 | 1e-3 |
-| bfloat16 | 1e-3 | 1e-3（转 float32 后比较） |
-| float32 | 1e-4 | 1e-4 |
-| 整数/bool | exact match | exact match |
+判定条件：**MERE < 阈值 且 MARE < 10 × 阈值**
+
+| 数据类型 | 阈值 | MERE 上限 | MARE 上限 |
+|----------|------|----------|----------|
+| float16 | 2⁻¹⁰ ≈ 9.77e-4 | 9.77e-4 | 9.77e-3 |
+| bfloat16 | 2⁻⁷ ≈ 7.81e-3 | 7.81e-3 | 7.81e-2（转 float32 后计算） |
+| float32 | 2⁻¹³ ≈ 1.22e-4 | 1.22e-4 | 1.22e-3 |
+| 整数/bool | exact match | exact match | exact match |

@@ -7,8 +7,8 @@ description: Analyze official Megatron-LM commits, PRs, and branch change sets t
   adaptation work.
 original-name: megatron-change-analyzer
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-04-29'
-synced-commit: 8faee0275e457955c8f50989aef8972c0838db31
+synced-date: '2026-05-05'
+synced-commit: 03b4bbd870d13fcd48044b285e84dd80e955214f
 license: UNKNOWN
 ---
 
