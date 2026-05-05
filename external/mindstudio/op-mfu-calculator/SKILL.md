@@ -3,7 +3,7 @@ name: external-mindstudio-op-mfu-calculator
 description: 计算算子（如 matmul/GEMM）的 MFU（Machine FLOP Utilization），并给出清晰的公式和推导过程。
 original-name: op-mfu-calculator
 synced-from: https://github.com/kali20gakki/mindstudio-skills
-synced-date: '2026-04-29'
+synced-date: '2026-05-05'
 synced-commit: f6695da3cfa864a100db5a94f594b638aeff6389
 license: UNKNOWN
 ---

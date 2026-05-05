@@ -57,7 +57,22 @@
 **不需要加载**:
 - `sync-control-api.md` — 各 slice 独立处理
 
-### 场景 4: 需要核间同步的算子（AllReduce、全局归约等）
+### 场景 4: Sort类算子（Sort、TopK）
+**特征**: 需要完成行内排序
+
+**必须加载**:
+- `sort_topk-api.md` — Sort/MrgSort/Extract等接口用法
+
+**按需加载**:
+- `basic-data-structures-api.md` — GlobalTensor/LocalTensor
+- `resource-management-api.md` — TPipe/TQue/TBuf、accumBuf 等多临时缓冲区
+- `data-copy-api.md` — 多次 DataCopyPad 搬入不同行/位置
+- `vector-compute-api.md` — 累加、类型转换、Duplicate 初始化
+- `kernel-constraints.md` — 通用 Kernel 限制
+- `sync-control-api.md` — 各 slice 独立处理
+
+
+### 场景 5: 需要核间同步的算子（AllReduce、全局归约等）
 
 **特征**: 多核之间存在数据依赖，需要先局部计算再全局合并
 
@@ -69,7 +84,7 @@
 - `sync-control-api.md` — **重点**: SyncAll/IBSet/IBWait 核间同步、workspace 空间要求
 - `kernel-constraints.md`
 
-### 场景 5: 仅修改已有算子（bug 修复、小范围改动）
+### 场景 6: 仅修改已有算子（bug 修复、小范围改动）
 
 **按需加载**: 只加载与修改相关的文档。例如：
 - 修改计算逻辑 → `vector-compute-api.md` + `kernel-constraints.md`
@@ -77,7 +92,7 @@
 - 修改资源分配 → `resource-management-api.md`
 - 运行时 crash / 数据错误 → 优先 `kernel-constraints.md` 诊断清单
 
-### 场景 6: 性能优化
+### 场景 7: 性能优化
 
 **必须加载**:
 - `resource-management-api.md` — Double Buffer 原理、UB 利用率

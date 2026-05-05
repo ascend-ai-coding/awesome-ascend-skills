@@ -130,8 +130,12 @@ store(w_ptr, w)
 
 ```python
 # 乒乓加载，隐藏访存延迟
-# Buffer A 加载时，Buffer B 计算
-# Buffer B 加载时，Buffer A 计算
+# tl.multibuffer 启用双缓冲（当前仅支持 size=2）
+a = tl.load(a_ptr + ...)
+a = tl.multibuffer(a, size=2)  # A2/A3 默认启用
+
+# 等效 compile_hint 方式：
+# tl.compile_hint(a, "multi_buffer", 2)
 ```
 
 ## 精度保护模式
@@ -278,3 +282,138 @@ off = row_off[:, None] + col_off[None, :]  # 四个张量通用
 | torch_npu (CANN) | 550 us | MTE2 (99.3%) | hand-tuned C++ kernel |
 
 与 CANN 差距：kernel 30%（752 vs 550us），full call 45%（expand 开销）。
+
+---
+
+### 踩坑 8：归约类算子的双 pass 反模式（GroupNorm 系列踩坑）
+
+**现象**：GroupNorm+Swish Triton 实现 kernel 耗时 36us，torch_npu 仅 7.7us（4.7x 差距）。msprof 显示 aiv_scalar_ratio=96.2%。
+
+**根因**：双 pass 模式——pass 1 计算 mean/var，pass 2 重新 load x 做 normalize。x 被读取 3 次，每次都要循环+mask+tl.where，产生大量标量指令。
+
+**正确做法：单 pass**。当 `NBLOCK = next_power_of_2(D)` 覆盖整行时，数据一次性 load 进 UB：
+
+```python
+# ❌ 双 pass（3次读取 x，大量标量开销）
+for i in range(0, N, BLOCK_N):
+    x = tl.load(...)          # 第1次读
+    m_sum += tl.sum(tl.where(mask, x, 0.0))
+for i in range(0, N, BLOCK_N):
+    x = tl.load(...)          # 第2次读
+    ...
+for i in range(0, N, BLOCK_N):
+    x = tl.load(...)          # 第3次读
+    tl.store(...)
+
+# ✅ 单 pass（1次读取 x，UB 内全计算）
+x = tl.load(x_ptr + tot_off, mask=tot_mask, other=0.0).to(tl.float32)
+sum_x = tl.sum(x, 1)                    # axis=1 归约
+mean = sum_x / D
+var = (tl.sum(x * x, 1) - mean * sum_x) / D
+x_norm = (x - mean[:, None]) * tl.rsqrt(var + eps)[:, None]
+tl.store(y_ptr + tot_off, x_norm * w + b, mask=tot_mask)
+```
+
+**性能数据**（msprof kernel avg）：
+
+| 版本 | Avg (us) | vs torch_npu |
+|------|----------|-------------|
+| 双 pass | 36.3 | 8.4x 慢 |
+| 单 pass | 3.3 | **0.77x（更快）** |
+| torch_npu | 4.3 | 1.0x |
+
+**核心思路**：`tl.sum(x, 1)` 对已 load 的 2D 块做 axis=1 归约，编译器保留数据在 UB，无需二次读取。NBLOCK 可用到 8192（不要过度保守）。
+
+**适用条件**：D ≤ UB 容量 / buffer 数。D 过大时分块处理。
+
+## 高级优化：对角线 Grid 调度
+
+大矩阵乘法中，顺序行调度导致 L2 缓存颠簸。对角线调度沿 M×N grid 对角线分散块，提升 L2 命中率。
+
+```python
+BLOCK_THRESHOLD: tl.constexpr = 4  # autotunable, 通常 4-8
+
+pid = tl.program_id(0)
+num_cores = tl.num_programs(0)
+NUM_BLOCKS_M = tl.cdiv(M, BLOCK_M)
+NUM_BLOCKS_N = tl.cdiv(N, BLOCK_N)
+NUM_BLOCKS = NUM_BLOCKS_M * NUM_BLOCKS_N
+
+for block_idx in range(pid, NUM_BLOCKS, num_cores):
+    if NUM_BLOCKS_M >= BLOCK_THRESHOLD and NUM_BLOCKS_N >= BLOCK_THRESHOLD:
+        # 对角线调度：沿对角线分散，提升 L2 复用
+        task_m_idx = block_idx % NUM_BLOCKS_M
+        task_n_idx = (block_idx // NUM_BLOCKS_M) % NUM_BLOCKS_N
+    else:
+        # 小矩阵：顺序调度即可
+        task_m_idx = block_idx // NUM_BLOCKS_N
+        task_n_idx = block_idx % NUM_BLOCKS_N
+
+    rm = task_m_idx * BLOCK_M
+    rn = task_n_idx * BLOCK_N
+    # ... 后续 load/dot/store
+```
+
+**阈值选择**：BLOCK_THRESHOLD 通过 autotune 在 4-8 之间搜索最优值。
+
+## 高级优化：多 Vector Core 并行（tl.parallel）
+
+Post-dot 操作（激活、类型转换、存储）可通过 `tl.parallel(bind_sub_block=True)` 分配到 2 个 vector core 并行执行。
+
+```python
+SUB_BLK_M: tl.constexpr = BLOCK_M // 2
+
+for s in tl.parallel(0, 2, bind_sub_block=True):
+    sub = tl.extract_slice(acc, (s * SUB_BLK_M, 0), (SUB_BLK_M, BLOCK_N), (1, 1))
+    sub = tl.where(sub > 0.0, sub, 0.0)  # ReLU 激活
+    sub = sub.to(tl.float16)              # 类型转换
+    # tl.store(c_ptr + ..., sub)          # 存储
+```
+
+**适用场景**：`tl.dot` 之后的 activation、cast、store 操作。对 post-dot 计算量大的 kernel 效果显著。
+
+## 高级优化：care_padding=False
+
+```python
+x = tl.load(ptr + offsets, mask=mask, other=0.0, care_padding=False)
+```
+
+当 padding 值的确定性不影响计算结果时，关闭 padding 检查可获 **5-10% 性能提升**。适用条件：
+- `other` 值不影响下游计算（如 mask 后的元素会被忽略）
+- 不需要对齐保证的场景
+
+## 高级优化：Cube-Vector 信号同步
+
+Cube 和 Vector 引擎间的流水线同步，用于重叠计算。16 个 event_id（0-15）可用。
+
+```python
+# Cube 完成计算后通知 Vector
+tl.sync_block_set(sender="cube", receiver="vector", event_id=0)
+
+# Vector 等待 Cube 完成后再处理
+tl.sync_block_wait(sender="cube", receiver="vector", event_id=0)
+
+# 流水线模式示例：
+# 1. Cube: tl.dot(a, b) → sync_block_set
+# 2. Vector: sync_block_wait → activation → store
+```
+
+**注意**：event_id 0-15，同一 sender-receiver 对可复用不同 event_id 实现多级流水线。
+
+## UB 估算公式（矩阵乘法）
+
+```python
+def estimate_ub_usage(BLOCK_M, BLOCK_N, BLOCK_K, dtype_size=2):
+    """估算 MatMul UB 占用（字节）"""
+    a_tile = BLOCK_M * BLOCK_K * dtype_size      # A 块
+    b_tile = BLOCK_K * BLOCK_N * dtype_size      # B 块
+    accumulator = BLOCK_M * BLOCK_N * 4          # FP32 累加器
+    mask = BLOCK_M * BLOCK_N                     # mask 数组
+    return a_tile + b_tile + accumulator + mask
+
+# 安全系数：编译器有 ~15% 额外开销
+actual_available = 192 * 1024 * 0.8  # 约 157KB 可用
+
+# FP16 下最优 BLOCK 组合（512B 对齐 = 256 元素）
+# BLOCK_M=128/256, BLOCK_N=256/128, BLOCK_K=256
+```

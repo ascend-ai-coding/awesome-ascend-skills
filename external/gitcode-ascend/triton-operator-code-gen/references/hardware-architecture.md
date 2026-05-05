@@ -21,6 +21,8 @@
 | 矩阵乘法（tl.dot） | AI Core | `get_npu_aicore_num()` |
 | CV 混合算子 | AI Core + Vector Core | `get_npu_aicore_num()` |
 
+**Cube Core 矩阵吞吐远高于 Vector Core 逐元素计算（数十倍差距）。** 矩阵乘法类算子（含 GEMV，即 N=1 的 GEMM）**必须**使用 `tl.dot` + AI Core。将矩阵乘法退化为 Vector Core 逐元素乘加是严重性能反模式，即使 N=1 也应通过 pad 对齐到 BLOCK_N=16 后使用 `tl.dot`。
+
 ```python
 import torch
 import triton.runtime.driver as driver
@@ -138,6 +140,7 @@ GM ──► L1 ──► Cube Core ──► L1/UB ──► Vector Core ──
 | CV（Cube-Vector） | 512 字节 | 矩阵+向量混合计算 |
 | UB 缓冲区 | 32 字节 | 所有 UB 分配 |
 | 单值缓冲区 | 32 字节 | 均值、方差等归约结果 |
+| 矩阵运算 BLOCK | 512B 对齐 | FP16 下 BLOCK_M/N/K 为 16 的倍数（512B ÷ 2B = 256 元素 ÷ 16 granularity = 16） |
 
 ---
 
@@ -217,3 +220,19 @@ xbar = tl.where(cols_cmp < N, x - mean, 0.0)
 3. 最后降精度到输出类型
 
 ---
+
+## 平台差异（A2/A3 vs 910_95）
+
+| 特性 | A2/A3 | 910_95 |
+|------|-------|--------|
+| `tl.multibuffer` 默认 | ✅ 启用 | ❌ 禁用 |
+| `auto_bind_sub_block` 默认 | ✅ 启用 | ❌ 禁用 |
+| FP8 支持 | ❌ | ✅ |
+| `sync_solver` | ✅ | ❌ |
+| `inject_block_all` | ✅ | ❌ |
+| `overflow_mode="saturate"` | 通过 FP32 中转（较慢） | 原生支持 |
+
+**影响**：
+- 910_95 需手动启用 `tl.multibuffer()` 和 `tl.parallel(bind_sub_block=True)`
+- 910_95 的 saturate cast 性能更优（原生指令）
+- FP8 量化场景仅 910_95 可用

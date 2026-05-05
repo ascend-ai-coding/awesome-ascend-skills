@@ -109,20 +109,23 @@ def torch_layer_norm(x, weight, bias, eps=1e-5):
     return torch.nn.functional.layer_norm(x, normalized_shape=(x.shape[-1],), weight=weight, bias=bias, eps=eps)
 
 
-def calculate_errors(y_cal, y_ref):
+_THRESHOLDS = {
+    'float16': 2.0 ** -10,
+    'float32': 2.0 ** -13,
+    'bfloat16': 2.0 ** -7,
+}
+
+def calculate_errors(y_cal, y_ref, dtype):
     """计算误差指标"""
-    # 转换为 CPU 张量进行计算
     y_cal_cpu = y_cal.cpu().numpy()
     y_ref_cpu = y_ref.cpu().numpy()
     
-    # 计算绝对误差
     abs_error = np.abs(y_cal_cpu - y_ref_cpu)
     
-    # 计算相对误差（避免除以零）
-    with np.errstate(divide='ignore', invalid='ignore'):
-        rel_error = np.abs((y_cal_cpu - y_ref_cpu) / (y_ref_cpu + 1e-12))
+    threshold = _THRESHOLDS.get(dtype, 1e-8)
+    denom = np.maximum(np.abs(y_ref_cpu), threshold)
+    rel_error = abs_error / denom
     
-    # 计算误差指标
     mere = np.mean(rel_error)
     mare = np.max(rel_error)
     max_abs_error = np.max(abs_error)
@@ -154,9 +157,10 @@ def generate_report():
         f.write(f"  Epsilon: {eps}\n")
         f.write("--------------------------------------------------------------------------------\n")
         f.write("[精度标准]:\n")
-        f.write("  float16: 相对误差 rtol=1e-03, atol=1e-03\n")
-        f.write("  float32: 相对误差 rtol=1e-04, atol=1e-04\n")
-        f.write("  bfloat16: 相对误差 rtol=1e-02, atol=1e-02\n")
+        f.write("  判定条件: MERE < 阈值 且 MARE < 10 × 阈值\n")
+        f.write("  float16: 阈值=2^-10 ≈ 9.77e-4, MERE < 9.77e-4, MARE < 9.77e-3\n")
+        f.write("  float32: 阈值=2^-13 ≈ 1.22e-4, MERE < 1.22e-4, MARE < 1.22e-3\n")
+        f.write("  bfloat16: 阈值=2^-7 ≈ 7.81e-3, MERE < 7.81e-3, MARE < 7.81e-2\n")
         f.write("  int32/int64/int16/int8: 完全相等\n")
         f.write("  uint32/uint64/uint16/uint8: 完全相等\n")
         f.write("  bool: 完全相等\n")
@@ -190,7 +194,7 @@ def generate_report():
                     y_cal = triton_layer_norm(x, weight, bias, eps)
                     
                     # 计算误差
-                    mere, mare, max_abs_error = calculate_errors(y_cal, y_ref)
+                    mere, mare, max_abs_error = calculate_errors(y_cal, y_ref, dtype)
                     
                     # 验证精度
                     test_common.validate_cmp(dtype, y_cal, y_ref)

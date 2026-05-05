@@ -4,8 +4,8 @@ description: Ascend C 算子 mssanitizer 内存检测分析技能。用于检测
   IR模式，自定义算子用Python模式）。触发关键词：mssanitizer、内存检测、内存泄漏、非法访问、illegal free、内存错误。
 original-name: ascendc-mssanitizer
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-04-29'
-synced-commit: 8faee0275e457955c8f50989aef8972c0838db31
+synced-date: '2026-05-05'
+synced-commit: 03b4bbd870d13fcd48044b285e84dd80e955214f
 license: UNKNOWN
 ---
 
