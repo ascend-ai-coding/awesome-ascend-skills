@@ -3,7 +3,7 @@ name: external-mindstudio-msmodelslim-model-analysis
 description: 在实现适配器前对候选模型做分析。确定模型实现来源（transformers 或模型目录）、结构特征、是否需逐层加载及 MoE 融合权重风险。适用于用户询问模型适配可行性或做适配前分析时使用。
 original-name: model-analysis
 synced-from: https://github.com/kali20gakki/mindstudio-skills
-synced-date: '2026-04-29'
+synced-date: '2026-05-08'
 synced-commit: f6695da3cfa864a100db5a94f594b638aeff6389
 license: UNKNOWN
 ---

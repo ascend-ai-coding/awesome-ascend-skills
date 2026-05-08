@@ -16,7 +16,7 @@ keywords:
 - 调度分析
 original-name: ascend_pytorch_profiler_db_explorer
 synced-from: https://github.com/kali20gakki/mindstudio-skills
-synced-date: '2026-04-29'
+synced-date: '2026-05-08'
 synced-commit: f6695da3cfa864a100db5a94f594b638aeff6389
 license: UNKNOWN
 ---

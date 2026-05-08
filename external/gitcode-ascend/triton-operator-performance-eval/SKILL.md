@@ -4,8 +4,8 @@ description: 评估 Ascend NPU 上 Triton 算子性能。使用 msprof/msprof op
   瓶颈，测量硬件利用率，生成性能报告。
 original-name: triton-operator-performance-eval
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-04-29'
-synced-commit: 8faee0275e457955c8f50989aef8972c0838db31
+synced-date: '2026-05-08'
+synced-commit: 155ac37bd169ddb89479af528297cfb2237400aa
 license: UNKNOWN
 ---
 
@@ -14,6 +14,8 @@ license: UNKNOWN
 ## 核心原则
 
 **只相信 msprof 数据，不凭直觉。**
+
+**性能比（Ratio）定义**：`Ratio = torch_npu 耗时 / Triton 耗时`。Ratio > 1.0 表示 Triton 更快，Ratio < 1.0 表示更慢。**不是耗时的直接比值，而是耗时的倒数**。目标通常为 Ratio ≥ 1.0x。
 
 **唯一可信采集方式：`msprof`（函数级）和 `msprof op`（算子级）**。其他方式（`time.time()`、`torch.npu.Event`、`do_bench`等）因包含 Host 开销且精度不足，**绝对不可用于性能评估**。
 
@@ -30,7 +32,7 @@ license: UNKNOWN
 |------|----------|----------|
 | 函数级性能对比 | [`msprof-function-level.md`](references/msprof-function-level.md) | msprof-op-level |
 | 算子级硬件分析 | [`msprof-op-level.md`](references/msprof-op-level.md), [`performance-data-analysis.md`](references/performance-data-analysis.md) | msprof-function-level |
-| 理解硬件术语 | [`ascend-terminology.md`](references/ascend-terminology.md) | — |
+| 理解硬件术语 | [`ascend-terminology.md`](../triton-operator-shared/references/ascend-terminology.md) | — |
 
 ## 性能总结模板
 

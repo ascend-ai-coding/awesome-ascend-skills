@@ -96,34 +96,41 @@ def get_triton_sig_typename(dtype):
 # Absolute error: abs(x_ref - x_cal)
 
 # calculation type operators require different error range
-# It is a stricter verification and not satisfied now, save it here
+# Uses same MERE/MARE thresholds as validate_cmp
 def validate_cal(dtype, y_cal, y_ref):
-    if dtype == 'float16':
-        if torch.mean(y_ref) < 0.001:
-            assert torch.abs(y_cal - y_ref) < 0.001, "|y_cal - y_ref| < 0.001 is required !"
-        else:
-            diff = torch.div(torch.abs(y_cal - y_ref), torch.abs(y_cal)) < 0.001
-            # all true
-            assert diff.all(), "Relative error is less than 0.001 !"
-    if dtype == 'float32':
-        if torch.mean(y_ref) < 0.0001:
-            assert torch.abs(y_cal - y_ref) < 0.0001, "|y_cal - y_ref| < 0.0001 is required !"
-        else:
-            diff = torch.div(torch.abs(y_cal - y_ref), torch.abs(y_cal)) < 0.0001
-            assert diff.all(), "Relative error is less than 0.001 !"
-    elif dtype == 'bfloat16':
-        diff = torch.div(torch.abs(y_cal - y_ref), torch.abs(y_cal)) < 0.001
-        assert diff.all(), "Relative error is less than 0.001 !"
-    elif dtype == 'int32' or dtype == 'int64' or dtype == 'int16' or dtype == 'int8':
-        assert torch.equal(y_cal, y_ref)
-    elif dtype == 'uint8' or dtype == 'uint16' or dtype == 'uint32' or dtype == 'uint64':
-        assert torch.equal(y_cal, y_ref)
-    elif dtype == 'bool':
+    if dtype in _PRECISION_THRESHOLDS:
+        threshold = _PRECISION_THRESHOLDS[dtype]
+        mere, mare = _compute_mere_mare(y_cal, y_ref, threshold)
+        assert mere < threshold, \
+            f"MERE={mere:.2e} >= threshold={threshold:.2e} for dtype={dtype}"
+        assert mare < 10 * threshold, \
+            f"MARE={mare:.2e} >= 10*threshold={10*threshold:.2e} for dtype={dtype}"
+    elif dtype in ('int32', 'int64', 'int16', 'int8',
+                   'uint8', 'uint16', 'uint32', 'uint64', 'bool'):
         assert torch.equal(y_cal, y_ref)
     else:
         raise ValueError('Invalid parameter \"dtype\" is found : {}'.format(dtype))
 
 # moving and comparison ops require no precision error
+# Precision thresholds based on dtype mantissa bits:
+#   fp16: 2^-10, bf16: 2^-7, fp32: 2^-13
+# Pass condition: MERE < threshold AND MARE < 10 * threshold
+_PRECISION_THRESHOLDS = {
+    'float16': 2.0 ** -10,
+    'bfloat16': 2.0 ** -7,
+    'float32': 2.0 ** -13,
+}
+
+def _compute_mere_mare(y_cal, y_ref, threshold):
+    y_cal_f = y_cal.float().cpu()
+    y_ref_f = y_ref.float().cpu()
+    abs_diff = torch.abs(y_cal_f - y_ref_f)
+    denom = torch.abs(y_ref_f).clamp(min=threshold)
+    rel_diff = abs_diff / denom
+    mere = rel_diff.mean().item()
+    mare = rel_diff.max().item()
+    return mere, mare
+
 def validate_cmp(dtype, y_cal, y_ref, overflow_mode: Optional[str] = None):
     y_cal=y_cal.npu()
     y_ref=y_ref.npu()
@@ -140,34 +147,32 @@ def validate_cmp(dtype, y_cal, y_ref, overflow_mode: Optional[str] = None):
         else:
             raise ValueError('Invalid parameter "dtype" is found : {}'.format(dtype))
         y_ref = torch.clamp(y_ref, min=min_value, max=max_value)
-    if dtype == 'float16':
-        torch.testing.assert_close(y_ref, y_cal,  rtol=1e-03, atol=1e-03, equal_nan=True)
-    elif dtype == 'bfloat16':
-        torch.testing.assert_close(y_ref.to(torch.float32), y_cal.to(torch.float32),  rtol=1e-02, atol=1e-02, equal_nan=True)
-    elif dtype == 'float32':
-        torch.testing.assert_close(y_ref, y_cal,  rtol=1e-04, atol=1e-04, equal_nan=True)
-    elif dtype == 'int32' or dtype == 'int64' or dtype == 'int16' or dtype == 'int8':
-        assert torch.equal(y_cal, y_ref)
-    elif dtype == 'uint8' or dtype == 'uint16' or dtype == 'uint32' or dtype == 'uint64':
-        assert torch.equal(y_cal, y_ref)
-    elif dtype == 'bool':
+    if dtype in _PRECISION_THRESHOLDS:
+        threshold = _PRECISION_THRESHOLDS[dtype]
+        mere, mare = _compute_mere_mare(y_cal, y_ref, threshold)
+        assert mere < threshold, \
+            f"MERE={mere:.2e} >= threshold={threshold:.2e} for dtype={dtype}"
+        assert mare < 10 * threshold, \
+            f"MARE={mare:.2e} >= 10*threshold={10*threshold:.2e} for dtype={dtype}"
+    elif dtype in ('int32', 'int64', 'int16', 'int8',
+                   'uint8', 'uint16', 'uint32', 'uint64', 'bool'):
         assert torch.equal(y_cal, y_ref)
     else:
         raise ValueError('Invalid parameter \"dtype\" is found : {}'.format(dtype))
 
 def validate_cmp_with_expection(dtype, y_cal, y_ref, expect):
-    if dtype == 'float32' or dtype == 'float16':
+    if dtype in _PRECISION_THRESHOLDS:
+        threshold = _PRECISION_THRESHOLDS[dtype]
+        mere, mare = _compute_mere_mare(y_cal, y_ref, threshold)
+        passed = (mere < threshold) and (mare < 10 * threshold)
         if expect:
-            assert torch.allclose(y_ref, y_cal,  rtol=1e-03, atol=1e-03, equal_nan=True)
+            assert passed, \
+                f"Expected pass but MERE={mere:.2e}, MARE={mare:.2e} for dtype={dtype}"
         else:
-            assert not torch.allclose(y_ref, y_cal, rtol=1e-03, atol=1e-03, equal_nan=True)
-    elif dtype == 'bfloat16':
-        if expect:
-            assert torch.allclose(y_ref.to(torch.float32), y_cal.to(torch.float32),  rtol=1e-02, atol=1e-02, equal_nan=True)
-        else:
-            assert not torch.allclose(y_ref.to(torch.float32), y_cal.to(torch.float32), rtol=1e-02, atol=1e-02, equal_nan=True)
-    elif dtype == 'int32' or dtype == 'int64' or dtype == 'int16' or dtype == 'int8' \
-        or dtype == 'uint8' or dtype == 'uint16' or dtype == 'uint32' or dtype == 'uint64':
+            assert not passed, \
+                f"Expected fail but MERE={mere:.2e}, MARE={mare:.2e} for dtype={dtype}"
+    elif dtype in ('int32', 'int64', 'int16', 'int8',
+                   'uint8', 'uint16', 'uint32', 'uint64', 'bool'):
         if expect:
             assert torch.equal(y_cal, y_ref)
         else:

@@ -1,0 +1,12 @@
+{
+  "default_context": "",
+  "default_namespace": "",
+  "readonly_mode": false,
+  "auto_confirm": false,
+  "ask_before_dangerous": true,
+  "remote_defaults": {
+    "host": "",
+    "user": "",
+    "key_path": ""
+  }
+}

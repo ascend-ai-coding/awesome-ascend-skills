@@ -43,6 +43,9 @@
 - [ ] 多核 kernel 中 `tl.atomic_add` 返回值未被使用
 
 ### 代码模式
+- [ ] `for/while` 循环内无 `return` 语句（含子函数中的 return）
+- [ ] `for` 循环内无 `break` 语句
+- [ ] 未使用 `tensor[i]` 索引操作（读取/赋值/切片均不支持，用 `tl.where`/`tl.gather`/`tl.extract_slice` 替代）
 - [ ] 小且固定次数的循环可考虑 `tl.static_range`（loop 数较大时可能劣化，非强制）
 - [ ] kernel 内未调用第三方库
 - [ ] 向量化计算（非逐元素）

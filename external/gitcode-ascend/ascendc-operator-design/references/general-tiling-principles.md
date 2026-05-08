@@ -387,6 +387,14 @@ int64_t bufferSize = AlignTo32(tileLength * dtypeSize, dtypeSize);
   |
   No
   v
+索引操作(gather/scatter/index_select...)? --Yes--> Index Tiling (see index-tiling.md)
+  |
+  No
+  v
+排序操作? --Yes--> Sort Tiling (see sort-tiling.md)
+  |
+  No
+  v
 其他复杂操作? --Yes--> 自定义 Tiling (参考通用原则)
   |
   No
@@ -442,3 +450,4 @@ if (totalUB > UB_SIZE_LIMIT) {
 
 - `elementwise-tiling.md` - 逐元素操作（包含完整的两级 Tiling 实现）
 - `reduction-tiling.md` - 归约操作
+- `index-tiling.md` - 索引操作（Gather/Scatter/IndexSelect，包含三种执行路径和多行批量处理）

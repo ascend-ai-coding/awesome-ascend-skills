@@ -5,7 +5,7 @@ description: 为 msModelSlim 创建基础 Transformers 模型适配器（Model A
   Transformers 架构。
 original-name: model-adapt
 synced-from: https://github.com/kali20gakki/mindstudio-skills
-synced-date: '2026-04-29'
+synced-date: '2026-05-08'
 synced-commit: f6695da3cfa864a100db5a94f594b638aeff6389
 license: UNKNOWN
 ---

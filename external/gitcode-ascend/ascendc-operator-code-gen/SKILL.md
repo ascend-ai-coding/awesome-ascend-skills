@@ -4,8 +4,8 @@ description: '根据设计文档生成 AscendC 算子完整代码实现并完成
   代码、注册到 PyTorch 框架、编译测试。关键词：代码生成、op_host、op_kernel、tiling、kernel、框架适配、算子注册。'
 original-name: ascendc-operator-code-gen
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-04-29'
-synced-commit: 8faee0275e457955c8f50989aef8972c0838db31
+synced-date: '2026-05-08'
+synced-commit: 155ac37bd169ddb89479af528297cfb2237400aa
 license: UNKNOWN
 ---
 
@@ -52,6 +52,10 @@ license: UNKNOWN
 |---------|-------------|---------------|
 | Elementwise (ReLU, GELU, Add...) | [`templates/elementwise_op_host.cpp`](templates/elementwise_op_host.cpp) | [`templates/elementwise_op_kernel.cpp`](templates/elementwise_op_kernel.cpp) |
 | 行处理 (LayerNorm, Softmax...) | [`templates/row_op_host.cpp`](templates/row_op_host.cpp) | [`templates/row_op_kernel.cpp`](templates/row_op_kernel.cpp) |
+| Index-PerRow (IndexSelect, 共享1D索引) | [`templates/index_op_host.cpp`](templates/index_op_host.cpp) | [`templates/index_op_kernel.cpp`](templates/index_op_kernel.cpp) |
+| Index-PerElem (Gather, Scatter, 逐行索引) | [`templates/index_op_per_elem_host.cpp`](templates/index_op_per_elem_host.cpp) | [`templates/index_op_per_elem_kernel.cpp`](templates/index_op_per_elem_kernel.cpp) |
+| Sort (Sort, TopK...) | [`templates/sort_op_host.cpp`](templates/sort_op_host.cpp) | [`templates/sort_op_kernel.cpp`](templates/sort_op_kernel.cpp) |
+| Pool (MaxPool, AvgPool...) | [`templates/pool_ndhwc_op_host.cpp`](templates/pool_ndhwc_op_host.cpp) | [`templates/pool_ndhwc_op_kernel.cpp`](templates/pool_ndhwc_op_kernel.cpp) |
 
 **MANDATORY**: 读取对应模板文件的完整内容，复制到目标路径后修改。
 

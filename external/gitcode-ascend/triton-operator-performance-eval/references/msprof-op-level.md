@@ -47,15 +47,22 @@ msprof op \
 
 ```
 output/
-├── ArithmeticUtilization.csv # Cube和Vector类型的指令耗时和占比
-├── L2Cache.csv               # L2 Cache命中率
-├── Memory.csv                # UB/L1/L2/主存储器读写带宽速率
-├── MemoryL0.csv              # L0A/L0B/L0C读写带宽速率
-├── MemoryUB.csv              # mte/vector/scalar采集UB读写带宽速率
-├── OpBasicInfo.csv           # 算子基础信息（名称、block dim、耗时等）
-├── PipeUtilization.csv       # 计算单元和搬运单元耗时和占比
-├── ResourceConflictRatio.csv # UB上的bank group、bank conflict占比
-└── visualize_data.bin        # 可视化数据二进制文件
+└── OPPROF_<timestamp>/
+    ├── ArithmeticUtilization.csv # Cube和Vector类型的指令耗时和占比
+    ├── L2Cache.csv               # L2 Cache命中率
+    ├── Memory.csv                # UB/L1/L2/主存储器读写带宽速率
+    ├── MemoryL0.csv              # L0A/L0B/L0C读写带宽速率
+    ├── MemoryUB.csv              # mte/vector/scalar采集UB读写带宽速率
+    ├── OpBasicInfo.csv           # 算子基础信息（名称、block dim、耗时等）
+    ├── PipeUtilization.csv       # 计算单元和搬运单元耗时和占比
+    ├── ResourceConflictRatio.csv # UB上的bank group、bank conflict占比
+    ├── visualize_data.bin        # 可视化数据二进制文件
+    └── dump/                     # 原始采集二进制数据
+        ├── DeviceProf<N>.bin
+        ├── L2Cache.bin
+        ├── aicore_binary.o
+        ├── duration.bin
+        └── op_basic_info.txt
 ```
 
 ## Triton Kernel 名称获取

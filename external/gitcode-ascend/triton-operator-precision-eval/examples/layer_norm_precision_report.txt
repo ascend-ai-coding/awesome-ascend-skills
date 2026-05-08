@@ -9,9 +9,10 @@
   Epsilon: 1e-05
 --------------------------------------------------------------------------------
 [精度标准]:
-  float16: 相对误差 rtol=1e-03, atol=1e-03
-  float32: 相对误差 rtol=1e-04, atol=1e-04
-  bfloat16: 相对误差 rtol=1e-02, atol=1e-02
+  判定条件: MERE < 阈值 且 MARE < 10 × 阈值
+  float16: 阈值=2^-10 ≈ 9.77e-4, MERE < 9.77e-4, MARE < 9.77e-3
+  float32: 阈值=2^-13 ≈ 1.22e-4, MERE < 1.22e-4, MARE < 1.22e-3
+  bfloat16: 阈值=2^-7 ≈ 7.81e-3, MERE < 7.81e-3, MARE < 7.81e-2
   int32/int64/int16/int8: 完全相等
   uint32/uint64/uint16/uint8: 完全相等
   bool: 完全相等

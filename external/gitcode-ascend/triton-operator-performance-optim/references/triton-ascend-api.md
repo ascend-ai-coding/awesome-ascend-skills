@@ -53,6 +53,26 @@ def calculate_ub_requirement(D, dtype='fp16'):
 
 - **作用**：在 Ascend 上，这两者无效
 
+### compile_hint 编译提示
+
+```python
+# 仅 pad K 维（矩阵乘法中减少 UB 占用 30-50%）
+tl.compile_hint(acc, "dot_pad_only_k")
+
+# 溢出处理模式
+tl.compile_hint(tensor, "overflow_mode", "saturate")  # 饱和截断
+tl.compile_hint(tensor, "overflow_mode", "trunc")     # 直接截断（默认）
+
+# 双缓冲（等效 tl.multibuffer(tensor, 2)）
+tl.compile_hint(tensor, "multi_buffer", 2)
+```
+
+| Hint | 参数 | 作用 | 适用场景 |
+|------|------|------|---------|
+| `dot_pad_only_k` | 无 | 仅 pad K 维 | MatMul 中 BLOCK_M/N 已对齐，仅 K 需 padding |
+| `overflow_mode` | `"saturate"` / `"trunc"` | 溢出处理策略 | 类型转换时控制溢出行为 |
+| `multi_buffer` | `2` | 启用双缓冲 | DMA 与计算重叠 |
+
 ## 高性能实现模式
 
 ### 模式 1：矩阵乘法（GEMM）
@@ -357,14 +377,17 @@ offsets = tl.arange(0, BLOCK_SIZE) * 2  # 非连续
 offsets = tl.arange(0, BLOCK_SIZE)  # 好
 ```
 
-### 陷阱 5：不支持python风格的slice操作
+### 陷阱 5：不支持 Python 风格的 slice 和索引操作
 
 ```python
-# 问题：python风格的slice操作不支持
-subx = x[1:3] # 编译错误
-y[2:4] = suby # 编译错误
+# 问题：Python 风格的 slice 和标量索引操作不支持
+subx = x[1:3]       # 编译错误（切片）
+y[2:4] = suby       # 编译错误（切片赋值）
+local_vector[i] = 123.0  # AssertionError（标量索引赋值）
+val = tensor[i]          # AssertionError（标量索引读取）
 
-# 解决：使用triton.language.extra.cann.extension中的操作
+# 解决：使用 triton 专用 API
+# 1. 切片 → tl.extract_slice / extension.extract_slice
 subx = extension.extract_slice(
     x,
     offsets=(1,),
@@ -378,6 +401,13 @@ y = extension.insert_slice(
     sizes=(2,),
     strides=(1,),  # 只能是包含1的tuple
 )  # 好
+
+# 2. 标量索引赋值 → tl.where
+idx = tl.arange(0, BLOCK_SIZE)
+local_vector = tl.where(i == idx, 123.0, local_vector)  # 好
+
+# 3. 标量索引读取 → tl.gather
+val = tl.gather(tensor, index, axis=0)  # 好
 ```
 
 ### 陷阱 6：多维以及超过物理核数的grid对性能无益
@@ -405,6 +435,93 @@ res = tl.where(mask, a, b)
 x = tl.load(x_ptr) # 假设int32
 mask = x.to(tl.float32) > 0 # 好
 res = tl.where(mask, a, b)
+```
+
+### 陷阱 8：Triton kernel 循环内不支持 return / break
+
+Triton IR 使用 MLIR 结构化控制流（`scf.for`/`scf.while`），不支持 early exit。`return` 和 `break` 在循环中均会触发编译错误。
+
+```python
+# 问题：循环内 return / break 触发编译错误
+for i in range(N):
+    if cond:
+        return val  # 编译错误："Cannot have return statements inside while or for"
+        break       # 编译错误："unsupported AST node type: Break"
+
+# 注意：return 检查是传递性的——子函数中的 return 也会被拒绝
+@triton.jit
+def helper():
+    return val  # 如果 helper 被 for/while 循环内调用，同样报错
+
+# 解决：while + 布尔标志，或 tl.where mask 跳过不需要的计算
+```
+
+### 陷阱 9：Triton tensor 不支持 Python 风格标量索引
+
+```python
+# 问题：tensor[i] 操作触发 AssertionError
+local_vector = tl.zeros((BLOCK_SIZE,), dtype=tl.float32)
+local_vector[i] = 123.0  # AssertionError
+val = tensor[i]           # AssertionError
+
+# 解决：
+# 1. 赋值 → tl.where
+idx = tl.arange(0, BLOCK_SIZE)
+local_vector = tl.where(i == idx, 123.0, local_vector)  # ✅
+
+# 2. 读取 → tl.gather
+val = tl.gather(tensor, index, axis=0)  # ✅
+```
+
+## Ascend 高性能 API
+
+### tl.parallel(bind_sub_block=True) — 多 Vector Core 并行
+
+将 post-dot 操作分配到 2 个 vector core 并行执行：
+
+```python
+SUB_BLK_M: tl.constexpr = BLOCK_M // 2
+
+for s in tl.parallel(0, 2, bind_sub_block=True):
+    sub = tl.extract_slice(acc, (s * SUB_BLK_M, 0), (SUB_BLK_M, BLOCK_N), (1, 1))
+    sub = tl.where(sub > 0.0, sub, 0.0)  # 激活
+    sub = sub.to(tl.float16)              # 类型转换
+    # tl.store(c_ptr + ..., sub)
+```
+
+**适用**：`tl.dot` 之后的 activation、cast、store 操作。
+
+### tl.multibuffer() — 双缓冲
+
+```python
+a = tl.load(a_ptr + ...)
+a = tl.multibuffer(a, size=2)  # 当前仅支持 size=2
+# A2/A3 默认启用，重叠 DMA 与计算
+```
+
+### care_padding=False — 加速 tl.load
+
+```python
+x = tl.load(ptr + offsets, mask=mask, other=0.0, care_padding=False)
+# ~5-10% 性能提升，当 padding 值不影响结果时使用
+```
+
+### tl.cast(overflow_mode=...) — 带溢出控制的类型转换
+
+```python
+y = x.to(tl.float16, overflow_mode="saturate")  # 溢出时饱和
+y = x.to(tl.float16, overflow_mode="trunc")     # 溢出时截断（默认）
+```
+
+### sync_block_set / sync_block_wait — Cube-Vector 信号同步
+
+```python
+# Cube 完成后通知 Vector（16 个 event_id: 0-15）
+tl.sync_block_set(sender="cube", receiver="vector", event_id=0)
+
+# Vector 等待 Cube 完成
+tl.sync_block_wait(sender="cube", receiver="vector", event_id=0)
+```
 
 ## 参考资源
 
