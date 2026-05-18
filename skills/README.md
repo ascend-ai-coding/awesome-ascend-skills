@@ -1,6 +1,6 @@
 # Skills
 
-本目录是 Awesome Ascend Skills 中**所有本地 skills 的统一入口**。
+这里是本仓所有本地 skills 的入口。
 
 规则：
 
@@ -8,7 +8,7 @@
 - root 不再承载本地 `SKILL.md`
 - `external/` 单独保留为外部同步目录
 
-## 功能域导航
+## 按功能域进入
 
 - [`base/`](base/)：基础环境、设备、容器、PyTorch NPU 基础能力
 - [`inference/`](inference/)：推理、模型转换、量化、评测
@@ -20,6 +20,6 @@
 
 ## 维护约定
 
-- 新增本地 skill 时，先判断功能域，再放入对应 `skills/<domain>/...`
-- 若需要 bundle 暴露或 README 导航入口，同时更新 `.claude-plugin/marketplace.json` 与 root `README.md`
-- 如果目录结构发生迁移，README、validator、CI、marketplace 与交叉链接必须在同一轮更新中完成
+- 新增本地 skill 时，先判断功能域，再放到对应的 `skills/<domain>/...`
+- 如果需要在 bundle 或 README 中露出入口，同时更新 `.claude-plugin/marketplace.json` 和 root `README.md`
+- 如果迁移目录结构，同一轮改完 README、validator、CI、marketplace 和交叉链接
