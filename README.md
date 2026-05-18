@@ -222,65 +222,65 @@ cp -r awesome-ascend-skills/skills/ops/npu-op-benchmark your-project/.agents/ski
 
 ### 基础环境与运维
 
-| Skill | 类别 | 描述 |
-|------|------|------|
-| [npu-smi](skills/base/npu-smi/SKILL.md) | 运维 | NPU 设备管理：健康状态查询、温度/功耗监控、固件升级、虚拟化配置、证书管理 |
-| [ascend-docker](skills/base/ascend-docker/SKILL.md) | 运维 | Docker 容器配置：NPU 设备映射、卷挂载、开发环境隔离 |
-| [torch_npu](skills/base/torch_npu/SKILL.md) | 开发 | PyTorch 昇腾扩展：环境检查、部署指引、PyTorch 迁移到 NPU |
-| [remote-server-guide](skills/base/remote-server-guide/SKILL.md) | 运维 | 远程服务器连接：SSH 认证、容器连接、远程执行、文件传输与故障排查 |
-| [npu-docker-launcher](skills/base/npu-docker-launcher/SKILL.md) | 运维 | NPU Docker 容器一键启动：自动配置设备挂载、网络、卷挂载和环境变量 |
-| [ascend-dmi](skills/base/ascend-dmi/SKILL.md) | 运维 | NPU 硬件管理与诊断：状态、带宽、算力、功耗、压力测试与卡复位 |
-| [ascend-avi-vnpu](skills/base/ascend-avi-vnpu/SKILL.md) | 运维 | AVI 模式与 vNPU 管理：虚拟化实例查询、创建、销毁与恢复状态检查 |
+| Skill | 描述 |
+|------|------|
+| [npu-smi](skills/base/npu-smi/SKILL.md) | NPU 设备管理：健康状态查询、温度/功耗监控、固件升级、虚拟化配置、证书管理 |
+| [ascend-docker](skills/base/ascend-docker/SKILL.md) | Docker 容器配置：NPU 设备映射、卷挂载、开发环境隔离 |
+| [torch_npu](skills/base/torch_npu/SKILL.md) | PyTorch 昇腾扩展：环境检查、部署指引、PyTorch 迁移到 NPU |
+| [remote-server-guide](skills/base/remote-server-guide/SKILL.md) | 远程服务器连接：SSH 认证、容器连接、远程执行、文件传输与故障排查 |
+| [npu-docker-launcher](skills/base/npu-docker-launcher/SKILL.md) | NPU Docker 容器一键启动：自动配置设备挂载、网络、卷挂载和环境变量 |
+| [ascend-dmi](skills/base/ascend-dmi/SKILL.md) | NPU 硬件管理与诊断：状态、带宽、算力、功耗、压力测试与卡复位 |
+| [ascend-avi-vnpu](skills/base/ascend-avi-vnpu/SKILL.md) | AVI 模式与 vNPU 管理：虚拟化实例查询、创建、销毁与恢复状态检查 |
 
 ### 推理与模型转换
 
-| Skill | 类别 | 描述 |
-|------|------|------|
-| [atc-model-converter](skills/inference/atc-model-converter/SKILL.md) | 开发 | ATC 模型转换：ONNX 转 .om 格式、OM 推理、精度对比、YOLO 端到端部署 |
-| [vllm-ascend](skills/inference/vllm-ascend/SKILL.md) | 开发 | vLLM 推理引擎：离线批推理、OpenAI 兼容 API、量化模型服务、分布式推理 |
-| [vllm-ascend-server](skills/inference/vllm-ascend-server/SKILL.md) | 开发 | vLLM 推理服务部署：模型发现、量化检测、张量并行、graph/eager 模式、健康检查 |
-| [vllm-bench-serve](skills/inference/vllm-bench-serve/SKILL.md) | 测试 | vLLM 在线性能压测与自动寻优：单次、批量、SLO 约束下搜索最优并发吞吐 |
-| [msmodelslim-quant](skills/inference/msmodelslim/msmodelslim-quant/SKILL.md) | 开发 | msmodelslim 已验证模型量化流程：环境检查、方案查询、容器部署与量化执行 |
-| [ais-bench](skills/inference/ais-bench/SKILL.md) | 测试 | AI 模型评估工具：精度评估、性能压测、Function Call |
-| [diffusers-ascend-skills](skills/inference/diffusers-ascend/diffusers-ascend-pipeline/SKILL.md) | 技能包 | Diffusers 环境、权重准备与推理 |
-| [wan-ascend-adaptation](skills/inference/wan-ascend-adaptation/SKILL.md) | 开发 | Wan 系列视频生成模型及相似扩散框架的昇腾适配指南 |
+| Skill | 描述 |
+|------|------|
+| [atc-model-converter](skills/inference/atc-model-converter/SKILL.md) | ATC 模型转换：ONNX 转 .om 格式、OM 推理、精度对比、YOLO 端到端部署 |
+| [vllm-ascend](skills/inference/vllm-ascend/SKILL.md) | vLLM 推理引擎：离线批推理、OpenAI 兼容 API、量化模型服务、分布式推理 |
+| [vllm-ascend-server](skills/inference/vllm-ascend-server/SKILL.md) | vLLM 推理服务部署：模型发现、量化检测、张量并行、graph/eager 模式、健康检查 |
+| [vllm-bench-serve](skills/inference/vllm-bench-serve/SKILL.md) | vLLM 在线性能压测与自动寻优：单次、批量、SLO 约束下搜索最优并发吞吐 |
+| [msmodelslim-quant](skills/inference/msmodelslim/msmodelslim-quant/SKILL.md) | msmodelslim 已验证模型量化流程：环境检查、方案查询、容器部署与量化执行 |
+| [ais-bench](skills/inference/ais-bench/SKILL.md) | AI 模型评估工具：精度评估、性能压测、Function Call |
+| [diffusers-ascend-skills](skills/inference/diffusers-ascend/diffusers-ascend-pipeline/SKILL.md) | Diffusers 环境、权重准备与推理 |
+| [wan-ascend-adaptation](skills/inference/wan-ascend-adaptation/SKILL.md) | Wan 系列视频生成模型及相似扩散框架的昇腾适配指南 |
 
 ### 训练与通信
 
-| Skill | 类别 | 描述 |
-|------|------|------|
-| [hccl-test](skills/training/hccl-test/SKILL.md) | 测试 | HCCL 集合通信性能测试：带宽测试、AllReduce/AllGather 等基准测试 |
-| [torch-npu-comm-test](skills/training/torch-npu-comm-test/SKILL.md) | 测试 | 通过 torch.distributed 测试通信算子性能，贴近真实训练场景 |
-| [mindspeed-llm-skills](skills/training/mindspeed-llm/mindspeed-llm-pipeline/SKILL.md) | 技能包 | MindSpeed-LLM 环境搭建、数据预处理、权重转换、训练启动 |
-| [mindspeed-mm-skills](skills/training/mindspeed-mm/mindspeed-mm-pipeline/SKILL.md) | 技能包 | MindSpeed-MM 多模态训练：环境、权重、VLM、生成模型与端到端流水线 |
-| [verl-quickstart](skills/training/verl-quickstart/SKILL.md) | 开发 | VERL 强化学习 quickstart：镜像选择、数据预处理、模型路径、PPO/GRPO 训练脚本 |
-| [training-mfu-calculator](skills/profiling/training-mfu-calculator/SKILL.md) | 分析 | 大模型训练 MFU 计算、FLOPs 分析与性能报告 |
+| Skill | 描述 |
+|------|------|
+| [hccl-test](skills/training/hccl-test/SKILL.md) | HCCL 集合通信性能测试：带宽测试、AllReduce/AllGather 等基准测试 |
+| [torch-npu-comm-test](skills/training/torch-npu-comm-test/SKILL.md) | 通过 torch.distributed 测试通信算子性能，贴近真实训练场景 |
+| [mindspeed-llm-skills](skills/training/mindspeed-llm/mindspeed-llm-pipeline/SKILL.md) | MindSpeed-LLM 环境搭建、数据预处理、权重转换、训练启动 |
+| [mindspeed-mm-skills](skills/training/mindspeed-mm/mindspeed-mm-pipeline/SKILL.md) | MindSpeed-MM 多模态训练：环境、权重、VLM、生成模型与端到端流水线 |
+| [verl-quickstart](skills/training/verl-quickstart/SKILL.md) | VERL 强化学习 quickstart：镜像选择、数据预处理、模型路径、PPO/GRPO 训练脚本 |
+| [training-mfu-calculator](skills/profiling/training-mfu-calculator/SKILL.md) | 大模型训练 MFU 计算、FLOPs 分析与性能报告 |
 
 ### Profiling 与性能分析
 
-| Skill | 类别 | 描述 |
-|------|------|------|
-| [profiling-analysis](skills/profiling/profiling-analysis/SKILL.md) | 分析 | Profiling 性能分析技能集：识别下发、通信、计算瓶颈 |
-| [mindspeed-llm-train-profiler](skills/profiling/mindspeed-llm-train-profiler/SKILL.md) | 分析 | 自动化完成 MindSpeed-LLM 训练 Profiling 数据采集 |
-| [npu-op-benchmark](skills/ops/npu-op-benchmark/SKILL.md) | 测试 | 昇腾 NPU 算子性能基准测试 |
+| Skill | 描述 |
+|------|------|
+| [profiling-analysis](skills/profiling/profiling-analysis/SKILL.md) | Profiling 性能分析技能集：识别下发、通信、计算瓶颈 |
+| [mindspeed-llm-train-profiler](skills/profiling/mindspeed-llm-train-profiler/SKILL.md) | 自动化完成 MindSpeed-LLM 训练 Profiling 数据采集 |
+| [npu-op-benchmark](skills/ops/npu-op-benchmark/SKILL.md) | 昇腾 NPU 算子性能基准测试 |
 
 ### 算子开发与迁移
 
-| Skill | 类别 | 描述 |
-|------|------|------|
-| [ascendc](skills/ops/ascendc/SKILL.md) | 开发 | AscendC 算子开发：Transformer 算子实现、CANN API 示例 |
-| [ascend-opplugin](skills/ops/ascend-opplugin/SKILL.md) | 开发 | op-plugin 环境安装与 torch_npu 自定义算子接入 |
-| [triton-ascend-migration](skills/ops/triton-ascend-migration/SKILL.md) | 开发 | GPU/CUDA Triton 算子迁移到 Triton-Ascend |
+| Skill | 描述 |
+|------|------|
+| [ascendc](skills/ops/ascendc/SKILL.md) | AscendC 算子开发：Transformer 算子实现、CANN API 示例 |
+| [ascend-opplugin](skills/ops/ascend-opplugin/SKILL.md) | op-plugin 环境安装与 torch_npu 自定义算子接入 |
+| [triton-ascend-migration](skills/ops/triton-ascend-migration/SKILL.md) | GPU/CUDA Triton 算子迁移到 Triton-Ascend |
 
 ### 工程知识与专项方向
 
-| Skill | 类别 | 描述 |
-|------|------|------|
-| [github-issue-summary](skills/agent-tools/github-issue-summary/SKILL.md) | 开发 | 从已关闭 issue 生成故障排查案例、根因分析、经验总结 |
-| [github-issue-rca](skills/agent-tools/github-issue-rca/SKILL.md) | 开发 | GitHub Issue 根因分析与调查方向评估 |
-| [gitcode-merge-flow](skills/agent-tools/gitcode-merge-flow/SKILL.md) | 开发 | GitCode 开源仓合入流程：commit、push、issue、PR、流水线、review 与 merge |
-| [hiascend-forum](skills/agent-tools/hiascend-forum/hiascend-forum-fetcher/SKILL.md) | 开发 | 昇腾社区论坛帖子抓取与开发者反馈问题分析 |
-| [ai-for-science](skills/ai-for-science/ai4s-main/SKILL.md) | 开发 | AI for Science 总入口：负责 Profiling 采集、模型迁移、路线选择与分流 |
+| Skill | 描述 |
+|------|------|
+| [github-issue-summary](skills/agent-tools/github-issue-summary/SKILL.md) | 从已关闭 issue 生成故障排查案例、根因分析、经验总结 |
+| [github-issue-rca](skills/agent-tools/github-issue-rca/SKILL.md) | GitHub Issue 根因分析与调查方向评估 |
+| [gitcode-merge-flow](skills/agent-tools/gitcode-merge-flow/SKILL.md) | GitCode 开源仓合入流程：commit、push、issue、PR、流水线、review 与 merge |
+| [hiascend-forum](skills/agent-tools/hiascend-forum/hiascend-forum-fetcher/SKILL.md) | 昇腾社区论坛帖子抓取与开发者反馈问题分析 |
+| [ai-for-science](skills/ai-for-science/ai4s-main/SKILL.md) | AI for Science 总入口：负责 Profiling 采集、模型迁移、路线选择与分流 |
 
 ## 外部 Skills (External Skills)
 
