@@ -1,0 +1,73 @@
+# Qwen3-VL Best Practice Configuration (Multimodal)
+# Last updated: 2026-02-27
+
+model:
+  name: "Qwen3-VL"
+  category: vl
+  description: "Qwen3 Vision-Language model for multimodal tasks"
+  hf_path: "Qwen/Qwen3-VL-7B-Instruct"
+  architectures: ["Qwen3VLForConditionalGeneration"]
+
+deployment:
+  recommended_tp: 1
+  min_npu_count: 1
+  recommended_memory_gb: 48
+
+performance:
+  max_model_len: 32768
+  max_num_seqs: 128
+  max_num_batched_tokens: 4096
+  block_size: 128
+  gpu_memory_utilization: 0.9
+
+env_vars:
+  TASK_QUEUE_ENABLE: 1
+  VLLM_ASCEND_ENABLE_DENSE_OPTIMIZE: 1
+  ASCEND_RT_VISIBLE_DEVICES: "0"
+
+vllm_args:
+  trust_remote_code: true
+  quantization: ascend
+  async_scheduling: true
+  no_enable_prefix_caching: true
+  limit-mm-per-prompt: "image=5,video=1"
+  distributed_executor_backend: mp
+
+additional_config:
+  enable_cpu_binding: true
+
+compilation_config:
+  cudagraph_mode: "FULL_DECODE_ONLY"
+
+# Feature support
+features:
+  chunked_prefill: true
+  automatic_prefix_cache: false
+  speculative_decoding: false
+  lora: false
+  multimodal: true
+
+# Multimodal settings
+multimodal_config:
+  image_input_type: "pixel_values"
+  max_image_size: 1024
+  max_video_frames: 16
+
+# Example launch command
+example_command: |
+  vllm serve /path/to/Qwen3-VL-7B \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --served-model-name Qwen3-VL-7B \
+    --trust-remote-code \
+    --max-num-seqs 128 \
+    --max-model-len 32768 \
+    --max-num-batched-tokens 4096 \
+    --tensor-parallel-size 1 \
+    --quantization ascend \
+    --gpu-memory-utilization 0.9 \
+    --no-enable-prefix-caching \
+    --async-scheduling \
+    --limit-mm-per-prompt "image=5,video=1" \
+    --additional-config '{"enable_cpu_binding":true}' \
+    --compilation-config '{"cudagraph_mode": "FULL_DECODE_ONLY"}'

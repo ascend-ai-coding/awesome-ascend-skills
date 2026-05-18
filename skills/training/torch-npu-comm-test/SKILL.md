@@ -303,5 +303,5 @@ torchrun --nproc_per_node=8 scripts/comm-bench.py \
 ## Official References
 
 - **PyTorch Distributed**: https://pytorch.org/docs/stable/distributed.html
-- **torch_npu Distributed**: 见 [torch_npu SKILL](../../base/torch_npu/SKILL.md) 中的分布式章节
+- **torch_npu Distributed**: 见 [torch_npu SKILL](../torch_npu/SKILL.md) 中的分布式章节
 - **HCCL 文档**: https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/83RC1/devaids/hccltool/HCCLpertest_16_0001.html

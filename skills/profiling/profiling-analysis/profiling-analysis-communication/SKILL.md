@@ -1,5 +1,5 @@
 ---
-name: profiling-analysis-profiling-communication
+name: profiling-analysis-communication
 description: Skill for analyzing communication performance bottlenecks and detecting slow/fast rank issues in Ascend NPU systems. Use this skill whenever you need to analyze communication efficiency, data transfer bottlenecks, or identify slow/fast rank problems using profiling data.
 ---
 

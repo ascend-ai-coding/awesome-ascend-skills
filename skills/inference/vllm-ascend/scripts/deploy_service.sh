@@ -1,9 +1,6 @@
 #!/bin/bash
 set -e
 
-readonly SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-readonly CHECK_ENV_SCRIPT="$SCRIPT_DIR/check_env.sh"
-
 # Configuration (use placeholders)
 MODEL_PATH="${MODEL_PATH:-/path/to/model}"
 PORT="${PORT:-8000}"
@@ -50,8 +47,8 @@ echo ""
 
 # Check environment
 echo "Step 1: Checking environment..."
-if [ -f "$CHECK_ENV_SCRIPT" ]; then
-    bash "$CHECK_ENV_SCRIPT"
+if [ -f vllm-ascend/scripts/check_env.sh ]; then
+    bash vllm-ascend/scripts/check_env.sh
 else
     echo "Warning: check_env.sh not found, skipping environment check"
 fi

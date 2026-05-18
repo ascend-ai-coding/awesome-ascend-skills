@@ -1,0 +1,4 @@
+interface:
+  display_name: "Megatron Change Analyzer"
+  short_description: "Summarize feature evolution from Megatron changes"
+  default_prompt: "Use $megatron-change-analyzer to turn Megatron commits or PRs into feature evolution findings and risk labels."

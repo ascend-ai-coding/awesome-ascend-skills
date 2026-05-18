@@ -1,0 +1,4 @@
+interface:
+  display_name: "Megatron Migration Generator"
+  short_description: "Produce migration reports and candidate patches"
+  default_prompt: "Use $megatron-migration-generator to generate a migration report and candidate patch for MindSpeed from aligned Megatron changes."

@@ -12,85 +12,278 @@
       "name": "npu-smi",
       "description": "Huawei Ascend NPU npu-smi command reference. Use for device queries (health, temperature, power, memory, processes, ECC), configuration (thresholds, modes, fan), firmware upgrades (MCU, bootloader, VRD), virtualization (vNPU), and certificate management.",
       "source": "./skills/base/npu-smi",
-      "category": "operations"
+      "category": "base",
+      "categories": [
+        "base",
+        "leaf-skill",
+        "device-management",
+        "hardware-diagnostics",
+        "virtualization"
+      ]
     },
     {
       "name": "hccl-test",
       "description": "HCCL (Huawei Collective Communication Library) performance testing for Ascend NPU clusters. Use for testing distributed communication bandwidth, verifying HCCL functionality, and benchmarking collective operations like AllReduce, AllGather, AlltoAll.",
       "source": "./skills/training/hccl-test",
-      "category": "testing"
+      "category": "training",
+      "categories": [
+        "training",
+        "leaf-skill",
+        "distributed-communication",
+        "benchmarking",
+        "hardware-diagnostics"
+      ]
     },
     {
       "name": "torch-npu-comm-test",
-      "description": "通过 PyTorch torch.distributed 接口测试昇腾 NPU 通信算子性能。支持指定任意 tensor shape、dtype，使用 torchrun 启动，贴近真实训练场景的通信算子测试与性能分析。Test collective communication operators with specific tensor shapes via torch.distributed on Ascend NPU.",
+      "description": "通过 PyTorch torch.distributed 接口测试昇腾 NPU 通信算子性能。支持指定任意 tensor shape、dtype，使用 torchrun 启动，贴近真实训练场景的通信算子测试与性能分析。Use for testing collective communication operators (AllReduce, AllGather, ReduceScatter, etc.) with specific tensor shapes via torch.distributed on Ascend NPU.",
       "source": "./skills/training/torch-npu-comm-test",
-      "category": "testing"
+      "category": "training",
+      "categories": [
+        "training",
+        "leaf-skill",
+        "distributed-communication",
+        "pytorch-npu",
+        "benchmarking"
+      ]
+    },
+    {
+      "name": "verl-quickstart",
+      "description": "Generates an executable, end-to-end VERL reinforcement learning quickstart runbook for Ascend/NPU (docker image, dataset preprocessing, model setup, main_ppo training, and examples/run_*.sh flow). Use when users mention verl, quickstart, PPO/GRPO, gsm8k, run_*.sh, Ascend, or NPU training.",
+      "source": "./skills/training/verl-quickstart",
+      "category": "training",
+      "categories": [
+        "training",
+        "leaf-skill",
+        "reinforcement-learning",
+        "training-workflow",
+        "container-runtime"
+      ]
     },
     {
       "name": "atc-model-converter",
-      "description": "Complete toolkit for Huawei Ascend NPU model conversion and inference. Convert ONNX models to .om format using ATC tool, run Python inference on OM models using ais_bench, compare precision between CPU ONNX and NPU OM outputs, and end-to-end YOLO inference with Ultralytics.",
+      "description": "Complete toolkit for Huawei Ascend NPU model conversion and end-to-end inference adaptation. Workflow 1 auto-discovers input shapes and parameters from user source code. Workflow 2 exports PyTorch models to ONNX. Workflow 3 converts ONNX to .om via ATC with multi-CANN version support. Workflow 4 adapts the user's full inference pipeline (preprocessing + model + postprocessing) to run end-to-end on NPU. Workflow 5 verifies precision between ONNX and OM outputs. Workflow 6 generates a reproducible README. Supports any standard PyTorch/ONNX model. Use when converting, testing, or deploying models on Ascend AI processors.",
       "source": "./skills/inference/atc-model-converter",
-      "category": "development"
+      "category": "inference",
+      "categories": [
+        "inference",
+        "leaf-skill",
+        "model-conversion",
+        "model-serving",
+        "evaluation"
+      ]
     },
     {
       "name": "ascend-docker",
       "description": "Create Docker containers for Huawei Ascend NPU development with proper device mappings (davinci_manager, devmm_svm, hisi_hdc) and volume mounts (driver, sbin, home). Use when setting up Ascend development environments in Docker, running CANN applications in containers, or creating isolated NPU development workspaces.",
       "source": "./skills/base/ascend-docker",
-      "category": "operations"
+      "category": "base",
+      "categories": [
+        "base",
+        "leaf-skill",
+        "container-runtime",
+        "environment-setup",
+        "pytorch-npu"
+      ]
+    },
+    {
+      "name": "remote-server-guide",
+      "description": "Guide for connecting to remote servers via SSH, managing containers, and executing commands remotely. Covers SSH connection setup with multiple authentication methods (SSH key, sshpass, Paramiko, Fabric, tmux interactive), Docker container connection and command execution, file transfer, and troubleshooting. Use this skill whenever users need to: (1) Connect to a remote server or VPS via SSH, (2) Execute commands on remote machines, (3) Transfer files to/from remote servers, (4) Connect to Docker containers on remote hosts, (5) Set up SSH password authentication tools. Even if the user just says 'help me run something on my server' or 'connect to my machine', this skill applies.",
+      "source": "./skills/base/remote-server-guide",
+      "category": "base",
+      "categories": [
+        "base",
+        "leaf-skill",
+        "remote-access",
+        "container-runtime",
+        "environment-setup"
+      ]
+    },
+    {
+      "name": "npu-docker-launcher",
+      "description": "Directly launch Docker containers on Ascend NPU servers for users. Collect requirements and execute docker run commands with proper NPU device mounting, networking, volume mounts, and environment variables. Use when users need to: (1) Start a Docker container on an NPU server, (2) Create containers with NPU device access, (3) Configure and launch containers with specific networking or mount requirements.",
+      "source": "./skills/base/npu-docker-launcher",
+      "category": "base",
+      "categories": [
+        "base",
+        "leaf-skill",
+        "container-runtime",
+        "remote-access",
+        "environment-setup"
+      ]
+    },
+    {
+      "name": "ascend-dmi",
+      "description": "当用户需要对华为昇腾 NPU 进行硬件层面的管理、测试或诊断时使用，包括状态/温度/利用率查询、h2d/d2h/d2d/p2p 带宽、TFLOPS/TOPS/功耗基准、硬件故障诊断、压力测试与异常 NPU 卡复位；不要用于写 NPU 代码、安装框架、训练调试或 Docker 配置。",
+      "source": "./skills/base/ascend-dmi",
+      "category": "base",
+      "categories": [
+        "base",
+        "leaf-skill",
+        "hardware-diagnostics",
+        "device-management",
+        "benchmarking"
+      ]
+    },
+    {
+      "name": "ascend-avi-vnpu",
+      "description": "昇腾虚拟化实例（AVI）和vNPU管理技能。用于查询/设置AVI模式、管理vNPU实例（创建/销毁）、查询vNPU配置恢复状态等操作。支持安全确认机制，在执行修改操作前检查设备状态。",
+      "source": "./skills/base/ascend-avi-vnpu",
+      "category": "base",
+      "categories": [
+        "base",
+        "leaf-skill",
+        "virtualization",
+        "device-management",
+        "hardware-diagnostics"
+      ]
     },
     {
       "name": "msmodelslim",
-      "description": "Huawei Ascend NPU model compression tool for LLM, MoE, and multimodal models. Supports W4A8, W8A8, W8A8S, W8A16, W8A8C8 quantization and sparse quantization. Compatible with 20+ model families (Qwen, DeepSeek, LLaMA, GLM, Kimi, Baichuan, Yi, InternLM, Mistral, etc.). Includes precision auto-tuning, custom model integration guide, and vLLM-Ascend/MindIE deployment.",
-      "source": "./skills/inference/msmodelslim",
-      "category": "development"
+      "description": "Huawei Ascend NPU server model quantization tool skills, using msmodelslim for quantization compression, the tool is specifically designed for LLM quantization acceleration on Ascend NPU cards. It supports INT4/INT8/INT16 quantization and provides a complete quantization workflow, including environment checking, dynamic scheme query, container deployment, quantization execution, etc., and supports quantization tuning, adapter adaptation, etc. Interactive experience with controllable processes.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/inference/msmodelslim/msmodelslim-quant"
+      ],
+      "category": "inference",
+      "categories": [
+        "inference",
+        "domain-skill-set",
+        "quantization",
+        "model-serving",
+        "environment-setup"
+      ]
     },
     {
       "name": "ais-bench",
       "description": "AI model evaluation tool for Ascend NPU. Supports accuracy evaluation (text, multimodal datasets), performance evaluation (latency, throughput, stress testing), vLLM/Triton inference, 15+ benchmarks (MMLU, GSM8K, MMMU, BFCL), multi-turn dialogue, Function Call, and custom datasets.",
       "source": "./skills/inference/ais-bench",
-      "category": "testing"
+      "category": "inference",
+      "categories": [
+        "inference",
+        "leaf-skill",
+        "evaluation",
+        "benchmarking",
+        "model-serving"
+      ]
     },
     {
       "name": "ascendc",
       "description": "AscendC development helper, provides AscendC development environment, compiler, and debugger. Supports C/C++ and Python programming on Ascend NPU. Includes sample code, tutorials, and best practices for AscendC development.",
       "source": "./skills/ops/ascendc",
-      "category": "development"
+      "category": "ops",
+      "categories": [
+        "ops",
+        "leaf-skill",
+        "operator-development",
+        "environment-setup",
+        "performance-analysis"
+      ]
     },
     {
       "name": "vllm-ascend",
-      "description": "vLLM inference engine for Huawei Ascend NPU. Deploy LLMs with OpenAI-compatible API, offline batch inference, quantized model serving (W4A8, W8A8), tensor/pipeline parallelism for distributed inference, and performance optimization. Supports Qwen, DeepSeek, GLM, LLaMA models with Ascend-optimized kernels.",
+      "description": "vLLM Ascend plugin for LLM inference serving on Huawei Ascend NPU. Use for offline batch inference, API server deployment, quantization inference (with msmodelslim quantized models), tensor/pipeline parallelism for distributed serving, and OpenAI-compatible API endpoints. Supports Qwen, DeepSeek, GLM, LLaMA models with Ascend-optimized kernels.",
       "source": "./skills/inference/vllm-ascend",
-      "category": "development"
+      "category": "inference",
+      "categories": [
+        "inference",
+        "leaf-skill",
+        "model-serving",
+        "quantization",
+        "pytorch-npu"
+      ]
+    },
+    {
+      "name": "vllm-ascend-server",
+      "description": "Deploy vLLM inference services on Ascend NPU servers with automatic model detection and optimized configuration. Supports local and remote deployment across bare metal, containers, and Docker images. Handles model discovery, quantization auto-detection, tensor parallelism configuration, graph/eager mode selection, and service health verification. Use when users need to: (1) Start or deploy vLLM server on NPU, (2) Launch LLM inference service, (3) Configure multi-card tensor parallel deployment, (4) Enable speculative decoding (Eagle) or quantization, (5) Run vllm offline batch inference, (6) Check or test vLLM service status.",
+      "source": "./skills/inference/vllm-ascend-server",
+      "category": "inference",
+      "categories": [
+        "inference",
+        "leaf-skill",
+        "model-serving",
+        "container-runtime",
+        "remote-access"
+      ]
+    },
+    {
+      "name": "vllm-bench-serve",
+      "description": "Interactive online benchmark orchestrator for vLLM inference services using `vllm bench serve`; supports single benchmarks, batch execution, result aggregation, and auto-optimization for concurrency/throughput under TTFT, TPOT, P99 and success-rate SLO constraints.",
+      "source": "./skills/inference/vllm-bench-serve",
+      "category": "inference",
+      "categories": [
+        "inference",
+        "leaf-skill",
+        "benchmarking",
+        "model-serving",
+        "performance-analysis"
+      ]
     },
     {
       "name": "torch_npu",
       "description": "华为昇腾 Ascend Extension for PyTorch (torch_npu) 的环境检查、部署与能力指引。在用户使用 @torch_npu、昇腾 NPU、CANN、或需要将 PyTorch 迁移到 NPU 时自动应用；当用户使用 @torch_npu_doc 时，基于 skill 的 reference 文档提供项目内中文文档能力说明。",
       "source": "./skills/base/torch_npu",
-      "category": "development"
+      "category": "base",
+      "categories": [
+        "base",
+        "leaf-skill",
+        "pytorch-npu",
+        "environment-setup",
+        "model-conversion"
+      ]
     },
     {
       "name": "diffusers-ascend-env-setup",
       "description": "HuggingFace Diffusers 环境配置指南，用于华为昇腾 NPU。覆盖 CANN 版本检测、PyTorch + torch_npu 安装、Diffusers 库安装及环境验证。当用户需要在昇腾 NPU 上配置 Diffusers 环境时使用。",
       "source": "./skills/inference/diffusers-ascend/diffusers-ascend-env-setup",
-      "category": "development"
+      "category": "inference",
+      "categories": [
+        "inference",
+        "leaf-skill",
+        "environment-setup",
+        "pytorch-npu",
+        "model-serving"
+      ]
     },
     {
       "name": "npu-op-benchmark",
       "description": "Ascend NPU operator benchmark for repeat_interleave-style latency testing. Supports SSH remote, local Conda, and Docker environments with CANN toolkit detection and torch_npu runtime checks. Uses existing environments only and does not install or repair dependencies.",
       "source": "./skills/ops/npu-op-benchmark",
-      "category": "testing"
+      "category": "ops",
+      "categories": [
+        "ops",
+        "leaf-skill",
+        "operator-development",
+        "benchmarking",
+        "performance-analysis"
+      ]
     },
     {
       "name": "ascend-opplugin",
-      "description": "Installs op-plugin (torch_npu operator plugin) environment and guides custom NPU operator integration with PyTorch via two generic patterns (no workspace vs workspace+tiling), from kernel implementation through host registration, build, and test.",
+      "description": "用于指导 Ascend C（CANN / xpu_kernel）算子开发完成后接入 PyTorch：与 torch_npu 对接、Host 侧注册与构建、Python 暴露与冒烟测试。涵盖算子工程内轻量化接入、必要时参考 op-plugin、Pybind 快速联调、复用图算子封装等。适用于 Ascend C、算子接入、torch_npu、NPU 自定义算子、op-plugin、xpu_kernel、cpp_extension、自定义算子等场景。",
       "source": "./skills/ops/ascend-opplugin",
-      "category": "development"
+      "category": "ops",
+      "categories": [
+        "ops",
+        "leaf-skill",
+        "operator-development",
+        "pytorch-npu",
+        "environment-setup"
+      ]
     },
     {
       "name": "triton-ascend-migration",
       "description": "将 GPU/CUDA Triton 算子迁移为 Triton-Ascend，或将 Python/PyTorch 算子改写为可在 Ascend NPU 上运行的 Triton-Ascend 实现，并在发现明确优化空间时直接输出优化后的代码、最小验证脚本和排障说明。用户只要提到 昇腾、Ascend、NPU、triton-ascend、Triton 算子迁移、PyTorch 算子改写、coreDim、UB overflow、1D grid、物理核绑定、block_ptr、stride、访存对齐、mask 性能、dtype 退化、算子优化，或者直接问“这个 skill 怎么用”“怎么在命令行里跑”“怎么在容器里执行迁移/验证”，就应优先使用本 skill，即使用户没有明确说“写 skill”或“做迁移”。",
       "source": "./skills/ops/triton-ascend-migration",
-      "category": "development"
+      "category": "ops",
+      "categories": [
+        "ops",
+        "leaf-skill",
+        "operator-migration",
+        "operator-development",
+        "performance-analysis"
+      ]
     },
     {
       "name": "ascend-base",
@@ -101,8 +294,19 @@
         "./skills/base/npu-smi",
         "./skills/base/ascend-docker",
         "./skills/base/torch_npu",
-        "./skills/training/hccl-test",
-        "./skills/training/torch-npu-comm-test"
+        "./skills/base/remote-server-guide",
+        "./skills/base/npu-docker-launcher",
+        "./skills/base/ascend-dmi",
+        "./skills/base/ascend-avi-vnpu"
+      ],
+      "category": "bundle",
+      "categories": [
+        "bundle",
+        "official-bundle",
+        "base",
+        "device-management",
+        "container-runtime",
+        "environment-setup"
       ]
     },
     {
@@ -111,24 +315,35 @@
       "source": "./",
       "strict": false,
       "skills": [
-        "./skills/base/torch_npu",
         "./skills/inference/atc-model-converter",
         "./skills/inference/vllm-ascend",
         "./skills/inference/ais-bench",
-        "./skills/inference/msmodelslim",
         "./skills/inference/diffusers-ascend/diffusers-ascend-env-setup",
         "./skills/inference/diffusers-ascend/diffusers-ascend-weight-prep",
         "./skills/inference/diffusers-ascend/diffusers-ascend-pipeline",
-        "./skills/inference/wan-ascend-adaptation"
+        "./skills/inference/wan-ascend-adaptation",
+        "./skills/inference/msmodelslim/msmodelslim-quant",
+        "./skills/inference/vllm-ascend-server",
+        "./skills/inference/vllm-bench-serve"
+      ],
+      "category": "bundle",
+      "categories": [
+        "bundle",
+        "official-bundle",
+        "inference",
+        "model-conversion",
+        "quantization",
+        "model-serving",
+        "evaluation",
+        "benchmarking"
       ]
     },
     {
       "name": "ascend-training",
-      "description": "官方推荐的昇腾训练安装包。适用于分布式训练、通信测试和 MindSpeed-LLM 训练链路，包含 HCCL、torch 通信测试、MindSpeed-LLM 全流程与 MFU 分析相关 skills。",
+      "description": "官方推荐的昇腾训练安装包。适用于分布式训练、通信测试、MindSpeed-LLM、MindSpeed-MM 与 VERL 训练链路，包含 HCCL、torch 通信测试和训练全流程相关 skills。",
       "source": "./",
       "strict": false,
       "skills": [
-        "./skills/base/torch_npu",
         "./skills/training/hccl-test",
         "./skills/training/torch-npu-comm-test",
         "./skills/training/mindspeed-llm/mindspeed-llm-pipeline",
@@ -136,12 +351,26 @@
         "./skills/training/mindspeed-llm/mindspeed-llm-data-prep",
         "./skills/training/mindspeed-llm/mindspeed-llm-weight-prep",
         "./skills/training/mindspeed-llm/mindspeed-llm-training",
-        "./skills/profiling/training-mfu-calculator"
+        "./skills/training/verl-quickstart",
+        "./skills/training/mindspeed-mm/mindspeed-mm-pipeline",
+        "./skills/training/mindspeed-mm/mindspeed-mm-env-setup",
+        "./skills/training/mindspeed-mm/mindspeed-mm-weight-prep",
+        "./skills/training/mindspeed-mm/mindspeed-mm-vlm",
+        "./skills/training/mindspeed-mm/mindspeed-mm-generative"
+      ],
+      "category": "bundle",
+      "categories": [
+        "bundle",
+        "official-bundle",
+        "training",
+        "distributed-communication",
+        "training-workflow",
+        "reinforcement-learning"
       ]
     },
     {
       "name": "ascend-profiling",
-      "description": "官方推荐的昇腾 Profiling 与性能分析安装包。适用于 Profiling 数据采集、瓶颈分析、训练性能诊断与算子基准测试场景。",
+      "description": "官方推荐的昇腾 Profiling 与性能分析安装包。适用于 Profiling 数据采集、瓶颈分析、训练性能诊断与 MFU 分析场景。",
       "source": "./",
       "strict": false,
       "skills": [
@@ -150,8 +379,16 @@
         "./skills/profiling/profiling-analysis/profiling-analysis-computing",
         "./skills/profiling/profiling-analysis/profiling-analysis-communication",
         "./skills/profiling/mindspeed-llm-train-profiler",
-        "./skills/ops/npu-op-benchmark",
         "./skills/profiling/training-mfu-calculator"
+      ],
+      "category": "bundle",
+      "categories": [
+        "bundle",
+        "official-bundle",
+        "profiling",
+        "performance-analysis",
+        "benchmarking",
+        "mfu-analysis"
       ]
     },
     {
@@ -160,11 +397,19 @@
       "source": "./",
       "strict": false,
       "skills": [
-        "./skills/base/torch_npu",
         "./skills/ops/ascendc",
         "./skills/ops/ascend-opplugin",
         "./skills/ops/triton-ascend-migration",
         "./skills/ops/npu-op-benchmark"
+      ],
+      "category": "bundle",
+      "categories": [
+        "bundle",
+        "official-bundle",
+        "ops",
+        "operator-development",
+        "operator-migration",
+        "benchmarking"
       ]
     },
     {
@@ -187,6 +432,15 @@
         "./skills/ai-for-science/tf-framework/ascend-tf-community",
         "./skills/ai-for-science/tf-framework/tf-to-pytorch",
         "./skills/ai-for-science/ai4s-profiling"
+      ],
+      "category": "bundle",
+      "categories": [
+        "bundle",
+        "official-bundle",
+        "ai-for-science",
+        "ai4s-model-migration",
+        "profiling",
+        "pytorch-npu"
       ]
     },
     {
@@ -200,6 +454,35 @@
         "./skills/training/mindspeed-llm/mindspeed-llm-data-prep",
         "./skills/training/mindspeed-llm/mindspeed-llm-weight-prep",
         "./skills/training/mindspeed-llm/mindspeed-llm-training"
+      ],
+      "category": "training",
+      "categories": [
+        "training",
+        "domain-skill-set",
+        "training-workflow",
+        "environment-setup",
+        "distributed-communication"
+      ]
+    },
+    {
+      "name": "mindspeed-mm-skills",
+      "description": "MindSpeed-MM 多模态大模型训练技能集，用于华为昇腾 NPU。覆盖环境搭建、权重转换、多模态理解模型训练、多模态生成模型训练和端到端流水线。",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/training/mindspeed-mm/mindspeed-mm-pipeline",
+        "./skills/training/mindspeed-mm/mindspeed-mm-env-setup",
+        "./skills/training/mindspeed-mm/mindspeed-mm-weight-prep",
+        "./skills/training/mindspeed-mm/mindspeed-mm-vlm",
+        "./skills/training/mindspeed-mm/mindspeed-mm-generative"
+      ],
+      "category": "training",
+      "categories": [
+        "training",
+        "domain-skill-set",
+        "training-workflow",
+        "environment-setup",
+        "pytorch-npu"
       ]
     },
     {
@@ -211,25 +494,81 @@
         "./skills/inference/diffusers-ascend/diffusers-ascend-env-setup",
         "./skills/inference/diffusers-ascend/diffusers-ascend-weight-prep",
         "./skills/inference/diffusers-ascend/diffusers-ascend-pipeline"
+      ],
+      "category": "inference",
+      "categories": [
+        "inference",
+        "domain-skill-set",
+        "environment-setup",
+        "model-serving",
+        "pytorch-npu"
       ]
     },
     {
       "name": "training-mfu-calculator",
       "description": "大模型训练 MFU (Model FLOPs Utilization) 计算工具。支持 Dense 和 MoE 模型，GQA 和 SwiGLU FFN。包含 NVIDIA GPU 和 Ascend NPU 硬件峰值 FLOPS 参考，默认使用 Ascend910B2 (353 TFLOPS)。提供详细的 FLOPs 分析和性能报告。",
       "source": "./skills/profiling/training-mfu-calculator",
-      "category": "development"
+      "category": "profiling",
+      "categories": [
+        "profiling",
+        "leaf-skill",
+        "mfu-analysis",
+        "training-workflow",
+        "performance-analysis"
+      ]
     },
     {
       "name": "github-issue-summary",
       "description": "Analyze closed GitHub issues to create troubleshooting case studies with root cause analysis and lessons learned. Use when summarizing resolved issue troubleshooting process, creating issue case studies, documenting problem-solving methodology, extracting lessons from closed issues, or building knowledge base from issue history.",
-      "source": "./skills/knowledge/github-issue-summary",
-      "category": "development"
+      "source": "./skills/agent-tools/github-issue-summary",
+      "category": "agent-tools",
+      "categories": [
+        "agent-tools",
+        "leaf-skill",
+        "issue-analysis",
+        "performance-analysis"
+      ]
     },
     {
       "name": "github-issue-rca",
       "description": "GitHub Issue root cause analysis skill. Analyze specified GitHub issues to identify possible root causes by examining issue content, code repository, and related resources. Use when user asks to analyze issue root cause, investigate issue, RCA analysis, or troubleshoot GitHub issues. Provides investigation directions with probability estimates and explicitly states when root cause cannot be determined.",
-      "source": "./skills/knowledge/github-issue-rca",
-      "category": "development"
+      "source": "./skills/agent-tools/github-issue-rca",
+      "category": "agent-tools",
+      "categories": [
+        "agent-tools",
+        "leaf-skill",
+        "issue-analysis",
+        "performance-analysis"
+      ]
+    },
+    {
+      "name": "gitcode-merge-flow",
+      "description": "Automates GitCode open-source repo merge workflow: commit → push → issue → PR → pipeline → review → /lgtm & /approve → merge. Invoke when user wants to submit code to a GitCode open-source repository.",
+      "source": "./skills/agent-tools/gitcode-merge-flow",
+      "category": "agent-tools",
+      "categories": [
+        "agent-tools",
+        "leaf-skill",
+        "gitcode-workflow",
+        "remote-access"
+      ]
+    },
+    {
+      "name": "hiascend-forum",
+      "description": "基于华为昇腾社区论坛开发者反馈内容，按时间范围抓取帖子并识别特定领域的易用性、故障和报错类问题，用于产品改进分析。",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/agent-tools/hiascend-forum/hiascend-forum-fetcher",
+        "./skills/agent-tools/hiascend-forum/hiascend-forum-analyzer"
+      ],
+      "category": "agent-tools",
+      "categories": [
+        "agent-tools",
+        "domain-skill-set",
+        "community-feedback",
+        "issue-analysis"
+      ]
     },
     {
       "name": "profiling-analysis",
@@ -241,6 +580,13 @@
         "./skills/profiling/profiling-analysis/profiling-analysis-hostbound",
         "./skills/profiling/profiling-analysis/profiling-analysis-computing",
         "./skills/profiling/profiling-analysis/profiling-analysis-communication"
+      ],
+      "category": "profiling",
+      "categories": [
+        "profiling",
+        "domain-skill-set",
+        "performance-analysis",
+        "benchmarking"
       ]
     },
     {
@@ -263,35 +609,110 @@
         "./skills/ai-for-science/tf-framework/ascend-tf-community",
         "./skills/ai-for-science/tf-framework/tf-to-pytorch",
         "./skills/ai-for-science/ai4s-profiling"
+      ],
+      "category": "ai-for-science",
+      "categories": [
+        "ai-for-science",
+        "domain-skill-set",
+        "router-skill",
+        "ai4s-model-migration",
+        "pytorch-npu"
       ]
     },
     {
       "name": "wan-ascend-adaptation",
       "description": "Comprehensive guide for adapting Wan series video generation models (Wan2.2/2.1/1.3) and similar diffusion-based video frameworks to Huawei Ascend NPU. ",
       "source": "./skills/inference/wan-ascend-adaptation",
-      "category": "development"
+      "category": "inference",
+      "categories": [
+        "inference",
+        "leaf-skill",
+        "model-serving",
+        "operator-migration",
+        "pytorch-npu"
+      ]
     },
     {
       "name": "external-gitcode-ascend-skills",
-      "description": "从 gitcode-ascend 同步的 Ascend 技能集，包含 7 个技能：\n- ascend-inference-repos-copilot: 昇腾（Ascend）推理生态开源代码仓库智能问答专家旨在为 vLLM、vLLM-Ascend、MindIE-LLM、MindIE-SD、MindIE-Motor、MindIE-Turbo 以及 msM\n- ascend-profiling-anomaly: Analyze Huawei Ascend NPU profiling data to discover hidden performance anomalies and produce a deta\n- npu-adapter-reviewer: GPU代码到昇腾NPU适配审查专家。当用户需要将GPU上的代码（特别是深度学习、模型推理相关）迁移到华为昇腾NPU时，必须使用此skill进行全面审查。此skill能识别GPU到NPU迁移的堵点、编写\n- ... 等 4 个技能",
+      "description": "从 gitcode-ascend 同步的 Ascend 技能集，包含 57 个技能。",
       "source": "./",
       "strict": false,
       "external": true,
       "source-url": "https://gitcode.com/Ascend/agent-skills",
       "source-branch": "master",
       "skills": [
+        "./external/gitcode-ascend/arxiv-recommendation-npu",
         "./external/gitcode-ascend/ascend-inference-repos-copilot",
+        "./external/gitcode-ascend/ascend-npu-driver-install",
         "./external/gitcode-ascend/ascend-profiling-anomaly",
+        "./external/gitcode-ascend/ascendc-operator-code-gen",
+        "./external/gitcode-ascend/ascendc-operator-code-review",
+        "./external/gitcode-ascend/ascendc-operator-compile-debug",
+        "./external/gitcode-ascend/ascendc-operator-design",
+        "./external/gitcode-ascend/ascendc-operator-dev",
+        "./external/gitcode-ascend/ascendc-operator-doc-gen",
+        "./external/gitcode-ascend/ascendc-operator-doc-writer",
+        "./external/gitcode-ascend/ascendc-operator-mssanitizer",
+        "./external/gitcode-ascend/ascendc-operator-performance-eval",
+        "./external/gitcode-ascend/ascendc-operator-performance-optim",
+        "./external/gitcode-ascend/ascendc-operator-precision-debug",
+        "./external/gitcode-ascend/ascendc-operator-precision-eval",
+        "./external/gitcode-ascend/ascendc-operator-project-init",
+        "./external/gitcode-ascend/ascendc-operator-testcase-gen",
+        "./external/gitcode-ascend/auto-bug-fixer",
+        "./external/gitcode-ascend/auto-develop-test-gen",
+        "./external/gitcode-ascend/cann-nnal-installer",
+        "./external/gitcode-ascend/cann-operator-env-config",
+        "./external/gitcode-ascend/catlass-operator-code-gen",
+        "./external/gitcode-ascend/catlass-operator-design",
+        "./external/gitcode-ascend/catlass-operator-dev",
+        "./external/gitcode-ascend/catlass-operator-performance-optim",
+        "./external/gitcode-ascend/fault_diagnose",
+        "./external/gitcode-ascend/k8s-check-fix",
+        "./external/gitcode-ascend/large_scale_deploy",
+        "./external/gitcode-ascend/megatron-change-analyzer",
+        "./external/gitcode-ascend/megatron-commit-tracker",
+        "./external/gitcode-ascend/megatron-impact-mapper",
+        "./external/gitcode-ascend/megatron-migration-generator",
+        "./external/gitcode-ascend/modelscope-cli",
+        "./external/gitcode-ascend/msverl-daily-regression-triage",
         "./external/gitcode-ascend/npu-adapter-reviewer",
+        "./external/gitcode-ascend/npu-model-migration",
+        "./external/gitcode-ascend/python-refactoring",
+        "./external/gitcode-ascend/security-code-review",
         "./external/gitcode-ascend/simple-vector-triton-gpu-to-npu",
         "./external/gitcode-ascend/skill-auditor",
+        "./external/gitcode-ascend/swanlab-setup",
+        "./external/gitcode-ascend/triton-operator-code-gen",
+        "./external/gitcode-ascend/triton-operator-code-review",
+        "./external/gitcode-ascend/triton-operator-design",
+        "./external/gitcode-ascend/triton-operator-dev",
+        "./external/gitcode-ascend/triton-operator-doc-gen",
+        "./external/gitcode-ascend/triton-operator-env-config",
+        "./external/gitcode-ascend/triton-operator-performance-eval",
+        "./external/gitcode-ascend/triton-operator-performance-optim",
+        "./external/gitcode-ascend/triton-operator-precision-eval",
         "./external/gitcode-ascend/vLLM-ascend_FAQ_Generator",
-        "./external/gitcode-ascend/vector-triton-ascend-ops-optimizer"
+        "./external/gitcode-ascend/vector-triton-ascend-ops-optimizer",
+        "./external/gitcode-ascend/verl-async-dapo",
+        "./external/gitcode-ascend/verl-feature-deploy",
+        "./external/gitcode-ascend/vllm-ascend-deploy",
+        "./external/gitcode-ascend/vllm-tests-failure-analysis"
+      ],
+      "category": "external",
+      "categories": [
+        "external",
+        "external-skill-set",
+        "external-sync",
+        "operator-development",
+        "operator-migration",
+        "model-serving",
+        "agent-tools"
       ]
     },
     {
       "name": "external-mindstudio-skills",
-      "description": "从 mindstudio 同步的 Ascend 技能集，包含 6 个技能：\n- ascend-profiler-db-explorer: 面向 Ascend PyTorch Profiler / msprof DB（如 ascend_pytorch_profiler*.db、msprof_*.db）的 SQL 分析技能。将自然语言问题（\n- cluster-fast-slow-rank-detector: 专门用于 Ascend 集群 Profiling 性能数据的“快慢卡”诊断专家技能。当用户提供【集群性能数据目录/路径】并要求分析【快慢卡】、【慢节点】、【负载不均衡】或【集群瓶颈】时，必须触发此技能\n- document-ux-review: 当用户希望你像第一次接触项目的人一样，真实按仓库的 README、安装文档或 quick start 跑一遍，并判断“新人能不能走通”“文档是否可用”“哪里会卡住”“安装/启动说明是否对新手友好”时，\n- ... 等 3 个技能",
+      "description": "从 mindstudio 同步的 Ascend 技能集，包含 9 个技能。",
       "source": "./",
       "strict": false,
       "external": true,
@@ -301,16 +722,81 @@
         "./external/mindstudio/ascend-profiler-db-explorer",
         "./external/mindstudio/cluster-fast-slow-rank-detector",
         "./external/mindstudio/document-ux-review",
+        "./external/mindstudio/gitcode-code-reviewer",
         "./external/mindstudio/github-raw-fetch",
         "./external/mindstudio/mindstudio_profiler_data_check",
+        "./external/mindstudio/msmodelslim-model-adapt",
+        "./external/mindstudio/msmodelslim-model-analysis",
         "./external/mindstudio/op-mfu-calculator"
+      ],
+      "category": "external",
+      "categories": [
+        "external",
+        "external-skill-set",
+        "external-sync",
+        "profiling",
+        "performance-analysis",
+        "agent-tools"
       ]
     },
     {
-        "name": "mindspeed-llm-train-profiler",
-        "description": "指导并自动化完成昇腾 NPU 上 MindSpeed-LLM 训练的 Profiling 数据采集。支持配置并运行带 Profiling 的模型训练，包括 CPU 采集、内存采集、不同采集级别（level0/level1/level2）和自定义 step 范围。生成的 Profiling 数据可用 MindStudio Insight 进行性能分析。当用户需要在模型训练中采集 Profiling 数据、进行训练性能分析、或执行 性能数据采集/Profiling采集 时触发。触发关键词：profiling、性能分析、性能数据采集、Profiling采集、训练框架profiling、MindSpeed-LLM profiling。",
+      "name": "mindspeed-llm-train-profiler",
+      "description": "指导并自动化完成昇腾 NPU 上 MindSpeed-LLM 训练的 Profiling 数据采集。支持配置并运行带 Profiling 的模型训练，包括 CPU 采集、内存采集、不同采集级别（level0/level1/level2）和自定义 step 范围。生成的 Profiling 数据可用 MindStudio Insight 进行性能分析。当用户需要在模型训练中采集 Profiling 数据、进行训练性能分析、或执行 性能数据采集/Profiling采集 时触发。触发关键词：profiling、性能分析、性能数据采集、Profiling采集、训练框架profiling、MindSpeed-LLM profiling。",
       "source": "./skills/profiling/mindspeed-llm-train-profiler",
-        "category": "development"
+      "category": "profiling",
+      "categories": [
+        "profiling",
+        "leaf-skill",
+        "performance-analysis",
+        "training-workflow",
+        "environment-setup"
+      ]
     }
-  ]
+  ],
+  "categoryLibrary": {
+    "primaryCategories": {
+      "base": "基础环境、服务器连接、设备管理、容器与硬件诊断",
+      "inference": "模型转换、量化、推理服务、评测与在线压测",
+      "training": "分布式训练、通信测试、训练数据/权重/启动流程与强化学习",
+      "profiling": "Profiling 采集、瓶颈定位、性能分析与 MFU 计算",
+      "ops": "算子开发、算子接入、Triton/AscendC 迁移与算子级调优",
+      "agent-tools": "面向 Agent/工程流程的 issue 分析、社区反馈、开源合入与知识沉淀工具",
+      "ai-for-science": "AI for Science 模型迁移、框架路线与专项模型适配",
+      "external": "从外部仓库同步的技能集合",
+      "bundle": "组合多个 skills 的安装包或领域技能包"
+    },
+    "roleCategories": {
+      "leaf-skill": "可单独触发的独立技能",
+      "router-skill": "负责选择和分流到子技能的入口技能",
+      "domain-skill-set": "面向一个技术方向的技能集合",
+      "official-bundle": "官方推荐安装包",
+      "external-skill-set": "外部同步技能集合"
+    },
+    "capabilityCategories": {
+      "device-management": "NPU 状态、健康、功耗、固件、证书等设备管理",
+      "hardware-diagnostics": "硬件诊断、带宽/算力/功耗测试、压力测试和复位",
+      "virtualization": "AVI/vNPU 等虚拟化管理",
+      "remote-access": "SSH、远程执行、文件传输和容器连接",
+      "container-runtime": "Docker 容器启动、NPU 设备挂载和运行环境",
+      "environment-setup": "CANN、torch_npu、训练/推理框架等环境准备",
+      "pytorch-npu": "PyTorch 到 Ascend NPU 的扩展、迁移与运行",
+      "distributed-communication": "HCCL 或 torch.distributed 通信链路与集合通信",
+      "training-workflow": "训练数据、权重、脚本、任务启动与端到端流程",
+      "reinforcement-learning": "VERL、PPO/GRPO/DAPO 等强化学习训练流程",
+      "model-conversion": "PyTorch/ONNX/OM 等模型格式转换与导出",
+      "quantization": "模型量化、压缩、精度调优和量化部署",
+      "model-serving": "vLLM/MindIE/OpenAI-compatible API 等模型服务部署",
+      "benchmarking": "性能、通信、算子或服务压测与基准测试",
+      "evaluation": "模型精度、benchmark 数据集、Function Call 等评测",
+      "operator-development": "AscendC、op-plugin、自定义算子开发和接入",
+      "operator-migration": "Triton/CUDA/PyTorch 算子迁移到 Ascend",
+      "performance-analysis": "Profiling 数据分析、慢卡/慢 rank、通信/计算/hostbound 瓶颈定位",
+      "mfu-analysis": "训练或算子 MFU/FLOPs 利用率分析",
+      "issue-analysis": "GitHub issue 总结、RCA、案例沉淀",
+      "gitcode-workflow": "GitCode issue、PR、流水线、review 和合入流程",
+      "community-feedback": "昇腾社区论坛抓取、反馈筛选和问题分析",
+      "ai4s-model-migration": "AI for Science 模型、TensorFlow/PyTorch 路线与专项迁移",
+      "external-sync": "外部来源技能同步和来源分组"
+    }
+  }
 }

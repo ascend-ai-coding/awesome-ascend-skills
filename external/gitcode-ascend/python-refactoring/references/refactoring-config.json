@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Python 重构约束配置。将 enabled 设为 false 可跳过对应检查；修改 value 可调整阈值。",
+
+  "function": {
+    "max_lines": {
+      "enabled": true,
+      "value": 80,
+      "description": "函数最大逻辑行数（不含注释和空行），超过则标记为「过长函数」",
+      "ref": "code-smells.md §1.1"
+    },
+    "max_parameters": {
+      "enabled": true,
+      "value": 4,
+      "description": "函数最大参数个数，超过则建议引入参数对象",
+      "ref": "code-smells.md §1.2"
+    },
+    "ideal_lines": {
+      "enabled": true,
+      "value": 15,
+      "description": "函数理想行数上限（可读性建议，非硬性约束）",
+      "ref": "readability.md §2.1"
+    },
+    "acceptable_lines": {
+      "enabled": true,
+      "value": 30,
+      "description": "函数可接受行数上限，超过则建议拆分",
+      "ref": "readability.md §2.1"
+    }
+  },
+
+  "class": {
+    "max_lines": {
+      "enabled": true,
+      "value": 300,
+      "description": "类最大行数，超过则标记为「上帝类」",
+      "ref": "code-smells.md §2.1"
+    },
+    "max_responsibilities": {
+      "enabled": true,
+      "value": 3,
+      "description": "类最大不相关职责数，超过则建议按职责拆分",
+      "ref": "code-smells.md §2.1"
+    },
+    "max_inheritance_depth": {
+      "enabled": true,
+      "value": 3,
+      "description": "最大继承层级深度，超过则建议组合替代继承",
+      "ref": "code-smells.md §2.3"
+    }
+  },
+
+  "logic": {
+    "max_isinstance_chain": {
+      "enabled": true,
+      "value": 3,
+      "description": "isinstance/type() if-elif 链最大分支数，超过则建议多态或 singledispatch",
+      "ref": "code-smells.md §3.4"
+    }
+  },
+
+  "duplication": {
+    "min_duplicate_lines": {
+      "enabled": true,
+      "value": 3,
+      "description": "相似代码块的最小行数，达到此行数才视为重复",
+      "ref": "code-smells.md §1.3"
+    },
+    "min_duplicate_occurrences": {
+      "enabled": true,
+      "value": 2,
+      "description": "相似代码块的最少出现次数，达到此次数才标记为重复",
+      "ref": "code-smells.md §1.3"
+    }
+  },
+
+  "module": {
+    "max_lines": {
+      "enabled": true,
+      "value": 500,
+      "description": "单文件最大行数，超过则建议拆分为子模块",
+      "ref": "code-smells.md §4.3"
+    }
+  }
+}

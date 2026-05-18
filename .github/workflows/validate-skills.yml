@@ -56,7 +56,7 @@ jobs:
               'training',
               'profiling',
               'ops',
-              'knowledge',
+              'agent-tools',
               'ai-for-science',
           }
           PREFIX_DOMAIN_DIRS = {'ai-for-science'}

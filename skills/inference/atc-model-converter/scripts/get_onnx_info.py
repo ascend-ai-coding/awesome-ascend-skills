@@ -4,7 +4,7 @@ Inspect ONNX model to get input/output information for ATC conversion.
 
 Usage:
     python3 get_onnx_info.py model.onnx
-    
+
 Output:
     - Input names and shapes
     - Output names and shapes
@@ -21,16 +21,16 @@ def get_onnx_info(model_path):
     except ImportError:
         print("Error: onnxruntime not installed. Install with: pip install onnxruntime")
         sys.exit(1)
-    
+
     if not os.path.exists(model_path):
         print(f"Error: Model file not found: {model_path}")
         sys.exit(1)
-    
+
     try:
         sess = ort.InferenceSession(model_path)
-        
+
         print(f"\n=== ONNX Model Information: {model_path} ===\n")
-        
+
         # Inputs
         print("INPUTS:")
         print("-" * 50)
@@ -42,7 +42,7 @@ def get_onnx_info(model_path):
             print(f"      Type: {inp.type}")
             input_shapes.append(f'{inp.name}:{shape_str}')
             print()
-        
+
         # Outputs
         print("OUTPUTS:")
         print("-" * 50)
@@ -52,21 +52,23 @@ def get_onnx_info(model_path):
             print(f"      Shape: [{shape_str}]")
             print(f"      Type: {out.type}")
             print()
-        
+
         # Recommended ATC command
         print("RECOMMENDED ATC COMMAND:")
         print("-" * 50)
         base_name = os.path.splitext(os.path.basename(model_path))[0]
         input_shape_param = ";".join(input_shapes)
-        
-        print(f"""atc \\
-    --model={model_path} \\
-    --framework=5 \\
-    --output={base_name}_om \\
-    --soc_version=Ascend310P3 \\
-    --input_shape="{input_shape_param}"""")
+
+        print(
+            f'atc \\\n'
+            f'    --model={model_path} \\\n'
+            f'    --framework=5 \\\n'
+            f'    --output={base_name}_om \\\n'
+            f'    --soc_version=Ascend310P3 \\\n'
+            f'    --input_shape="{input_shape_param}"'
+        )
         print()
-        
+
     except Exception as e:
         print(f"Error loading model: {e}")
         sys.exit(1)
@@ -75,5 +77,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 get_onnx_info.py <model.onnx>")
         sys.exit(1)
-    
+
     get_onnx_info(sys.argv[1])

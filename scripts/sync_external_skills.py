@@ -18,6 +18,70 @@ sys.path.insert(0, str(script_dir))
 from sync_types import ExternalSource, Skill, ConflictInfo, SyncResult
 
 
+DEFAULT_CATEGORY_LIBRARY = {
+    "primaryCategories": {
+        "base": "基础环境、服务器连接、设备管理、容器与硬件诊断",
+        "inference": "模型转换、量化、推理服务、评测与在线压测",
+        "training": "分布式训练、通信测试、训练数据/权重/启动流程与强化学习",
+        "profiling": "Profiling 采集、瓶颈定位、性能分析与 MFU 计算",
+        "ops": "算子开发、算子接入、Triton/AscendC 迁移与算子级调优",
+        "agent-tools": "面向 Agent/工程流程的 issue 分析、社区反馈、开源合入与知识沉淀工具",
+        "ai-for-science": "AI for Science 模型迁移、框架路线与专项模型适配",
+        "external": "从外部仓库同步的技能集合",
+        "bundle": "组合多个 skills 的安装包或领域技能包",
+    },
+    "roleCategories": {
+        "leaf-skill": "可单独触发的独立技能",
+        "router-skill": "负责选择和分流到子技能的入口技能",
+        "domain-skill-set": "面向一个技术方向的技能集合",
+        "official-bundle": "官方推荐安装包",
+        "external-skill-set": "外部同步技能集合",
+    },
+    "capabilityCategories": {
+        "device-management": "NPU 状态、健康、功耗、固件、证书等设备管理",
+        "hardware-diagnostics": "硬件诊断、带宽/算力/功耗测试、压力测试和复位",
+        "virtualization": "AVI/vNPU 等虚拟化管理",
+        "remote-access": "SSH、远程执行、文件传输和容器连接",
+        "container-runtime": "Docker 容器启动、NPU 设备挂载和运行环境",
+        "environment-setup": "CANN、torch_npu、训练/推理框架等环境准备",
+        "pytorch-npu": "PyTorch 到 Ascend NPU 的扩展、迁移与运行",
+        "distributed-communication": "HCCL 或 torch.distributed 通信链路与集合通信",
+        "training-workflow": "训练数据、权重、脚本、任务启动与端到端流程",
+        "reinforcement-learning": "VERL、PPO/GRPO/DAPO 等强化学习训练流程",
+        "model-conversion": "PyTorch/ONNX/OM 等模型格式转换与导出",
+        "quantization": "模型量化、压缩、精度调优和量化部署",
+        "model-serving": "vLLM/MindIE/OpenAI-compatible API 等模型服务部署",
+        "benchmarking": "性能、通信、算子或服务压测与基准测试",
+        "evaluation": "模型精度、benchmark 数据集、Function Call 等评测",
+        "operator-development": "AscendC、op-plugin、自定义算子开发和接入",
+        "operator-migration": "Triton/CUDA/PyTorch 算子迁移到 Ascend",
+        "performance-analysis": "Profiling 数据分析、慢卡/慢 rank、通信/计算/hostbound 瓶颈定位",
+        "mfu-analysis": "训练或算子 MFU/FLOPs 利用率分析",
+        "issue-analysis": "GitHub issue 总结、RCA、案例沉淀",
+        "gitcode-workflow": "GitCode issue、PR、流水线、review 和合入流程",
+        "community-feedback": "昇腾社区论坛抓取、反馈筛选和问题分析",
+        "ai4s-model-migration": "AI for Science 模型、TensorFlow/PyTorch 路线与专项迁移",
+        "external-sync": "外部来源技能同步和来源分组",
+    },
+}
+
+
+BASE_EXTERNAL_CATEGORIES = [
+    "external",
+    "external-skill-set",
+    "external-sync",
+]
+
+
+def ensure_category_library(marketplace: Dict) -> None:
+    """Ensure marketplace has all known category library groups and tags."""
+    category_library = marketplace.setdefault("categoryLibrary", {})
+    for group_name, defaults in DEFAULT_CATEGORY_LIBRARY.items():
+        group = category_library.setdefault(group_name, {})
+        for tag, description in defaults.items():
+            group.setdefault(tag, description)
+
+
 def load_config(config_path: str) -> List[ExternalSource]:
     """Load external sources from YAML config file.
 
@@ -229,16 +293,19 @@ def find_skills(repo_path: Path, source: ExternalSource) -> List[Skill]:
         search_path = repo_path / source.skills_path
     if not search_path.exists():
         return skills
-    for item in search_path.iterdir():
-        if item.is_dir() and (item / "SKILL.md").exists():
-            skills.append(
-                Skill(
-                    name=item.name,
-                    path=item,
-                    source=source,
-                    has_skill_md=True,
-                )
+    for skill_md in sorted(search_path.rglob("SKILL.md")):
+        rel_parts = skill_md.relative_to(search_path).parts
+        if any(part.startswith(".") for part in rel_parts):
+            continue
+        skill_dir = skill_md.parent
+        skills.append(
+            Skill(
+                name=skill_dir.name,
+                path=skill_dir,
+                source=source,
+                has_skill_md=True,
             )
+        )
     return skills
 
 
@@ -410,14 +477,14 @@ def inject_attribution(skill: Skill, commit_sha: str) -> str:
 
 
 def copy_skill(skill: Skill, commit_sha: str) -> bool:
-    """Copy skill to external/ directory, inject attribution, and validate.
+    """Copy skill to external/ directory and inject attribution.
 
     Args:
         skill: The Skill object to copy.
         commit_sha: The Git commit SHA for attribution.
 
     Returns:
-        True on success, False if validation fails.
+        True on success.
     """
     target = Path("external") / skill.source.name / skill.name
 
@@ -432,11 +499,20 @@ def copy_skill(skill: Skill, commit_sha: str) -> bool:
     attributed_content = inject_attribution(copied_skill, commit_sha)
     (target / "SKILL.md").write_text(attributed_content, encoding="utf-8")
 
+    return True
+
+
+def validate_after_sync() -> None:
+    """Run full repository validation after marketplace and README are updated."""
     result = subprocess.run(
         ["python3", "scripts/validate_skills.py"], capture_output=True, text=True
     )
-
-    return result.returncode == 0
+    if result.stdout:
+        print(result.stdout)
+    if result.stderr:
+        print(result.stderr, file=sys.stderr)
+    if result.returncode != 0:
+        raise RuntimeError("Validation failed after external skills sync")
 
 
 def generate_report(
@@ -621,6 +697,8 @@ def sync_all_sources(config_path: str = ".github/external-sources.yml") -> Dict:
     update_marketplace(merged_synced_skills)
     print("\nUpdating README.md...")
     update_readme(merged_synced_skills)
+    print("\nValidating synced repository...")
+    validate_after_sync()
 
     # Return summary statistics
     results = {
@@ -755,8 +833,14 @@ def update_marketplace(
             },
             "plugins": [],
         }
+    ensure_category_library(marketplace)
 
     plugins = marketplace.get("plugins", [])
+    existing_external_categories = {
+        p.get("name"): p.get("categories", [])
+        for p in plugins
+        if isinstance(p, dict) and p.get("external") is True
+    }
 
     # Group skills by source
     skills_by_source: Dict[str, List[Tuple[Skill, str]]] = defaultdict(list)
@@ -788,14 +872,24 @@ def update_marketplace(
             if len(descriptions) > 3:
                 description_text += f"\n- ... 等 {len(descriptions) - 3} 个技能"
 
+        entry_name = f"external-{source_name}-skills"
+        existing_categories = [
+            category
+            for category in existing_external_categories.get(entry_name, [])
+            if isinstance(category, str)
+        ]
+        categories = list(dict.fromkeys(BASE_EXTERNAL_CATEGORIES + existing_categories))
+
         group_entry = {
-            "name": f"external-{source_name}-skills",
+            "name": entry_name,
             "description": description_text,
             "source": "./",
             "strict": False,
             "external": True,
             "source-url": source.url,
             "source-branch": source.branch,
+            "category": "external",
+            "categories": categories,
             "skills": skill_paths,
         }
 

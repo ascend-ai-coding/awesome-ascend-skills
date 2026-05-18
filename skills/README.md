@@ -15,7 +15,7 @@
 - [`training/`](training/)：训练链路、通信、MindSpeed-LLM
 - [`profiling/`](profiling/)：Profiling 采集与性能分析
 - [`ops/`](ops/)：算子开发、迁移与调优
-- [`knowledge/`](knowledge/)：工程案例、issue 分析、知识沉淀
+- [`agent-tools/`](agent-tools/)：工程案例、issue 分析、社区反馈分析与开源合入流程
 - [`ai-for-science/`](ai-for-science/)：AI for Science 专项域
 
 ## 维护约定

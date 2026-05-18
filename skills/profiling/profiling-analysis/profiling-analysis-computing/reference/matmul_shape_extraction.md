@@ -6,17 +6,17 @@
 
 ### 基本用法
 ```bash
-python ./awesome-ascend-skills/skills/profiling/profiling-analysis/profiling-analysis-computing/scripts/extract_op_shapes.py --input /path/to/your/op_analysis_details.csv --output /path/to/your/matmul_mnk_results.csv --op matmul
+python ./awesome-ascend-skills/profiling-analysis/profiling-analysis-computing/scripts/extract_op_shapes.py --input /path/to/your/op_analysis_details.csv --output /path/to/your/matmul_mnk_results.csv --op matmul
 ```
 
 ### 从目录中读取文件
 ```bash
-python ./awesome-ascend-skills/skills/profiling/profiling-analysis/profiling-analysis-computing/scripts/extract_op_shapes.py --input /path/to/profiling/directory --output /path/to/your/matmul_mnk_results.csv --op matmul
+python ./awesome-ascend-skills/profiling-analysis/profiling-analysis-computing/scripts/extract_op_shapes.py --input /path/to/profiling/directory --output /path/to/your/matmul_mnk_results.csv --op matmul
 ```
 
 ### 带HTML形状替换功能
 ```bash
-python ./awesome-ascend-skills/skills/profiling/profiling-analysis/profiling-analysis-computing/scripts/extract_op_shapes.py --input /path/to/profiling/directory --output /path/to/your/matmul_mnk_results.csv --op matmul --html-file /path/to/your/op_analysis_combined.html
+python ./awesome-ascend-skills/profiling-analysis/profiling-analysis-computing/scripts/extract_op_shapes.py --input /path/to/profiling/directory --output /path/to/your/matmul_mnk_results.csv --op matmul --html-file /path/to/your/op_analysis_combined.html
 ```
 
 ### 参数说明

@@ -5,10 +5,13 @@ from pathlib import Path
 
 from scripts.sync_external_skills import (
     build_synced_skill_index,
+    copy_skill,
     detect_conflicts,
+    find_skills,
     get_local_skills,
     load_existing_external_skills,
     prune_removed_source_skills,
+    update_marketplace,
 )
 from scripts.sync_types import ExternalSource, Skill
 
@@ -197,3 +200,114 @@ def test_get_local_skills_finds_nested_local_skills_and_skips_external(
     assert "ai-for-science-ankh-ascend-npu-skill" in local_skills
     assert "external-skill" not in local_skills
     assert "local-agent-skill" not in local_skills
+
+
+def test_find_skills_recurses_under_configured_skills_path(tmp_path: Path) -> None:
+    source = ExternalSource(
+        name="source-a",
+        url="https://example.com/a.git",
+        skills_path="skills",
+    )
+    repo = tmp_path / "repo"
+    write_skill(repo / "skills" / "base" / "npu-smi", "npu-smi")
+    write_skill(
+        repo / "skills" / "training" / "mindspeed-llm" / "mindspeed-llm-training",
+        "mindspeed-llm-training",
+    )
+
+    skills = find_skills(repo, source)
+
+    assert {skill.name for skill in skills} == {"npu-smi", "mindspeed-llm-training"}
+
+
+def test_update_marketplace_preserves_existing_external_categories(
+    tmp_path: Path,
+) -> None:
+    marketplace_path = tmp_path / "marketplace.json"
+    marketplace_path.write_text(
+        """{
+  "name": "test-marketplace",
+  "version": "1.0.0",
+  "plugins": [
+    {
+      "name": "external-source-a-skills",
+      "source": "./",
+      "external": true,
+      "category": "external",
+      "categories": [
+        "external",
+        "external-skill-set",
+        "external-sync",
+        "operator-development"
+      ],
+      "skills": []
+    }
+  ],
+  "categoryLibrary": {
+    "primaryCategories": {"external": "External"},
+    "roleCategories": {"external-skill-set": "External skill set"},
+    "capabilityCategories": {
+      "external-sync": "External sync",
+      "operator-development": "Operator development"
+    }
+  }
+}
+""",
+        encoding="utf-8",
+    )
+    source = ExternalSource(name="source-a", url="https://example.com/a.git")
+    skill_dir = tmp_path / "external" / "source-a" / "operator-dev"
+    write_skill(skill_dir, "external-source-a-operator-dev")
+
+    update_marketplace(
+        [(Skill("operator-dev", skill_dir, source, True), "abc123")],
+        marketplace_path=str(marketplace_path),
+    )
+
+    import json
+
+    updated = json.loads(marketplace_path.read_text(encoding="utf-8"))
+    external_entry = updated["plugins"][0]
+    assert "operator-development" in external_entry["categories"]
+
+
+def test_update_marketplace_adds_category_library_when_creating_file(
+    tmp_path: Path,
+) -> None:
+    marketplace_path = tmp_path / "marketplace.json"
+    source = ExternalSource(name="source-a", url="https://example.com/a.git")
+    skill_dir = tmp_path / "external" / "source-a" / "skill-one"
+    write_skill(skill_dir, "external-source-a-skill-one")
+
+    update_marketplace(
+        [(Skill("skill-one", skill_dir, source, True), "abc123")],
+        marketplace_path=str(marketplace_path),
+    )
+
+    import json
+
+    updated = json.loads(marketplace_path.read_text(encoding="utf-8"))
+    assert "categoryLibrary" in updated
+    assert "external" in updated["categoryLibrary"]["primaryCategories"]
+
+
+def test_copy_skill_does_not_validate_before_marketplace_is_updated(
+    tmp_path: Path, monkeypatch
+) -> None:
+    source = ExternalSource(name="source-a", url="https://example.com/a.git")
+    upstream_skill = tmp_path / "upstream" / "skill-one"
+    write_skill(upstream_skill, "skill-one")
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("copy_skill must not run repository validation")
+
+    monkeypatch.setattr("scripts.sync_external_skills.subprocess.run", fail_if_called)
+
+    original_cwd = Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        assert copy_skill(Skill("skill-one", upstream_skill, source, True), "abc123")
+    finally:
+        os.chdir(original_cwd)
+
+    assert (tmp_path / "external" / "source-a" / "skill-one" / "SKILL.md").exists()

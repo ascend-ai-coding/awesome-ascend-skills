@@ -456,17 +456,17 @@ export VLLM_ASCEND_LAZY_INIT=0
 ## References
 
 - [references/deployment.md](references/deployment.md) - Deployment patterns and best practices
-- [references/installation.md](references/installation.md) - Environment setup and installation guide
-- [references/troubleshooting.md](references/troubleshooting.md) - Common issues and debugging notes
+- [references/supported-models.md](references/supported-models.md) - Complete model support matrix
+- [references/api-reference.md](references/api-reference.md) - API endpoint documentation
 
 ---
 
 ## Related Skills
 
 - [msmodelslim](../msmodelslim/SKILL.md) - Model quantization for vLLM-Ascend
-- [ascend-docker](../../base/ascend-docker/SKILL.md) - Docker container setup for Ascend
-- [npu-smi](../../base/npu-smi/SKILL.md) - NPU device management
-- [hccl-test](../../training/hccl-test/SKILL.md) - HCCL performance testing for multi-NPU
+- [ascend-docker](../ascend-docker/SKILL.md) - Docker container setup for Ascend
+- [npu-smi](../npu-smi/SKILL.md) - NPU device management
+- [hccl-test](../hccl-test/SKILL.md) - HCCL performance testing for multi-NPU
 
 ---
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Megatron Impact Mapper"
+  short_description: "Map Megatron changes onto MindSpeed impact points"
+  default_prompt: "Use $megatron-impact-mapper to map Megatron branch changes onto likely MindSpeed adaptation points."

@@ -27,7 +27,6 @@ import sys
 import argparse
 import json
 
-
 def select_high_time_ops(profiling_path, top_n=3):
     """
     筛选高耗时算子
@@ -82,7 +81,7 @@ def select_high_time_ops(profiling_path, top_n=3):
         print(f"Ratio(%)最高的{top_n}个算子: {top_ops}")
 
         # 收集统计信息
-        op_stats = op_statistic.head(top_n).to_dict("records")
+        op_stats = op_statistic.head(top_n).to_dict('records')
 
     elif op_summary_files:
         print(f"未找到op_statistic_*.csv文件，使用op_summary_*.csv文件")
@@ -107,11 +106,7 @@ def select_high_time_ops(profiling_path, top_n=3):
 
         # 统计各个算子的总耗时
         print(f"统计各个算子的总耗时，选取前{top_n}个...")
-        op_total_duration = (
-            df.groupby("OP Type")["Task Duration(us)"]
-            .sum()
-            .sort_values(ascending=False)
-        )
+        op_total_duration = df.groupby("OP Type")["Task Duration(us)"].sum().sort_values(ascending=False)
 
         # 选取总耗时最高的前N个算子
         top_ops = op_total_duration.head(top_n).index.tolist()
@@ -120,11 +115,12 @@ def select_high_time_ops(profiling_path, top_n=3):
         # 收集统计信息
         op_stats = []
         for op_type, duration in op_total_duration.head(top_n).items():
-            op_stats.append({"OP Type": op_type, "Total Duration(us)": duration})
+            op_stats.append({
+                "OP Type": op_type,
+                "Total Duration(us)": duration
+            })
     elif kernel_details_files:
-        print(
-            f"未找到op_statistic_*.csv或op_summary_*.csv文件，使用kernel_details.csv文件"
-        )
+        print(f"未找到op_statistic_*.csv或op_summary_*.csv文件，使用kernel_details.csv文件")
         print(f"找到{len(kernel_details_files)}个kernel_details文件")
 
         # 读取所有kernel_details文件
@@ -140,20 +136,14 @@ def select_high_time_ops(profiling_path, top_n=3):
         # 确保必要的列存在
         op_type_column = "OP Type" if "OP Type" in df.columns else "Type"
         if op_type_column not in df.columns or "Task Duration(us)" not in df.columns:
-            print(
-                f"kernel_details.csv文件缺少必要的列: {op_type_column} 或 Task Duration(us)"
-            )
+            print(f"kernel_details.csv文件缺少必要的列: {op_type_column} 或 Task Duration(us)")
             return None, None
 
         print("所有必要列都存在")
 
         # 统计各个算子的总耗时
         print(f"统计各个算子的总耗时，选取前{top_n}个...")
-        op_total_duration = (
-            df.groupby(op_type_column)["Task Duration(us)"]
-            .sum()
-            .sort_values(ascending=False)
-        )
+        op_total_duration = df.groupby(op_type_column)["Task Duration(us)"].sum().sort_values(ascending=False)
 
         # 选取总耗时最高的前N个算子
         top_ops = op_total_duration.head(top_n).index.tolist()
@@ -162,27 +152,23 @@ def select_high_time_ops(profiling_path, top_n=3):
         # 收集统计信息
         op_stats = []
         for op_type, duration in op_total_duration.head(top_n).items():
-            op_stats.append({"OP Type": op_type, "Total Duration(us)": duration})
+            op_stats.append({
+                "OP Type": op_type,
+                "Total Duration(us)": duration
+            })
     else:
         print("未找到op_statistic_*.csv、op_summary_*.csv或kernel_details.csv文件")
         return None, None
 
     return top_ops, op_stats
 
-
 def main():
     """主函数"""
     # 解析命令行参数
-    parser = argparse.ArgumentParser(description="高耗时算子筛选脚本")
-    parser.add_argument(
-        "--input-path", required=True, help="profiling文件路径，包含PROF_*目录的根路径"
-    )
-    parser.add_argument(
-        "--output-path", required=False, help="输出结果目录，用于保存生成的算子列表"
-    )
-    parser.add_argument(
-        "--top-n", type=int, default=3, help="选取的高耗时算子数量，默认3"
-    )
+    parser = argparse.ArgumentParser(description='高耗时算子筛选脚本')
+    parser.add_argument('--input-path', required=True, help='profiling文件路径，包含PROF_*目录的根路径')
+    parser.add_argument('--output-path', required=False, help='输出结果目录，用于保存生成的算子列表')
+    parser.add_argument('--top-n', type=int, default=3, help='选取的高耗时算子数量，默认3')
 
     args = parser.parse_args()
 
@@ -194,7 +180,7 @@ def main():
         output_dir = args.output_path
     else:
         # 如果没有指定输出路径，则在输入路径下创建output文件夹
-        output_dir = os.path.join(profiling_path, "output")
+        output_dir = os.path.join(profiling_path, 'output')
 
     # 确保输出目录存在
     os.makedirs(output_dir, exist_ok=True)
@@ -215,7 +201,6 @@ def main():
 
     print("高耗时算子筛选完成！")
     return 0
-
 
 if __name__ == "__main__":
     exit(main())

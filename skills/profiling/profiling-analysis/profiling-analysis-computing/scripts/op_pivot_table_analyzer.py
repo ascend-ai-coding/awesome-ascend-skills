@@ -27,7 +27,6 @@ import argparse
 import json
 import re
 
-
 def read_csv_in_chunks(file_path, chunksize=2000):
     """
     分批读取CSV文件
@@ -44,13 +43,9 @@ def read_csv_in_chunks(file_path, chunksize=2000):
 
     for chunk in pd.read_csv(file_path, chunksize=chunksize):
         chunks.append(chunk)
-        print(
-            f"  已读取{len(chunk)}行，累计{len(pd.concat(chunks, ignore_index=True))}行"
-        )
+        print(f"  已读取{len(chunk)}行，累计{len(pd.concat(chunks, ignore_index=True))}行")
 
     return pd.concat(chunks, ignore_index=True)
-
-
 def generate_op_pivot_tables(profiling_path, output_dir, top_n=3):
     """
     生成算子数据透视表
@@ -127,24 +122,13 @@ def generate_op_pivot_tables(profiling_path, output_dir, top_n=3):
     # 确保必要的列存在，支持不同的列名格式
     column_mapping = {
         "Name": ["Name", "Op Name"],
-        "Duration(us)": ["Duration(us)", "Task Duration(us)"],
+        "Duration(us)": ["Duration(us)", "Task Duration(us)"]
     }
 
     # 检查所有必需的列
-    required_columns = [
-        "Name",
-        "Duration(us)",
-        "Input Shapes",
-        "aic_mac_ratio",
-        "aic_scalar_ratio",
-        "aic_mte1_ratio",
-        "aic_mte2_ratio",
-        "aic_fixpipe_ratio",
-        "aiv_vec_ratio",
-        "aiv_scalar_ratio",
-        "aiv_mte2_ratio",
-        "aiv_mte3_ratio",
-    ]
+    required_columns = ["Name", "Duration(us)", "Input Shapes",
+                       "aic_mac_ratio", "aic_scalar_ratio", "aic_mte1_ratio", "aic_mte2_ratio", "aic_fixpipe_ratio",
+                       "aiv_vec_ratio", "aiv_scalar_ratio", "aiv_mte2_ratio", "aiv_mte3_ratio"]
 
     actual_columns = df.columns.tolist()
     column_aliases = {}
@@ -183,24 +167,18 @@ def generate_op_pivot_tables(profiling_path, output_dir, top_n=3):
         op_df = df[df["Name"].str.contains(op, case=False)]
 
         # 按Input Shapes分组，计算各列的平均值，包括Duration(us)
-        pivot_df = (
-            op_df.groupby("Input Shapes")
-            .agg(
-                {
-                    "Duration(us)": "mean",
-                    "aic_mac_ratio": "mean",
-                    "aic_scalar_ratio": "mean",
-                    "aic_mte1_ratio": "mean",
-                    "aic_mte2_ratio": "mean",
-                    "aic_fixpipe_ratio": "mean",
-                    "aiv_vec_ratio": "mean",
-                    "aiv_scalar_ratio": "mean",
-                    "aiv_mte2_ratio": "mean",
-                    "aiv_mte3_ratio": "mean",
-                }
-            )
-            .reset_index()
-        )
+        pivot_df = op_df.groupby("Input Shapes").agg({
+            "Duration(us)": "mean",
+            "aic_mac_ratio": "mean",
+            "aic_scalar_ratio": "mean",
+            "aic_mte1_ratio": "mean",
+            "aic_mte2_ratio": "mean",
+            "aic_fixpipe_ratio": "mean",
+            "aiv_vec_ratio": "mean",
+            "aiv_scalar_ratio": "mean",
+            "aiv_mte2_ratio": "mean",
+            "aiv_mte3_ratio": "mean"
+        }).reset_index()
 
         # 按平均耗时从高到低排序
         pivot_df = pivot_df.sort_values(by="Duration(us)", ascending=False)
@@ -226,7 +204,7 @@ def generate_op_pivot_tables(profiling_path, output_dir, top_n=3):
             valid_row = row[1:].dropna()
 
             # 保存分析详情
-            detail_row = {"OP Type": op, "Input Shapes": row["Input Shapes"]}
+            detail_row = {"OP Type": op, "Input Shapes": row['Input Shapes']}
 
             if valid_row.empty:
                 # 如果没有有效数据，所有列都显示N/A
@@ -235,7 +213,7 @@ def generate_op_pivot_tables(profiling_path, output_dir, top_n=3):
                     combined_html_output += f"<td>N/A</td>"
             else:
                 # 找到各行占比最大的ratio
-                ratio_cols = [col for col in valid_row.index if col != "Duration(us)"]
+                ratio_cols = [col for col in valid_row.index if col != 'Duration(us)']
                 if ratio_cols:
                     ratio_row = valid_row[ratio_cols]
                     max_val = ratio_row.max()
@@ -276,20 +254,13 @@ def generate_op_pivot_tables(profiling_path, output_dir, top_n=3):
 
     return True
 
-
 def main():
     """主函数"""
     # 解析命令行参数
-    parser = argparse.ArgumentParser(description="算子数据透视表分析脚本")
-    parser.add_argument(
-        "--input-path", required=True, help="profiling文件路径，包含PROF_*目录的根路径"
-    )
-    parser.add_argument(
-        "--output-path", required=False, help="输出结果目录，用于保存生成的分析报告"
-    )
-    parser.add_argument(
-        "--top-n", type=int, default=3, help="选取的高耗时算子数量，默认3"
-    )
+    parser = argparse.ArgumentParser(description='算子数据透视表分析脚本')
+    parser.add_argument('--input-path', required=True, help='profiling文件路径，包含PROF_*目录的根路径')
+    parser.add_argument('--output-path', required=False, help='输出结果目录，用于保存生成的分析报告')
+    parser.add_argument('--top-n', type=int, default=3, help='选取的高耗时算子数量，默认3')
 
     args = parser.parse_args()
 
@@ -302,7 +273,7 @@ def main():
         output_dir = args.output_path
     else:
         # 如果没有指定输出路径，则在输入路径下创建output文件夹
-        output_dir = os.path.join(profiling_path, "output")
+        output_dir = os.path.join(profiling_path, 'output')
 
     # 确保输出目录存在
     os.makedirs(output_dir, exist_ok=True)
@@ -316,7 +287,6 @@ def main():
     else:
         print("算子数据透视表生成失败！")
         return 1
-
 
 if __name__ == "__main__":
     exit(main())

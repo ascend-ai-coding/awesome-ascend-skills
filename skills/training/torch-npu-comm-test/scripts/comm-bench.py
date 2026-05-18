@@ -153,9 +153,7 @@ def run_op(
     work = None
 
     if op == "all_reduce":
-        work = dist.all_reduce(
-            tensors["tensor"], op=reduce_op, group=group, async_op=async_op
-        )
+        work = dist.all_reduce(tensors["tensor"], op=reduce_op, group=group, async_op=async_op)
 
     elif op == "all_gather":
         work = dist.all_gather_into_tensor(
@@ -164,17 +162,11 @@ def run_op(
 
     elif op == "reduce_scatter":
         work = dist.reduce_scatter_tensor(
-            tensors["output"],
-            tensors["input"],
-            op=reduce_op,
-            group=group,
-            async_op=async_op,
+            tensors["output"], tensors["input"], op=reduce_op, group=group, async_op=async_op
         )
 
     elif op == "broadcast":
-        work = dist.broadcast(
-            tensors["tensor"], src=src_rank, group=group, async_op=async_op
-        )
+        work = dist.broadcast(tensors["tensor"], src=src_rank, group=group, async_op=async_op)
 
     elif op == "all_to_all":
         work = dist.all_to_all_single(
@@ -183,11 +175,7 @@ def run_op(
 
     elif op == "reduce":
         work = dist.reduce(
-            tensors["tensor"],
-            dst=src_rank,
-            op=reduce_op,
-            group=group,
-            async_op=async_op,
+            tensors["tensor"], dst=src_rank, op=reduce_op, group=group, async_op=async_op
         )
 
     elif op == "send_recv":
@@ -228,9 +216,7 @@ def validate_result(
         torch.npu.synchronize()
         expected = sum(range(1, world_size + 1))
         return torch.allclose(
-            t.float(),
-            torch.full(shape, expected, dtype=torch.float32, device=device),
-            atol=1.0,
+            t.float(), torch.full(shape, expected, dtype=torch.float32, device=device), atol=1.0
         )
 
     elif op == "all_gather":
@@ -241,23 +227,15 @@ def validate_result(
         torch.npu.synchronize()
         for i in range(world_size):
             chunk = out[i * shape[0] : (i + 1) * shape[0]]
-            if not torch.allclose(
-                chunk.float(), torch.full(shape, float(i + 1), device=device), atol=1.0
-            ):
+            if not torch.allclose(chunk.float(), torch.full(shape, float(i + 1), device=device), atol=1.0):
                 return False
         return True
 
     elif op == "broadcast":
-        t = torch.ones(shape, dtype=dtype, device=device) * (
-            42.0 if rank == src_rank else 0.0
-        )
+        t = torch.ones(shape, dtype=dtype, device=device) * (42.0 if rank == src_rank else 0.0)
         dist.broadcast(t, src=src_rank, group=group)
         torch.npu.synchronize()
-        return torch.allclose(
-            t.float(),
-            torch.full(shape, 42.0, dtype=torch.float32, device=device),
-            atol=1.0,
-        )
+        return torch.allclose(t.float(), torch.full(shape, 42.0, dtype=torch.float32, device=device), atol=1.0)
 
     return True
 
@@ -299,14 +277,8 @@ def run_benchmark(args: argparse.Namespace) -> None:
 
     for _ in range(args.warmup):
         work = run_op(
-            args.op,
-            tensors,
-            rank,
-            group_world_size,
-            group,
-            reduce_op,
-            args.src_rank,
-            args.async_op,
+            args.op, tensors, rank, group_world_size, group,
+            reduce_op, args.src_rank, args.async_op,
         )
         if args.async_op and work is not None:
             work.wait()
@@ -320,14 +292,8 @@ def run_benchmark(args: argparse.Namespace) -> None:
         start = time.perf_counter()
 
         work = run_op(
-            args.op,
-            tensors,
-            rank,
-            group_world_size,
-            group,
-            reduce_op,
-            args.src_rank,
-            args.async_op,
+            args.op, tensors, rank, group_world_size, group,
+            reduce_op, args.src_rank, args.async_op,
         )
         if args.async_op and work is not None:
             work.wait()
@@ -338,22 +304,13 @@ def run_benchmark(args: argparse.Namespace) -> None:
 
     if args.check and args.op != "barrier":
         check_pass = validate_result(
-            args.op,
-            shape,
-            dtype,
-            device,
-            group_world_size,
-            rank,
-            group,
-            reduce_op,
-            args.src_rank,
+            args.op, shape, dtype, device, group_world_size,
+            rank, group, reduce_op, args.src_rank,
         )
     else:
         check_pass = None
 
-    if rank == 0 or (
-        args.group_ranks and rank == parse_group_ranks(args.group_ranks)[0]
-    ):
+    if rank == 0 or (args.group_ranks and rank == parse_group_ranks(args.group_ranks)[0]):
         sorted_latencies = sorted(latencies_us)
         avg_us = sum(latencies_us) / len(latencies_us)
         min_us = sorted_latencies[0]
@@ -363,9 +320,7 @@ def run_benchmark(args: argparse.Namespace) -> None:
         p99_us = percentile(sorted_latencies, 99)
 
         avg_time_s = avg_us / 1e6
-        algbw, busbw = compute_bandwidth(
-            args.op, data_size_bytes, avg_time_s, group_world_size
-        )
+        algbw, busbw = compute_bandwidth(args.op, data_size_bytes, avg_time_s, group_world_size)
 
         if args.output == "json":
             result = {
@@ -397,33 +352,15 @@ def run_benchmark(args: argparse.Namespace) -> None:
             print(header)
             print(sep)
             fmt = "{:<14s} {:<10s} {:<10s} {:<10s} {:<10s} {:<10s} {:<10s} {:<12s} {:<12s}"
-            print(
-                fmt.format(
-                    "data_size(MB)",
-                    "avg(us)",
-                    "min(us)",
-                    "max(us)",
-                    "p50(us)",
-                    "p95(us)",
-                    "p99(us)",
-                    "algbw(GB/s)",
-                    "busbw(GB/s)",
-                )
-            )
+            print(fmt.format(
+                "data_size(MB)", "avg(us)", "min(us)", "max(us)",
+                "p50(us)", "p95(us)", "p99(us)", "algbw(GB/s)", "busbw(GB/s)",
+            ))
             val_fmt = "{:<14.2f} {:<10.1f} {:<10.1f} {:<10.1f} {:<10.1f} {:<10.1f} {:<10.1f} {:<12.2f} {:<12.2f}"
-            print(
-                val_fmt.format(
-                    data_size_mb,
-                    avg_us,
-                    min_us,
-                    max_us,
-                    p50_us,
-                    p95_us,
-                    p99_us,
-                    algbw,
-                    busbw,
-                )
-            )
+            print(val_fmt.format(
+                data_size_mb, avg_us, min_us, max_us,
+                p50_us, p95_us, p99_us, algbw, busbw,
+            ))
             print(sep)
 
     dist.destroy_process_group()
@@ -435,61 +372,37 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "--op",
-        type=str,
-        default="all_reduce",
-        choices=SUPPORTED_OPS,
+        "--op", type=str, default="all_reduce", choices=SUPPORTED_OPS,
         help="Communication operator to test",
     )
     parser.add_argument(
-        "--shape",
-        type=str,
-        default="1024,1024",
+        "--shape", type=str, default="1024,1024",
         help="Tensor shape, comma-separated (e.g., '4096,12288')",
     )
     parser.add_argument(
-        "--dtype",
-        type=str,
-        default="fp16",
-        choices=list(DTYPE_MAP.keys()),
+        "--dtype", type=str, default="fp16", choices=list(DTYPE_MAP.keys()),
         help="Data type",
     )
+    parser.add_argument("--iters", type=int, default=50, help="Number of measured iterations")
+    parser.add_argument("--warmup", type=int, default=10, help="Number of warmup iterations")
     parser.add_argument(
-        "--iters", type=int, default=50, help="Number of measured iterations"
-    )
-    parser.add_argument(
-        "--warmup", type=int, default=10, help="Number of warmup iterations"
-    )
-    parser.add_argument(
-        "--reduce-op",
-        type=str,
-        default="sum",
-        choices=list(REDUCE_OP_MAP.keys()),
+        "--reduce-op", type=str, default="sum", choices=list(REDUCE_OP_MAP.keys()),
         help="Reduce operation type (for all_reduce, reduce, reduce_scatter)",
     )
     parser.add_argument(
-        "--src-rank",
-        type=int,
-        default=0,
+        "--src-rank", type=int, default=0,
         help="Source rank for broadcast / destination rank for reduce",
     )
     parser.add_argument(
-        "--group-ranks",
-        type=str,
-        default=None,
+        "--group-ranks", type=str, default=None,
         help="Comma-separated rank list for subgroup testing (e.g., '0,1,2,3')",
     )
     parser.add_argument(
-        "--output",
-        type=str,
-        default="table",
-        choices=["table", "json"],
+        "--output", type=str, default="table", choices=["table", "json"],
         help="Output format",
     )
     parser.add_argument("--async-op", action="store_true", help="Use async operations")
-    parser.add_argument(
-        "--check", action="store_true", help="Enable result correctness check"
-    )
+    parser.add_argument("--check", action="store_true", help="Enable result correctness check")
 
     args = parser.parse_args()
     run_benchmark(args)

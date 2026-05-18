@@ -7,7 +7,7 @@
 在 `mcp` 目录下执行：
 
 ```bash
-cd awesome-ascend-skills/skills/base/torch_npu/mcp
+cd awesome-ascend-skills/torch_npu/mcp
 npm install
 ```
 
@@ -19,7 +19,7 @@ npm install
 
 1. **不改策略，直接用 cmd 版**（推荐）：
    ```powershell
-   cd awesome-ascend-skills\base\torch_npu\mcp
+   cd awesome-ascend-skills\torch_npu\mcp
    npm.cmd install
    ```
    之后若用 npx 也改为 `npx.cmd`。

@@ -24,7 +24,7 @@ Skill 名称：
 
 ### 治理规则检查
 - [ ] 已阅读 `docs/governance/skill-governance.md`
-- [ ] 已明确本次变更属于哪个功能域（base / inference / training / profiling / ops / ai-for-science / knowledge）
+- [ ] 已明确本次变更属于哪个功能域（base / inference / training / profiling / ops / agent-tools / ai-for-science）
 - [ ] 已明确本次变更是 bundle / domain skill set / leaf / router / external 哪一类
 - [ ] 如为本地 skill，目录位于 `skills/<domain>/...`
 - [ ] 如与其他 bundle 或 skill 容易混淆，已补充“怎么选”的边界说明

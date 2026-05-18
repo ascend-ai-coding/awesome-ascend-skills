@@ -11,9 +11,8 @@ import tempfile
 def check_msprof_installed():
     """检查msprof-analyze工具是否安装"""
     try:
-        result = subprocess.run(
-            ["msprof-analyze", "--help"], capture_output=True, text=True
-        )
+        result = subprocess.run(["msprof-analyze", "--help"],
+                                capture_output=True, text=True)
         return result.returncode == 0
     except FileNotFoundError:
         return False
@@ -27,29 +26,20 @@ def install_msprof():
     with tempfile.TemporaryDirectory() as temp_dir:
         try:
             # 安装wheel
-            subprocess.run(
-                [sys.executable, "-m", "pip", "install", "wheel"],
-                check=True,
-                capture_output=True,
-            )
+            subprocess.run([sys.executable, "-m", "pip", "install", "wheel"],
+                           check=True, capture_output=True)
 
             # 克隆源码
-            subprocess.run(
-                ["git", "clone", "-b", "master", "https://gitee.com/ascend/mstt.git"],
-                cwd=temp_dir,
-                check=True,
-            )
+            subprocess.run(["git", "clone", "-b", "master",
+                            "https://gitee.com/ascend/mstt.git"],
+                           cwd=temp_dir, check=True)
 
             # 编译whl包
             msprof_dir = os.path.join(temp_dir, "mstt", "profiler", "msprof_analyze")
-            subprocess.run(
-                [sys.executable, "-m", "pip", "install", "-r", "requirements.txt"],
-                cwd=msprof_dir,
-                check=True,
-            )
-            subprocess.run(
-                [sys.executable, "setup.py", "bdist_wheel"], cwd=msprof_dir, check=True
-            )
+            subprocess.run([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"],
+                           cwd=msprof_dir, check=True)
+            subprocess.run([sys.executable, "setup.py", "bdist_wheel"],
+                           cwd=msprof_dir, check=True)
 
             # 安装whl包
             dist_dir = os.path.join(msprof_dir, "dist")
@@ -58,25 +48,16 @@ def install_msprof():
                 print("❌ 编译失败，未生成whl文件")
                 return False
 
-            subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    "pip",
-                    "install",
-                    os.path.join(dist_dir, whl_files[0]),
-                ],
-                check=True,
-            )
+            subprocess.run([sys.executable, "-m", "pip", "install",
+                            os.path.join(dist_dir, whl_files[0])],
+                           check=True)
 
             print("✅ msprof-analyze工具安装成功")
             return True
 
         except subprocess.CalledProcessError as e:
             print(f"❌ 安装失败：{e}")
-            print(
-                f"错误输出：{e.stderr.decode() if hasattr(e, 'stderr') else '无详细信息'}"
-            )
+            print(f"错误输出：{e.stderr.decode() if hasattr(e, 'stderr') else '无详细信息'}")
             return False
 
 
@@ -85,7 +66,7 @@ def extract_zip(zip_path, output_dir):
     print(f"正在解压 {zip_path} 到 {output_dir}...")
 
     try:
-        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             zip_ref.extractall(output_dir)
         print(f"✅ 解压完成")
         return True
@@ -101,21 +82,11 @@ def run_slow_rank_detection(profiling_dir, output_dir):
     print(f"输出目录：{output_dir}")
 
     try:
-        result = subprocess.run(
-            [
-                "msprof-analyze",
-                "cluster",
-                "-d",
-                profiling_dir,
-                "-m",
-                "slow_rank",
-                "-o",
-                output_dir,
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+        result = subprocess.run(["msprof-analyze", "cluster",
+                                 "-d", profiling_dir,
+                                 "-m", "slow_rank",
+                                 "-o", output_dir],
+                                check=True, capture_output=True, text=True)
 
         print("✅ 快慢卡检测完成")
         return True
@@ -201,7 +172,6 @@ def analyze_slow_rank_results(db_path, profiling_dir=None):
 
         # 计算标准差
         import statistics
-
         if len(slow_counts) > 1:
             std_dev = statistics.stdev(slow_counts)
         else:
@@ -274,8 +244,7 @@ def analyze_slow_rank_results(db_path, profiling_dir=None):
             print(f"严重程度: {max_affected_rank[3]}")
             if max_affected_rank[1] > avg_count and avg_count > 0:
                 print(
-                    f"超过平均值: {(max_affected_rank[1] - avg_count):.2f} ({((max_affected_rank[1] - avg_count) / avg_count * 100):.1f}%)"
-                )
+                    f"超过平均值: {(max_affected_rank[1] - avg_count):.2f} ({((max_affected_rank[1] - avg_count) / avg_count * 100):.1f}%)")
         else:
             print("\n✅ 未检测到明显的快慢卡问题")
 
@@ -285,9 +254,7 @@ def analyze_slow_rank_results(db_path, profiling_dir=None):
         if slow_ranks:
             # 检查是否有严重慢卡
             has_severe = any(severity == "严重慢卡" for _, _, _, severity in slow_ranks)
-            has_moderate = any(
-                severity == "中度慢卡" for _, _, _, severity in slow_ranks
-            )
+            has_moderate = any(severity == "中度慢卡" for _, _, _, severity in slow_ranks)
 
             if has_severe:
                 print("🔥 严重慢卡优化建议：")
@@ -329,18 +296,12 @@ def analyze_slow_rank_results(db_path, profiling_dir=None):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="快慢卡检测工具")
-    parser.add_argument(
-        "--input",
-        type=str,
-        required=True,
-        help="输入profiling数据路径（可以是zip文件或目录）",
-    )
-    parser.add_argument(
-        "--output", type=str, default="./slow_rank_result", help="输出结果目录"
-    )
-    parser.add_argument(
-        "--install", action="store_true", help="强制重新安装msprof-analyze工具"
-    )
+    parser.add_argument("--input", type=str, required=True,
+                        help="输入profiling数据路径（可以是zip文件或目录）")
+    parser.add_argument("--output", type=str, default="./slow_rank_result",
+                        help="输出结果目录")
+    parser.add_argument("--install", action="store_true",
+                        help="强制重新安装msprof-analyze工具")
 
     args = parser.parse_args()
 

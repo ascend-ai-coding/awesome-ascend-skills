@@ -1,6 +1,6 @@
 # torch_npu 中文文档参考（Reference）
 
-本文档为 **@torch_npu_doc** 提供文档索引与要点，便于在用户请求时引用工作区内 `base/torch_npu` 项目的中文文档内容。所有路径均相对于项目根或 `torch_npu` 仓库根。
+本文档为 **@torch_npu_doc** 提供文档索引与要点，便于在用户请求时引用工作区内 `torch_npu` 项目的中文文档内容。所有路径均相对于项目根或 `torch_npu` 仓库根。
 
 ---
 
@@ -10,21 +10,21 @@
 
 | 路径 | 说明 |
 |------|------|
-| `skills/base/torch_npu/README.zh.md` | 项目总览、PyTorch/Python 版本配套表、昇腾辅助软件表、环境部署（二进制/源码）、安装后验证、卸载、硬件配套、分支维护策略、参考文档链接 |
-| `skills/base/torch_npu/CONTRIBUTING.zh.md` | 贡献指南：CLA、Fork、测试用例、代码风格、门禁、Fork-Pull、报告问题、提出 PR |
+| `torch_npu/README.zh.md` | 项目总览、PyTorch/Python 版本配套表、昇腾辅助软件表、环境部署（二进制/源码）、安装后验证、卸载、硬件配套、分支维护策略、参考文档链接 |
+| `torch_npu/CONTRIBUTING.zh.md` | 贡献指南：CLA、Fork、测试用例、代码风格、门禁、Fork-Pull、报告问题、提出 PR |
 
 ### 2. docs/zh 概览与入门
 
 | 路径 | 说明 |
 |------|------|
-| `skills/base/torch_npu/docs/zh/overview/product_overview.md` | Ascend Extension for PyTorch 是什么、总体架构、关键功能特性 |
-| `skills/base/torch_npu/docs/zh/quick_start/quick_start.md` | 快速入门：环境准备、模型迁移训练（GPU→NPU 示例）、混合精度说明 |
-| `skills/base/torch_npu/docs/zh/release_notes/release_notes.md` | 版本说明、PyTorch/CANN/Extension 配套表、组件配套、维护策略 |
-| `skills/base/torch_npu/docs/zh/security_statement/security_statement.md` | 安全声明 |
+| `torch_npu/docs/zh/overview/product_overview.md` | Ascend Extension for PyTorch 是什么、总体架构、关键功能特性 |
+| `torch_npu/docs/zh/quick_start/quick_start.md` | 快速入门：环境准备、模型迁移训练（GPU→NPU 示例）、混合精度说明 |
+| `torch_npu/docs/zh/release_notes/release_notes.md` | 版本说明、PyTorch/CANN/Extension 配套表、组件配套、维护策略 |
+| `torch_npu/docs/zh/security_statement/security_statement.md` | 安全声明 |
 
 ### 3. docs/zh 框架特性指南（framework_feature_guide_pytorch）
 
-路径前缀：`skills/base/torch_npu/docs/zh/framework_feature_guide_pytorch/`
+路径前缀：`torch_npu/docs/zh/framework_feature_guide_pytorch/`
 
 | 路径 | 说明 |
 |------|------|
@@ -69,7 +69,7 @@
 
 ### 4. docs/zh 故障处理（troubleshooting）
 
-路径前缀：`skills/base/torch_npu/docs/zh/troubleshooting/`
+路径前缀：`torch_npu/docs/zh/troubleshooting/`
 
 | 路径 | 说明 |
 |------|------|
@@ -162,5 +162,5 @@
 当用户使用 **@torch_npu_doc** 时：
 
 1. **优先读取本 reference.md**，根据用户问题定位到上述索引中的对应文档路径。
-2. **按需打开工作区内对应文件**（如 `skills/base/torch_npu/README.zh.md`、`skills/base/torch_npu/docs/zh/quick_start/quick_start.md`、`skills/base/torch_npu/docs/zh/framework_feature_guide_pytorch/xxx.md`、`skills/base/torch_npu/docs/zh/troubleshooting/xxx.md`），提取与问题相关的段落或步骤。
+2. **按需打开工作区内对应文件**（如 `torch_npu/README.zh.md`、`torch_npu/docs/zh/quick_start/quick_start.md`、`torch_npu/docs/zh/framework_feature_guide_pytorch/xxx.md`、`torch_npu/docs/zh/troubleshooting/xxx.md`），提取与问题相关的段落或步骤。
 3. **回答时引用文档内容**：安装/验证/卸载用 README.zh.md；迁移与快速体验用 quick_start.md；算子适配用 adaptation_description_* 与 menu_framework_feature；故障与错误码用 troubleshooting 目录；版本与配套用 release_notes 与 README.zh.md。

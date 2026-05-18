@@ -1,0 +1,33 @@
+{
+  "initial_filter": {
+    "topic_class_keywords": [
+      "问题", "故障", "报错", "错误", "error", "issue", "bug", "异常",
+      "报错信息", "出错", "失败", "技术支持", "求助", "问答", "提问"
+    ],
+    "title_keywords": [
+      "报错", "错误", "error", "失败", "fail", "异常", "bug", "issue", "问题",
+      "无法", "不能", "报错信息", "出错", "运行失败", "编译失败", "安装失败",
+      "求助", "请问", "怎么解决", "如何解决", "报错码", "error code"
+    ]
+  },
+  "deep_filter": {
+    "problem_keywords": [
+      "报错", "错误", "error", "exception", "失败", "fail",
+      "无法", "不能", "运行失败", "编译失败", "安装失败", "启动失败",
+      "求助", "解决", "报错信息", "报错码", "出错信息",
+      "卡死", "死机", "崩溃", "闪退", "无响应",
+      "error", "fail", "exception", "bug", "issue", "fault",
+      "crash", "cannot", "unable", "not working", "failed"
+    ],
+    "tech_keywords": [
+      "ascend", "cann", "mindspore", "atlas",
+      "算子", "模型", "训练", "推理", "部署",
+      "驱动", "固件", "sdk", "开发环境"
+    ]
+  },
+  "filter_settings": {
+    "case_sensitive": false,
+    "match_mode": "contains",
+    "min_content_length": 10
+  }
+}

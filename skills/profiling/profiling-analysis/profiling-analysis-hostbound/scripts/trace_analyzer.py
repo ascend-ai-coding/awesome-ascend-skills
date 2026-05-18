@@ -26,24 +26,20 @@ IRQ_TIME_THRESHOLD = 0.1  # 中断时间阈值（秒）
 
 TaskKey = namedtuple("TaskKey", ["cpu", "comm", "pid"])
 
-CPU_RE = re.compile(r"\[(\d+)]")
-TS_RE = re.compile(r"\s(\d+\.\d+):")
-IRQ_ENTRY_RE = re.compile(r"irq_handler_entry: irq=(\d+)\s+name=(\S+)")
-IRQ_EXIT_RE = re.compile(r"irq_handler_exit: irq=(\d+)\s+ret=")
-SOFT_ENTRY_RE = re.compile(r"softirq_entry: vec=(\d+)\s+\[action=([^]]+)]")
-SOFT_EXIT_RE = re.compile(r"softirq_exit: vec=(\d+)\s+\[action=([^]]+)]")
-WAKING_RE = re.compile(
-    r"sched_waking: comm=([^ ]+) pid=(\d+) prio=\d+ target_cpu=(\d+)"
-)
-WAKEUP_RE = re.compile(
-    r"sched_wakeup: comm=([^ ]+) pid=(\d+) prio=\d+ success=\d+ target_cpu=(\d+)"
-)
+CPU_RE = re.compile(r'\[(\d+)]')
+TS_RE = re.compile(r'\s(\d+\.\d+):')
+IRQ_ENTRY_RE = re.compile(r'irq_handler_entry: irq=(\d+)\s+name=(\S+)')
+IRQ_EXIT_RE = re.compile(r'irq_handler_exit: irq=(\d+)\s+ret=')
+SOFT_ENTRY_RE = re.compile(r'softirq_entry: vec=(\d+)\s+\[action=([^]]+)]')
+SOFT_EXIT_RE = re.compile(r'softirq_exit: vec=(\d+)\s+\[action=([^]]+)]')
+WAKING_RE = re.compile(r'sched_waking: comm=([^ ]+) pid=(\d+) prio=\d+ target_cpu=(\d+)')
+WAKEUP_RE = re.compile(r'sched_wakeup: comm=([^ ]+) pid=(\d+) prio=\d+ success=\d+ target_cpu=(\d+)')
 SWITCH_RE = re.compile(
-    r"sched_switch: prev_comm=([^ ]+) prev_pid=(\d+) prev_prio=\d+ prev_state=([A-Z0-9]+) "
-    r"==> next_comm=([^ ]+) next_pid=(\d+) next_prio=\d+"
+    r'sched_switch: prev_comm=([^ ]+) prev_pid=(\d+) prev_prio=\d+ prev_state=([A-Z0-9]+) '
+    r'==> next_comm=([^ ]+) next_pid=(\d+) next_prio=\d+'
 )
 MIGRATE_RE = re.compile(
-    r"sched_migrate_task: comm=([^ ]+) pid=(\d+) prio=\d+ orig_cpu=(\d+) dest_cpu=(\d+)"
+    r'sched_migrate_task: comm=([^ ]+) pid=(\d+) prio=\d+ orig_cpu=(\d+) dest_cpu=(\d+)'
 )
 
 
@@ -116,15 +112,11 @@ class TraceAnalyzer:
                 self.stats[self.get_task_key(cpu, comm, pid)].running += dt
         self.last_ts[cpu] = timestamp
 
-    def handle_soft_entry(
-        self, cpu: int, timestamp: Decimal, vec: str, action: str
-    ) -> None:
+    def handle_soft_entry(self, cpu: int, timestamp: Decimal, vec: str, action: str) -> None:
         self.advance_time(cpu, timestamp)
         comm, pid = self.current_task.get(cpu, (f"swapper/{cpu}", 0))
         self.irq_stack[cpu].append(
-            IRQFrame(
-                "soft", int(vec), action, timestamp, self.get_task_key(cpu, comm, pid)
-            )
+            IRQFrame("soft", int(vec), action, timestamp, self.get_task_key(cpu, comm, pid))
         )
 
     def handle_soft_exit(self, cpu: int, timestamp: Decimal) -> None:
@@ -151,9 +143,7 @@ class TraceAnalyzer:
         self.pid_comm[prev_pid] = prev_comm
         self.pid_comm[next_pid] = next_comm
         if prev_pid != 0:
-            self.offcpu[prev_pid] = OffCPUState(
-                self.classify_prev_state(prev_state), timestamp, cpu
-            )
+            self.offcpu[prev_pid] = OffCPUState(self.classify_prev_state(prev_state), timestamp, cpu)
             self.stats[self.get_task_key(cpu, prev_comm, prev_pid)].cs_count += 1
         if next_pid != 0 and next_pid in self.offcpu:
             oc = self.offcpu.pop(next_pid)
@@ -171,15 +161,11 @@ class TraceAnalyzer:
         comm, pid, orig_cpu, _ = m.groups()
         self.stats[self.get_task_key(int(orig_cpu), comm, int(pid))].migrate_count += 1
 
-    def handle_irq_entry(
-        self, cpu: int, timestamp: Decimal, irq_id: str, name: str
-    ) -> None:
+    def handle_irq_entry(self, cpu: int, timestamp: Decimal, irq_id: str, name: str) -> None:
         self.advance_time(cpu, timestamp)
         comm, pid = self.current_task.get(cpu, (f"swapper/{cpu}", 0))
         self.irq_stack[cpu].append(
-            IRQFrame(
-                "hard", int(irq_id), name, timestamp, self.get_task_key(cpu, comm, pid)
-            )
+            IRQFrame("hard", int(irq_id), name, timestamp, self.get_task_key(cpu, comm, pid))
         )
 
     def handle_irq_exit(self, cpu: int, timestamp: Decimal) -> None:
@@ -251,21 +237,17 @@ class TraceAnalyzer:
 
     @staticmethod
     def write_excel(
-        df_summary,
-        df_irq_detail,
-        df_proc_irq,
-        df_summary_by_comm,
-        df_summary_by_process_pid,
-        path: str,
+            df_summary,
+            df_irq_detail,
+            df_proc_irq,
+            df_summary_by_comm,
+            df_summary_by_process_pid,
+            path: str
     ) -> None:
         with pd.ExcelWriter(path, engine="openpyxl") as writer:
             df_summary.to_excel(writer, sheet_name="task_summary", index=False)
-            df_summary_by_comm.to_excel(
-                writer, sheet_name="task_summary_by_comm", index=False
-            )
-            df_summary_by_process_pid.to_excel(
-                writer, sheet_name="task_summary_by_process_pid", index=False
-            )
+            df_summary_by_comm.to_excel(writer, sheet_name="task_summary_by_comm", index=False)
+            df_summary_by_process_pid.to_excel(writer, sheet_name="task_summary_by_process_pid", index=False)
             df_irq_detail.to_excel(writer, sheet_name="task_irq_detail", index=False)
             df_proc_irq.to_excel(writer, sheet_name="proc_irq_detail", index=False)
 
@@ -280,17 +262,15 @@ class TraceAnalyzer:
                     cell_value = str(cell.value)
                     if len(cell_value) > max_length:
                         max_length = len(cell_value)
-                ws.column_dimensions[col_letter].width = min(
-                    max_length + 2, MAX_COL_WIDTH
-                )
+                ws.column_dimensions[col_letter].width = min(max_length + 2, MAX_COL_WIDTH)
         wb.save(path)
 
     @staticmethod
     def insert_charts(
-        excel_path: str,
-        df_summary_by_comm: pd.DataFrame,
-        df_summary_by_process_pid: pd.DataFrame,
-        df_proc_irq: pd.DataFrame,
+            excel_path: str,
+            df_summary_by_comm: pd.DataFrame,
+            df_summary_by_process_pid: pd.DataFrame,
+            df_proc_irq: pd.DataFrame
     ) -> None:
         wb = load_workbook(excel_path)
 
@@ -338,7 +318,7 @@ class TraceAnalyzer:
             df_proc = df_proc.sort_values("pid")
             rows = df_proc.to_dict("records")
             chunks = [
-                rows[i : i + MAX_PID_PER_CHART]
+                rows[i:i + MAX_PID_PER_CHART]
                 for i in range(0, len(rows), MAX_PID_PER_CHART)
             ]
 
@@ -346,7 +326,7 @@ class TraceAnalyzer:
                 fig, axes = plt.subplots(3, 1, figsize=(8, 6))
                 fig.suptitle(
                     f"{comm} - PID Metrics ({chunk_index + 1}/{len(chunks)})",
-                    fontsize=12,
+                    fontsize=12
                 )
 
                 for ax, (metric, title) in zip(axes, metrics):
@@ -372,7 +352,7 @@ class TraceAnalyzer:
                 col_letter = get_column_letter(chart_col_index)
                 ws_pid.add_image(img, f"{col_letter}{insert_row}")
 
-                chart_col_index += 12  # 横向向右移动
+                chart_col_index += 12 # 横向向右移动
 
             # 每个 comm 结束后换一行，列重置
             insert_row += int(img.height / ROW_HEIGHT) + 2
@@ -388,9 +368,9 @@ class TraceAnalyzer:
         df_top10_irq_time = df_proc_irq.sort_values(
             "irq_time_ms", ascending=False
         ).head(10)
-        df_top10_irq_count = df_proc_irq.sort_values("irq_count", ascending=False).head(
-            10
-        )
+        df_top10_irq_count = df_proc_irq.sort_values(
+            "irq_count", ascending=False
+        ).head(10)
         fig, axes = plt.subplots(2, 1, figsize=(10, 6))
         ax_t = axes[0]
         ax_t.bar(
@@ -410,7 +390,7 @@ class TraceAnalyzer:
         ax_c.bar(
             df_top10_irq_count["comm_pid"],
             df_top10_irq_count["irq_count"],
-            color="teal",
+            color="teal"
         )
         ax_c.set_title("Top 10 IRQ Count by Process", fontsize=10)
         ax_c.set_ylabel("IRQ Count")
@@ -437,64 +417,56 @@ class TraceAnalyzer:
         for tk, s in self.stats.items():
             irq_total_count = sum(v["count"] for v in s.irqs.values())
             irq_total_time = sum(v["time"] for v in s.irqs.values())
-            summary_rows.append(
-                {
+            summary_rows.append({
+                "cpu": tk.cpu,
+                "comm": tk.comm,
+                "pid": tk.pid,
+                "running_s": s.running,
+                "sleeping_s": s.sleeping,
+                "runnable_s": s.runnable,
+                "cs_count": s.cs_count,
+                "migrate_count": s.migrate_count,
+                "irq_total_count": irq_total_count,
+                "irq_total_time_s": irq_total_time
+            })
+            for (irq_type, irq_id, name), v in s.irqs.items():
+                irq_detail_rows.append({
                     "cpu": tk.cpu,
                     "comm": tk.comm,
                     "pid": tk.pid,
-                    "running_s": s.running,
-                    "sleeping_s": s.sleeping,
-                    "runnable_s": s.runnable,
-                    "cs_count": s.cs_count,
-                    "migrate_count": s.migrate_count,
-                    "irq_total_count": irq_total_count,
-                    "irq_total_time_s": irq_total_time,
-                }
-            )
-            for (irq_type, irq_id, name), v in s.irqs.items():
-                irq_detail_rows.append(
-                    {
-                        "cpu": tk.cpu,
-                        "comm": tk.comm,
-                        "pid": tk.pid,
-                        "irq_type": irq_type,
-                        "irq_id": irq_id,
-                        "irq_name": name,
-                        "irq_count": v["count"],
-                        "irq_time_s": v["time"],
-                    }
-                )
+                    "irq_type": irq_type,
+                    "irq_id": irq_id,
+                    "irq_name": name,
+                    "irq_count": v["count"],
+                    "irq_time_s": v["time"]
+                })
                 key = (tk.comm, tk.pid, irq_type, irq_id, name)
                 proc_irq[key]["count"] += v["count"]
                 proc_irq[key]["time"] += v["time"]
 
         df_summary = pd.DataFrame(summary_rows)
         df_irq_detail = pd.DataFrame(irq_detail_rows)
-        df_proc_irq = pd.DataFrame(
-            [
-                {
-                    "comm": comm,
-                    "pid": pid,
-                    "irq_type": irq_type,
-                    "irq_id": irq_id,
-                    "irq_name": name,
-                    "irq_count": v["count"],
-                    "irq_time_s": v["time"],
-                }
-                for (comm, pid, irq_type, irq_id, name), v in proc_irq.items()
-            ]
-        )
-        summary_by_comm = defaultdict(
-            lambda: {
-                "running_s": Decimal("0"),
-                "sleeping_s": Decimal("0"),
-                "runnable_s": Decimal("0"),
-                "cs_count": 0,
-                "migrate_count": 0,
-                "irq_total_count": 0,
-                "irq_total_time_s": Decimal("0"),
+        df_proc_irq = pd.DataFrame([
+            {
+                "comm": comm,
+                "pid": pid,
+                "irq_type": irq_type,
+                "irq_id": irq_id,
+                "irq_name": name,
+                "irq_count": v["count"],
+                "irq_time_s": v["time"]
             }
-        )
+            for (comm, pid, irq_type, irq_id, name), v in proc_irq.items()
+        ])
+        summary_by_comm = defaultdict(lambda: {
+            "running_s": Decimal("0"),
+            "sleeping_s": Decimal("0"),
+            "runnable_s": Decimal("0"),
+            "cs_count": 0,
+            "migrate_count": 0,
+            "irq_total_count": 0,
+            "irq_total_time_s": Decimal("0")
+        })
         for row in summary_rows:
             key = row["comm"]
             summary_by_comm[key]["running_s"] += row["running_s"]
@@ -504,40 +476,31 @@ class TraceAnalyzer:
             summary_by_comm[key]["migrate_count"] += row["migrate_count"]
             summary_by_comm[key]["irq_total_count"] += row["irq_total_count"]
             summary_by_comm[key]["irq_total_time_s"] += row["irq_total_time_s"]
-        df_summary_by_comm = pd.DataFrame(
-            [{"comm": comm, **v} for comm, v in summary_by_comm.items()]
-        )
-        df_summary_by_process_pid = df_summary.groupby(
-            ["comm", "pid"], as_index=False
-        ).agg(
-            {
+        df_summary_by_comm = pd.DataFrame([
+            {"comm": comm, **v} for comm, v in summary_by_comm.items()
+        ])
+        df_summary_by_process_pid = (
+            df_summary.groupby(["comm", "pid"], as_index=False)
+            .agg({
                 "running_s": "sum",
                 "sleeping_s": "sum",
                 "runnable_s": "sum",
                 "cs_count": "sum",
                 "migrate_count": "sum",
                 "irq_total_count": "sum",
-                "irq_total_time_s": "sum",
-            }
+                "irq_total_time_s": "sum"
+            })
         )
-        for df in (
-            df_summary,
-            df_irq_detail,
-            df_proc_irq,
-            df_summary_by_comm,
-            df_summary_by_process_pid,
-        ):
+        for df in (df_summary, df_irq_detail, df_proc_irq, df_summary_by_comm, df_summary_by_process_pid):
             for col in df.columns:
                 if df[col].dtype == "object":
-                    df[col] = df[col].apply(
-                        lambda x: float(x) if isinstance(x, Decimal) else x
-                    )
+                    df[col] = df[col].apply(lambda x: float(x) if isinstance(x, Decimal) else x)
         return (
             df_summary,
             df_irq_detail,
             df_proc_irq,
             df_summary_by_comm,
-            df_summary_by_process_pid,
+            df_summary_by_process_pid
         )
 
 
@@ -561,11 +524,11 @@ def analyze_top10_processes_by_comm(df_summary_by_comm, df_irq_detail):
 
         # 判断是否存在问题
         issues = []
-        if row["cs_count"] > CS_COUNT_THRESHOLD:
+        if row['cs_count'] > CS_COUNT_THRESHOLD:
             issues.append(f"上下文切换次数过多 (> {CS_COUNT_THRESHOLD})")
-        if row["migrate_count"] > MIGRATE_COUNT_THRESHOLD:
+        if row['migrate_count'] > MIGRATE_COUNT_THRESHOLD:
             issues.append(f"CPU迁移次数过多 (> {MIGRATE_COUNT_THRESHOLD})")
-        if row["irq_total_time_s"] > IRQ_TIME_THRESHOLD:
+        if row['irq_total_time_s'] > IRQ_TIME_THRESHOLD:
             issues.append(f"中断时间过长 (> {IRQ_TIME_THRESHOLD}秒)")
 
         if issues:
@@ -573,18 +536,14 @@ def analyze_top10_processes_by_comm(df_summary_by_comm, df_irq_detail):
             has_host_issue = True
 
             # 如果中断时间过长，找出打断该进程时间最长的几个中断
-            if row["irq_total_time_s"] > IRQ_TIME_THRESHOLD:
+            if row['irq_total_time_s'] > IRQ_TIME_THRESHOLD:
                 print(f"\n  打断该进程时间最长的5个中断:")
                 # 筛选该进程的中断记录
-                process_irqs = df_irq_detail[df_irq_detail["comm"] == row["comm"]]
+                process_irqs = df_irq_detail[df_irq_detail['comm'] == row['comm']]
                 # 按中断时间排序，取前5个
-                top_irqs = process_irqs.sort_values("irq_time_s", ascending=False).head(
-                    5
-                )
+                top_irqs = process_irqs.sort_values("irq_time_s", ascending=False).head(5)
                 for _, irq_row in top_irqs.iterrows():
-                    print(
-                        f"    - {irq_row['irq_type']} IRQ {irq_row['irq_id']} ({irq_row['irq_name']}): {irq_row['irq_time_s']:.2f}秒 ({irq_row['irq_count']}次)"
-                    )
+                    print(f"    - {irq_row['irq_type']} IRQ {irq_row['irq_id']} ({irq_row['irq_name']}): {irq_row['irq_time_s']:.2f}秒 ({irq_row['irq_count']}次)")
         else:
             print(f"  状态: 正常")
 
@@ -605,13 +564,7 @@ def run(args: argparse.Namespace) -> None:
             tracer.advance_time(cpu, trace_end_ts)
 
         # 构建数据框
-        (
-            df_summary,
-            df_irq_detail,
-            df_proc_irq,
-            df_summary_by_comm,
-            df_summary_by_process_pid,
-        ) = tracer.build_dataframes()
+        df_summary, df_irq_detail, df_proc_irq, df_summary_by_comm, df_summary_by_process_pid = tracer.build_dataframes()
 
         # 分析top10进程（按进程名）
         has_issue = analyze_top10_processes_by_comm(df_summary_by_comm, df_irq_detail)
@@ -619,9 +572,9 @@ def run(args: argparse.Namespace) -> None:
         # 分析所有存在问题的进程
         print("\n=== 所有存在问题的进程分析 ===")
         problematic_processes = df_summary[
-            (df_summary["cs_count"] > CS_COUNT_THRESHOLD)
-            | (df_summary["migrate_count"] > MIGRATE_COUNT_THRESHOLD)
-            | (df_summary["irq_total_time_s"] > IRQ_TIME_THRESHOLD)
+            (df_summary['cs_count'] > CS_COUNT_THRESHOLD) |
+            (df_summary['migrate_count'] > MIGRATE_COUNT_THRESHOLD) |
+            (df_summary['irq_total_time_s'] > IRQ_TIME_THRESHOLD)
         ]
 
         if not problematic_processes.empty:
@@ -629,25 +582,17 @@ def run(args: argparse.Namespace) -> None:
             for _, row in problematic_processes.iterrows():
                 print(f"- 进程: {row['comm']} (PID: {row['pid']})")
                 issues = []
-                if row["cs_count"] > CS_COUNT_THRESHOLD:
-                    issues.append(
-                        f"上下文切换次数过高: {row['cs_count']} (阈值: {CS_COUNT_THRESHOLD})"
-                    )
-                if row["migrate_count"] > MIGRATE_COUNT_THRESHOLD:
-                    issues.append(
-                        f"CPU迁移次数过高: {row['migrate_count']} (阈值: {MIGRATE_COUNT_THRESHOLD})"
-                    )
-                if row["irq_total_time_s"] > IRQ_TIME_THRESHOLD:
-                    issues.append(
-                        f"中断时间过长: {row['irq_total_time_s']:.2f}s (阈值: {IRQ_TIME_THRESHOLD}s)"
-                    )
+                if row['cs_count'] > CS_COUNT_THRESHOLD:
+                    issues.append(f"上下文切换次数过高: {row['cs_count']} (阈值: {CS_COUNT_THRESHOLD})")
+                if row['migrate_count'] > MIGRATE_COUNT_THRESHOLD:
+                    issues.append(f"CPU迁移次数过高: {row['migrate_count']} (阈值: {MIGRATE_COUNT_THRESHOLD})")
+                if row['irq_total_time_s'] > IRQ_TIME_THRESHOLD:
+                    issues.append(f"中断时间过长: {row['irq_total_time_s']:.2f}s (阈值: {IRQ_TIME_THRESHOLD}s)")
                 print("  " + "; ".join(issues))
 
             # 输出最终结论
             print("\n=== 分析结论 ===")
-            print(
-                "❌ 发现Host侧性能问题: 存在进程上下文切换、CPU迁移或中断时间异常的情况"
-            )
+            print("❌ 发现Host侧性能问题: 存在进程上下文切换、CPU迁移或中断时间异常的情况")
             print("   建议进一步分析相关进程，优化Host侧性能")
         else:
             # 输出最终结论
@@ -668,13 +613,16 @@ def run(args: argparse.Namespace) -> None:
             df_proc_irq,
             df_summary_by_comm,
             df_summary_by_process_pid,
-            output_path,
+            output_path
         )
         print(f"\n✅ 基本统计表格已生成: {output_path}")
 
         # 插入图表
         tracer.insert_charts(
-            output_path, df_summary_by_comm, df_summary_by_process_pid, df_proc_irq
+            output_path,
+            df_summary_by_comm,
+            df_summary_by_process_pid,
+            df_proc_irq
         )
         print("✅ 图表插入完成")
         print(f"\n🎉 分析结果已保存到Excel文件: {output_path}")
@@ -686,8 +634,6 @@ def run(args: argparse.Namespace) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Trace Analyzer - Host侧性能分析")
     parser.add_argument("--input", type=str, required=True, help="输入trace文件路径")
-    parser.add_argument(
-        "--output", type=str, help="输出Excel文件路径（可选，默认在当前路径生成）"
-    )
+    parser.add_argument("--output", type=str, help="输出Excel文件路径（可选，默认在当前路径生成）")
     args = parser.parse_args()
     run(args)

@@ -26,7 +26,7 @@ NC='\033[0m' # No Color
 detect_cann_version() {
     local cann_path=""
     local cann_version=""
-    
+
     # Check for 8.5.0+ path first
     if [ -f "/usr/local/Ascend/cann/latest/version.cfg" ]; then
         cann_path="/usr/local/Ascend/cann"
@@ -45,21 +45,21 @@ detect_cann_version() {
         fi
         cann_version="detected via atc"
     fi
-    
+
     echo "$cann_path|$cann_version"
 }
 
 # Check NPU device and get SoC version
 check_npu_device() {
     echo -e "\n${BLUE}[NPU Device Check]${NC}"
-    
+
     if command -v npu-smi &>/dev/null; then
         local npu_info=$(npu-smi info 2>/dev/null | grep -E "Name|Version" | head -5)
         if [ -n "$npu_info" ]; then
             echo "$npu_info"
-            
-            # Extract SoC name
-            local soc_name=$(npu-smi info 2>/dev/null | grep "Name" | awk '{print $NF}')
+
+            # Extract SoC name (e.g. "910B3" from lines like "| 0     910B3  | OK |...")
+            local soc_name=$(npu-smi info 2>/dev/null | grep -E "^\|\s+[0-9]+\s+[0-9A-Z]" | awk '{print $3}' | head -1)
             if [ -n "$soc_name" ]; then
                 echo -e "\n${YELLOW}⚠️  IMPORTANT: SoC Version Matching${NC}"
                 echo "   Your device SoC: Ascend$soc_name"
@@ -81,7 +81,7 @@ setup_environment() {
     local result=$(detect_cann_version)
     local cann_path=$(echo "$result" | cut -d'|' -f1)
     local cann_version=$(echo "$result" | cut -d'|' -f2)
-    
+
     if [ -z "$cann_path" ]; then
         echo -e "${RED}✗ CANN installation not found!${NC}"
         echo
@@ -90,12 +90,12 @@ setup_environment() {
         echo
         return 1
     fi
-    
+
     echo -e "${GREEN}✓ CANN installation found:${NC}"
     echo "  Path: $cann_path"
     echo "  Version: ${cann_version:-Unknown}"
     echo
-    
+
     # Source the environment
     if [ -f "$cann_path/set_env.sh" ]; then
         echo -e "${BLUE}→ Sourcing environment from: $cann_path/set_env.sh${NC}"
@@ -104,7 +104,7 @@ setup_environment() {
         echo -e "${RED}✗ Environment setup script not found at: $cann_path/set_env.sh${NC}"
         return 1
     fi
-    
+
     # Verify atc is available
     echo
     echo -e "${BLUE}[ATC Verification]${NC}"
@@ -117,12 +117,12 @@ setup_environment() {
         echo "  This may indicate an incomplete CANN installation."
         return 1
     fi
-    
+
     # Version-specific additional setup
     if [[ "$cann_path" == *"cann"* ]] && [[ "$cann_version" =~ ^8\.[5-9] ]]; then
         echo
         echo -e "${BLUE}[CANN 8.5.0+ Additional Setup]${NC}"
-        
+
         # Check for ops package requirement
         if [ ! -d "$cann_path/opp" ]; then
             echo -e "${YELLOW}  ⚠ Warning: Ops package (opp) not found!${NC}"
@@ -130,7 +130,7 @@ setup_environment() {
         else
             echo -e "${GREEN}  ✓ Ops package found${NC}"
         fi
-        
+
         # Set LD_LIBRARY_PATH for non-Ascend hosts
         if ! command -v npu-smi &>/dev/null; then
             local arch=$(uname -m)
@@ -138,7 +138,7 @@ setup_environment() {
             echo -e "${GREEN}  ✓ Set LD_LIBRARY_PATH for non-Ascend host development${NC}"
         fi
     fi
-    
+
     return 0
 }
 
@@ -169,7 +169,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
         print_usage
         exit 0
     fi
-    
+
     echo -e "${YELLOW}Note: Running script directly. Environment changes will not persist.${NC}"
     echo "For persistent changes, run: source $0"
     echo

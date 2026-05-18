@@ -1,0 +1,4 @@
+interface:
+  display_name: "MSVerl Daily Regression Triage"
+  short_description: "Triage daily verl and MindSpeed regressions with low-cost commit ranking"
+  default_prompt: "Use $msverl-daily-regression-triage to analyze the latest msverl comparison log, extract failure evidence if needed, and identify the most likely recent culprit commit."

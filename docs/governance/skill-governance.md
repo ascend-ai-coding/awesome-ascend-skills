@@ -25,6 +25,7 @@
   - 面向任务场景，而不是面向实现细节
   - 默认优先推荐给新用户
   - 一个 bundle 应该有清晰边界，避免“什么都放进去”
+  - marketplace 中的 `skills` 必须都位于同一个 bundle 目录下，例如 `skills/<domain>/...`
 
 ### 2.2 Domain Skill Set
 
@@ -36,6 +37,7 @@
   - 聚焦单一领域
   - 可被官方 bundle 引用
   - 不要求承担新手入口职责
+  - marketplace 中的 `skills` 必须收敛在同一个技能包目录下，例如 `skills/training/mindspeed-llm/...`
 
 ### 2.3 Leaf Skill / Router Skill
 
@@ -70,7 +72,7 @@
 | `profiling` | Profiling 采集与性能分析 | `profiling-analysis`、`mindspeed-llm-train-profiler` |
 | `ops` | 算子开发、迁移与调优 | `ascendc`、`ascend-opplugin`、`triton-ascend-migration` |
 | `ai-for-science` | AI for Science 专项方向 | `skills/ai-for-science/*` |
-| `knowledge` | 工程案例、排障知识沉淀 | `github-issue-summary`、`github-issue-rca` |
+| `agent-tools` | 工程案例、排障知识沉淀、社区反馈分析与开源合入流程 | `github-issue-summary`、`github-issue-rca`、`gitcode-merge-flow`、`hiascend-forum` |
 
 新增 skill 时，应先判断功能域，再决定角色类型。
 
@@ -83,7 +85,7 @@
 - `skills/training/`
 - `skills/profiling/`
 - `skills/ops/`
-- `skills/knowledge/`
+- `skills/agent-tools/`
 - `skills/ai-for-science/`
 
 当前仓库已采用 `skills/<domain>/...` 承载本地 skills，并要求：
@@ -100,6 +102,30 @@
 - `ops`：关注**开发和改造算子本身**，核心问题是“怎么实现/迁移/接入/优化一个算子”。
 
 允许存在少量交叉工具（例如算子 benchmark 既能辅助 profiling，也能辅助 ops 调优），但在 README 和 bundle 描述中必须明确主职责，避免两个 bundle 看起来像同一件事。
+
+### 3.2 Marketplace Category Library
+
+`.claude-plugin/marketplace.json` 中每个插件条目必须同时维护：
+
+- `category`：单值主分类，用于兼容只支持一个分类字段的消费方。优先使用 skill 所在的 `skills/<domain>/...` 功能域；官方安装包使用 `bundle`；外部同步入口使用 `external`。
+- `categories`：多值分类标签，用于更细粒度的检索、过滤、统计和后续推荐。至少包含一个主分类和一个角色分类，可以再补充能力分类。
+
+仓库维护一个显式的 `categoryLibrary`，作为 `categories` 的可选值来源。当前分为三层：
+
+| 类型 | 用途 | 示例 |
+|------|------|------|
+| `primaryCategories` | README / 安装路径 / 目录结构对应的主功能域 | `base`、`inference`、`training`、`profiling`、`ops`、`agent-tools`、`ai-for-science`、`external`、`bundle` |
+| `roleCategories` | skill 在仓库 taxonomy 中的角色 | `leaf-skill`、`router-skill`、`domain-skill-set`、`official-bundle`、`external-skill-set` |
+| `capabilityCategories` | 更细的能力标签，用于表达一个 skill 的实际覆盖面 | `model-serving`、`quantization`、`distributed-communication`、`operator-migration`、`performance-analysis`、`issue-analysis` |
+
+新增或调整 marketplace 条目时应遵循：
+
+1. `category` 必须来自 `primaryCategories`
+2. `categories` 中的每个值都必须存在于 `categoryLibrary`
+3. 本地 leaf skill 的主分类应与其 `skills/<domain>/...` 路径一致
+4. bundle / domain skill set 可以包含多个能力标签，但不能用能力标签替代主分类
+5. 带 `skills` 数组的 bundle / skill set 必须引用同一个目录树内的 skills；不要在一个 bundle 中混入其他功能域目录
+6. 外部同步 skill group 统一以 `external` 作为主分类，并补充 `external-skill-set`、`external-sync`
 
 ## 4. 命名与收敛规则
 
@@ -186,7 +212,8 @@
 2. 这个需求应该放进现有 `references/`，还是值得成为独立 skill？
 3. 它属于哪个功能域？
 4. 它是 leaf、router、domain skill set，还是需要升级为官方 bundle？
-5. README / marketplace / 导航是否需要同步更新？
+5. marketplace 的 `category` / `categories` 是否覆盖主功能域、角色和关键能力？
+6. README / marketplace / 导航是否需要同步更新？
 
 ## 7. Minimal Analytics / Feedback Loop
 
@@ -216,6 +243,8 @@
 
 - [ ] 已明确该变更属于哪个功能域
 - [ ] 已明确该变更是 bundle / domain skill set / leaf / router / external 哪一类
+- [ ] marketplace 条目已设置主 `category`
+- [ ] marketplace 条目已设置多值 `categories`，且所有值都来自 `categoryLibrary`
 - [ ] 未与现有 skill 产生明显重复
 - [ ] README 与 marketplace 已同步更新
 - [ ] 如为官方 bundle，已说明推荐用户与核心覆盖范围

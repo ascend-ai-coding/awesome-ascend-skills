@@ -1,0 +1,23 @@
+{
+  "skill_name": "remote-server-guide",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "我需要连接到一台远程服务器 192.168.1.50，用户名 root，密码登录，然后在上面执行几个命令看看系统状态",
+      "expected_output": "Should detect SSH tools, recommend authentication method, establish connection, and execute system status commands",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Help me connect to my dev server at 10.0.0.5 via a jump host (bastion.example.com), then I need to get into a running Docker container called 'ml-training' and check the training logs",
+      "expected_output": "Should handle jump host setup, SSH connection through bastion, docker exec into container, and log retrieval",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "I want to upload a Python script to my remote server and run it inside an existing container. The server is at 172.16.0.10, I have an SSH key at ~/.ssh/id_rsa. The container is called 'app-server'.",
+      "expected_output": "Should use SSH key auth, upload file via scp/sftp, docker cp into container, and execute the script",
+      "files": []
+    }
+  ]
+}

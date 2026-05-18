@@ -1,0 +1,4 @@
+interface:
+  display_name: "Megatron Commit Tracker"
+  short_description: "Track branch commits and normalize change sets"
+  default_prompt: "Use $megatron-commit-tracker to collect commits, PRs, or time-window changes from a Megatron branch."

@@ -16,11 +16,10 @@ keywords:
 - 调度分析
 original-name: ascend_pytorch_profiler_db_explorer
 synced-from: https://github.com/kali20gakki/mindstudio-skills
-synced-date: '2026-03-26'
-synced-commit: 266c7821de7b51b683d4605960d0d86f7d631e03
+synced-date: '2026-05-18'
+synced-commit: f6695da3cfa864a100db5a94f594b638aeff6389
 license: UNKNOWN
 ---
-
 
 # Ascend Profiling 数据库查询与 SQL 设计
 
@@ -183,11 +182,11 @@ WITH comm_view AS (
 
 ```sql
 WITH dispatch_view AS (
-    SELECT 
-        ROUND(t.endNs - t.startNs) AS task_duration_ns, 
-        ROUND(c.endNs - c.startNs) AS cann_duration_ns, 
+    SELECT
+        ROUND(t.endNs - t.startNs) AS task_duration_ns,
+        ROUND(c.endNs - c.startNs) AS cann_duration_ns,
         ROUND(p.endNs - p.startNs) AS pytorch_duration_ns,
-        c_str.value AS cann_api_name, 
+        c_str.value AS cann_api_name,
         p_str.value AS pytorch_api_name,
         t_str.value AS task_type
     FROM TASK t

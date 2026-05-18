@@ -78,7 +78,7 @@ W8A8C8 extends W8A8 with additional KV cache quantization for long sequence hand
 
 The quantization process is handled by the msmodelslim toolkit. For detailed instructions on quantizing models, see:
 
-**[msmodelslim Skill - Quantization Guide](../../msmodelslim/SKILL.md)**
+**[msmodelslim Skill - Quantization Guide](../msmodelslim/SKILL.md)**
 
 The general workflow:
 1. Prepare calibration data
@@ -153,4 +153,4 @@ python -m vllm.entrypoints.openai.api_server \
 ## References
 
 - [vLLM-Ascend Quantization Documentation](https://docs.vllm.ai/projects/ascend/en/latest/user_guide/feature_guide/quantization.html)
-- [msmodelslim Quantization Guide](../../msmodelslim/SKILL.md)
+- [msmodelslim Quantization Guide](../msmodelslim/SKILL.md)

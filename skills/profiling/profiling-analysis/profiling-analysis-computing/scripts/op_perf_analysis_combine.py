@@ -22,22 +22,13 @@ import sys
 import argparse
 import subprocess
 
-
 def main():
     """主函数"""
     # 解析命令行参数
-    parser = argparse.ArgumentParser(description="算子性能分析整合脚本")
-    parser.add_argument(
-        "--input-path", required=True, help="profiling文件路径，包含PROF_*目录的根路径"
-    )
-    parser.add_argument(
-        "--output-path",
-        required=False,
-        help="输出结果目录，用于保存生成的分析报告和CSV文件",
-    )
-    parser.add_argument(
-        "--top-n", type=int, default=3, help="选取的高耗时算子数量，默认3"
-    )
+    parser = argparse.ArgumentParser(description='算子性能分析整合脚本')
+    parser.add_argument('--input-path', required=True, help='profiling文件路径，包含PROF_*目录的根路径')
+    parser.add_argument('--output-path', required=False, help='输出结果目录，用于保存生成的分析报告和CSV文件')
+    parser.add_argument('--top-n', type=int, default=3, help='选取的高耗时算子数量，默认3')
 
     args = parser.parse_args()
 
@@ -47,12 +38,9 @@ def main():
     # 构建第一个脚本命令（高耗时算子筛选）
     selector_script = os.path.join(script_dir, "op_high_time_selector.py")
     selector_cmd = [
-        sys.executable,
-        selector_script,
-        "--input-path",
-        args.input_path,
-        "--top-n",
-        str(args.top_n),
+        sys.executable, selector_script,
+        "--input-path", args.input_path,
+        "--top-n", str(args.top_n)
     ]
 
     if args.output_path:
@@ -77,17 +65,14 @@ def main():
         output_dir = args.output_path
     else:
         # 如果没有指定输出路径，则在输入路径下创建output文件夹
-        output_dir = os.path.join(args.input_path, "output")
+        output_dir = os.path.join(args.input_path, 'output')
 
     # 构建第二个脚本命令（数据透视表分析）
     analyzer_script = os.path.join(script_dir, "op_pivot_table_analyzer.py")
     analyzer_cmd = [
-        sys.executable,
-        analyzer_script,
-        "--input-path",
-        args.input_path,
-        "--top-n",
-        str(args.top_n),
+        sys.executable, analyzer_script,
+        "--input-path", args.input_path,
+        "--top-n", str(args.top_n)
     ]
 
     if args.output_path:
@@ -113,14 +98,10 @@ def main():
     html_file = os.path.join(output_dir, "op_analysis_combined.html")
 
     extract_cmd = [
-        sys.executable,
-        extract_script,
-        "--input",
-        args.input_path,
-        "--output",
-        extract_output,
-        "--op",
-        "matmul",
+        sys.executable, extract_script,
+        "--input", args.input_path,
+        "--output", extract_output,
+        "--op", "matmul"
     ]
 
     # 如果存在HTML文件，则添加HTML形状替换参数
@@ -145,7 +126,6 @@ def main():
     print("完整分析流程完成！")
     print("=" * 50)
     return 0
-
 
 if __name__ == "__main__":
     exit(main())
