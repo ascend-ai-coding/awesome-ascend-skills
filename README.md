@@ -4,6 +4,9 @@
 
 这是一个给昇腾 NPU 开发者使用的 skills 仓库。内容按 Skill 组织，可被 Claude Code、OpenCode、Cursor、Trae、Codex 等 AI 编程工具读取。
 
+- GitHub Pages: https://ascend-ai-coding.github.io/awesome-ascend-skills/
+- skills.sh: https://skills.sh/ascend-ai-coding/awesome-ascend-skills
+
 ---
 
 ## 目录
@@ -79,19 +82,6 @@ Start
 ---
 
 ## 安装指南
-
-### 网页索引
-
-可以通过静态网页快速搜索、查看和安装 Skills：
-
-- GitHub Pages: https://ascend-ai-coding.github.io/awesome-ascend-skills/
-- skills.sh: https://skills.sh/ascend-ai-coding/awesome-ascend-skills
-
-网页代码位于 `web/`，网页数据由 `web/scripts/build_web_data.py` 从仓库内的 `SKILL.md` 和 `.claude-plugin/marketplace.json` 生成：
-
-```bash
-python3 web/scripts/build_web_data.py
-```
 
 ### 推荐安装方式
 
