@@ -20,15 +20,15 @@ def main():
     if len(sys.argv) < 5:
         print("Usage: python create_issue.py <access_token> <upstream_repo_info> <issue_title> <issue_body>")
         sys.exit(1)
-
+    
     access_token = sys.argv[1]
     upstream_repo_info = sys.argv[2]
     issue_title = sys.argv[3]
     issue_body = sys.argv[4]
-
+    
     # 解析仓库信息
     upstream_owner, upstream_repo = upstream_repo_info.split('/')
-
+    
     # 构建请求
     url = f"https://api.gitcode.com/api/v5/repos/{upstream_owner}/issues"
     headers = {
@@ -41,11 +41,11 @@ def main():
         "title": issue_title,
         "body": issue_body
     }
-
+    
     # 发送请求
     response = requests.post(url, headers=headers, json=data)
     response.raise_for_status()
-
+    
     # 打印结果
     print(json.dumps(response.json(), indent=2, ensure_ascii=False))
 

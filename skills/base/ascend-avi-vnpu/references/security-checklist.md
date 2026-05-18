@@ -140,3 +140,4 @@ kill -9 <PID>
 
 - [华为企业支持 - npu-smi 命令参考](https://support.huawei.com/enterprise/zh/doc/EDOC1100540373/e5658bf0?idPath=23710424|251366513|22892968|252309139|251052354)
 - [华为昇腾官方文档](https://www.hiascend.com/document)
+

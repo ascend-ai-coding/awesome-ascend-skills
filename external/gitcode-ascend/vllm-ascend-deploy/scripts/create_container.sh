@@ -57,19 +57,19 @@ detect_npu_count() {
     echo "$NPU_COUNT"
     return
   fi
-
+  
   local count
   if [[ "$MODE" == "remote" ]]; then
     count=$(ssh ${SSH_USER}@${SERVER_IP} "npu-smi info 2>/dev/null | grep -c 'Ascend'" || echo "0")
   else
     count=$(npu-smi info 2>/dev/null | grep -c 'Ascend' || echo "0")
   fi
-
+  
   if [[ "$count" -eq 0 ]]; then
     echo "Warning: 无法检测 NPU 卡数，使用默认值 8" >&2
     count=8
   fi
-
+  
   echo "$count"
 }
 

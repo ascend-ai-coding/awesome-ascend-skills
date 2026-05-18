@@ -1,6 +1,6 @@
 # 网络通用检查细则
 
-本文档提供 Kubernetes 网络问题的系统化诊断方法，适用于 Pod 无法通信、Service 访问异常、跨节点不通、DNS 解析失败等场景。
+本文档提供 Kubernetes 网络问题的系统化诊断方法，适用于 Pod 无法通信、Service 访问异常、跨节点不通、DNS 解析失败等场景。  
 **使用建议**：当用户报告网络相关问题时，或通过 Pod 状态发现网络错误（如 `failed to set up sandbox container network`）时，可参考以下步骤进行分析。
 
 ---

@@ -5,7 +5,7 @@
 
 ## 修复操作
 
-{{command}}
+{{command}} 
 
 预期影响
 {{impact}}

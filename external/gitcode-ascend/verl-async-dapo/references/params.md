@@ -13,7 +13,7 @@ class VerlConfig:
     rollout: RolloutConfig     # Rollout 配置
     trainer: TrainerConfig     # 训练器配置
     feature: FeatureConfig     # 特性开关
-
+    
     model_path: str            # 模型路径
     ckpts_dir: str             # Checkpoint 目录
     learning_rate: float       # 学习率

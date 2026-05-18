@@ -79,7 +79,7 @@ std::tuple<at::Tensor, at::Tensor> sort_op(const at::Tensor &self) {
     // 填充 tiling 结构体并 launch kernel
     // 例如：
     // EXEC_KERNEL_CMD(<op_name>, blockDim,
-    //                 self, values, indices, workspace,
+    //                 self, values, indices, workspace, 
     //                 formerNum, ......其他tiling参数);
 }
 }  // namespace ascend_kernel

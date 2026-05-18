@@ -26,8 +26,8 @@
 ## 3. 指标计算
 
 1. 对单次 `with profile` 生成的 `op_statistic.csv`，对 **每一行** 的 **Total Time(us)** **求和**（所有 OP 类型行计入，除非脚本明确排除）。
-2. **归一化**：
-   `per_step_metric = sum_total_us / divisor`
+2. **归一化**：  
+   `per_step_metric = sum_total_us / divisor`  
    推荐 **`divisor = active × repeat`**；本技能 **`active` 固定为 5**，通常 **`repeat = 1`**，故 **`divisor = 5`**。
 3. 表头可能带 BOM 或列名微调；解析时应兼容 **`Total Time(us)`** 或等价列名。
 

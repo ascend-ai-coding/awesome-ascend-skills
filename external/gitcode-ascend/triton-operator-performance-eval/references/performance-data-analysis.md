@@ -162,38 +162,38 @@ import pandas as pd
 
 def analyze_msprof_op_output(output_root):
     """分析 msprof op 输出数据"""
-
+    
     # 定位 OPPROF 目录
     prof_dirs = glob.glob(os.path.join(output_root, 'OPPROF_*'))
     if not prof_dirs:
         print(f"未找到 OPPROF 目录于 {output_root}")
         return
     output_dir = prof_dirs[0]
-
+    
     # 读取算子基础信息
     op_info = pd.read_csv(f'{output_dir}/OpBasicInfo.csv')
     print(f"算子: {op_info['Op Name'].iloc[0]}")
     print(f"类型: {op_info['Op Type'].iloc[0]}")
     print(f"耗时: {op_info['Task Duration(us)'].iloc[0]:.2f} us")
     print(f"Block Dim: {op_info['Block Dim'].iloc[0]}")
-
+    
     # 读取算术利用率
     arith = pd.read_csv(f'{output_dir}/ArithmeticUtilization.csv')
-
+    
     # 读取内存数据
     memory = pd.read_csv(f'{output_dir}/Memory.csv')
-
+    
     # 读取资源冲突率
     resource_conflict = pd.read_csv(f'{output_dir}/ResourceConflictRatio.csv')
-
+    
     # 计算 AI
     total_flops = arith['aic_cube_fops'].sum() + arith['aiv_vec_fops'].sum()
     total_bytes_kb = memory['GM_to_UB_datas(KB)'].sum() + memory['UB_to_GM_datas(KB)'].sum()
     total_bytes = total_bytes_kb * 1024
     ai = total_flops / total_bytes if total_bytes > 0 else 0
-
+    
     print(f"\n算术强度 (AI): {ai:.2f} FLOPs/Byte")
-
+    
     # 判断瓶颈
     if ai < 50:
         print("瓶颈类型: Memory-Bound")
@@ -201,30 +201,30 @@ def analyze_msprof_op_output(output_root):
     else:
         print("瓶颈类型: Compute-Bound")
         print("优化方向: 优化计算逻辑")
-
+    
     # 带宽利用率
     gm_to_ub_util = memory['GM_to_UB_bw_usage_rate(%)'].mean()
     ub_to_gm_util = memory['UB_to_GM_bw_usage_rate(%)'].mean()
     print(f"\nGM→UB 带宽利用率: {gm_to_ub_util:.1f}%")
     print(f"UB→GM 带宽利用率: {ub_to_gm_util:.1f}%")
-
+    
     # Cube 利用率（纯 vector 算子可能全为 NaN）
     cube_ratio = arith['aic_cube_ratio'].mean(skipna=True)
     vec_ratio = arith['aiv_vec_ratio'].mean(skipna=True)
     print(f"\nCube 占比: {cube_ratio * 100:.1f}%" if pd.notna(cube_ratio) else "\nCube 占比: N/A (纯 vector 算子)")
     print(f"Vector 占比: {vec_ratio * 100:.1f}%")
-
+    
     # Bank conflict
     bankgroup_cflt = resource_conflict['aiv_vec_bankgroup_cflt_ratio'].mean(skipna=True)
     print(f"\nBank Group Conflict: {bankgroup_cflt * 100:.1f}%")
-
+    
     # 诊断建议
     if gm_to_ub_util < 30:
         print("\n⚠️  低带宽利用率：检查内存访问模式")
-
+    
     if pd.notna(cube_ratio) and cube_ratio < 0.5:
         print("⚠️  Cube 利用率低：检查矩阵分块策略")
-
+    
     if bankgroup_cflt > 0.1:
         print("⚠️  高 Bank Conflict：优化数据块大小")
 

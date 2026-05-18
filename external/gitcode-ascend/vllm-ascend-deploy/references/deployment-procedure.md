@@ -99,25 +99,25 @@ curl http://<IP>:<PORT>/v1/models
 ```bash
 while true; do
     logs=$(docker exec <container> tail -50 /tmp/vllm.log 2>&1)
-
+    
     # 检测错误（立即通知）
     if echo "$logs" | grep -qiE "error|exception|traceback|failed|oom"; then
         # 通知用户启动失败
         break
     fi
-
+    
     # 检测成功（立即通知）
     if echo "$logs" | grep -q "Application startup complete"; then
         # 通知用户启动成功
         break
     fi
-
+    
     # 超时（10分钟）
     if [ $elapsed -gt 600 ]; then
         # 通知用户启动超时
         break
     fi
-
+    
     sleep 30
 done
 ```

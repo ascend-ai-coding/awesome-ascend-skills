@@ -36,11 +36,11 @@ OOM_RETRY_COUNT="${OOM_RETRY_COUNT:-0}"
 determine_features() {
     local result=""
     local mem_features_to_add=""
-
+    
     # ==========================================
     # Step 1: 基础特性来源
     # ==========================================
-
+    
     if [ -n "$USER_FEATURES" ]; then
         # 用户显式指定：使用用户特性作为基础
         info "用户显式指定特性: $USER_FEATURES"
@@ -50,18 +50,18 @@ determine_features() {
         info "使用默认性能特性: $PERF_FEATURES_DEFAULT"
         result="$PERF_FEATURES_DEFAULT"
     fi
-
+    
     # ==========================================
     # Step 2: OOM 时追加显存特性
     # ==========================================
-
+    
     if [ "$OOM_RETRY_COUNT" -ge 1 ]; then
         info "OOM 重试 #$OOM_RETRY_COUNT：追加显存优化特性"
 
         # 根据 OOM 重试次数，逐步开启显存特性
         [ "$OOM_RETRY_COUNT" -ge 1 ] && mem_features_to_add="$mem_features_to_add offload"
         [ "$OOM_RETRY_COUNT" -ge 2 ] && mem_features_to_add="$mem_features_to_add recompute"
-
+        
         # 检查是否已包含显存特性，避免重复
         for feat in $mem_features_to_add; do
             if ! echo "$result" | grep -qw "$feat"; then
@@ -69,11 +69,11 @@ determine_features() {
             fi
         done
     fi
-
+    
     # ==========================================
     # Step 3: 输出最终特性
     # ==========================================
-
+    
     info "最终特性配置: $result"
     echo "$result"
 }
@@ -84,7 +84,7 @@ determine_features() {
 
 check_oom() {
     local log_file="${1:-/verl/train.log}"
-
+    
     # 检查常见的 OOM 错误模式
     if grep -qiE "out of memory|OOM|CUDA out of memory|NPU out of memory|memory allocation failed" "$log_file" 2>/dev/null; then
         warn "检测到 OOM 错误！"
@@ -100,7 +100,7 @@ check_oom() {
 features_to_hydra() {
     local features="$1"
     local hydra_args=""
-
+    
     for feat in $features; do
         case "$feat" in
             flash_attn)
@@ -138,7 +138,7 @@ features_to_hydra() {
                 ;;
         esac
     done
-
+    
     echo "$hydra_args"
 }
 
@@ -177,7 +177,7 @@ EOF
 
 main() {
     local action="${1:-determine}"
-
+    
     case "$action" in
         determine)
             determine_features

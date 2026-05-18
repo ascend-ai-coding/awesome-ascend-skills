@@ -177,12 +177,12 @@ def post_inline_comment(
 ):
     encoded_project = quote(project_id, safe="")
     url = f"{API_V4_BASE}/projects/{encoded_project}/merge_requests/{mr_iid}/discussions"
-
+    
     headers = {
         "PRIVATE-TOKEN": TOKEN,
         "Content-Type": "application/json"
     }
-
+    
     position = {
         "position_type": "text",
         "base_sha": sha_info["base_sha"],
@@ -191,15 +191,15 @@ def post_inline_comment(
         "new_path": path,
         "new_line": line
     }
-
+    
     payload = {
         "body": body,
         "position": position
     }
-
+    
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=data, headers=headers, method="POST")
-
+    
     with urllib.request.urlopen(req) as response:
         return json.loads(response.read().decode("utf-8"))
 

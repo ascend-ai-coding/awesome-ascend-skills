@@ -60,14 +60,14 @@ at::Tensor pooling_op(const at::Tensor& self,
                       at::IntArrayRef kernel_size,
                       at::IntArrayRef stride,
                       at::IntArrayRef padding) {    //ceil_mode, count_include_pad, divisor_override...用例信息参数传递
-
+    
     // ---- 获取硬件参数 ----核数量，ub空间大小参数
     auto ascendc_platform = platform_ascendc::PlatformAscendCManager::GetInstance();
     int64_t coreNum = static_cast<int64_t>(ascendc_platform->GetCoreNumAiv());
     uint64_t ubSize;
     ascendc_platform->GetCoreMemSize(platform_ascendc::CoreMemType::UB, ubSize);
     int64_t ubSizeLimit = static_cast<int64_t>(ubSize);
-
+    
     // 参数解析
     int64_t N = input.size(0);
     int64_t C = input.size(1);
@@ -81,7 +81,7 @@ at::Tensor pooling_op(const at::Tensor& self,
 
     // 参数校验
     TORCH_CHECK(self.scalar_type() == at::kHalf || self.scalar_type() == at::kFloat || self.scalar_type() == at::kBFloat16,
-                "<op_name>: only float16, float32 and bfloat16 are supported, got ", self.scalar_type());
+                "<op_name>: only float16, float32 and bfloat16 are supported, got ", self.scalar_type()); 
     //数据类型、长度、取值范围校验...
 
     // 计算输出形状并创建,ceilmode=1需要特殊处理计算输出形状
@@ -91,7 +91,7 @@ at::Tensor pooling_op(const at::Tensor& self,
 
     // 准备输入数据，NCDHWC → NDHWC格式
     at::Tensor xNDHWC = self.permute({0, 2, 3, 4, 1}).contiguous();
-    at::Tensor outputNDHWC = at::empty({N, outputD, outputH, outputW, C},
+    at::Tensor outputNDHWC = at::empty({N, outputD, outputH, outputW, C}, 
                                  self.options().dtype(self.scalar_type()));
 
     // 计算tiling切分参数-核间处理，每个核处理数据量
@@ -119,7 +119,7 @@ at::Tensor pooling_op(const at::Tensor& self,
     usedCoreNum = static_cast<uint64_t>(usedCoreNum);
 
     // 计算tiling切分参数-核内处理，UB空间单次处理的数据量， UB空间使用最好预留1k
-    int64_t alignNum = 32 / sizeof(T);
+    int64_t alignNum = 32 / sizeof(T);  
     int64_t alignC = ((channels + alignNum - 1) / alignNum) * alignNum;
     //...其他参数
 

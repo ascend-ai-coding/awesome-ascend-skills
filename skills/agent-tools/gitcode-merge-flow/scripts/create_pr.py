@@ -24,7 +24,7 @@ def main():
     if len(sys.argv) < 8:
         print("Usage: python create_pr.py <access_token> <personal_repo_info> <upstream_repo_info> <branch_name> <target_branch> <pr_title> <pr_body> [close_related_issue]")
         sys.exit(1)
-
+    
     access_token = sys.argv[1]
     personal_repo_info = sys.argv[2]
     upstream_repo_info = sys.argv[3]
@@ -34,11 +34,11 @@ def main():
     pr_body = sys.argv[7]
     close_related_issue = sys.argv[8] if len(sys.argv) > 8 else "true"
     close_related_issue = close_related_issue.lower() == "true"
-
+    
     # 解析仓库信息
     personal_owner, personal_repo = personal_repo_info.split('/')
     upstream_owner, upstream_repo = upstream_repo_info.split('/')
-
+    
     # 构建请求
     url = f"https://api.gitcode.com/api/v5/repos/{upstream_owner}/{upstream_repo}/pulls"
     headers = {
@@ -54,11 +54,11 @@ def main():
         "fork_path": f"{personal_owner}/{personal_repo}",
         "close_related_issue": close_related_issue
     }
-
+    
     # 发送请求
     response = requests.post(url, headers=headers, json=data)
     response.raise_for_status()
-
+    
     # 打印结果
     print(json.dumps(response.json(), indent=2, ensure_ascii=False))
 

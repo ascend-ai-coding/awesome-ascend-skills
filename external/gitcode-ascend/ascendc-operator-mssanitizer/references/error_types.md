@@ -76,11 +76,11 @@ for (uint32_t i = 0; i < loopNum; i++) {
 for (uint32_t i = 0; i < loopNum; i++) {
     uint32_t offset = startOffset + i * maxElementsPerLoop;
     uint32_t elements = maxElementsPerLoop;
-
+    
     if (offset + elements > startOffset + actualElements) {
         elements = startOffset + actualElements - offset;
     }
-
+    
     if (elements > 0) {
         Compute(offset, elements);
     }
@@ -91,11 +91,11 @@ for (uint32_t i = 0; i < loopNum; i++) {
 
 ```cpp
 // 使用 PRINTF 调试
-AscendC::PRINTF("offset=%u, elements=%u, totalElements=%u\n",
+AscendC::PRINTF("offset=%u, elements=%u, totalElements=%u\n", 
                 offset, elements, totalElements);
 
 // 检查 DataCopy 参数
-AscendC::PRINTF("DataCopy: len=%u, sizeof(T)=%lu\n",
+AscendC::PRINTF("DataCopy: len=%u, sizeof(T)=%lu\n", 
                 copyParams.len, sizeof(T));
 ```
 
@@ -348,7 +348,7 @@ aclrtDestroyStream(stream);
 ### 1. 使用 PRINTF
 
 ```cpp
-AscendC::PRINTF("offset=%u, elements=%u, totalElements=%u\n",
+AscendC::PRINTF("offset=%u, elements=%u, totalElements=%u\n", 
                 offset, elements, totalElements);
 ```
 

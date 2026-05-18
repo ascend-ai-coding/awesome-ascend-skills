@@ -59,20 +59,20 @@ sleep 3
 kill -9 <PID>
 ```
 
-1. Step 0: 环境/镜像
+1. Step 0: 环境/镜像  
    参考 `references/docker-ascend.md`
-2. Step 1: 数据处理（生成 parquet）
+2. Step 1: 数据处理（生成 parquet）  
    参考 `references/data-preprocess.md`
-3. Step 2: 模型准备（ModelScope + 路径规范）
+3. Step 2: 模型准备（ModelScope + 路径规范）  
    参考 `references/model-download.md`
-4. Step 3A: `main_ppo` 训练（按后端选择）
-   - **默认 FSDP**：适合多数场景，参考 `references/main-ppo-quickstart.md` 的 FSDP 示例
+4. Step 3A: `main_ppo` 训练（按后端选择）  
+   - **默认 FSDP**：适合多数场景，参考 `references/main-ppo-quickstart.md` 的 FSDP 示例  
    - **Megatron**：当用户明确要求或大模型/并行策略需要时选择，参考同文件的 Megatron 示例
      - 默认追加：`+actor_rollout_ref.actor.megatron.override_transformer_config.use_flash_attn=True`
      - 若 ref 侧未继承该配置，再追加：`++actor_rollout_ref.ref.megatron.override_transformer_config.use_flash_attn=True`（已存在该 key 时不要用单 `+`）。
-5. Step 3B: examples 脚本训练与冒烟
+5. Step 3B: examples 脚本训练与冒烟  
    参考 `references/examples-scripts.md`
-6. Step 4: checkpoint 合并
+6. Step 4: checkpoint 合并  
    参考 `references/checkpoint-merge.md`
-7. FAQ / 排障
+7. FAQ / 排障  
    参考 `references/faq.md`

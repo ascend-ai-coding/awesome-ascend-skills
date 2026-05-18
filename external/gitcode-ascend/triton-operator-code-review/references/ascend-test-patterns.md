@@ -91,7 +91,7 @@ def _attn_fwd(Q, K, V, Out, ...):
             strides=(stride_qm, stride_qk),
             offsets=(task_m_idx * BLOCK_M, 0),
             block_shape=(BLOCK_M, HEAD_DIM), order=(1, 0))
-
+        
         q = tl.load(Q_block_ptr)
         for start_n in range(lo, hi, BLOCK_N):
             k = tl.load(K_block_ptr)

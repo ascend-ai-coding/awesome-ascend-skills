@@ -71,7 +71,7 @@ tiling_params->num_groups = *num_groups;
 ```cpp
 auto inputTensor = context->GetInputTensor(0);
 OPS_CHECK_NULL_WITH_CONTEXT(context, inputTensor);
-auto shape = inputTensor->GetShape();
+auto shape = inputTensor->GetShape(); 
 auto dtype = inputTensor->GetDataType();
 ```
 
@@ -79,7 +79,7 @@ auto dtype = inputTensor->GetDataType();
 ```cpp
 auto inputDesc = context->GetInputDesc(0);
 OPS_CHECK_NULL_WITH_CONTEXT(context, inputDesc);
-auto shape = context->GetInputShape(0);
+auto shape = context->GetInputShape(0); 
 auto dtype = inputDesc->GetDataType();
 ```
 

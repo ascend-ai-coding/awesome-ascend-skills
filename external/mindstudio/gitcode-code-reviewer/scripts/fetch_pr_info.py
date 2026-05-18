@@ -23,12 +23,12 @@ def get_gitcode_token(token: Optional[str] = None) -> str:
     """Get GitCode token from argument, environment, or git config."""
     if token:
         return token
-
+    
     # Try environment variable
     env_token = os.environ.get("GITCODE_TOKEN")
     if env_token:
         return env_token
-
+    
     # Try git config
     try:
         result = subprocess.run(
@@ -41,7 +41,7 @@ def get_gitcode_token(token: Optional[str] = None) -> str:
             return result.stdout.strip()
     except subprocess.CalledProcessError:
         pass
-
+    
     raise ValueError(
         "GitCode token not found. Please set it via:\n"
         "1. --token argument\n"
@@ -57,9 +57,9 @@ def make_api_request(url: str, token: str) -> dict:
         "Accept": "application/json",
         "User-Agent": "gitcode-code-reviewer/1.0"
     }
-
+    
     req = urllib.request.Request(url, headers=headers)
-
+    
     try:
         with urllib.request.urlopen(req, timeout=30) as response:
             return json.loads(response.read().decode("utf-8"))
@@ -90,15 +90,15 @@ def fetch_pr_files(owner: str, repo: str, pull_number: str, token: str) -> list:
 def fetch_pr_diff(owner: str, repo: str, pull_number: str, token: str) -> str:
     """Fetch PR diff using GitCode API."""
     url = f"{API_BASE}/repos/{owner}/{repo}/pulls/{pull_number}/diff"
-
+    
     headers = {
         "PRIVATE-TOKEN": token,
         "Accept": "application/vnd.github.v3.diff",
         "User-Agent": "gitcode-code-reviewer/1.0"
     }
-
+    
     req = urllib.request.Request(url, headers=headers)
-
+    
     try:
         with urllib.request.urlopen(req, timeout=30) as response:
             return response.read().decode("utf-8")
@@ -122,21 +122,21 @@ def main():
     parser.add_argument("--token", help="GitCode access token")
     parser.add_argument("--output-dir", default=".", help="Output directory for fetched data")
     parser.add_argument("--include-comments", action="store_true", help="Include existing PR comments")
-
+    
     args = parser.parse_args()
-
+    
     try:
         token = get_gitcode_token(args.token)
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
-
+    
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-
+    
     print(f"Fetching PR #{args.pull_number} from {args.owner}/{args.repo}...")
     print()
-
+    
     try:
         # Fetch PR metadata
         print("  Fetching PR metadata...")
@@ -145,7 +145,7 @@ def main():
         with open(metadata_file, "w", encoding="utf-8") as f:
             json.dump(pr_metadata, f, indent=2, ensure_ascii=False)
         print(f"    ✓ Saved to {metadata_file}")
-
+        
         # Fetch changed files
         print("  Fetching changed files...")
         pr_files = fetch_pr_files(args.owner, args.repo, args.pull_number, token)
@@ -153,7 +153,7 @@ def main():
         with open(files_file, "w", encoding="utf-8") as f:
             json.dump(pr_files, f, indent=2, ensure_ascii=False)
         print(f"    ✓ Saved to {files_file}")
-
+        
         # Fetch diff
         print("  Fetching PR diff...")
         try:
@@ -164,7 +164,7 @@ def main():
             print(f"    ✓ Saved to {diff_file}")
         except RuntimeError as e:
             print(f"    ⚠ Warning: Could not fetch diff - {e}")
-
+        
         # Fetch comments if requested
         if args.include_comments:
             print("  Fetching PR comments...")
@@ -176,7 +176,7 @@ def main():
                 print(f"    ✓ Saved to {comments_file}")
             except RuntimeError as e:
                 print(f"    ⚠ Warning: Could not fetch comments - {e}")
-
+        
         # Save summary
         summary = {
             "owner": args.owner,
@@ -194,11 +194,11 @@ def main():
             "head_sha": pr_metadata.get("head", {}).get("sha", ""),
             "base_sha": pr_metadata.get("base", {}).get("sha", "")
         }
-
+        
         summary_file = output_dir / "summary.json"
         with open(summary_file, "w", encoding="utf-8") as f:
             json.dump(summary, f, indent=2, ensure_ascii=False)
-
+        
         print()
         print("=" * 50)
         print("PR Summary:")
@@ -211,7 +211,7 @@ def main():
         print(f"  Base SHA:  {summary['base_sha'][:8] if summary['base_sha'] else 'N/A'}")
         print()
         print(f"All data saved to: {output_dir.absolute()}")
-
+        
     except RuntimeError as e:
         print(f"\nError: {e}", file=sys.stderr)
         sys.exit(1)

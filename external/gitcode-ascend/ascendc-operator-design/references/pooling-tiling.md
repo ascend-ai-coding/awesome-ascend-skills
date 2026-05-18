@@ -36,7 +36,7 @@
           │                │                │
           ▼                ▼                ▼
     ┌──────────┐     ┌──────────┐     ┌──────────┐
-    │   UB 0   │     │   UB 1   │     │  UB N    │
+    │   UB 0   │     │   UB 1   │     │  UB N    │   
     │  o2~o3   │     │  o2~o3   │     │  o2~o3   │
     │ in tiles │     │ in tiles │     │ in tiles │
     └──────────┘     └──────────┘     └──────────┘
@@ -54,7 +54,7 @@ struct PoolingTilingData {
     int64_t channels;
     int64_t inputD, inputH, inputW;
     int64_t outputD, outputH, outputW;
-
+    
     // 池化参数
     int64_t kernelD, kernelH, kernelW;
     int64_t strideD, strideH, strideW;

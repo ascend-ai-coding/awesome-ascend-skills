@@ -60,13 +60,13 @@ def [operator_name](
 ) -> torch.Tensor:
     """
     [算子功能描述]
-
+    
     Args:
         input: 输入张量，形状为 [..., D]
         param1: [参数说明]，形状为 [D]
         param2: [参数说明]（可选），形状为 [D]
         eps: 微小常数，避免除零
-
+    
     Returns:
         输出张量，形状与 input 相同
     """
@@ -189,9 +189,9 @@ AI Core 硬件参数（以昇腾 A2/A3 为例）：
    假设 D=768，计算每个 batch 需要的空间：
    - 输入数据: D × 2B = 1536B
    - [其他数据]: [计算]
-
+   
    每个 batch 总空间: [总和]
-
+   
    可处理的 batch 数量: 192KB / [每个batch总空间] ≈ [数量]
    ```
 
@@ -203,7 +203,7 @@ AI Core 硬件参数（以昇腾 A2/A3 为例）：
 
 [算子名称] 算子 UB 使用特点：
 - 数据流向: GM → UB → 计算 → UB → GM
-- 精度处理:
+- 精度处理: 
   * 存储: UB 中按原输入数据类型(FP16/BF16)存储
   * 计算: 升精度到 FP32 进行计算，保证精度
   * 输出: 根据需求输出 FP16/BF16 或 FP32
@@ -383,17 +383,17 @@ def test_basic_function():
     """基本功能测试"""
     # 定义测试参数
     B, D = 1024, 768
-
+    
     # 创建输入张量和参数
     x = torch.randn(B, D, dtype=torch.float16, device='npu')
     param1 = torch.randn(D, dtype=torch.float16, device='npu')
-
+    
     # 使用 PyTorch 计算参考结果
     y_ref = reference_implementation(x, param1)
-
+    
     # 使用 Triton 算子计算结果
     y_triton = triton_operator(x, param1)
-
+    
     # 验证结果一致性
     assert np.allclose(y_triton.cpu().numpy(), y_ref.cpu().numpy(), rtol=1e-3)
 

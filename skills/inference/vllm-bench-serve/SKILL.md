@@ -1,6 +1,16 @@
 ---
 name: vllm-bench-serve
-description: Interactive online benchmark orchestrator for vLLM inference services using `vllm bench serve`; supports single benchmarks, batch execution, result aggregation, and auto-optimization for concurrency/throughput under TTFT, TPOT, P99 and success-rate SLO constraints.
+description: >-
+  Interactive online benchmark orchestrator for vLLM inference services using
+  `vllm bench serve`. Supports single benchmarks, multi-case batch execution
+  with result aggregation, and auto-optimization to find optimal
+  concurrency/throughput under latency SLO constraints (TTFT, TPOT, P99,
+  success rate). Use this skill whenever the user wants to benchmark, stress
+  test, or measure performance of a running LLM/multimodal/embedding inference
+  service — even if they don't say "vllm bench serve" explicitly. Do NOT use
+  for offline inference throughput, service deployment/startup, profiling/tracing,
+  health checks only, or analyzing existing benchmark results without running
+  new tests.
 keywords:
   - vllm bench serve
   - benchmark
@@ -116,7 +126,7 @@ Before anything else, determine WHERE the benchmark client will run. The benchma
 2. **vllm available?** — `scripts/check_bench_env.sh` or `vllm bench serve --help`
    - Available → proceed locally
    - Not available → need a different environment
-3. **If local not viable** —
+3. **If local not viable** — 
    - Ask user where benchmark should run (remote server? container?)
    - Use `remote-server-guide` skill to establish connection
    - Once in the remote environment, re-run environment checks
@@ -179,7 +189,7 @@ bash <skill-path>/scripts/probe_service.sh --base-url http://ip:port
 | "多个并发/参数/服务对比" | **Batch** | Multiple cases, aggregate comparison table |
 | "找最优并发/吞吐" / "寻优" | **Auto-Optimize** | Iterative search for optimal configuration |
 
-If ambiguous, ask the user which mode they need.
+If ambiguous, ask the user which mode they need. 
 **Always check the test mode with the user**, **DO NOT** decide it yourselves.
 
 ---
@@ -198,7 +208,7 @@ The backend determines the request format. **`--endpoint` must match the backend
 | Audio/ASR | `openai-audio` | `/v1/audio/transcriptions` |
 
 Default to `openai-chat` for text LLMs. The scripts (`generate_bench_cmd.py`, `auto_optimize.py`) auto-inject the correct endpoint, but when constructing commands manually, always include `--endpoint`.
-> **CRITICAL**: When using `--backend openai-chat`, you MUST also pass `--endpoint /v1/chat/completions`. Without it, the benchmark will fail with a URL validation error.
+> **CRITICAL**: When using `--backend openai-chat`, you MUST also pass `--endpoint /v1/chat/completions`. Without it, the benchmark will fail with a URL validation error. 
 
 > Read `references/backend-mapping.md` when: user needs embedding/reranking/audio backends, or uncommon backends like `openai-embeddings-clip`, `vllm-pooling`.
 > Skip when: using `openai-chat` (default) — the table above is sufficient.

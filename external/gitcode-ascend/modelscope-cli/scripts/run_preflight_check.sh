@@ -47,11 +47,11 @@ check_warn() {
 echo "【1. Python 环境】"
 if command -v python3 &> /dev/null; then
     PY_VER=$(python3 --version 2>&1)
-
+    
     # 获取主版本号和次版本号
     PY_MAJOR=$(python3 -c "import sys; print(sys.version_info.major)" 2>/dev/null || echo "0")
     PY_MINOR=$(python3 -c "import sys; print(sys.version_info.minor)" 2>/dev/null || echo "0")
-
+    
     # 检查版本 >= 3.7
     if [ "$PY_MAJOR" -eq 3 ] && [ "$PY_MINOR" -ge 7 ]; then
         check_pass "Python 已安装: $PY_VER (符合要求 >= 3.7)"
@@ -79,7 +79,7 @@ except AttributeError:
 except Exception:
     print('error')
 " 2>/dev/null)
-
+    
     if [ "$MS_VER" = "unknown" ] || [ "$MS_VER" = "error" ] || [ -z "$MS_VER" ]; then
         check_pass "ModelScope 已安装（版本未知）"
     else
@@ -174,14 +174,14 @@ echo "【6. 磁盘空间】"
 if command -v df &> /dev/null; then
     # 获取当前目录所在分区的可用空间（KB）
     AVAILABLE_KB=$(df -k . 2>/dev/null | tail -1 | awk '{print $4}')
-
+    
     # 检查是否为空或非数字
     if [ -z "$AVAILABLE_KB" ] || ! [[ "$AVAILABLE_KB" =~ ^[0-9]+$ ]]; then
         check_warn "无法解析磁盘空间" "手动检查: df -h"
     else
         # 转换为 GB
         AVAILABLE_GB=$((AVAILABLE_KB / 1024 / 1024))
-
+        
         if [ "$AVAILABLE_GB" -ge 100 ]; then
             check_pass "磁盘空间充足: ${AVAILABLE_GB}GB 可用"
         elif [ "$AVAILABLE_GB" -ge 50 ]; then

@@ -110,7 +110,7 @@ python3 log_collector.py -s after -n nodes.json -o ./logs
 
 ### 1.1 训练及推理前日志采集
 
-**文件**：`npu_info_before.txt`
+**文件**：`npu_info_before.txt`  
 **路径**：`采集目录/environment_check/`
 
 **采集命令**：

@@ -1,10 +1,10 @@
 # 🏥 Pod 详细检查：`{{pod_name}}`
 
-**命名空间**: {{namespace}}
-**节点**: {{node}}
-**状态**: {{phase}}
-**QoS 等级**: {{qos_class}}
-**创建时间**: {{creation_time}}
+**命名空间**: {{namespace}}  
+**节点**: {{node}}  
+**状态**: {{phase}}  
+**QoS 等级**: {{qos_class}}  
+**创建时间**: {{creation_time}}  
 **拥有者**: {{owner}}
 
 ## 容器状态

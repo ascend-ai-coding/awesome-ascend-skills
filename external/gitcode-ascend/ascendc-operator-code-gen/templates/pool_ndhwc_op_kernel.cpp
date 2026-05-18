@@ -148,7 +148,7 @@ private:
                 }
 
                 // 计算w位置需要搬入数据的起止索引，搬入GM数据到UB,同时搬运windowWNum个窗口位置w方向的输入数据，每个W位置是C个元素,rightPadding将channels填充到alignC字节对齐
-                CopyIn(offset, wEnd - wStart, channels, rightPadding);
+                CopyIn(offset, wEnd - wStart, channels, rightPadding); 
 
                 // 参考cast方法fp16、bf16升精度
                 castXToFp32(castLocal, dataLocal, rowLen * alignC);

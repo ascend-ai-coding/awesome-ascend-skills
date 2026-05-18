@@ -58,7 +58,7 @@ __aicore__ inline void CopyInFp32(AscendC::GlobalTensor<float> srcGm, uint64_t s
         needPad, 0, rightPad, static_cast<float>(-__builtin_inff()));
     AscendC::DataCopyPad(tensorUb, srcGm[srcStart], intriParams, padParams);
     WaitMte2Done();
-    // 3. Negate actual data for ascending (keep -inf padding unchanged)
+    // 3. Negate actual data for ascending (keep -inf padding unchanged) 
     if (!descending) {
         AscendC::Muls(tensorUb, tensorUb, (float)(-1), copyNums);
         WaitVDone();
@@ -73,7 +73,7 @@ __aicore__ inline void CopyInSize2(AscendC::GlobalTensor<half/bfloat16_t> srcGm,
     uint64_t copyNumsAligned = (copyNums + 32 - 1) / 32 * 32;
     AscendC::Duplicate(tensorUb, static_cast<float>(-__builtin_inff()), copyNumsAligned);
     WaitVDone();
-
+    
     // 2. 用DataCopyPad从GM搬入copyNums个实际数据（无32字节对齐要求）到inUb的后半部分
     AscendC::DataCopyExtParams intriParams(
         static_cast<uint16_t>(1),
@@ -113,7 +113,7 @@ __aicore__ inline void CopyOutScoreIndex(AscendC::GlobalTensor<float> dstGm, uin
 template <typename T>
 __aicore__ inline void CopyOutScore(AscendC::GlobalTensor<T> dstGm, uint64_t dstStart,
                                    LocalTensor<float> outUb, uint64_t copyNums) {
-
+    
     // Cast(outUb.ReinterpretCast<half/bfloat16_t>(), outUb, AscendC::RoundMode::CAST_NONE, static_cast<uint32_t>(copyNums)); // 需要类型转换时使用
     // WaitVDone(); // 需要类型转换时使用
     // auto tensorUb = outUb.ReinterpretCast<half/bfloat16_t>(); // 需要类型转换时使用
@@ -175,17 +175,17 @@ __aicore__ inline void CopyOutIndex(AscendC::GlobalTensor<U> dstGm, uint64_t dst
     auto sortDst2 = inUb2;
     LocalTensor<float> sortDst3 = tmpUb;
     LocalTensor<float> sortDst4 = sortDst3;
-
+    
     // sortList: 待归并的有序队列列表，因为只需要两两归并，后面两个都使用tmpBuf占位即可
     AscendC::MrgSortSrcList sortList = AscendC::MrgSortSrcList(sortDst1, sortDst2, sortDst3, sortDst4);
-
+    
     // elementCountList：4个队列的有效长度，sortDst1Length为搬入归并切块的score-index对数，sortDst2Length同理，后面两条队列用不到，用0填充
     // 注意：必须使用实际长度，不可对齐，防止额外元素参与归并导致的精度错误
     const uint16_t elementCountList[4] = {sortDst1Length, sortDst2Length, 0, 0};
 
     // sortedNum：记录归并过程中，当有一条队列数据被消耗完时，4条队列分别消耗了多少元素。
     uint32_t sortedNum[4];
-
+    
     auto mrgDst = outQue1.AllocateTensor<float>();
     // true: 开启耗尽模式，ob11：设置前两条队列有效
     AscendC::MrgSort<float, true>(mrgDst, sortList, elementCountList, sortedNum, 0b11, 1);

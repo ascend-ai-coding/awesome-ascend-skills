@@ -4,7 +4,7 @@ Setup and verify GitCode access token.
 
 Usage:
     python setup_token.py [TOKEN]
-
+    
 If TOKEN is not provided, will prompt interactively.
 """
 
@@ -24,15 +24,15 @@ API_BASE = "https://api.gitcode.com/api/v5"
 def validate_token(token: str) -> tuple[bool, str]:
     """Validate token by making a test API call."""
     url = f"{API_BASE}/user"
-
+    
     headers = {
         "PRIVATE-TOKEN": token,
         "Accept": "application/json",
         "User-Agent": "gitcode-code-reviewer/1.0"
     }
-
+    
     req = urllib.request.Request(url, headers=headers)
-
+    
     try:
         with urllib.request.urlopen(req, timeout=10) as response:
             user_data = json.loads(response.read().decode("utf-8"))
@@ -65,7 +65,7 @@ def get_current_token() -> tuple[str | None, str | None]:
     env_token = os.environ.get("GITCODE_TOKEN")
     if env_token:
         return env_token, "environment variable GITCODE_TOKEN"
-
+    
     # Check git config
     try:
         result = subprocess.run(
@@ -78,7 +78,7 @@ def get_current_token() -> tuple[str | None, str | None]:
             return result.stdout.strip(), "git config (global)"
     except subprocess.CalledProcessError:
         pass
-
+    
     return None, None
 
 
@@ -116,13 +116,13 @@ def main():
     parser.add_argument("token", nargs="?", help="GitCode token (optional, will prompt if not provided)")
     parser.add_argument("--verify-only", action="store_true", help="Only verify existing token")
     parser.add_argument("--save", choices=["env", "git"], default="git", help="Where to save the token")
-
+    
     args = parser.parse_args()
-
+    
     print("╔════════════════════════════════════════════════════════════════╗")
     print("║              GitCode Code Reviewer - Token Setup               ║")
     print("╚════════════════════════════════════════════════════════════════╝\n")
-
+    
     # Verify-only mode
     if args.verify_only:
         current_token, source = get_current_token()
@@ -131,10 +131,10 @@ def main():
             print("\nTo set up a token, run without --verify-only:")
             print("  python setup_token.py")
             sys.exit(1)
-
+        
         print(f"Found token from: {source}")
         print("Validating...")
-
+        
         valid, message = validate_token(current_token)
         if valid:
             print(f"✅ Token is valid! Logged in as: @{message}")
@@ -142,7 +142,7 @@ def main():
         else:
             print(f"❌ Token validation failed: {message}")
             sys.exit(1)
-
+    
     # Check current token
     current_token, source = get_current_token()
     if current_token:
@@ -160,7 +160,7 @@ def main():
             print("Please enter a new token.\n")
     else:
         print_setup_instructions()
-
+    
     # Get token from user
     if args.token:
         token = args.token
@@ -168,15 +168,15 @@ def main():
         print("Please enter your GitCode token:")
         print("(Input will be hidden for security)")
         token = getpass.getpass("Token: ").strip()
-
+    
     if not token:
         print("❌ No token provided.")
         sys.exit(1)
-
+    
     # Validate token
     print("\nValidating token...")
     valid, message = validate_token(token)
-
+    
     if not valid:
         print(f"❌ Token validation failed: {message}")
         print("\nPlease check:")
@@ -184,9 +184,9 @@ def main():
         print("  - The token has not expired")
         print("  - The token has the required permissions")
         sys.exit(1)
-
+    
     print(f"✅ Token is valid! Logged in as: @{message}")
-
+    
     # Save token
     if args.save == "git":
         print("\nSaving token to git global config...")
@@ -201,7 +201,7 @@ def main():
         print("\nTo use this token, set the environment variable:")
         print(f'  export GITCODE_TOKEN="{token[:10]}..."')
         print("\nOr add it to your shell profile (~/.bashrc, ~/.zshrc, etc.)")
-
+    
     print("\n✨ Setup complete! You can now use the gitcode-code-reviewer skill.")
     print("\nQuick test:")
     print("  python setup_token.py --verify-only")

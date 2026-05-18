@@ -84,15 +84,15 @@ check_error() {
 send_welink() {
   local status="$1"
   local message="$2"
-
+  
   if [[ -z "$RECEIVER" ]] || [[ -z "$AUTH_TOKEN" ]]; then
     echo "Warning: RECEIVER or AUTH_TOKEN not configured, skipping notification"
     return
   fi
-
+  
   # 构建 JSON payload
   local payload="{\"receiver\":\"${RECEIVER}\",\"auth\":\"${AUTH_TOKEN}\",\"content\":\"${message}\"}"
-
+  
   # 调用小鲁班 API (welink-notify skill 底层接口)
   if [[ "$MODE" == "remote" ]]; then
     ssh ${SSH_USER}@${SERVER_IP} "curl -s -X POST http://xiaoluban.rnd.huawei.com:80/ -H 'Content-Type: application/json' -d '${payload}'"
@@ -110,7 +110,7 @@ PREV_STATUS=""
 
 while true; do
   LOGS=$(get_latest_logs)
-
+  
   if check_success "$LOGS"; then
     STATUS="running"
     if [[ -n "$MODEL_PATH" ]]; then
@@ -125,23 +125,23 @@ while true; do
     STATUS="starting"
     MSG="⏳ 服务启动中...\n\n最新日志:\n$(echo "$LOGS" | tail -3)"
   fi
-
+  
   # 状态变化时发送通知
   if [[ "$STATUS" != "$PREV_STATUS" ]]; then
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] 状态变更：$PREV_STATUS -> $STATUS"
-
+    
     if [[ "$NOTIFY_MODE" == "welink" ]]; then
       send_welink "$STATUS" "$MSG"
     fi
-
+    
     PREV_STATUS="$STATUS"
-
+    
     # 终态退出
     if [[ "$STATUS" == "running" ]] || [[ "$STATUS" == "error" ]]; then
       echo "监控完成"
       break
     fi
   fi
-
+  
   sleep $CHECK_INTERVAL
 done

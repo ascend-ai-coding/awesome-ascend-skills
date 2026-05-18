@@ -54,3 +54,4 @@
 - `我这边 load_library 后没有 torch.ops.npu.xxx，帮我检查注册链路哪里断了。`
 - `这个扩展在源码目录里能 import，在安装后反而有问题，帮我排查是不是源码目录遮蔽了 site-packages。`
 - `当前环境没有 TorchConfig.cmake，帮我改成更稳妥的构建方式。`
+

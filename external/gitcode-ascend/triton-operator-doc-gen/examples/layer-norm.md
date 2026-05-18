@@ -69,7 +69,7 @@
     </tr>
     <tr>
       <td>y</td>
-      <td>输出</td>
+      <td>输出</td> 
       <td>Layer Norm归一化输出:math: y。</td>
     </tr>
   </tbody>

@@ -13,7 +13,7 @@
 ## 关键词
 
 ```
-msmodelslim, quant, model quantization, 华为昇腾, Ascend, NPU,
+msmodelslim, quant, model quantization, 华为昇腾, Ascend, NPU, 
 模型压缩, quant加速, INT4quant, INT8quant, 大模型部署,
 昇腾NPU, 华为AI, Atlas, Davinci, 模型加速, 权重量化,
 ascend, 昇腾卡, npu-smi, 模型部署, LLMquant

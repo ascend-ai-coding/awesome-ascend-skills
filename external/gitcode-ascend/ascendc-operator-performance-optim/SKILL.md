@@ -9,7 +9,7 @@ synced-commit: b9d45f47afbf8fefdeb77f731d39b57d76b02b0b
 license: UNKNOWN
 ---
 
-# Ascend C 算子性能优化（排查 → 修改 → 验证 闭环）
+# Ascend C 算子性能优化（排查 → 修改 → 验证 闭环） 
 
 本 skill 不仅排查性能问题，还负责 **修改代码并验证优化效果**。完整流程为：
 

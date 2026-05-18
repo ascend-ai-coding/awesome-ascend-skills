@@ -109,3 +109,4 @@ python3 test_smoke.py
 - **处理**：
   - 固定从项目目录外验证：`cd /tmp && python -c 'import <pkg>'`
   - loader（`_load.py`）建议支持从包内 `*.so` 查找，并对开发态 `../build/**.so` 做兜底。
+

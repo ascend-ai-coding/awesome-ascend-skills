@@ -39,7 +39,7 @@ echo "--- NPU 检测 ---"
 if command -v npu-smi &>/dev/null; then
     NPU_INFO=$(npu-smi info 2>/dev/null || echo "")
     NPU_COUNT=$(echo "$NPU_INFO" | grep -c "910B\|Ascend 910" || echo "0")
-
+    
     if [[ "$NPU_INFO" == *"910B"* ]]; then
         ok "NPU 类型: A2 (910B), 检测到 ${NPU_COUNT} 张"
     elif [[ "$NPU_INFO" == *"Ascend 910"* ]]; then
@@ -71,7 +71,7 @@ echo "--- Docker 检查 ---"
 if command -v docker &>/dev/null; then
     # 查找 verl 容器
     CONTAINERS=$(docker ps --format "{{.Names}}" 2>/dev/null | grep -E "verl|jins" || echo "")
-
+    
     if [ -n "$CONTAINER_NAME" ]; then
         if docker ps --format "{{.Names}}" | grep -q "$CONTAINER_NAME"; then
             ok "指定容器存在: $CONTAINER_NAME"

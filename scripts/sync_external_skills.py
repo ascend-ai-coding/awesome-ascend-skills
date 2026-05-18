@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Sync external skills from configured repositories."""
 
+import re
 import shutil
 import subprocess
 import sys
@@ -8,7 +9,7 @@ import tempfile
 import yaml
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
 
 script_dir = Path(__file__).parent
 project_root = script_dir.parent
@@ -16,6 +17,18 @@ sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(script_dir))
 
 from sync_types import ExternalSource, Skill, ConflictInfo, SyncResult
+
+
+FRONTMATTER_RE = re.compile(r"\A---\r?\n(.*?)\r?\n---\r?\n?", re.DOTALL)
+FALLBACK_FRONTMATTER_KEYS = {
+    "name",
+    "description",
+    "original-name",
+    "synced-from",
+    "synced-date",
+    "synced-commit",
+    "license",
+}
 
 
 DEFAULT_CATEGORY_LIBRARY = {
@@ -246,35 +259,88 @@ def clone_external_repo(source: ExternalSource) -> Tuple[Path, str]:
     return repo_path, commit_sha
 
 
-def parse_skill_md(skill_path: Path) -> Dict:
-    """Parse SKILL.md frontmatter and return as dict.
+def split_skill_md(content: str) -> Tuple[str, str]:
+    """Split frontmatter and body from SKILL.md content."""
+    match = FRONTMATTER_RE.match(content)
+    if not match:
+        return "", content
+    return match.group(1), content[match.end() :]
 
-    Args:
-        skill_path: Path to the skill directory.
 
-    Returns:
-        Dictionary containing parsed YAML frontmatter, or empty dict
-        if no frontmatter found.
-    """
+def parse_frontmatter_fallback(frontmatter: str) -> Optional[Dict[str, str]]:
+    """Parse a narrow set of scalar frontmatter fields when YAML parsing fails."""
+    parsed: Dict[str, str] = {}
+    current_key: Optional[str] = None
+
+    for line in frontmatter.splitlines():
+        if not line.strip():
+            continue
+
+        if line[:1].isspace():
+            if not current_key:
+                return None
+
+            continuation = line.strip()
+            if continuation.startswith("- "):
+                return None
+            if continuation:
+                parsed[current_key] = f"{parsed[current_key]} {continuation}".strip()
+            continue
+
+        if ":" not in line:
+            return None
+
+        key, value = line.split(":", 1)
+        key = key.strip()
+        if not key or key not in FALLBACK_FRONTMATTER_KEYS:
+            return None
+
+        parsed[key] = value.strip()
+        current_key = key
+
+    return parsed
+
+
+def read_skill_md(
+    skill_path: Path, *, tolerate_invalid_frontmatter: bool = False
+) -> Tuple[Dict[str, Any], str]:
+    """Read SKILL.md metadata with a tolerant frontmatter parser."""
     skill_md = skill_path / "SKILL.md"
     content = skill_md.read_text(encoding="utf-8")
-    if content.startswith("---"):
-        parts = content.split("---", 2)
-        if len(parts) >= 3:
-            return yaml.safe_load(parts[1]) or {}
-    return {}
+    frontmatter, body = split_skill_md(content)
+    if not frontmatter:
+        return {}, body
+
+    try:
+        parsed = yaml.safe_load(frontmatter) or {}
+        if isinstance(parsed, dict):
+            return parsed, body
+    except yaml.YAMLError:
+        fallback = parse_frontmatter_fallback(frontmatter)
+        if fallback is not None:
+            return fallback, body
+
+        if tolerate_invalid_frontmatter:
+            return {}, body
+
+        raise ValueError(f"Unsupported malformed frontmatter in {skill_md}")
+
+    if tolerate_invalid_frontmatter:
+        return {}, body
+
+    raise ValueError(f"Unsupported non-dict frontmatter in {skill_md}")
+
+
+def parse_skill_md(skill_path: Path) -> Dict[str, Any]:
+    """Parse SKILL.md frontmatter and return it as a dictionary."""
+    parsed, _ = read_skill_md(skill_path, tolerate_invalid_frontmatter=True)
+    return parsed
 
 
 def parse_skill_name_from_file(skill_md: Path) -> str:
     """Read a SKILL.md file and return its frontmatter name."""
-    content = skill_md.read_text(encoding="utf-8")
-    if not content.startswith("---"):
-        return ""
-    parts = content.split("---", 2)
-    if len(parts) < 3:
-        return ""
-    frontmatter = yaml.safe_load(parts[1]) or {}
-    return str(frontmatter.get("name", "")).strip()
+    parsed, _ = read_skill_md(skill_md.parent, tolerate_invalid_frontmatter=True)
+    return str(parsed.get("name", "")).strip()
 
 
 def find_skills(repo_path: Path, source: ExternalSource) -> List[Skill]:
@@ -312,10 +378,7 @@ def find_skills(repo_path: Path, source: ExternalSource) -> List[Skill]:
 def get_local_skills() -> Set[str]:
     """Get canonical local skill names under skills/ for conflict detection."""
     skills = set()
-    for skill_md in Path(".").glob("**/SKILL.md"):
-        rel_parts = skill_md.parts
-        if ".worktrees" in rel_parts or rel_parts[0] != "skills":
-            continue
+    for skill_md in Path(".").glob("skills/**/SKILL.md"):
         skill_name = parse_skill_name_from_file(skill_md)
         if skill_name:
             skills.add(skill_name)
@@ -443,17 +506,7 @@ def inject_attribution(skill: Skill, commit_sha: str) -> str:
     - Adds attribution fields only if they don't exist
     - Does NOT modify the body content
     """
-    skill_md_path = skill.path / "SKILL.md"
-    content = skill_md_path.read_text(encoding="utf-8")
-
-    # Parse existing frontmatter
-    fm = {}
-    body = content
-    if content.startswith("---"):
-        parts = content.split("---", 2)
-        if len(parts) >= 3:
-            fm = yaml.safe_load(parts[1]) or {}
-            body = parts[2]
+    fm, body = read_skill_md(skill.path)
 
     # Rename skill to follow nested naming convention: external-{source}-{name}
     original_name = fm.get("name", skill.name)
@@ -476,30 +529,92 @@ def inject_attribution(skill: Skill, commit_sha: str) -> str:
     return f"---\n{new_frontmatter}---\n{body}"
 
 
-def copy_skill(skill: Skill, commit_sha: str) -> bool:
-    """Copy skill to external/ directory and inject attribution.
+def restore_backed_up_skill(target: Path, backup_target: Optional[Path]) -> None:
+    """Restore the original synced skill after a failed sync attempt."""
+    if not backup_target or not backup_target.exists():
+        return
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(backup_target, target)
+
+
+def cleanup_copied_skill(target: Path) -> None:
+    """Remove a copied skill directory after a failed sync attempt."""
+    if target.exists():
+        shutil.rmtree(target)
+    source_dir = target.parent
+    if source_dir.exists() and not any(source_dir.iterdir()):
+        source_dir.rmdir()
+
+
+def get_validation_failure_reason(output: str) -> str:
+    """Extract a concise validation failure reason from validator output."""
+    for line in output.splitlines():
+        if "ERROR:" in line:
+            return line.split("ERROR:", 1)[1].strip()
+    return "Validation failed"
+
+
+def copy_skill(skill: Skill, commit_sha: str) -> Tuple[bool, str]:
+    """Copy skill to external/ directory, inject attribution, and validate.
 
     Args:
         skill: The Skill object to copy.
         commit_sha: The Git commit SHA for attribution.
 
     Returns:
-        True on success.
+        Tuple of (success, reason). Reason is empty on success.
     """
     target = Path("external") / skill.source.name / skill.name
+    backup_dir: Optional[Path] = None
+    backup_target: Optional[Path] = None
+    keep_backup = False
 
     if target.exists():
-        shutil.rmtree(target)
+        backup_dir = Path(tempfile.mkdtemp(prefix=f"sync-backup-{skill.name}-"))
+        backup_target = backup_dir / target.name
+        shutil.move(target, backup_target)
 
-    shutil.copytree(skill.path, target, ignore=shutil.ignore_patterns(".git"))
+    try:
+        shutil.copytree(skill.path, target, ignore=shutil.ignore_patterns(".git"))
 
-    copied_skill = Skill(
-        name=skill.name, path=target, source=skill.source, has_skill_md=True
-    )
-    attributed_content = inject_attribution(copied_skill, commit_sha)
-    (target / "SKILL.md").write_text(attributed_content, encoding="utf-8")
+        copied_skill = Skill(
+            name=skill.name, path=target, source=skill.source, has_skill_md=True
+        )
+        attributed_content = inject_attribution(copied_skill, commit_sha)
+        (target / "SKILL.md").write_text(attributed_content, encoding="utf-8")
 
-    return True
+        result = subprocess.run(
+            ["python3", "scripts/validate_skills.py"], capture_output=True, text=True
+        )
+        if result.returncode == 0:
+            return True, ""
+
+        cleanup_copied_skill(target)
+        try:
+            restore_backed_up_skill(target, backup_target)
+        except Exception as restore_exc:
+            keep_backup = True
+            return (
+                False,
+                f"Validation failed and restore did not complete: {restore_exc}",
+            )
+        failure_output = result.stdout or result.stderr
+        return False, get_validation_failure_reason(failure_output)
+    except Exception as exc:
+        cleanup_copied_skill(target)
+        try:
+            restore_backed_up_skill(target, backup_target)
+        except Exception as restore_exc:
+            keep_backup = True
+            return (
+                False,
+                f"Failed to restore existing skill after sync error: {restore_exc}",
+            )
+        return False, str(exc)
+    finally:
+        if backup_dir and backup_dir.exists() and not keep_backup:
+            shutil.rmtree(backup_dir)
 
 
 def validate_after_sync() -> None:
@@ -659,7 +774,7 @@ def sync_all_sources(config_path: str = ".github/external-sources.yml") -> Dict:
 
                 try:
                     print(f"  Syncing {skill.name}...")
-                    success = copy_skill(skill, commit_sha)
+                    success, reason = copy_skill(skill, commit_sha)
                     if success:
                         print(f"  ✓ Synced {skill.name}")
                         synced_skill = Skill(
@@ -674,8 +789,8 @@ def sync_all_sources(config_path: str = ".github/external-sources.yml") -> Dict:
                             commit_sha,
                         )
                     else:
-                        print(f"  ❌ Validation failed for {skill.name}")
-                        all_errors.append((skill.name, "Validation failed"))
+                        print(f"  ⏭️  Skipping {skill.name}: {reason}")
+                        all_skipped.append((skill.name, reason))
                 except Exception as e:
                     print(f"  ❌ Error syncing {skill.name}: {e}")
                     all_errors.append((skill.name, str(e)))
@@ -833,26 +948,35 @@ def update_marketplace(
             },
             "plugins": [],
         }
-    ensure_category_library(marketplace)
 
+    ensure_category_library(marketplace)
     plugins = marketplace.get("plugins", [])
     existing_external_categories = {
         p.get("name"): p.get("categories", [])
         for p in plugins
         if isinstance(p, dict) and p.get("external") is True
     }
+    external_insert_index = next(
+        (
+            index
+            for index, plugin in enumerate(plugins)
+            if isinstance(plugin, dict) and plugin.get("external") is True
+        ),
+        len(plugins),
+    )
 
     # Group skills by source
     skills_by_source: Dict[str, List[Tuple[Skill, str]]] = defaultdict(list)
     for skill, commit_sha in synced_skills:
         skills_by_source[skill.source.name].append((skill, commit_sha))
 
-    plugins = [
+    non_external_plugins = [
         p for p in plugins if not (isinstance(p, dict) and p.get("external") is True)
     ]
 
     # Create grouped entries for each source
-    for source_name, skills_list in skills_by_source.items():
+    external_plugins = []
+    for source_name, skills_list in sorted(skills_by_source.items()):
         source = skills_list[0][0].source
         skill_paths = []
         descriptions = []
@@ -893,9 +1017,13 @@ def update_marketplace(
             "skills": skill_paths,
         }
 
-        plugins.append(group_entry)
+        external_plugins.append(group_entry)
 
-    marketplace["plugins"] = plugins
+    marketplace["plugins"] = (
+        non_external_plugins[:external_insert_index]
+        + external_plugins
+        + non_external_plugins[external_insert_index:]
+    )
     with marketplace_file.open("w", encoding="utf-8") as f:
         json.dump(marketplace, f, indent=2, ensure_ascii=False)
 

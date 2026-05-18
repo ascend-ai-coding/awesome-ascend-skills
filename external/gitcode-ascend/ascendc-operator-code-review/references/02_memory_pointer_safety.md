@@ -142,7 +142,7 @@ static Dev devs[DEV_NUM];
 int set_dev_id(size_t index, int id)
 {
 	if (index > DEV_NUM) { // 错误：差一错误。
-		... // 错误处理
+ 		... // 错误处理
 	}
 
 	devs[index].id = id;
@@ -152,7 +152,7 @@ int set_dev_id(size_t index, int id)
 static Dev *get_dev(size_t index)
 {
 	if (index > DEV_NUM) { // 错误：差一错误。
-		... // 错误处理
+ 		... // 错误处理
 	}
 
 	return devs + index;
@@ -185,7 +185,7 @@ int set_dev_Id (size_t index, int id)
 static Dev *get_dev(size_t index)
 {
 	if (index >= DEV_NUM) {
-		... // 错误处理
+ 		... // 错误处理
 	}
 
 	return devs + index;

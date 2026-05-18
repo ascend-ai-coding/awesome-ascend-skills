@@ -162,19 +162,19 @@ cleanup_ray() {
 start_ray_head() {
     local num_gpus="${1:-8}"
     local dashboard_port="${2:-8265}"
-
+    
     info "启动 Ray Head 节点 (GPUs: $num_gpus, Dashboard: $dashboard_port)..."
-
+    
     # NPU 环境下 Ray 无法自动检测 GPU，必须显式声明
     ray start --head \
         --num-gpus=$num_gpus \
         --dashboard-port=$dashboard_port \
         --port=6379 \
         2>&1 | grep -E "SUCC|INFO|ERROR|WARN" | tail -10
-
+    
     # 等待 Ray 就绪
     sleep 3
-
+    
     # 验证 Ray 状态
     if ray status 2>&1 | grep -q "Active:"; then
         ok "Ray 集群启动成功"

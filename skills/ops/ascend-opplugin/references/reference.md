@@ -34,3 +34,4 @@ PyTorch 2.6 及以上版本不再支持 Python 3.8。更准确的完整版本矩
 - [Ascend Extension for PyTorch (torch_npu)](https://gitcode.com/ascend/pytorch)
 - `op-plugin` 仓库中的 `examples/cpp_extension/README.md`：包含目录布局、kernel/host/tiling 说明以及运行步骤（仓库内路径：`examples/cpp_extension/README.md`）
 - [Ascend C](https://www.hiascend.com/ascend-c) — Ascend C kernel 开发文档
+

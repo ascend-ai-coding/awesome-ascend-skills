@@ -200,19 +200,19 @@ def swiglu_forward_kernel(
     BLOCK_SIZE: tl.constexpr
 ):
     pid = tl.program_id(0)
-
+    
     row_start = pid * rows_per_core
     row_end = tl.minimum(row_start + rows_per_core, n_rows)
-
+    
     base_offsets = tl.arange(0, BLOCK_SIZE)
-
+    
     for row_idx in range(row_start, row_end):
         row_offset = row_idx * stride
-
+        
         for i in range(0, n_cols, BLOCK_SIZE):
             col_offsets = base_offsets + i
             mask = col_offsets < n_cols
-
+            
             a_row = tl.load(a_ptr + row_offset + col_offsets, mask=mask, other=0).to(tl.float32)
             b_row = tl.load(b_ptr + row_offset + col_offsets, mask=mask, other=0)
             c_row = silu(a_row).cast(b_row.dtype) * b_row
@@ -227,9 +227,9 @@ def swiglu_forward(a: torch.Tensor, b: torch.Tensor):
     n_rows = a.shape[0]
 
     BLOCK_SIZE = min(5120, triton.next_power_of_2(n_cols))
-
+    
     core_num = get_npu_vectorcore_num()
-
+    
     if n_rows <= core_num:
         grid = (n_rows,)
         rows_per_core = 1
@@ -281,27 +281,27 @@ def cross_entropy_kernel(
     BLOCK_SIZE: tl.constexpr,
 ):
     pid = tl.program_id(0)
-
+    
     row_start = pid * rows_per_core
     row_end = tl.minimum(row_start + rows_per_core, n_rows)
-
+    
     for row_idx in range(row_start, row_end):
         Y_ptr_row = Y_ptr + row_idx * Y_stride
         y = tl.load(Y_ptr_row).to(tl.int32)
-
+        
         X_ptr_row = X_ptr + row_idx * X_stride
-
+        
         if y == ignore_index:
             for i in range(0, n_cols, BLOCK_SIZE):
                 X_offsets = i + tl.arange(0, BLOCK_SIZE)
                 tl.store(X_ptr_row + X_offsets, 0.0, mask=X_offsets < n_cols)
         else:
             loss_ptr_row = loss_ptr + row_idx
-
+            
             m = float("-inf")
             d = 0.0
             ori_X_y = tl.load(X_ptr_row + y).cast(tl.float32)
-
+            
             for i in range(0, n_cols, BLOCK_SIZE):
                 X_offsets = i + tl.arange(0, BLOCK_SIZE)
                 X_block = tl.load(
@@ -311,13 +311,13 @@ def cross_entropy_kernel(
                 m_new = tl.maximum(m, block_max)
                 d = d * tl.exp(m - m_new) + tl.sum(tl.exp(X_block - m_new))
                 m = m_new
-
+            
             lse = m + tl.log(d)
             loss = lse - ori_X_y
-
+            
             if reduction == "mean":
                 loss = loss / n_non_ignore
-
+            
             tl.store(loss_ptr_row, loss)
 
 def cross_entropy_forward(_input: torch.Tensor, target: torch.Tensor,
@@ -330,9 +330,9 @@ def cross_entropy_forward(_input: torch.Tensor, target: torch.Tensor,
 
     target_mask = target != ignore_index
     n_non_ignore = target_mask.sum().item()
-
+    
     core_num = get_npu_vectorcore_num()
-
+    
     if n_rows <= core_num:
         grid = (n_rows,)
         rows_per_core = 1

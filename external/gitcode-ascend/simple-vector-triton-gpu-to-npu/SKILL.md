@@ -170,7 +170,7 @@ def verify_accuracy(result, ref, dtype):
     # 检查NaN/Inf
     assert not torch.isnan(result).any(), "结果包含NaN"
     assert not torch.isinf(result).any(), "结果包含Inf"
-
+    
     # 设置容差
     if dtype in [torch.float16, torch.bfloat16]:
         rtol, atol = 1e-3, 1e-3
@@ -178,7 +178,7 @@ def verify_accuracy(result, ref, dtype):
         rtol, atol = 1e-4, 1e-4
     else:
         rtol, atol = 0, 0
-
+    
     torch.testing.assert_close(result, ref, rtol=rtol, atol=atol)
 ```
 
@@ -353,7 +353,7 @@ for task_id in tl.range(core_id, task_num, num_core):
 
 **额外的NPU参数：**
 ```python
-def kernel(...,
+def kernel(...,    
     knh_step: tl.constexpr,
     nh_step: tl.constexpr,
     N: tl.constexpr,
@@ -445,7 +445,7 @@ for task_id in tl.range(core_id, task_num, num_core):
     pid_b = task_id // h_step
     pid_h = task_id % h_step
     seq_len = ...  # 在循环内部定义
-
+    
     # 所有使用这些变量的代码都在循环内部
     nchunks = tl.cdiv(seq_len, CHUNK_SIZE)
     angle_ptr = ANGLE + pid_b * stride_angle_batch  # 使用局部变量
@@ -488,7 +488,7 @@ kernel[grid](
 def kernel_gpu(x_ptr, output_ptr, N, M, BLOCK_SIZE: tl.constexpr):
     pid_n = tl.program_id(0)
     pid_m = tl.program_id(1)
-
+    
     # 计算偏移
     x = x_ptr + pid_n * M + pid_m * BLOCK_SIZE
     # ... 计算逻辑
@@ -504,11 +504,11 @@ kernel_gpu[grid](x, output, N, M, BLOCK_SIZE=128)
 def kernel_npu(x_ptr, output_ptr, N, M, BLOCK_SIZE: tl.constexpr,
                m_step: tl.constexpr, task_num: tl.constexpr, num_core: tl.constexpr):
     core_id = tl.program_id(0)
-
+    
     for task_id in tl.range(core_id, task_num, num_core):
         pid_n = task_id // m_step
         pid_m = task_id % m_step
-
+        
         # 计算偏移
         x = x_ptr + pid_n * M + pid_m * BLOCK_SIZE
         # ... 计算逻辑（所有代码都在循环内部）
@@ -518,7 +518,7 @@ num_core = get_npu_properties()["num_vectorcore"]
 m_step = M // BLOCK_SIZE
 task_num = N * m_step
 grid = (num_core,)
-kernel_npu[grid](x, output, N, M, BLOCK_SIZE=128,
+kernel_npu[grid](x, output, N, M, BLOCK_SIZE=128, 
                 m_step=m_step, task_num=task_num, num_core=num_core)
 ```
 
@@ -597,7 +597,7 @@ def get_npu_properties():
     device = torch.npu.current_device()
     return driver.active.utils.get_device_properties(device)
 
-def _layer_norm_fwd_1pass_kernel(...,
+def _layer_norm_fwd_1pass_kernel(..., 
     # NPU task dispatch parameters
     ngroups_step: tl.constexpr,
     task_num: tl.constexpr,
@@ -605,12 +605,12 @@ def _layer_norm_fwd_1pass_kernel(...,
 ):
     # NPU optimization: Use 1D physical core grid with task dispatch
     core_id = tl.program_id(0)
-
+    
     for task_id in tl.range(core_id, task_num, num_core):
         # Reconstruct original 2D indices from task_id
         row = task_id // ngroups_step
         group = task_id % ngroups_step
-
+        
         # Calculate pointer offsets
         X_ptr = X + row * stride_x_row + group * N
         # ... kernel logic
@@ -620,7 +620,7 @@ def _layer_norm_fwd(...):
     npu_props = get_npu_properties()
     num_core = npu_props["num_vectorcore"]
     grid = (num_core,)
-
+    
     _layer_norm_fwd_1pass_kernel[grid](...)
 ```
 

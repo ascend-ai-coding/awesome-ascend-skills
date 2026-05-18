@@ -131,7 +131,7 @@ verify_npu() {
     read -p "是否立即重启系统（驱动固件生效需重启）？(y/n，默认n): " REBOOT_CHOICE
     REBOOT_CHOICE=${REBOOT_CHOICE:-n}
     [ "$REBOOT_CHOICE" == "y" ] && { green_echo "系统将立即重启..."; reboot; } || yellow_echo "已跳过重启，后续驱动失效请手动执行reboot"
-
+    
     green_echo "开始验证NPU驱动加载状态"
     command -v npu-smi &> /dev/null || { red_echo "未找到npu-smi命令，驱动可能安装失败" && exit 12; }
     echo -e "======================================"

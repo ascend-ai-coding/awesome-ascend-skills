@@ -39,7 +39,7 @@ license: UNKNOWN
 
 **MANDATORY**: 在生成测试用例之前，必须读取以下参考文档：
 
-1. **必读**:
+1. **必读**: 
 - `templates/test-cases-template.md` — 测试用例格式参考
 - `design.md` — 用户提供的算子设计文档
 
@@ -158,7 +158,7 @@ GENERAL_SHAPES = [
     ("Small", "1x128 single row",       (1, 128)),
     ("Small", "1x1x1 scalar",           (1, 1, 1)),
     ("Small", "1x8x64 single batch",    (1, 8, 64)),
-
+    
     # 大Shape场景（生产环境）
     ("Large", "BERT-base FFN 3072",     (3072,)),
     ("Large", "BERT-large FFN 4096",    (4096,)),

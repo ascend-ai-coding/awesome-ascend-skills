@@ -89,3 +89,4 @@ class SparseMoeBlockWithLinearExperts(nn.Module):
             out.index_add_(0, token_idx, expert_out.to(out.dtype))
 
         return out.reshape(batch_size, seq_len, hidden_size)
+

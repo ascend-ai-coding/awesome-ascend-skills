@@ -18,19 +18,19 @@ UB_SIZE = 192 * 1024
 def calculate_ub_requirement(D, dtype='fp16'):
     type_sizes = {'fp16': 2, 'fp32': 4, 'bf16': 2}
     element_size = type_sizes[dtype]
-
+    
     # 输入缓冲区
     input_size = D * element_size
-
+    
     # 升精度缓冲区（归约操作需要）
     upcast_size = D * 4  # 总是 FP32
-
+    
     # 输出缓冲区
     output_size = D * element_size
-
+    
     # 单值缓冲区（32B 对齐）
     scalar_size = 32
-
+    
     total = input_size + upcast_size + output_size + scalar_size
     return total
 ```
@@ -97,27 +97,27 @@ def matmul_kernel(
     """
     pid_m = tl.program_id(0)
     pid_n = tl.program_id(1)
-
+    
     # 计算当前块的位置
     rm = pid_m * BLOCK_M
     rn = pid_n * BLOCK_N
-
+    
     # 初始化累加器（FP32）
     acc = tl.zeros([BLOCK_M, BLOCK_N], dtype=tl.float32)
-
+    
     # K 维度分块累加
     for k in range(0, K, BLOCK_K):
         # 加载 A 块（FP16）
         a = tl.load(a_ptr + (rm + tl.arange(0, BLOCK_M)[:, None]) * stride_am +
                           (k + tl.arange(0, BLOCK_K)[None, :]) * stride_ak)
-
+        
         # 加载 B 块（FP16）
         b = tl.load(b_ptr + (k + tl.arange(0, BLOCK_K)[:, None]) * stride_bk +
                           (rn + tl.arange(0, BLOCK_N)[None, :]) * stride_bn)
-
+        
         # 矩阵乘法（触发 Cube 单元）
         acc += tl.dot(a, b)
-
+    
     # 写回结果（FP16）
     tl.store(c_ptr + (rm + tl.arange(0, BLOCK_M)[:, None]) * stride_cm +
                     (rn + tl.arange(0, BLOCK_N)[None, :]) * stride_cn,
@@ -141,31 +141,31 @@ def layernorm_kernel(
     3. 使用 Welford 算法提高数值稳定性
     """
     pid = tl.program_id(0)
-
+    
     # 计算当前行
     row_start = pid * N
-
+    
     # 加载一行数据
     offsets = tl.arange(0, BLOCK_SIZE)
     mask = offsets < N
     x = tl.load(x_ptr + row_start + offsets, mask=mask).to(tl.float32)
-
+    
     # 计算均值（Welford 算法）
     mean = tl.sum(x, axis=0) / N
-
+    
     # 计算方差
     x_centered = x - mean
     var = tl.sum(x_centered * x_centered, axis=0) / N
-
+    
     # 归一化
     rstd = 1.0 / tl.sqrt(var + eps)
     x_norm = x_centered * rstd
-
+    
     # 应用 gamma 和 beta
     gamma = tl.load(gamma_ptr + offsets, mask=mask).to(tl.float32)
     beta = tl.load(beta_ptr + offsets, mask=mask).to(tl.float32)
     y = x_norm * gamma + beta
-
+    
     # 写回
     tl.store(y_ptr + row_start + offsets, y.to(tl.float16), mask=mask)
 ```
@@ -187,27 +187,27 @@ def softmax_kernel(
     """
     pid = tl.program_id(0)
     row_start = pid * N
-
+    
     offsets = tl.arange(0, BLOCK_SIZE)
     mask = offsets < N
-
+    
     # 加载一行
     x = tl.load(x_ptr + row_start + offsets, mask=mask).to(tl.float32)
-
+    
     # Online Softmax: 单次遍历
     # max_val = max(x)
     max_val = tl.max(x, axis=0)
-
+    
     # exp(x - max)
     x_shifted = x - max_val
     exp_x = tl.exp(x_shifted)
-
+    
     # sum(exp)
     sum_exp = tl.sum(exp_x, axis=0)
-
+    
     # 归一化
     y = exp_x / sum_exp
-
+    
     # 写回
     tl.store(y_ptr + row_start + offsets, y.to(tl.float16), mask=mask)
 ```
@@ -232,42 +232,42 @@ def flash_attention_kernel(
     pid_b = tl.program_id(0)
     pid_h = tl.program_id(1)
     pid_m = tl.program_id(2)
-
+    
     # 当前 Q 块的位置
     q_start = pid_b * H * S * D + pid_h * S * D + pid_m * BLOCK_M * D
-
+    
     # 加载 Q 块
-    q = tl.load(q_ptr + q_start +
+    q = tl.load(q_ptr + q_start + 
                 tl.arange(0, BLOCK_M)[:, None] * D +
                 tl.arange(0, BLOCK_D)[None, :])
-
+    
     # 初始化累加器
     acc = tl.zeros([BLOCK_M, BLOCK_D], dtype=tl.float32)
     max_score = tl.zeros([BLOCK_M], dtype=tl.float32) - float('inf')
     sum_exp = tl.zeros([BLOCK_M], dtype=tl.float32)
-
+    
     # 遍历 K、V 块
     for n in range(0, S, BLOCK_N):
         # 加载 K、V 块
         k = tl.load(k_ptr + pid_b * H * S * D + pid_h * S * D +
                     n + tl.arange(0, BLOCK_N))
         v = tl.load(v_ptr + ...)
-
+        
         # 计算 QK^T
         qk = tl.dot(q, k.T)
-
+        
         # Online Softmax 更新
         new_max = tl.maximum(max_score, tl.max(qk, axis=1))
         exp_qk = tl.exp(qk - new_max[:, None])
         new_sum = sum_exp * tl.exp(max_score - new_max) + tl.sum(exp_qk, axis=1)
-
+        
         # 更新累加器
         acc = acc * (sum_exp / new_sum)[:, None] + \
               tl.dot(exp_qk / new_sum[:, None], v)
-
+        
         max_score = new_max
         sum_exp = new_sum
-
+    
     # 写回
     tl.store(o_ptr + ..., acc.to(tl.float16))
 ```

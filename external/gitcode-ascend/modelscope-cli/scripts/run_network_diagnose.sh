@@ -123,16 +123,16 @@ if command -v openssl &> /dev/null; then
 QUIT
 EOF
 )
-
+    
     if [ -n "$CERT_INFO" ]; then
         # 提取颁发者
         ISSUER=$(echo "$CERT_INFO" | openssl x509 -issuer -noout 2>/dev/null | sed 's/issuer=//')
         echo "  颁发者: $ISSUER"
-
+        
         # 提取有效期
         EXPIRY=$(echo "$CERT_INFO" | openssl x509 -dates -noout 2>/dev/null | grep "notAfter" | sed 's/notAfter=//')
         echo "  有效期至: $EXPIRY"
-
+        
         # 验证证书
         VERIFY_RESULT=$(echo "$CERT_INFO" | grep "Verify return code" | awk -F':' '{print $2}' | xargs)
         echo "  验证结果: $VERIFY_RESULT"

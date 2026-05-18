@@ -22,17 +22,17 @@ def main():
     if len(sys.argv) < 4:
         print("Usage: python check_pipeline_status.py <access_token> <upstream_repo_info> <pr_number> [max_attempts] [interval_seconds]")
         sys.exit(1)
-
+    
     access_token = sys.argv[1]
     upstream_repo_info = sys.argv[2]
     pr_number = sys.argv[3]
     max_attempts = int(sys.argv[4]) if len(sys.argv) > 4 else 20
     interval_seconds = int(sys.argv[5]) if len(sys.argv) > 5 else 30
-
+    
     # 轮询检查
     for i in range(1, max_attempts + 1):
         print(f"Checking pipeline status (attempt {i}/{max_attempts})...")
-
+        
         # 获取 PR 详情
         script_path = f"{subprocess.os.path.dirname(__file__)}/get_pr_details.py"
         result = subprocess.run(
@@ -40,12 +40,12 @@ def main():
             capture_output=True,
             text=True
         )
-
+        
         if result.returncode != 0:
             print(f"Error getting PR details: {result.stderr}")
             time.sleep(interval_seconds)
             continue
-
+        
         try:
             pr_details = json.loads(result.stdout)
             # 检查状态（这里根据实际 API 返回字段调整）
@@ -54,10 +54,10 @@ def main():
                 sys.exit(0)
         except json.JSONDecodeError:
             print(f"Error parsing PR details: {result.stdout}")
-
+        
         # 等待
         time.sleep(interval_seconds)
-
+    
     print(f"Pipeline check timed out after {max_attempts} attempts")
     sys.exit(1)
 

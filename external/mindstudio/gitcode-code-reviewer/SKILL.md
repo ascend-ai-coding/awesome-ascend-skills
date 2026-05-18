@@ -151,8 +151,8 @@ git checkout "pr-<NUMBER>-source"
 ```markdown
 ## 代码审查摘要
 
-**PR**： [标题](URL)
-**作者**：@author
+**PR**： [标题](URL)  
+**作者**：@author  
 **结论**： [通过 / 请求修改]
 
 ### 发现的问题
@@ -208,7 +208,7 @@ node = int(node_str)
 ```
 ````
 
-优先在 `comments.json` 中使用结构化字段：`severity`、`problem`、`reason`、`fix`。
+优先在 `comments.json` 中使用结构化字段：`severity`、`problem`、`reason`、`fix`。  
 `scripts/post_pr_comment.py` 会在发布前将这些字段统一整理为四段式 Markdown 正文，默认输出中文严重程度（`严重`、`建议`、`提示`），也会兼容旧版英文值和旧版三段式 `body` 内容。
 
 ### 9. 清理临时目录

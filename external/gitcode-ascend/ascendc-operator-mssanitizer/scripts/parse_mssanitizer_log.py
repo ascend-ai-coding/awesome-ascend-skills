@@ -24,7 +24,7 @@ from typing import Dict, List, Optional
 
 class MssanitizerLogParser:
     """mssanitizer 日志解析器"""
-
+    
     def __init__(self, log_file: str, heading_offset: int = 0, no_title: bool = False):
         self.log_file = log_file
         self.heading_offset = heading_offset
@@ -32,7 +32,7 @@ class MssanitizerLogParser:
         self.errors: Dict[str, List[Dict]] = defaultdict(list)
         self.heap_blocks: Dict[str, int] = {}
         self.stats = defaultdict(int)
-
+        
     def parse(self) -> None:
         """解析日志文件"""
         last_error = None
@@ -59,7 +59,7 @@ class MssanitizerLogParser:
         elif 'SUMMARY:' in line and 'leaked' in line:
             self._parse_error(line)
         return None
-
+    
     def _parse_error(self, line: str) -> Optional[Dict]:
         """解析错误信息，返回错误条目"""
         error_patterns = [
@@ -69,25 +69,25 @@ class MssanitizerLogParser:
             ('memory_leak', r'LeakCheck|memory leak'),
             ('ub_out_of_bounds', r'ub address out of bounds|VEC instruction error'),
         ]
-
+        
         # 检查是否为错误行
         if "ERROR:" in line:
             for error_type, pattern in error_patterns:
                 match = re.search(pattern, line, re.IGNORECASE)
                 if match:
                     error_info = {'type': error_type, 'line': line}
-
+                    
                     if error_type == 'illegal_free':
                         addr_match = re.search(r'at (0x[0-9a-fA-F]+)', line)
                         if addr_match:
                             error_info['address'] = addr_match.group(1)
                     elif error_type in ['illegal_read', 'illegal_write']:
                         error_info['size'] = match.group(1)
-
+                    
                     self.errors[error_type].append(error_info)
                     self.stats[error_type] += 1
                     return error_info
-
+        
         # 单独处理内存泄漏摘要行
         elif "SUMMARY:" in line and "leaked" in line:
             error_info = {'type': 'memory_leak', 'line': line}
@@ -95,37 +95,37 @@ class MssanitizerLogParser:
             self.stats['memory_leak'] += 1
             return error_info
         return None
-
+    
     def _parse_memory_record(self, line: str) -> None:
         """解析内存记录"""
         match = re.search(r'type:(\w+)', line)
         if match:
             mem_type = match.group(1).lower()
             self.stats[f'total_{mem_type}'] += 1
-
+    
     def _parse_heap_block(self, line: str) -> None:
         """解析 heap block 添加"""
         match = re.search(r'addr: (0x[0-9a-fA-F]+), size: (\d+)', line)
         if match:
             self.heap_blocks[match.group(1)] = int(match.group(2))
-
+    
     def _parse_free_heap_block(self, line: str) -> None:
         """解析 heap block 释放"""
         match = re.search(r'addr: (0x[0-9a-fA-F]+)', line)
         if match:
             self.heap_blocks.pop(match.group(1), None)
-
+    
     def generate_report(self, output_file: Optional[str] = None) -> str:
         """生成分析报告"""
         report = self._build_report()
-
+        
         if output_file:
             with open(output_file, 'w', encoding='utf-8') as f:
                 f.write(report)
             print(f"报告已保存到: {output_file}")
-
+        
         return report
-
+    
     def _shift_heading(self, line: str) -> str:
         if not line.startswith('#'):
             return line
@@ -163,11 +163,11 @@ class MssanitizerLogParser:
             lines = [self._shift_heading(l) for l in lines]
 
         return '\n'.join(lines)
-
+    
     def _build_summary(self) -> List[str]:
         """构建问题摘要"""
         lines = ["## 问题摘要", "", "| 问题类型 | 数量 | 严重程度 |", "|---------|------|---------|"]
-
+        
         severity_map = {
             'illegal_read': '🔴 严重',
             'illegal_write': '🔴 严重',
@@ -175,36 +175,36 @@ class MssanitizerLogParser:
             'memory_leak': '🟡 中等',
             'ub_out_of_bounds': '🔴 严重',
         }
-
+        
         has_errors = False
         for error_type in severity_map:
             count = self.stats.get(error_type, 0)
             if count > 0:
                 has_errors = True
                 lines.append(f"| **{error_type}** | **{count}** | {severity_map[error_type]} |")
-
+        
         if not has_errors:
             lines.append("| 无错误 | 0 | 🟢 无 |")
-
+        
         total_errors = sum(self.stats.get(t, 0) for t in severity_map)
         lines.extend(["", "### 问题严重性评估", ""])
-
+        
         if total_errors == 0:
             lines.extend(["**整体评级**: 🟢 **良好 (GOOD)**", "", "未检测到内存错误。"])
         elif total_errors < 5:
             lines.extend(["**整体评级**: 🟡 **中等 (MODERATE)**", "", f"检测到 {total_errors} 个内存问题。"])
         else:
             lines.extend(["**整体评级**: 🔴 **严重 (CRITICAL)**", "", f"检测到 {total_errors} 个内存问题。"])
-
+        
         return lines + [""]
-
+    
     def _build_stats(self) -> List[str]:
         """构建内存统计"""
         lines = ["## 内存操作统计", "", "| 操作类型 | 数量 |", "|---------|------|"]
-
+        
         for op in ['MALLOC', 'FREE', 'LOAD', 'STORE']:
             lines.append(f"| {op} | {self.stats.get(f'total_{op.lower()}', 0)} |")
-
+        
         malloc_count = self.stats.get('total_malloc', 0)
         free_count = self.stats.get('total_free', 0)
         if malloc_count > 0 and free_count > 0:
@@ -215,16 +215,16 @@ class MssanitizerLogParser:
             ])
             if malloc_count != free_count:
                 lines.append("⚠️ **警告**: MALLOC 和 FREE 数量不匹配，可能存在内存泄漏")
-
+        
         return lines + [""]
-
+    
     def _build_errors(self) -> List[str]:
         """构建详细错误分析"""
         lines = ["## 详细错误分析", ""]
-
+        
         for error_type, errors in self.errors.items():
             lines.extend([f"### {error_type}", ""])
-
+            
             for i, error in enumerate(errors[:10], 1):
                 lines.extend([
                     f"**错误 {i}**:",
@@ -233,29 +233,29 @@ class MssanitizerLogParser:
                     "```",
                     "",
                 ])
-
+                
                 if 'address' in error:
                     lines.append(f"- **地址**: `{error['address']}`")
                 if 'size' in error:
                     lines.append(f"- **大小**: {error['size']} 字节")
                 lines.append("")
-
+            
             if len(errors) > 10:
                 lines.append(f"... 还有 {len(errors) - 10} 个同类错误未显示")
                 lines.append("")
-
+        
         return lines
-
+    
     def _build_leaked_blocks(self) -> List[str]:
         """构建未释放内存块"""
         lines = ["## 未释放的内存块", "", "| 地址 | 大小 (字节) |", "|------|------------|"]
-
+        
         for addr, size in list(self.heap_blocks.items())[:20]:
             lines.append(f"| `{addr}` | {size} |")
-
+        
         if len(self.heap_blocks) > 20:
             lines.append(f"| ... | 还有 {len(self.heap_blocks) - 20} 个未显示 |")
-
+        
         return lines + [""]
 
     def _build_fix_suggestions(self) -> List[str]:
@@ -431,16 +431,16 @@ def main():
     python3 parse_mssanitizer_log.py mssanitizer.log --output report.md
         """
     )
-
+    
     parser.add_argument('log_file', help='mssanitizer 日志文件路径')
     parser.add_argument('-o', '--output', help='输出报告文件路径（可选，默认输出到控制台）')
     parser.add_argument('--heading-offset', type=int, default=0,
                         help='标题层级偏移量（如 2 表示 ## 变 ####）')
     parser.add_argument('--no-title', action='store_true',
                         help='不输出顶层标题和元数据（嵌入其他文档时使用）')
-
+    
     args = parser.parse_args()
-
+    
     try:
         parser_obj = MssanitizerLogParser(
             args.log_file,
@@ -449,7 +449,7 @@ def main():
         )
         parser_obj.parse()
         report = parser_obj.generate_report(args.output)
-
+        
         if not args.output:
             print(report)
     except FileNotFoundError:

@@ -40,18 +40,18 @@ MAX_RETRY=100  # 最大重试次数
 
 while true; do
     RETRY_COUNT=$((RETRY_COUNT + 1))
-
+    
     echo "========================================"
     echo "第 ${RETRY_COUNT} 次尝试 ($(date '+%Y-%m-%d %H:%M:%S'))"
     echo "========================================"
     echo ""
-
+    
     # 执行脚本
     set +e
     bash "$SCRIPT_PATH"
     EXIT_CODE=$?
     set -e
-
+    
     if [ $EXIT_CODE -eq 0 ]; then
         echo ""
         echo "========================================"
@@ -60,18 +60,18 @@ while true; do
         echo "总尝试次数: $RETRY_COUNT"
         exit 0
     fi
-
+    
     echo ""
     echo "❌ 执行失败，退出码: $EXIT_CODE"
-
+    
     if [ $RETRY_COUNT -ge $MAX_RETRY ]; then
         echo ""
         echo "⚠️  已达到最大重试次数 ($MAX_RETRY)，退出"
         exit 1
     fi
-
+    
     echo "将在 ${RETRY_INTERVAL}s 后重试..."
     echo ""
-
+    
     sleep $RETRY_INTERVAL
 done

@@ -89,3 +89,4 @@ extern "C" __global__ __aicore__ void helloworld(GM_ADDR x, GM_ADDR y, GM_ADDR z
     op.Init(x, y, z, totalLength);
     op.Process();
 }
+

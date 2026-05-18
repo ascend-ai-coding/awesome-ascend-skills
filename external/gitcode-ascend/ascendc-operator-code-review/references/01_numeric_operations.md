@@ -43,7 +43,7 @@ int num_b = ... // 来自外部数据
 int sum = 0;
 if (((num_a > 0) && (num_b > (INT_MAX - num_a))) ||
 	((num_a < 0) && (num_b < (INT_MIN - num_a)))) {
-	... // 错误处理
+  	... // 错误处理
 }
 sum = num_a + num_b;
 ...

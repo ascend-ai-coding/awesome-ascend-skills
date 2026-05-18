@@ -36,13 +36,13 @@ DIR="./models"
 if [ -z "$SKIP_PREFLIGHT" ]; then
     SCRIPT_DIR=$(dirname "$0")
     PREFLIGHT_SCRIPT="${SCRIPT_DIR}/run_preflight_check.sh"
-
+    
     if [ -f "$PREFLIGHT_SCRIPT" ]; then
         echo "========================================"
         echo "执行前置检查..."
         echo "========================================"
         echo ""
-
+        
         if ! bash "$PREFLIGHT_SCRIPT"; then
             echo ""
             echo "❌ 前置检查失败，请修复后重试"
@@ -151,13 +151,13 @@ for MODEL_ID in "${MODELS[@]}"; do
     # 检查下载结果
     if [ $EXIT_CODE -eq 0 ]; then
         echo "✅ ${MODEL_ID} 下载完成"
-
+        
         # 显示下载后的目录大小
         if command -v du &> /dev/null; then
             DOWNLOADED_SIZE=$(du -sh ${LOCAL_DIR} 2>/dev/null | awk '{print $1}')
             echo "   下载大小: ${DOWNLOADED_SIZE}"
         fi
-
+        
         SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
     else
         echo "❌ ${MODEL_ID} 下载失败，退出码: $EXIT_CODE"

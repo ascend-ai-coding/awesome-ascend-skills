@@ -30,7 +30,7 @@ ValueTable *value_table_dup(const ValueTable *input_table)
 	for (size_t i = 0; i  < input_table->count; i++) {
 		output_table->val[i] = input_table->val[i];
 	}
-	...
+  	...
 }
 ```
 

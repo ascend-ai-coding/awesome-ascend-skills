@@ -44,7 +44,7 @@ keywords:
 ## 关键词
 
 ```
-msmodelslim, quant, model quantization, 华为昇腾, Ascend, NPU,
+msmodelslim, quant, model quantization, 华为昇腾, Ascend, NPU, 
 模型compress, quant加速, INT4quant, INT8quant, 大模型deployment,
 昇腾NPU, 华为AI, Atlas, Davinci, 模型加速, 权重量化,
 ascend, 昇腾卡, npu-smi, 模型deployment, LLMquant
@@ -66,7 +66,7 @@ ascend, 昇腾卡, npu-smi, 模型deployment, LLMquant
 ## 远程服务器访问
 
 > ⚠️ **重要提示**：如果用户的指令是在**远程服务器**上执行quant操作，则优先使用**非交互式**工具访问服务器，例如：
-> - `sshpass -p 'password' ssh user@server`
+> - `sshpass -p 'password' ssh user@server` 
 > - `sshpass -f passwordfile ssh user@server`
 > - 配置 SSH Key 并使用 `ssh -i keyfile user@server`
 >

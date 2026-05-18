@@ -1,6 +1,6 @@
 # 模型适配基础接口参考
 
-本文档只保留模型适配开发所需的基础接口。
+本文档只保留模型适配开发所需的基础接口。  
 不包含 SmoothQuant、QuaRot、FA3、FlatQuant 等高阶算法接口。
 
 ## 1) IModel（基础模型属性）
@@ -62,7 +62,7 @@ class PipelineInterface(IModel):
 
 ## 3) ModelInfoInterface（推荐）
 
-**位置**: `msmodelslim/app/naive_quantization/model_info_interface.py`
+**位置**: `msmodelslim/app/naive_quantization/model_info_interface.py`  
 （部分场景也在 `msmodelslim/app/auto_tuning/model_info_interface.py` 使用）
 
 用于提供模型基础信息：

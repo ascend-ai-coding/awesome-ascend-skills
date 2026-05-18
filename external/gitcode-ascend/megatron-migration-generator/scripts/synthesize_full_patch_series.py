@@ -64,12 +64,12 @@ def graceful_exit_series() -> list[dict[str, str]]:
 +import signal
 +import sys
  from logging import getLogger
-
+ 
  import torch
 @@ -53,6 +55,31 @@ _BASE_TIME = 1742613446  # one moment of 2025.3.22
  _TRAIN_START_TIME = time.time()
  LOG = getLogger(__name__)
-
+ 
 +
 +def _install_training_exit_handlers():
 +    args = get_args()
@@ -97,15 +97,15 @@ def graceful_exit_series() -> list[dict[str, str]]:
 +
 +    signal.signal(signal.SIGINT, _graceful_shutdown)
 +    signal.signal(signal.SIGTERM, _graceful_shutdown)
-
+ 
  @torch.no_grad()
  def update_ema(
 @@ -199,6 +226,7 @@ def pretrain(
-
+ 
      args = get_args()
      timers = get_timers()
 +    _install_training_exit_handlers()
-
+ 
      if args.log_progress:
          append_to_progress_log("Starting job")
 """,
@@ -139,8 +139,8 @@ def async_lifetime_series() -> list[dict[str, str]]:
 +++ b/mindspeed/core/megatron_basic/megatron_basic.py
 @@ -126,6 +126,11 @@ def get_device_arch_version():
      return 8
-
-
+ 
+ 
 +_PRELOADED_TENSORS_HOLDER = None
 +
 +def clear_preloaded_tensors():
@@ -156,7 +156,7 @@ def async_lifetime_series() -> list[dict[str, str]]:
      \"""
 +    global _PRELOADED_TENSORS_HOLDER
      result = []
-
+ 
      for bucket in write_buckets:
 @@ -147,6 +153,7 @@ def preload_tensors(write_buckets, non_blocking=True):
          result.append((file_name, storage_key, (bytes_data, tensor_data)))
@@ -178,8 +178,8 @@ def async_lifetime_series() -> list[dict[str, str]]:
  )
 +
 +from mindspeed.core.megatron_basic.megatron_basic import clear_preloaded_tensors
-
-
+ 
+ 
  def save_checkpoint(iteration, model, optimizer, opt_param_scheduler,
 @@ -140,13 +142,16 @@ def save_checkpoint(iteration, model, optimizer, opt_param_scheduler,
          if args.async_save:
@@ -189,14 +189,14 @@ def async_lifetime_series() -> list[dict[str, str]]:
          else:
              iter_finalize_fn()
 +            clear_preloaded_tensors()
-
+ 
      if args.async_save:
          schedule_async_save(async_save_request)
          print_rank_0('  scheduled an async checkpoint save at iteration {:7d} to {}' \\
                       .format(iteration, args.save))
 +    else:
 +        clear_preloaded_tensors()
-
+ 
      # Wait so everyone is done (not necessary)
      if torch.distributed.is_initialized():
 """,
@@ -268,7 +268,7 @@ def nvrx_series() -> list[dict[str, str]]:
 --- a/tests_extend/system_tests/yaml_args_example/example.yaml
 +++ b/tests_extend/system_tests/yaml_args_example/example.yaml
 @@ -189,6 +189,7 @@ async_save: null
-
+ 
  consumed_train_samples: 0
  consumed_valid_samples: 0
 +async_strategy: 'nvrx'

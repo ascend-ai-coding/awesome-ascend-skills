@@ -1,8 +1,8 @@
 # 🏥 Kubernetes 诊断报告
 
-**集群上下文**: {{context}}
-**命名空间**: {{namespace}}
-**检查时间**: {{timestamp}}
+**集群上下文**: {{context}}  
+**命名空间**: {{namespace}}  
+**检查时间**: {{timestamp}}  
 **子命令**: {{subcommand}}
 
 ## 概览

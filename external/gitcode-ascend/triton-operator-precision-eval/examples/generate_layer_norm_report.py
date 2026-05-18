@@ -119,17 +119,17 @@ def calculate_errors(y_cal, y_ref, dtype):
     """计算误差指标"""
     y_cal_cpu = y_cal.cpu().numpy()
     y_ref_cpu = y_ref.cpu().numpy()
-
+    
     abs_error = np.abs(y_cal_cpu - y_ref_cpu)
-
+    
     threshold = _THRESHOLDS.get(dtype, 1e-8)
     denom = np.maximum(np.abs(y_ref_cpu), threshold)
     rel_error = abs_error / denom
-
+    
     mere = np.mean(rel_error)
     mare = np.max(rel_error)
     max_abs_error = np.max(abs_error)
-
+    
     return mere, mare, max_abs_error
 
 
@@ -137,14 +137,14 @@ def generate_report():
     """生成层归一化精度报告"""
     # 支持的数据类型
     supported_dtypes = ['float16', 'float32']
-
+    
     # 测试参数
     test_shapes = [(128, 128), (256, 256), (512, 512)]
     eps = 1e-5
-
+    
     # 生成报告文件
     report_path = os.path.join(os.path.dirname(__file__), 'layer_norm_precision_report.txt')
-
+    
     with open(report_path, 'w') as f:
         f.write("================================================================================\n")
         f.write("                              生态算子精度验证报告                               \n")
@@ -166,13 +166,13 @@ def generate_report():
         f.write("  bool: 完全相等\n")
         f.write("--------------------------------------------------------------------------------\n")
         f.write("[验证结果]:\n")
-
+        
         total_passed = 0
         total_tests = 0
-
+        
         # 存储详细结果
         detailed_results = []
-
+        
         for dtype in supported_dtypes:
             for shape in test_shapes:
                 total_tests += 1
@@ -181,24 +181,24 @@ def generate_report():
                     np_x = test_common.generate_numpy(shape, dtype)
                     np_weight = test_common.generate_numpy((shape[-1],), dtype)
                     np_bias = test_common.generate_numpy((shape[-1],), dtype)
-
+                    
                     # 转换为 PyTorch 张量并移动到 NPU
                     x = torch.from_numpy(np_x).to(eval('torch.' + dtype)).npu()
                     weight = torch.from_numpy(np_weight).to(eval('torch.' + dtype)).npu()
                     bias = torch.from_numpy(np_bias).to(eval('torch.' + dtype)).npu()
-
+                    
                     # 计算参考结果
                     y_ref = torch_layer_norm(x, weight, bias, eps)
-
+                    
                     # 计算Triton结果
                     y_cal = triton_layer_norm(x, weight, bias, eps)
-
+                    
                     # 计算误差
                     mere, mare, max_abs_error = calculate_errors(y_cal, y_ref, dtype)
-
+                    
                     # 验证精度
                     test_common.validate_cmp(dtype, y_cal, y_ref)
-
+                    
                     detailed_results.append({
                         'dtype': dtype,
                         'shape': shape,
@@ -208,7 +208,7 @@ def generate_report():
                         'max_abs_error': max_abs_error
                     })
                     total_passed += 1
-
+                    
                 except Exception as e:
                     detailed_results.append({
                         'dtype': dtype,
@@ -216,7 +216,7 @@ def generate_report():
                         'status': 'FAIL',
                         'error': str(e)
                     })
-
+        
         # 写入总体结果
         f.write(f"  测试总数: {total_tests}\n")
         f.write(f"  通过数量: {total_passed}\n")
@@ -224,11 +224,11 @@ def generate_report():
         f.write(f"  总体结果: {'PASS' if total_passed == total_tests else 'FAIL'}\n")
         f.write("--------------------------------------------------------------------------------\n")
         f.write("[详细误差指标]:\n")
-
+        
         for result in detailed_results:
             f.write(f"  数据类型: {result['dtype']}, 形状: {result['shape']}\n")
             f.write(f"  测试结果: {result['status']}\n")
-
+            
             if result['status'] == 'PASS':
                 f.write(f"    平均相对误差(MERE): {result['mere']:.6e}\n")
                 f.write(f"    最大相对误差(MARE): {result['mare']:.6e}\n")
@@ -236,14 +236,14 @@ def generate_report():
             else:
                 f.write(f"    错误信息: {result['error'][:100]}...\n")
             f.write("\n")
-
+        
         f.write("--------------------------------------------------------------------------------\n")
         f.write("[判定条件]:\n")
         f.write(f"  ✓ 所有数据类型测试通过: {'True' if total_passed == total_tests else 'False'}\n")
         f.write("================================================================================\n")
-
+    
     print(f"层归一化精度报告已生成: {report_path}")
-
+    
     # 打印报告内容
     with open(report_path, 'r') as f:
         print(f.read())

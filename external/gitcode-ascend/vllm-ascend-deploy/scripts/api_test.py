@@ -49,7 +49,7 @@ def test_completions(prompt="你好"):
         "temperature": 1
     }
     print(f"请求: {json.dumps(payload, indent=2, ensure_ascii=False)}")
-
+    
     try:
         resp = requests.post(
             f"{API_BASE}/v1/completions",
@@ -80,7 +80,7 @@ def test_chat_completions(message="你好"):
         "temperature": 1
     }
     print(f"请求: {json.dumps(payload, indent=2, ensure_ascii=False)}")
-
+    
     try:
         resp = requests.post(
             f"{API_BASE}/v1/chat/completions",
@@ -104,12 +104,12 @@ def main():
     print(f"\nvLLM API 测试工具")
     print(f"API 地址: {API_BASE}")
     print(f"模型: {MODEL}")
-
+    
     # 测试所有接口
     test_models()
     test_completions("你好")
     test_chat_completions("你好")
-
+    
     print_separator("测试完成")
 
 if __name__ == "__main__":

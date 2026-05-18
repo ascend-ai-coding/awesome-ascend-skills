@@ -1,7 +1,7 @@
 # 📦 Deployment 分析：`{{deployment_name}}`
 
-**命名空间**: {{namespace}}
-**创建时间**: {{creation_time}}
+**命名空间**: {{namespace}}  
+**创建时间**: {{creation_time}}  
 **滚动策略**: {{strategy}}
 
 ## 副本状态

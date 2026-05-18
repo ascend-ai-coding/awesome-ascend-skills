@@ -191,7 +191,7 @@ actualLen = min(chunkSize, sortLength - c * chunkSize)
 actualLenAligned = ceil(actualLen / 32) * 32
 
 ① CopyIn:   xGm[rowBase + c*chunkSize] → inBuf1         // 搬入 actualLen 个 float（-inf 填充对齐）
-① Muls(inBuf1, descending) // actualLen个float数，如果是升序就 * -1，降序则忽略此步骤
+① Muls(inBuf1, descending) // actualLen个float数，如果是升序就 * -1，降序则忽略此步骤   
 ② CreateVecIndex(outBuf2, c*chunkSize, actualLenAligned)  // 生成行内全局索引
 ③ Sort<float, true>(outBuf1, inBuf1, outBuf2_u32, tmpBuf, actualLenAligned / 32)  // 排序
 ④ CopyOutFp32: outBuf1 → WS_A[c * chunkSize * 2]          // 写出 2×actualLen 个 float

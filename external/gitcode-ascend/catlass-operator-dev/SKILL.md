@@ -170,7 +170,7 @@ MANDATORY: 按 ascendc-operator-project-init 执行：
 **执行内容**
 
 1. 在 **`ASCEND_KERNEL_ROOT`** 下确保存在 **`catlass/`**，且含 **`catlass/include`**、**`catlass/examples`**
-2. 若不存在：**MUST** 在工程根执行（**禁止**在 `csrc/ops/<op_name>/` 内克隆）
+2. 若不存在：**MUST** 在工程根执行（**禁止**在 `csrc/ops/<op_name>/` 内克隆）  
    `git clone https://gitcode.com/cann/catlass.git catlass`
 
 **检查点（Step 1.2）**

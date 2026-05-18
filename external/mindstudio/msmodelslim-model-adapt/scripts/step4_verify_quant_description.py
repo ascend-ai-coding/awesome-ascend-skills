@@ -19,26 +19,26 @@ def find_description_file(path: str) -> str:
     """在指定路径查找描述文件"""
     if os.path.isfile(path):
         return path
-
+    
     p = os.path.join(path, "quant_weight_description.json")
 
     if os.path.exists(p):
         return p
-
+            
     return None
 
 def verify_description(desc_path: str, rules_path: str) -> bool:
     print("=" * 60)
     print("步骤4: 验证量化描述文件")
     print("=" * 60)
-
+    
     # 1. 查找并加载描述文件
     real_desc_path = find_description_file(desc_path)
     if not real_desc_path:
         print(f"[ERROR] 未找到量化描述文件 (在路径: {desc_path})")
         print("  期望文件: quant_weight_description.json 或 quant_model_description.json")
         return False
-
+        
     print(f"[INFO] 描述文件: {real_desc_path}")
     try:
         desc_data = load_json(real_desc_path)
@@ -55,13 +55,13 @@ def verify_description(desc_path: str, rules_path: str) -> bool:
     if not os.path.exists(rules_path):
         print(f"[ERROR] 规则文件不存在: {rules_path}")
         return False
-
+        
     try:
         rules = load_json(rules_path)
     except Exception as e:
         print(f"[ERROR] 加载规则文件失败: {e}")
         return False
-
+        
     if not isinstance(rules, list):
         print(f"[ERROR] 规则文件格式错误: 期望为 JSON Array (list)")
         return False
@@ -70,39 +70,39 @@ def verify_description(desc_path: str, rules_path: str) -> bool:
     print("\n[CHECK] 开始匹配规则...")
     all_passed = True
     total_checked_keys = 0
-
+    
     for i, rule in enumerate(rules):
         quant_type = rule.get("quant_type")
         keywords = rule.get("keywords", [])
-
+        
         if not quant_type or not keywords:
             print(f"[WARNING] 规则 #{i+1} 格式无效 (缺少 quant_type 或 keywords)，跳过")
             continue
-
+            
         print(f"  > 规则 #{i+1}: 期望包含 {keywords} 的权重为 '{quant_type}'")
-
+        
         matched_keys = []
         failed_keys = []
-
+        
         # 遍历描述文件中的所有键
         for key, value in desc_data.items():
             # 仅检查权重文件 (通常以 .weight 结尾)，避免检查 bias 或其他属性
             # 如果用户规则里明确写了不带 .weight 的关键字，这里也兼容
             if not isinstance(key, str):
                 continue
-
+                
             # 检查是否匹配任一关键字
             is_match = False
             for kw in keywords:
                 if kw in key:
                     is_match = True
                     break
-
+            
             if is_match:
                 # 默认只检查 .weight 结尾的键，除非规则里显式包含 bias 等
                 # 这里为了通用性，我们假设用户提供的 keyword 足够具体，或者默认过滤非 weight
                 # 改进策略：如果 key 包含 keyword，就进行检查
-
+                
                 # 严格检查值
                 if value != quant_type:
                     failed_keys.append((key, value))
@@ -110,7 +110,7 @@ def verify_description(desc_path: str, rules_path: str) -> bool:
                     matched_keys.append(key)
 
         total_checked_keys += len(matched_keys) + len(failed_keys)
-
+        
         if failed_keys:
             all_passed = False
             print(f"    [FAILED] 发现 {len(failed_keys)} 个不匹配项 (展示前10个):")
@@ -138,9 +138,9 @@ def main():
     parser = argparse.ArgumentParser(description="验证量化描述文件内容")
     parser.add_argument("--desc-path", required=True, help="量化输出目录或描述文件路径")
     parser.add_argument("--rules-path", required=True, help="校验规则JSON文件路径")
-
+    
     args = parser.parse_args()
-
+    
     success = verify_description(args.desc_path, args.rules_path)
     sys.exit(0 if success else 1)
 

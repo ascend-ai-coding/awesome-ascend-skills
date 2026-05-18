@@ -141,10 +141,10 @@ print_swanlab_links() {
 monitor_for_errors() {
     local log_file="/verl/train.log"
     local pid_file="/verl/train.pid"
-
+    
     while true; do
         sleep 30
-
+        
         # 检查进程是否还在运行
         if [ -f "$pid_file" ]; then
             local pid=$(cat "$pid_file")
@@ -163,7 +163,7 @@ monitor_for_errors() {
                 fi
             fi
         fi
-
+        
         # 检查是否有 OOM
         if check_oom "$log_file"; then
             echo "[ERROR] 检测到 OOM 错误！"
@@ -178,14 +178,14 @@ monitor_for_errors() {
 
 main() {
     local oom_retry=0
-
+    
     while true; do
         # 设置 OOM 重试计数 (供 feature_manager 使用)
         export OOM_RETRY_COUNT=$oom_retry
-
+        
         # 确定特性配置
         FEATURES=$(determine_features)
-
+        
         # 显示启动信息
         info "=========================================="
         info "启动 Verl 异步 DAPO 训练"
@@ -196,31 +196,31 @@ main() {
         info "资源: trainer=$TRAINER_GPUS GPUs, rollout=$ROLLOUT_GPUS GPUs"
         info "特性: $FEATURES"
         info "=========================================="
-
+        
         # 运行训练（通过 echo 捕获 PID）
         local train_pid
         train_pid=$(run_training "$FEATURES" "/verl/train.log")
-
+        
         # 输出 SwanLab 链接
         print_swanlab_links
-
+        
         # 监控错误
         monitor_for_errors
         local monitor_result=$?
-
+        
         # 训练成功
         if [ $monitor_result -eq 0 ]; then
             return 0
         fi
-
+        
         # OOM 错误
         if [ $monitor_result -eq 2 ]; then
             oom_retry=$((oom_retry + 1))
-
+            
             if [ $oom_retry -le $MAX_OOM_RETRIES ]; then
                 warn "[OOM] 尝试追加显存优化特性重试..."
                 warn "[OOM] 重试 $oom_retry / $MAX_OOM_RETRIES"
-
+                
                 # 清理环境
                 cleanup_ray
                 sleep 10

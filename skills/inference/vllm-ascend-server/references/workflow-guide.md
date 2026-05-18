@@ -438,3 +438,4 @@ curl http://localhost:8000/v1/chat/completions \
 | Config | OOM during init | Reduce max_num_seqs |
 | Launch | Port in use | Kill existing process |
 | Verify | Health check fails | Check logs, wait longer |
+

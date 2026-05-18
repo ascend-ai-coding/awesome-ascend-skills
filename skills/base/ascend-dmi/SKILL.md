@@ -1,6 +1,28 @@
 ---
 name: ascend-dmi
-description: 当用户需要对华为昇腾 NPU 进行硬件层面的管理、测试或诊断时使用，包括状态/温度/利用率查询、h2d/d2h/d2d/p2p 带宽、TFLOPS/TOPS/功耗基准、硬件故障诊断、压力测试与异常 NPU 卡复位；不要用于写 NPU 代码、安装框架、训练调试或 Docker 配置。
+description: |
+  当用户需要对华为昇腾 NPU 进行硬件层面的管理、测试或诊断时使用此 skill。典型场景：
+
+  - 查看 NPU 卡的状态、温度、利用率
+  - 测试内存带宽（h2d/d2h/d2d/p2p）
+  - 跑算力/功耗基准测试（TFLOPS、TOPS）
+  - 诊断 NPU 硬件故障或做健康检查
+  - 对 NPU 卡做压力测试（aicore、内存）
+  - 复位/恢复卡住或异常的 NPU 卡
+
+  典型用户问题（即使不提 ascend-dmi 也应触发）：
+  - "帮我测一下这台服务器的算力和带宽"
+  - "看看 192.168.1.50 上 NPU 的温度和利用率"
+  - "跑个 fp16 算力测试，看看 TFLOPS 多少"
+  - "d2d 带宽有没有达标"
+  - "3 号卡好像有问题，帮我诊断一下"
+  - "NPU 卡住了，复位一下"
+  - "对 8 张卡做个压力测试"
+  - "跑个功耗测试，edp 模式"
+
+  Use this skill whenever the user wants to measure, diagnose, or manage Ascend NPU hardware directly — including checking server NPU performance (算力/带宽/功耗), diagnosing hardware faults, or resetting NPU cards. Trigger even when the user only mentions "服务器" + "算力/带宽/NPU状态" without saying "ascend-dmi".
+
+  Do NOT use for: writing NPU code, installing frameworks, debugging training issues, or Docker configuration.
 ---
 
 # Ascend DMI 工具使用指南
