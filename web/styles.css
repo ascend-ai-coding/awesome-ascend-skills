@@ -1,6 +1,46 @@
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap");
+@font-face {
+  font-family: "Alibaba PuHuiTi 3";
+  src: url("./assets/fonts/AlibabaPuHuiTi-3-55-RegularL3.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: "Alibaba PuHuiTi 3";
+  src: url("./assets/fonts/AlibabaPuHuiTi-3-115-Black.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 600;
+}
+
+@font-face {
+  font-family: "Alibaba PuHuiTi 3";
+  src: url("./assets/fonts/AlibabaPuHuiTi-3-115-Black.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 700;
+}
+
+@font-face {
+  font-family: "Alibaba PuHuiTi 3";
+  src: url("./assets/fonts/AlibabaPuHuiTi-3-115-Black.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 800;
+}
+
+@font-face {
+  font-family: "Alibaba PuHuiTi 3";
+  src: url("./assets/fonts/AlibabaPuHuiTi-3-115-Black.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 900;
+}
 
 :root {
+  --font-sans: "Alibaba PuHuiTi 3", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
   --color-primary: #475569;
   --color-on-primary: #ffffff;
   --color-secondary: #64748b;
@@ -34,7 +74,7 @@ body {
   background:
     linear-gradient(180deg, rgba(37, 99, 235, 0.08), rgba(248, 250, 252, 0) 360px),
     var(--color-background);
-  font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   font-size: 16px;
   line-height: 1.55;
 }
@@ -109,7 +149,7 @@ h1,
 h2,
 h3,
 .command-title strong {
-  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-sans);
 }
 
 .brand small {
@@ -263,7 +303,7 @@ main {
 
 pre,
 code {
-  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-mono);
 }
 
 .terminal-panel pre {
