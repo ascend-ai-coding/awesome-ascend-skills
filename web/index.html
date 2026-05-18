@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Awesome Ascend Skills searchable web catalog and installer command generator."
+    />
+    <title>Awesome Ascend Skills</title>
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./styles.css" />
+    <script>
+      window.MathJax = {
+        tex: {
+          inlineMath: [["$", "$"], ["\\(", "\\)"]],
+          displayMath: [["$$", "$$"], ["\\[", "\\]"]],
+        },
+        options: {
+          skipHtmlTags: ["script", "noscript", "style", "textarea", "pre", "code"],
+        },
+      };
+    </script>
+    <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="Awesome Ascend Skills 首页">
+        <span class="brand-mark" aria-hidden="true">
+          <img src="./avatar.svg" alt="" />
+        </span>
+        <span>
+          <strong>Awesome Ascend Skills</strong>
+          <small>昇腾 Agent Skills 开源社区</small>
+        </span>
+      </a>
+      <nav class="top-nav" aria-label="页面导航">
+        <a href="#guide">安装指引</a>
+        <a href="#skills">Skills</a>
+        <a href="#install">安装命令</a>
+        <a href="#bundles">配套组</a>
+        <a href="https://github.com/ascend-ai-coding/awesome-ascend-skills">GitHub</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <h1 id="hero-title">快速查找并安装<span class="text-ascend title-line">昇腾开发 Skills</span></h1>
+          <p>
+            面向 Claude Code、OpenCode、Cursor、Trae、Codex 等 Agent 工具的昇腾 NPU 技能库。搜索一个场景，复制命令，交给 CLI 或 Agent 完成安装。
+          </p>
+          <div class="hero-actions" aria-label="常用安装命令">
+            <a class="button primary" href="https://github.com/ascend-ai-coding/awesome-ascend-skills">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z" /></svg>
+              GitHub.com
+            </a>
+            <a class="button secondary" href="https://skills.sh/ascend-ai-coding/awesome-ascend-skills">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9" /></svg>
+              打开 skills.sh
+            </a>
+          </div>
+        </div>
+        <div class="terminal-panel" aria-label="安装命令示例">
+          <div class="terminal-title">
+            <span></span><span></span><span></span>
+            <strong>install</strong>
+          </div>
+          <pre><code>npx skills add https://github.com/ascend-ai-coding/awesome-ascend-skills/tree/main/skills/base -s '*'
+
+npx skills add ascend-ai-coding/awesome-ascend-skills -s npu-smi</code></pre>
+        </div>
+      </section>
+
+      <section class="guide-section" id="guide" aria-labelledby="guide-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="guide-title">如何下载 Skill</h2>
+            <p>页面不会直接替你安装文件，而是帮你生成可复制的安装命令或 Agent 安装说明。</p>
+          </div>
+        </div>
+        <div class="guide-grid">
+          <article class="guide-card">
+            <span class="guide-step">1</span>
+            <h3>搜索并查看 Skill</h3>
+            <p>在 Skill 索引里输入关键词，点击左侧条目后，右侧会展示 SKILL.md 的详细说明。</p>
+          </article>
+          <article class="guide-card">
+            <span class="guide-step">2</span>
+            <h3>选择要安装的 Skill</h3>
+            <p>勾选左侧复选框，或在右侧详情点击“选择此 Skill”。可以单选、多选，也可以全选当前列表。</p>
+          </article>
+          <article class="guide-card">
+            <span class="guide-step">3</span>
+            <h3>复制安装命令</h3>
+            <p>到下方“批量安装命令”复制 npx 命令，或复制给 Agent 的安装说明。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="search-shell" id="skills" aria-labelledby="skills-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="skills-title">Skill 索引</h2>
+            <p id="statsLine">正在载入技能数据...</p>
+          </div>
+          <div class="view-actions">
+            <button class="icon-button" id="clearSelectionButton" title="清空已选" aria-label="清空已选">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 14h10l1-14M9 7V4h6v3" /></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="toolbar" role="search">
+          <label class="search-box" for="searchInput">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.3-4.3M10.8 18a7.2 7.2 0 1 1 0-14.4 7.2 7.2 0 0 1 0 14.4Z" /></svg>
+            <input id="searchInput" type="search" placeholder="搜索 npu-smi、HCCL、vLLM、profiling、Docker..." autocomplete="off" />
+          </label>
+          <div class="segmented" id="categoryFilters" aria-label="按 Skill 方向筛选"></div>
+        </div>
+
+        <div class="install-callout">
+          <strong>下载入口在下方生成</strong>
+          <span>先在左侧勾选一个或多个 Skill，页面会自动在“批量安装命令”区域生成 npx、skills.sh 和 Agent 安装说明。</span>
+          <a class="small-copy" href="#install">查看安装命令</a>
+        </div>
+
+        <div class="workspace">
+          <aside class="skill-list-panel" aria-label="Skill 列表">
+            <div class="list-meta">
+              <span id="resultCount">0 results</span>
+              <span id="selectedCount">0 selected</span>
+              <button class="list-select-all" id="selectAllVisibleButton" type="button">一键全选</button>
+              <button class="list-select-all" id="clearVisibleButton" type="button">取消全选</button>
+            </div>
+            <div class="skill-list" id="skillList"></div>
+          </aside>
+
+          <article class="skill-detail" id="skillDetail" aria-live="polite"></article>
+        </div>
+      </section>
+
+      <section class="selection-panel" id="install" aria-labelledby="selection-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="selection-title">批量安装命令</h2>
+            <p>勾选多个 Skill 后，这里会生成一次性安装命令和给 Agent 的安装说明。</p>
+          </div>
+        </div>
+        <div class="command-grid">
+          <div class="command-card">
+            <div class="command-title">
+              <strong>npx skills</strong>
+              <button class="small-copy" data-copy-target="bulkNpx" data-copy-message="已复制 npx 下载命令">复制</button>
+            </div>
+            <pre id="bulkNpx"><code>先选择一个或多个 Skill</code></pre>
+          </div>
+          <div class="command-card">
+            <div class="command-title">
+              <strong>skills.sh 页面</strong>
+              <button class="small-copy" data-copy-target="bulkSkillsSh" data-copy-message="已复制 skills.sh 页面链接">复制</button>
+            </div>
+            <pre id="bulkSkillsSh"><code>先选择一个或多个 Skill</code></pre>
+          </div>
+          <div class="command-card wide">
+            <div class="command-title">
+              <strong>给 Agent 的说明</strong>
+              <button class="small-copy" data-copy-target="bulkAgentPrompt" data-copy-message="已复制 Agent 安装说明">复制</button>
+            </div>
+            <pre id="bulkAgentPrompt"><code>先选择一个或多个 Skill</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <section class="bundle-section" id="bundles" aria-labelledby="bundles-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="bundles-title">配套 Skill 组</h2>
+            <p>这些组合来自 marketplace 配置，适合一次性安装一组协同工作的 Skills。</p>
+          </div>
+        </div>
+        <div class="bundle-grid" id="bundleGrid"></div>
+      </section>
+    </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script src="./skills-data.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>

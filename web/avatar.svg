@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Awesome Ascend Skills avatar</title>
+  <desc id="desc">A friendly red robot in a green field.</desc>
+  <defs>
+    <linearGradient id="sky" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#f8df85" />
+      <stop offset="0.55" stop-color="#e9f4cf" />
+      <stop offset="1" stop-color="#b9d9f0" />
+    </linearGradient>
+    <linearGradient id="redBody" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#d86445" />
+      <stop offset="1" stop-color="#a9362f" />
+    </linearGradient>
+    <linearGradient id="face" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#fff4c8" />
+      <stop offset="1" stop-color="#f0c982" />
+    </linearGradient>
+    <clipPath id="round">
+      <rect width="256" height="256" rx="48" />
+    </clipPath>
+  </defs>
+  <g clip-path="url(#round)">
+    <rect width="256" height="256" fill="url(#sky)" />
+    <path d="M0 153c38-25 73-28 105-10 29 15 62 14 95-2 22-11 40-12 56-3v118H0Z" fill="#d8e8ab" />
+    <path d="M0 184c29-10 55-11 77-4 26 9 52 7 79-5 31-14 64-12 100 6v75H0Z" fill="#8fbd62" />
+    <path d="M33 206c12-20 21-34 27-43M54 218c11-24 22-44 35-61M186 220c-5-25-6-49-2-72M208 226c1-33 5-59 12-78M143 229c2-24 7-43 16-59" stroke="#5b8f41" stroke-width="6" stroke-linecap="round" />
+    <path d="M131 27v-21" stroke="#5f5b50" stroke-width="7" stroke-linecap="round" />
+    <circle cx="131" cy="5" r="8" fill="#6c675b" />
+    <path d="M57 67c5-33 35-54 76-54 42 0 74 22 80 58l2 41c3 45-34 72-84 71-50 0-87-28-84-72Z" fill="url(#redBody)" stroke="#6e2b28" stroke-width="5" />
+    <path d="M77 72c11-22 35-34 65-31 31 3 54 20 59 46l1 31c2 30-26 48-66 47-40 0-68-18-66-49Z" fill="url(#face)" stroke="#6e2b28" stroke-width="4" />
+    <ellipse cx="111" cy="105" rx="8" ry="13" fill="#31261f" />
+    <ellipse cx="170" cy="105" rx="8" ry="13" fill="#31261f" />
+    <path d="M133 133c5 7 14 7 19 0" fill="none" stroke="#7d6854" stroke-width="3" stroke-linecap="round" />
+    <circle cx="91" cy="125" r="9" fill="#ef9f80" opacity=".75" />
+    <circle cx="187" cy="125" r="9" fill="#ef9f80" opacity=".75" />
+    <circle cx="52" cy="104" r="22" fill="#9d4438" stroke="#6e2b28" stroke-width="5" />
+    <circle cx="52" cy="104" r="15" fill="#7f8d88" stroke="#4f5754" stroke-width="4" />
+    <circle cx="218" cy="104" r="19" fill="#b34b3d" stroke="#6e2b28" stroke-width="5" />
+    <path d="M93 177h82l9 55H82Z" fill="url(#redBody)" stroke="#6e2b28" stroke-width="5" />
+    <path d="M79 188 43 205l-18-30 38-22Z" fill="url(#redBody)" stroke="#6e2b28" stroke-width="5" />
+    <path d="M181 184c23-11 38-21 46-31l18 25c-11 16-28 28-50 36Z" fill="url(#redBody)" stroke="#6e2b28" stroke-width="5" />
+    <path d="M204 160c15-11 24-25 29-42M213 164c18-10 29-25 35-45M220 169c14-8 24-19 31-34" stroke="#5c953f" stroke-width="7" stroke-linecap="round" />
+    <path d="M80 224 64 256h48l8-31M166 224l8 32h47l-21-33" fill="#9f3b34" />
+    <path d="M92 196h75M108 216h49" stroke="#6e2b28" stroke-width="4" stroke-linecap="round" opacity=".6" />
+    <circle cx="86" cy="51" r="4" fill="#7f342e" />
+    <circle cx="182" cy="48" r="4" fill="#f6b799" />
+    <path d="M202 48c9 8 14 18 16 31" stroke="#f4a48a" stroke-width="4" stroke-linecap="round" opacity=".55" />
+  </g>
+</svg>

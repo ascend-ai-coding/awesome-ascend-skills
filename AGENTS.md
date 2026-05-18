@@ -62,15 +62,15 @@ awesome-ascend-skills/
 
 ## 4. 如何使用本仓
 
-用户安装推荐使用官方 `npx skills add` 方式。安装技能包/目录时使用 URL + `-s *`；安装单个 skill 时使用仓库 shorthand + `-s <skill-name>`。
+用户安装推荐使用官方 `npx skills add` 方式。安装技能包/目录时使用 URL + `-s '*'`；安装单个 skill 时使用仓库 shorthand + `-s <skill-name>`。
 
 ```bash
-npx skills add https://github.com/ascend-ai-coding/awesome-ascend-skills/tree/main/skills/base -s *
-npx skills add https://github.com/ascend-ai-coding/awesome-ascend-skills/tree/main/skills/inference -s *
-npx skills add https://github.com/ascend-ai-coding/awesome-ascend-skills/tree/main/skills/training -s *
-npx skills add https://github.com/ascend-ai-coding/awesome-ascend-skills/tree/main/skills/profiling -s *
-npx skills add https://github.com/ascend-ai-coding/awesome-ascend-skills/tree/main/skills/ops -s *
-npx skills add https://github.com/ascend-ai-coding/awesome-ascend-skills/tree/main/skills/ai-for-science -s *
+npx skills add https://github.com/ascend-ai-coding/awesome-ascend-skills/tree/main/skills/base -s '*'
+npx skills add https://github.com/ascend-ai-coding/awesome-ascend-skills/tree/main/skills/inference -s '*'
+npx skills add https://github.com/ascend-ai-coding/awesome-ascend-skills/tree/main/skills/training -s '*'
+npx skills add https://github.com/ascend-ai-coding/awesome-ascend-skills/tree/main/skills/profiling -s '*'
+npx skills add https://github.com/ascend-ai-coding/awesome-ascend-skills/tree/main/skills/ops -s '*'
+npx skills add https://github.com/ascend-ai-coding/awesome-ascend-skills/tree/main/skills/ai-for-science -s '*'
 npx skills add ascend-ai-coding/awesome-ascend-skills -s npu-smi
 ```
 
@@ -248,7 +248,7 @@ readonly DIR="$(cd "$(dirname "$0")" && pwd)"
 
 - 中英文都可以，但本仓面向中文 Ascend 用户，中文说明应优先清晰。
 - 避免营销式描述，直接说明适用场景、输入、输出、命令和限制。
-- 更新安装方式时，技能包/目录使用 `npx skills add https://github.com/.../tree/main/... -s *`，单 skill 使用 `npx skills add ascend-ai-coding/awesome-ascend-skills -s <skill-name>`。
+- 更新安装方式时，技能包/目录使用 `npx skills add https://github.com/.../tree/main/... -s '*'`，单 skill 使用 `npx skills add ascend-ai-coding/awesome-ascend-skills -s <skill-name>`。
 
 ## 12. 常见错误
 

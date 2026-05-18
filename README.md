@@ -1,6 +1,6 @@
 # Awesome Ascend Skills
 
-这是一个给华为昇腾 NPU 开发者使用的 skills 仓库。内容按 Skill 组织，可被 Claude Code、OpenCode、Cursor、Trae、Codex 等 AI 编程工具读取。
+这是一个给昇腾 NPU 开发者使用的 skills 仓库。内容按 Skill 组织，可被 Claude Code、OpenCode、Cursor、Trae、Codex 等 AI 编程工具读取。
 
 ---
 
@@ -78,34 +78,47 @@ Start
 
 ## 安装指南
 
+### 网页索引
+
+可以通过静态网页快速搜索、查看和安装 Skills：
+
+- GitHub Pages: https://ascend-ai-coding.github.io/awesome-ascend-skills/
+- skills.sh: https://skills.sh/ascend-ai-coding/awesome-ascend-skills
+
+网页代码位于 `web/`，网页数据由 `web/scripts/build_web_data.py` 从仓库内的 `SKILL.md` 和 `.claude-plugin/marketplace.json` 生成：
+
+```bash
+python3 web/scripts/build_web_data.py
+```
+
 ### 推荐安装方式
 
 使用 `npx` 安装到支持 Skills 的 AI 编程工具中。新同学先装对应方向的目录即可，不要一上来把全部 skills 都装进去：
 
 ```bash
 # 基础环境包（推荐所有新同学先装）
-npx skills add https://github.com/ascend-ai-coding/awesome-ascend-skills/tree/main/skills/base -s *
+npx skills add https://github.com/ascend-ai-coding/awesome-ascend-skills/tree/main/skills/base -s '*'
 
 # 推理方向
-npx skills add https://github.com/ascend-ai-coding/awesome-ascend-skills/tree/main/skills/inference -s *
+npx skills add https://github.com/ascend-ai-coding/awesome-ascend-skills/tree/main/skills/inference -s '*'
 
 # 训练方向
-npx skills add https://github.com/ascend-ai-coding/awesome-ascend-skills/tree/main/skills/training -s *
+npx skills add https://github.com/ascend-ai-coding/awesome-ascend-skills/tree/main/skills/training -s '*'
 
 # Profiling / 性能分析方向
-npx skills add https://github.com/ascend-ai-coding/awesome-ascend-skills/tree/main/skills/profiling -s *
+npx skills add https://github.com/ascend-ai-coding/awesome-ascend-skills/tree/main/skills/profiling -s '*'
 
 # 算子开发 / 迁移方向
-npx skills add https://github.com/ascend-ai-coding/awesome-ascend-skills/tree/main/skills/ops -s *
+npx skills add https://github.com/ascend-ai-coding/awesome-ascend-skills/tree/main/skills/ops -s '*'
 
 # AI for Science 方向
-npx skills add https://github.com/ascend-ai-coding/awesome-ascend-skills/tree/main/skills/ai-for-science -s *
+npx skills add https://github.com/ascend-ai-coding/awesome-ascend-skills/tree/main/skills/ai-for-science -s '*'
 
 # 安装单个 Skill
 npx skills add ascend-ai-coding/awesome-ascend-skills -s npu-smi
 
 # 安装全部 Skills（不建议新同学直接使用）
-npx skills add https://github.com/ascend-ai-coding/awesome-ascend-skills -s *
+npx skills add https://github.com/ascend-ai-coding/awesome-ascend-skills -s '*'
 ```
 
 支持的 AI 编程工具：Claude Code、OpenCode、Cursor、Trae、Codex 等。
@@ -291,7 +304,7 @@ cp -r awesome-ascend-skills/skills/ops/npu-op-benchmark your-project/.agents/ski
 | [arxiv-recommendation-npu](external/gitcode-ascend/arxiv-recommendation-npu/SKILL.md) | [gitcode-ascend](https://gitcode.com/Ascend/agent-skills) | 自动化推荐系统论文发现流水线。抓取 arxiv 推荐论文，检测源码，生成待迁移任务清单，由 npu-model-migration skill 完成 NPU 适配。 |
 | [ascend-inference-repos-copilot](external/gitcode-ascend/ascend-inference-repos-copilot/SKILL.md) | [gitcode-ascend](https://gitcode.com/Ascend/agent-skills) | 查询 Ascend 推理相关开源仓，包括 vLLM、vLLM-Ascend、MindIE-LLM、MindIE-SD、MindIE-Motor、MindIE-Turbo 等。 |
 | [ascend-npu-driver-install](external/gitcode-ascend/ascend-npu-driver-install/SKILL.md) | [gitcode-ascend](https://gitcode.com/Ascend/agent-skills) | 安装昇腾 NPU 驱动和固件，处理安装包识别、权限、包校验、系统依赖和常见 Linux 发行版差异。 |
-| [ascend-profiling-anomaly](external/gitcode-ascend/ascend-profiling-anomaly/SKILL.md) | [gitcode-ascend](https://gitcode.com/Ascend/agent-skills) | Analyze Huawei Ascend NPU profiling data, find performance anomalies, and write a compact report. |
+| [ascend-profiling-anomaly](external/gitcode-ascend/ascend-profiling-anomaly/SKILL.md) | [gitcode-ascend](https://gitcode.com/Ascend/agent-skills) | Analyze Ascend NPU profiling data, find performance anomalies, and write a compact report. |
 | [ascendc-operator-code-gen](external/gitcode-ascend/ascendc-operator-code-gen/SKILL.md) | [gitcode-ascend](https://gitcode.com/Ascend/agent-skills) | 根据设计文档生成 AscendC 算子的 op_host、op_kernel 代码，并接入 PyTorch 侧注册。 |
 | [ascendc-operator-code-review](external/gitcode-ascend/ascendc-operator-code-review/SKILL.md) | [gitcode-ascend](https://gitcode.com/Ascend/agent-skills) | 检查 Ascend C 代码的安全、规范和接口问题。调用时需要给出代码片段和检视规则。 |
 | [ascendc-operator-compile-debug](external/gitcode-ascend/ascendc-operator-compile-debug/SKILL.md) | [gitcode-ascend](https://gitcode.com/Ascend/agent-skills) | 编译安装 AscendC 算子，运行精度测试，并排查编译或测试失败。 |
@@ -324,7 +337,7 @@ cp -r awesome-ascend-skills/skills/ops/npu-op-benchmark your-project/.agents/ski
 | [modelscope-cli](external/gitcode-ascend/modelscope-cli/SKILL.md) | [gitcode-ascend](https://gitcode.com/Ascend/agent-skills) | 使用 ModelScope CLI 下载模型或数据集，校验文件，统计参数量，并做网络诊断。 |
 | [msverl-daily-regression-triage](external/gitcode-ascend/msverl-daily-regression-triage/SKILL.md) | [gitcode-ascend](https://gitcode.com/Ascend/agent-skills) | Triage a daily msverl regression run by reading the baseline comparison log, stopping on succ... |
 | [npu-adapter-reviewer](external/gitcode-ascend/npu-adapter-reviewer/SKILL.md) | [gitcode-ascend](https://gitcode.com/Ascend/agent-skills) | 审查 GPU 代码迁移到昇腾 NPU 的风险，重点看深度学习和模型推理代码。 |
-| [npu-model-migration](external/gitcode-ascend/npu-model-migration/SKILL.md) | [gitcode-ascend](https://gitcode.com/Ascend/agent-skills) | 自动化将 PyTorch 模型迁移到华为昇腾 NPU。Use when: 用户请求将模型迁移到 NPU、适配 NPU、在 NPU 上跑通模型、迁移到昇腾。 |
+| [npu-model-migration](external/gitcode-ascend/npu-model-migration/SKILL.md) | [gitcode-ascend](https://gitcode.com/Ascend/agent-skills) | 自动化将 PyTorch 模型迁移到昇腾 NPU。Use when: 用户请求将模型迁移到 NPU、适配 NPU、在 NPU 上跑通模型、迁移到昇腾。 |
 | [python-refactoring](external/gitcode-ascend/python-refactoring/SKILL.md) | [gitcode-ascend](https://gitcode.com/Ascend/agent-skills) | Python 代码重构技能，覆盖代码坏味道识别、设计模式应用、可读性改进和实战经验。当用户要求"重构代码"、"refactor"、"代码优化"、"改善代码质量"、"code smell ... |
 | [security-code-review](external/gitcode-ascend/security-code-review/SKILL.md) | [gitcode-ascend](https://gitcode.com/Ascend/agent-skills) | 多语言安全代码审查 (Security Code Review)。对 Python、C++、Shell、Markdown 文件进行系统性安全漏洞检测与修复指导。覆盖 OWASP Top ... |
 | [simple-vector-triton-gpu-to-npu](external/gitcode-ascend/simple-vector-triton-gpu-to-npu/SKILL.md) | [gitcode-ascend](https://gitcode.com/Ascend/agent-skills) | 将简单Vector类型Triton算子从GPU迁移到昇腾NPU。当用户需要迁移Triton代码到NPU、提到GPU到NPU迁移、Triton迁移、昇腾适配时使用。注意：无法自动迁移存在编... |
@@ -615,7 +628,7 @@ mkdir -p skills/<domain>/your-skill-name
 
 ## 官方文档
 
-- [华为昇腾官方文档](https://www.hiascend.com/document)
+- [昇腾官方文档](https://www.hiascend.com/document)
 - [npu-smi 命令参考](https://www.hiascend.com/document/detail/zh/canncommercial/81RC1/envdeployment/instg/instg_0045.html)
 - [CANN 开发指南](https://www.hiascend.com/document/detail/zh/canncommercial/)
 
