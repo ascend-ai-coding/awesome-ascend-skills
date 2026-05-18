@@ -215,13 +215,14 @@
     },
     {
       "name": "external-gitcode-ascend-skills",
-      "description": "从 gitcode-ascend 同步的 Ascend 技能集，包含 51 个技能：\n- ascend-inference-repos-copilot: 昇腾（Ascend）推理生态开源代码仓库智能问答专家旨在为 vLLM、vLLM-Ascend、MindIE-LLM、MindIE-SD、MindIE-Motor、MindIE-Turbo 以及 msM\n- ascend-npu-driver-install: 能完成昇腾NPU驱动和固件安装部署，实现安装包正则匹配提取、按需添加可执行权限、Python+Shell双重包校验、系统依赖先验后装、适配CentOS/RHEL/Ubuntu/Debian系统，适用于\n- ascend-profiling-anomaly: Analyze Huawei Ascend NPU profiling data to discover hidden performance anomalies and produce a deta\n- ... 等 48 个技能",
+      "description": "从 gitcode-ascend 同步的 Ascend 技能集，包含 57 个技能：\n- arxiv-recommendation-npu: 自动化推荐系统论文发现流水线。抓取 arxiv 推荐论文，检测源码，生成待迁移任务清单，由 npu-model-migration skill 完成 NPU 适配。\n- ascend-inference-repos-copilot: 昇腾（Ascend）推理生态开源代码仓库智能问答专家旨在为 vLLM、vLLM-Ascend、MindIE-LLM、MindIE-SD、MindIE-Motor、MindIE-Turbo 以及 msM\n- ascend-npu-driver-install: 能完成昇腾NPU驱动和固件安装部署，实现安装包正则匹配提取、按需添加可执行权限、Python+Shell双重包校验、系统依赖先验后装、适配CentOS/RHEL/Ubuntu/Debian系统，适用于\n- ... 等 54 个技能",
       "source": "./",
       "strict": false,
       "external": true,
       "source-url": "https://gitcode.com/Ascend/agent-skills",
       "source-branch": "master",
       "skills": [
+        "./external/gitcode-ascend/arxiv-recommendation-npu",
         "./external/gitcode-ascend/ascend-inference-repos-copilot",
         "./external/gitcode-ascend/ascend-npu-driver-install",
         "./external/gitcode-ascend/ascend-profiling-anomaly",
@@ -231,6 +232,7 @@
         "./external/gitcode-ascend/ascendc-operator-design",
         "./external/gitcode-ascend/ascendc-operator-dev",
         "./external/gitcode-ascend/ascendc-operator-doc-gen",
+        "./external/gitcode-ascend/ascendc-operator-doc-writer",
         "./external/gitcode-ascend/ascendc-operator-mssanitizer",
         "./external/gitcode-ascend/ascendc-operator-performance-eval",
         "./external/gitcode-ascend/ascendc-operator-performance-optim",
@@ -246,7 +248,9 @@
         "./external/gitcode-ascend/catlass-operator-design",
         "./external/gitcode-ascend/catlass-operator-dev",
         "./external/gitcode-ascend/catlass-operator-performance-optim",
+        "./external/gitcode-ascend/fault_diagnose",
         "./external/gitcode-ascend/k8s-check-fix",
+        "./external/gitcode-ascend/large_scale_deploy",
         "./external/gitcode-ascend/megatron-change-analyzer",
         "./external/gitcode-ascend/megatron-commit-tracker",
         "./external/gitcode-ascend/megatron-impact-mapper",
@@ -254,6 +258,7 @@
         "./external/gitcode-ascend/modelscope-cli",
         "./external/gitcode-ascend/msverl-daily-regression-triage",
         "./external/gitcode-ascend/npu-adapter-reviewer",
+        "./external/gitcode-ascend/npu-model-migration",
         "./external/gitcode-ascend/python-refactoring",
         "./external/gitcode-ascend/security-code-review",
         "./external/gitcode-ascend/simple-vector-triton-gpu-to-npu",
@@ -272,7 +277,8 @@
         "./external/gitcode-ascend/vector-triton-ascend-ops-optimizer",
         "./external/gitcode-ascend/verl-async-dapo",
         "./external/gitcode-ascend/verl-feature-deploy",
-        "./external/gitcode-ascend/vllm-ascend-deploy"
+        "./external/gitcode-ascend/vllm-ascend-deploy",
+        "./external/gitcode-ascend/vllm-tests-failure-analysis"
       ]
     },
     {

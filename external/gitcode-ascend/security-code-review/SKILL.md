@@ -6,8 +6,8 @@ description: 多语言安全代码审查 (Security Code Review)。对 Python、C
   嵌套深度攻击防护。即使用户没有明确说'安全审查'，只要涉及代码安全性评估、漏洞检测、安全最佳实践，都应触发此技能。
 original-name: security-code-review
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-05-08'
-synced-commit: 155ac37bd169ddb89479af528297cfb2237400aa
+synced-date: '2026-05-18'
+synced-commit: b9d45f47afbf8fefdeb77f731d39b57d76b02b0b
 license: UNKNOWN
 ---
 

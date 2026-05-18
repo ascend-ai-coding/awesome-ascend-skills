@@ -5,8 +5,8 @@ description: 昇腾（Ascend） NPU 上 Triton 算子深度性能优化技能（
   上 Vector 类 Triton 算子性能优化。
 original-name: vector-triton-ascend-ops-optimizer
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-05-08'
-synced-commit: 155ac37bd169ddb89479af528297cfb2237400aa
+synced-date: '2026-05-18'
+synced-commit: b9d45f47afbf8fefdeb77f731d39b57d76b02b0b
 license: UNKNOWN
 ---
 

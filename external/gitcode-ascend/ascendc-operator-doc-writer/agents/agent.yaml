@@ -1,0 +1,4 @@
+interface:
+  display_name: "AscendC Operator Doc Writer"
+  short_description: "Write AscendC operator docs from code"
+  default_prompt: "Use $ascendc-operator-doc-writer to read a template README and local AscendC source files, then draft a matching operator document."
