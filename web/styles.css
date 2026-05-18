@@ -700,6 +700,33 @@ code {
   color: #334155;
 }
 
+.markdown-body blockquote {
+  margin: 14px 0;
+  padding: 12px 16px;
+  border-left: 4px solid #94a3b8;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: #f8fafc;
+}
+
+.markdown-body blockquote p {
+  margin: 8px 0;
+  color: #475569;
+}
+
+.markdown-body blockquote p:first-child {
+  margin-top: 0;
+}
+
+.markdown-body blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body hr {
+  margin: 22px 0;
+  border: 0;
+  border-top: 1px solid var(--color-border);
+}
+
 .markdown-body pre,
 .command-card pre {
   overflow: auto;

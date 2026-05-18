@@ -75,6 +75,7 @@ function renderMarkdown(markdown) {
   let codeBuffer = [];
   let mathBuffer = [];
   let tableBuffer = [];
+  let quoteBuffer = [];
   let inList = false;
   let listType = "ul";
 
@@ -93,6 +94,12 @@ function renderMarkdown(markdown) {
   const flushMath = () => {
     html += `<div class="math-block">\\[${escapeHtml(mathBuffer.join("\n"))}\\]</div>`;
     mathBuffer = [];
+  };
+
+  const flushQuote = () => {
+    if (!quoteBuffer.length) return;
+    html += `<blockquote>${quoteBuffer.map((line) => `<p>${inlineMarkdown(line)}</p>`).join("")}</blockquote>`;
+    quoteBuffer = [];
   };
 
   const tableCells = (line) => {
@@ -138,6 +145,8 @@ function renderMarkdown(markdown) {
         inCode = false;
       } else {
         closeList();
+        flushQuote();
+        flushTable();
         inCode = true;
         codeBuffer = [];
       }
@@ -163,6 +172,7 @@ function renderMarkdown(markdown) {
 
     if (trimmed.startsWith("$$") && trimmed.endsWith("$$") && trimmed.length > 4) {
       closeList();
+      flushQuote();
       flushTable();
       const expression = trimmed.slice(2, -2).trim();
       html += `<div class="math-block">\\[${escapeHtml(expression)}\\]</div>`;
@@ -171,6 +181,7 @@ function renderMarkdown(markdown) {
 
     if (trimmed === "$$") {
       closeList();
+      flushQuote();
       flushTable();
       inMath = true;
       mathBuffer = [];
@@ -179,16 +190,34 @@ function renderMarkdown(markdown) {
 
     if (!trimmed) {
       closeList();
+      flushQuote();
       flushTable();
+      continue;
+    }
+
+    if (/^-{3,}$/.test(trimmed)) {
+      closeList();
+      flushQuote();
+      flushTable();
+      html += "<hr>";
+      continue;
+    }
+
+    if (trimmed.startsWith(">")) {
+      closeList();
+      flushTable();
+      quoteBuffer.push(trimmed.replace(/^>\s?/, ""));
       continue;
     }
 
     if (trimmed.startsWith("|")) {
       closeList();
+      flushQuote();
       tableBuffer.push(line);
       continue;
     }
 
+    flushQuote();
     flushTable();
 
     const heading = /^(#{1,4})\s+(.+)$/.exec(line);
@@ -219,6 +248,7 @@ function renderMarkdown(markdown) {
 
   if (inCode) flushCode();
   if (inMath) flushMath();
+  flushQuote();
   flushTable();
   closeList();
 
