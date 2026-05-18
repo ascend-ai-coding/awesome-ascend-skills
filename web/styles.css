@@ -382,32 +382,6 @@ code {
   color: var(--color-secondary);
 }
 
-.install-callout {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 0 0 16px;
-  padding: 13px 14px;
-  border: 1px solid #bfdbfe;
-  border-radius: var(--radius);
-  background: #eff6ff;
-}
-
-.install-callout strong {
-  flex: 0 0 auto;
-  color: #1e3a8a;
-}
-
-.install-callout span {
-  min-width: 0;
-  color: #334155;
-}
-
-.install-callout .small-copy {
-  flex: 0 0 auto;
-  margin-left: auto;
-}
-
 .search-box {
   display: flex;
   align-items: center;
@@ -1087,15 +1061,6 @@ code {
   .section-heading {
     align-items: start;
     flex-direction: column;
-  }
-
-  .install-callout {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .install-callout .small-copy {
-    margin-left: 0;
   }
 
   .terminal-panel pre,
