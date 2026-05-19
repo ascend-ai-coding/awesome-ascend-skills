@@ -4,8 +4,8 @@ description: Catlass 算子端到端开发编排器。基于 ascend-kernel（csr
   与 ascendc 子 skill，完成从工程初始化到文档、精度、性能的闭环。关键词：Catlass、端到端、ascend-kernel、算子开发、工作流编排。
 original-name: catlass-operator-dev
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-05-18'
-synced-commit: b9d45f47afbf8fefdeb77f731d39b57d76b02b0b
+synced-date: '2026-05-19'
+synced-commit: 61a50580836017810c0ff005bc53c940ca059f06
 license: UNKNOWN
 ---
 

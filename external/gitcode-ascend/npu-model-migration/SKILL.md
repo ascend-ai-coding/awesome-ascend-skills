@@ -3,8 +3,8 @@ name: external-gitcode-ascend-npu-model-migration
 description: '自动化将 PyTorch 模型迁移到华为昇腾 NPU。Use when: 用户请求将模型迁移到 NPU、适配 NPU、在 NPU 上跑通模型、迁移到昇腾。'
 original-name: npu-model-migration
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-05-18'
-synced-commit: b9d45f47afbf8fefdeb77f731d39b57d76b02b0b
+synced-date: '2026-05-19'
+synced-commit: 61a50580836017810c0ff005bc53c940ca059f06
 license: UNKNOWN
 ---
 

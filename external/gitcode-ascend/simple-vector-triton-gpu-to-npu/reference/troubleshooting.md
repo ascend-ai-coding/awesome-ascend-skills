@@ -85,14 +85,14 @@ ub overflow, requires xxxx bits while 1572684 bits available!
 def kernel_func(..., BLOCK_SIZE: tl.constexpr, BLOCK_SIZE_SUB: tl.constexpr):
     pid = tl.program_id(0)
     base_offset = pid * BLOCK_SIZE
-
+    
     num_sub_blocks = tl.cdiv(BLOCK_SIZE, BLOCK_SIZE_SUB)
-
+    
     for sub_block_idx in range(num_sub_blocks):
         sub_offset = base_offset + sub_block_idx * BLOCK_SIZE_SUB
         offsets = sub_offset + tl.arange(0, BLOCK_SIZE_SUB)
         mask = offsets < n_elements
-
+        
         data = tl.load(input_ptr + offsets, mask=mask, care_padding=False)
         result = compute(data)
         tl.store(output_ptr + offsets, result, mask=mask)

@@ -7,8 +7,8 @@ description: Generate migration deliverables for bringing relevant Megatron chan
   of redoing upstream analysis from scratch.
 original-name: megatron-migration-generator
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-05-18'
-synced-commit: b9d45f47afbf8fefdeb77f731d39b57d76b02b0b
+synced-date: '2026-05-19'
+synced-commit: 61a50580836017810c0ff005bc53c940ca059f06
 license: UNKNOWN
 ---
 

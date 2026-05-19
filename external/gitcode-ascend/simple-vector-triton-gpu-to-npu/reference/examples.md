@@ -49,21 +49,21 @@ def my_function(x):
 def index_select_kernel(inp, out, M, N, index, index_len, BLOCK_M, BLOCK_N):
     pid_x = tle.program_id(axis=0)
     pid_y = tle.program_id(axis=1)
-
+    
     rows_offsets = pid_x * BLOCK_M + tl.arange(0, BLOCK_M)[:, None]
     rows_mask = rows_offsets < M
     cols_offsets = pid_y * BLOCK_N + tl.arange(0, BLOCK_N)
-
+    
     out_mask = rows_mask and (cols_offsets < index_len)
     indices = tl.load(index + cols_offsets, mask=(cols_offsets < index_len), other=0)
-
+    
     valid_lower_bound = indices >= 0
     valid_upper_bound = indices < N
     index_valid_mask = valid_lower_bound & valid_upper_bound
-
+    
     inp_off = rows_offsets * N + indices[None, :]
     out_off = rows_offsets * index_len + cols_offsets[None, :]
-
+    
     final_mask = out_mask & index_valid_mask
     selected = tl.load(inp + inp_off, mask=final_mask, other=0.0)
     tl.store(out + out_off, selected, mask=final_mask)
@@ -84,22 +84,22 @@ def index_select_kernel(inp, out, M, N, index, index_len, BLOCK_M, BLOCK_N):
 def index_select_kernel(inp, out, M, N, index, index_len, BLOCK_M, BLOCK_N):
     pid_x = tl.program_id(axis=0)
     pid_y = tl.program_id(axis=1)
-
+    
     rows_offsets = pid_x * BLOCK_M + tl.arange(0, BLOCK_M)[:, None]
     rows_mask = rows_offsets < M
     cols_offsets = pid_y * BLOCK_N + tl.arange(0, BLOCK_N)
-
+    
     cols_mask = cols_offsets < index_len
     out_mask = rows_mask & cols_mask[None, :]
-
+    
     indices = tl.load(index + cols_offsets, mask=cols_mask, other=N)
     valid_lower_bound = indices >= 0
     valid_upper_bound = indices < N
     index_valid_mask = valid_lower_bound & valid_upper_bound
-
+    
     inp_off = rows_offsets * N + indices[None, :]
     out_off = rows_offsets * index_len + cols_offsets[None, :]
-
+    
     final_mask = out_mask & index_valid_mask[None, :]
     selected = tl.load(inp + inp_off, mask=final_mask, other=0.0)
     tl.store(out + out_off, selected, mask=out_mask)
@@ -167,12 +167,12 @@ def add_kernel(x_ptr, y_ptr, output_ptr, n_elements, BLOCK_SIZE: tl.constexpr):
 def add(x, y):
     output = torch.empty_like(x)
     n_elements = output.numel()
-
+    
     # 获取NPU核数
     device = torch_npu.npu.current_device()
     properties = driver.active.utils.get_device_properties(device)
     NUM_AICORE = properties["num_aicore"]
-
+    
     # 固定核数
     grid = (NUM_AICORE,)
     add_kernel[grid](x, y, output, n_elements, BLOCK_SIZE=1024)
@@ -197,14 +197,14 @@ def add(x, y):
 ### 解决方案
 ```python
 @triton.jit
-def optimized_kernel(in_ptr, out_ptr, n_elements,
+def optimized_kernel(in_ptr, out_ptr, n_elements, 
                      BLOCK_SIZE: tl.constexpr, SUB_BLOCK_SIZE: tl.constexpr):
     xoffset = tl.program_id(0) * BLOCK_SIZE
-
+    
     for xoffset_sub in range(0, BLOCK_SIZE, SUB_BLOCK_SIZE):
         x_index = xoffset + xoffset_sub + tl.arange(0, SUB_BLOCK_SIZE)
         xmask = x_index < n_elements
-
+        
         x = tl.load(in_ptr + x_index, xmask, care_padding=False)
         result = compute(x)
         tl.store(out_ptr + x_index, result, xmask)

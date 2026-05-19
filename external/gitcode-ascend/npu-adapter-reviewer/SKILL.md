@@ -3,8 +3,8 @@ name: external-gitcode-ascend-npu-adapter-reviewer
 description: GPU代码到昇腾NPU适配审查专家。当用户需要将GPU上的代码（特别是深度学习、模型推理相关）迁移到华为昇腾NPU时，必须使用此skill进行全面审查。此skill能识别GPU到NPU迁移的堵点、编写适配脚本、生成验证方案，并输出完整的Markdown审查报告。触发场景包括：用户提到"NPU适配"、"昇腾迁移"、"GPU转NPU"、"Ascend"、"CANN"、"模型迁移"、"算子适配"等关键词，或者用户要求对GPU代码仓库进行审查并迁移到NPU平台。
 original-name: npu-adapter-reviewer
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-05-18'
-synced-commit: b9d45f47afbf8fefdeb77f731d39b57d76b02b0b
+synced-date: '2026-05-19'
+synced-commit: 61a50580836017810c0ff005bc53c940ca059f06
 license: UNKNOWN
 ---
 
@@ -82,7 +82,7 @@ ls -la <local_path>
 - **文件位置**: `src/attention/cuda_impl.cu:142`
 - **GPU API**: `cudaStreamCreate(&stream)`
 - **NPU替代**: `aclrtCreateStream(&stream)`
-- **迁移方案**:
+- **迁移方案**: 
   1. 替换头文件 `aclrt.h`
   2. 替换API调用
   3. 处理错误码差异
@@ -110,7 +110,7 @@ ls -la <local_path>
            return "cuda"
        else:
            return "cpu"
-
+   
    # 替换torch.cuda调用
    def to_device(tensor):
        device = get_device()
@@ -190,7 +190,7 @@ def verify_npu_precision(cuda_result, npu_result, rtol=1e-3, atol=1e-3):
     diff = np.abs(cuda_result - npu_result)
     max_diff = np.max(diff)
     mean_diff = np.mean(diff)
-
+    
     passed = np.allclose(cuda_result, npu_result, rtol=rtol, atol=atol)
     return {
         "passed": passed,
@@ -246,12 +246,12 @@ def verify_npu_precision(cuda_result, npu_result, rtol=1e-3, atol=1e-3):
 - **问题描述**: 使用CUDA流管理异步执行
 - **NPU替代**: `aclrtCreateStream`
 - **影响范围**: 全局，影响所有异步操作
-- **迁移建议**:
+- **迁移建议**: 
   ```python
   # 修改前
   import torch.cuda
   stream = torch.cuda.Stream()
-
+  
   # 修改后
   import torch_npu
   stream = torch.npu.Stream()
@@ -264,17 +264,17 @@ def verify_npu_precision(cuda_result, npu_result, rtol=1e-3, atol=1e-3):
 - **问题描述**: 使用Flash Attention加速注意力计算
 - **NPU替代**: Ascend flash_attn算子或MindSpore flash_attention
 - **影响范围**: 高，核心推理性能
-- **迁移建议**:
+- **迁移建议**: 
   ```python
   # 修改前
   from flash_attn import flash_attn_func
   output = flash_attn_func(q, k, v)
-
+  
   # 修改后
   # 方案1: 使用torch_npu的算子
   import torch_npu
   output = torch_npu.npu_flash_attention(q, k, v)
-
+  
   # 方案2: 使用ATB库
   from ascend_toolkit import flash_attention
   output = flash_attention(q, k, v)
@@ -286,12 +286,12 @@ def verify_npu_precision(cuda_result, npu_result, rtol=1e-3, atol=1e-3):
 #### 问题 #003: GPU权重格式
 - **文件**: `src/model/loader.py:112`
 - **问题描述**: 权重以CUDA格式存储，直接加载会失败
-- **迁移建议**:
+- **迁移建议**: 
   ```python
   # 修改前
   state_dict = torch.load(weights_path)
   model.load_state_dict(state_dict)
-
+  
   # 修改后
   state_dict = torch.load(weights_path, map_location='cpu')
   # 转换权重

@@ -3,8 +3,8 @@ name: external-gitcode-ascend-catlass-operator-design
 description: 将用户基于CATLASS开发算子的需求转变为具体的设计文档
 original-name: catlass-operator-design
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-05-18'
-synced-commit: b9d45f47afbf8fefdeb77f731d39b57d76b02b0b
+synced-date: '2026-05-19'
+synced-commit: 61a50580836017810c0ff005bc53c940ca059f06
 license: UNKNOWN
 ---
 
