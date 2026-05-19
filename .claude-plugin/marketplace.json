@@ -633,8 +633,162 @@
       ]
     },
     {
+      "name": "external-cannbot-model-infer-skills",
+      "description": "NPU 模型推理优化原子 Skills（11 个）。覆盖框架适配、并行策略、KVCache/FA、融合算子、图模式、精度/运行时调试、多流、预取和 SuperKernel。",
+      "source": "./",
+      "strict": false,
+      "external": true,
+      "source-url": "https://gitcode.com/cann/cannbot-skills",
+      "source-branch": "master",
+      "upstream-name": "model-infer-skills",
+      "category": "external",
+      "categories": [
+        "external",
+        "external-skill-set",
+        "external-sync"
+      ],
+      "skills": [
+        "./external/cannbot/model/model-infer-migrator",
+        "./external/cannbot/model/model-infer-parallel-analysis",
+        "./external/cannbot/model/model-infer-parallel-impl",
+        "./external/cannbot/model/model-infer-kvcache",
+        "./external/cannbot/model/model-infer-fusion",
+        "./external/cannbot/model/model-infer-graph-mode",
+        "./external/cannbot/model/model-infer-precision-debug",
+        "./external/cannbot/model/model-infer-runtime-debug",
+        "./external/cannbot/model/model-infer-multi-stream",
+        "./external/cannbot/model/model-infer-prefetch",
+        "./external/cannbot/model/model-infer-superkernel"
+      ]
+    },
+    {
+      "name": "external-cannbot-ops-code-reviewer-skills",
+      "description": "Ascend C 代码审查 Skills（2 个）。代码审查规范和 API 文档检索。",
+      "source": "./",
+      "strict": false,
+      "external": true,
+      "source-url": "https://gitcode.com/cann/cannbot-skills",
+      "source-branch": "master",
+      "upstream-name": "ops-code-reviewer-skills",
+      "category": "external",
+      "categories": [
+        "external",
+        "external-skill-set",
+        "external-sync"
+      ],
+      "skills": [
+        "./external/cannbot/ops/ascendc-code-review",
+        "./external/cannbot/ops/ascendc-docs-search"
+      ]
+    },
+    {
+      "name": "external-cannbot-ops-direct-invoke-skills",
+      "description": "Ascend C Kernel 直调算子开发 Skills（40+ 个）。API 检索、Tiling 设计、精度调试、性能采集、环境检查、代码模板等。",
+      "source": "./",
+      "strict": false,
+      "external": true,
+      "source-url": "https://gitcode.com/cann/cannbot-skills",
+      "source-branch": "master",
+      "upstream-name": "ops-direct-invoke-skills",
+      "category": "external",
+      "categories": [
+        "external",
+        "external-skill-set",
+        "external-sync"
+      ],
+      "skills": [
+        "./external/cannbot/ops/ascendc-api-best-practices",
+        "./external/cannbot/ops/ascendc-regbase-best-practice",
+        "./external/cannbot/ops/ascendc-code-review",
+        "./external/cannbot/ops/ascendc-direct-invoke-template",
+        "./external/cannbot/ops/ascendc-docs-search",
+        "./external/cannbot/ops/ascendc-env-check",
+        "./external/cannbot/ops/npu-arch",
+        "./external/cannbot/ops/ascendc-precision-debug",
+        "./external/cannbot/ops/ascendc-runtime-debug",
+        "./external/cannbot/ops/ascendc-crash-debug",
+        "./external/cannbot/ops/ascendc-tiling-design",
+        "./external/cannbot/ops/ops-precision-standard",
+        "./external/cannbot/ops/ops-profiling",
+        "./external/cannbot/ops/torch-ascendc-op-extension"
+      ]
+    },
+    {
+      "name": "external-cannbot-pypto-op-orchestrator-skills",
+      "description": "PyPTO 算子开发 Skills（8 个）。API 探索、Golden 生成、需求理解、算子设计与开发、性能调优、精度调试。",
+      "source": "./",
+      "strict": false,
+      "external": true,
+      "source-url": "https://gitcode.com/cann/cannbot-skills",
+      "source-branch": "master",
+      "upstream-name": "pypto-op-orchestrator-skills",
+      "category": "external",
+      "categories": [
+        "external",
+        "external-skill-set",
+        "external-sync"
+      ],
+      "skills": [
+        "./external/cannbot/ops/pypto-api-explore",
+        "./external/cannbot/ops/pypto-golden-generate",
+        "./external/cannbot/ops/pypto-intent-understand",
+        "./external/cannbot/ops/pypto-op-design",
+        "./external/cannbot/ops/pypto-op-develop",
+        "./external/cannbot/ops/pypto-op-perf-tune",
+        "./external/cannbot/ops/pypto-precision-compare",
+        "./external/cannbot/ops/pypto-precision-debug"
+      ]
+    },
+    {
+      "name": "external-cannbot-tilelang-op-orchestrator-skills",
+      "description": "TileLang 算子开发 Skills（5 个）。API 最佳实践、编程模式指南、算子设计、算子开发、代码审查。",
+      "source": "./",
+      "strict": false,
+      "external": true,
+      "source-url": "https://gitcode.com/cann/cannbot-skills",
+      "source-branch": "master",
+      "upstream-name": "tilelang-op-orchestrator-skills",
+      "category": "external",
+      "categories": [
+        "external",
+        "external-skill-set",
+        "external-sync"
+      ],
+      "skills": [
+        "./external/cannbot/ops-lab/tilelang/skills/tilelang-api-best-practices",
+        "./external/cannbot/ops-lab/tilelang/skills/tilelang-op-design",
+        "./external/cannbot/ops-lab/tilelang/skills/tilelang-op-developer",
+        "./external/cannbot/ops-lab/tilelang/skills/tilelang-programming-model-guide",
+        "./external/cannbot/ops-lab/tilelang/skills/tilelang-review"
+      ]
+    },
+    {
+      "name": "external-cannbot-torch-npugraph-ex-skills",
+      "description": "PyTorch 昇腾 NPU npugraph_ex Skills（6 个）。覆盖图模式知识、代码模板、问题分诊、编译错误、运行时错误和自定义算子入图。",
+      "source": "./",
+      "strict": false,
+      "external": true,
+      "source-url": "https://gitcode.com/cann/cannbot-skills",
+      "source-branch": "master",
+      "upstream-name": "torch-npugraph-ex-skills",
+      "category": "external",
+      "categories": [
+        "external",
+        "external-skill-set",
+        "external-sync"
+      ],
+      "skills": [
+        "./external/cannbot/graph/torch-custom-ops-guide",
+        "./external/cannbot/graph/torch-npugraph-ex-compile-error-diagnosis",
+        "./external/cannbot/graph/torch-npugraph-ex-dfx-triage",
+        "./external/cannbot/graph/torch-npugraph-ex-knowledge",
+        "./external/cannbot/graph/torch-npugraph-ex-runtime-error-diagnosis",
+        "./external/cannbot/graph/torch-npugraph-ex-template"
+      ]
+    },
+    {
       "name": "external-gitcode-ascend-skills",
-      "description": "从 gitcode-ascend 同步的 Ascend 技能集，包含 87 个技能：\n- analyse-coverage: 分析测试覆盖率盲区，生成覆盖率分析报告\n- arxiv-recommendation-npu: 自动化推荐系统论文发现流水线。抓取 arxiv 推荐论文，检测源码，生成待迁移任务清单，由 npu-model-migration skill 完成 NPU 适配。\n- ascend-inference-repos-copilot: 昇腾（Ascend）推理生态开源代码仓库智能问答专家旨在为 vLLM、vLLM-Ascend、MindIE-LLM、MindIE-SD、MindIE-Motor、MindIE-Turbo 以及 msM\n- ... 等 84 个技能",
+      "description": "从 gitcode-ascend 同步的 Ascend 技能集，包含 91 个技能：\n- analyse-coverage: 分析测试覆盖率盲区，生成覆盖率分析报告\n- arxiv-recommendation-npu: 自动化推荐系统论文发现流水线。抓取 arxiv 推荐论文，检测源码，生成待迁移任务清单，由 npu-model-migration skill 完成 NPU 适配。\n- ascend-inference-repos-copilot: 昇腾（Ascend）推理生态开源代码仓库智能问答专家旨在为 vLLM、vLLM-Ascend、MindIE-LLM、MindIE-SD、MindIE-Motor、MindIE-Turbo 以及 msM\n- ... 等 88 个技能",
       "source": "./",
       "strict": false,
       "external": true,
@@ -654,8 +808,10 @@
         "./external/gitcode-ascend/analyse-coverage",
         "./external/gitcode-ascend/arxiv-recommendation-npu",
         "./external/gitcode-ascend/ascend-inference-repos-copilot",
+        "./external/gitcode-ascend/ascend-mmlab-install-suite",
         "./external/gitcode-ascend/ascend-npu-driver-install",
         "./external/gitcode-ascend/ascend-profiling-anomaly",
+        "./external/gitcode-ascend/ascend-transformer-boost",
         "./external/gitcode-ascend/ascendc-operator-code-gen",
         "./external/gitcode-ascend/ascendc-operator-code-review",
         "./external/gitcode-ascend/ascendc-operator-compile-debug",
@@ -692,6 +848,7 @@
         "./external/gitcode-ascend/debug",
         "./external/gitcode-ascend/deploy",
         "./external/gitcode-ascend/detectron2",
+        "./external/gitcode-ascend/drivingsdk-ascend-model-migration",
         "./external/gitcode-ascend/fault_diagnose",
         "./external/gitcode-ascend/k8s-check-fix",
         "./external/gitcode-ascend/large_scale_deploy",
@@ -720,6 +877,7 @@
         "./external/gitcode-ascend/security-code-review",
         "./external/gitcode-ascend/simple-vector-triton-gpu-to-npu",
         "./external/gitcode-ascend/skill-auditor",
+        "./external/gitcode-ascend/ssh-connection",
         "./external/gitcode-ascend/swanlab-setup",
         "./external/gitcode-ascend/triton-operator-code-gen",
         "./external/gitcode-ascend/triton-operator-code-review",

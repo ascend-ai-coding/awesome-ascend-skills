@@ -1,0 +1,35 @@
+  SSH Dev Suite 配置
+# 敏感信息（密码、token）通过环境变量设置，不写入此文件
+
+profiles:
+  server-228:
+    host: 192.168.9.228
+    port: 22
+    username: root
+    identity_file: C:/Users/qian/.ssh/id_ed25519
+    env_password: ""
+    jump_host: ""
+    container: ""
+    container_runtime: docker
+
+  server-151:
+    host: 192.168.13.151
+    port: 22
+    username: root
+    identity_file: C:/Users/qian/.ssh/id_ed25519
+    env_password: ""
+    jump_host: ""
+    container: "qianqian_0312"
+    container_runtime: docker
+
+defaults:
+  connect_timeout: 10
+  control_persist: 600
+  retry_count: 3
+
+tunnels:
+  outbound-proxy:
+    profile: server-228
+    type: reverse_proxy
+    local_proxy_port: 7890
+    remote_proxy_port: 7890
