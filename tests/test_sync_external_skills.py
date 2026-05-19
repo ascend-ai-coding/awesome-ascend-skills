@@ -3,10 +3,11 @@
 import json
 import os
 from pathlib import Path
-from types import SimpleNamespace
 
+from scripts.validate_config import validate_config
 from scripts import sync_external_skills as sync_module
 from scripts.sync_external_skills import (
+    discover_source_skills,
     build_synced_skill_index,
     copy_skill,
     detect_conflicts,
@@ -17,7 +18,7 @@ from scripts.sync_external_skills import (
     prune_removed_source_skills,
     update_marketplace,
 )
-from scripts.sync_types import ExternalSource, Skill
+from scripts.sync_types import ExternalBundle, ExternalSource, Skill
 
 
 def write_skill(skill_dir: Path, name: str, commit_sha: str = "abc123") -> None:
@@ -174,6 +175,39 @@ def test_prune_removed_source_skills_removes_stale_same_source_entries(
     assert not stale_dir.exists()
 
 
+def test_prune_removed_source_skills_keeps_marketplace_nested_children(
+    tmp_path: Path,
+) -> None:
+    source = ExternalSource(
+        name="source-a",
+        url="https://example.com/a.git",
+        sync_mode="marketplace",
+    )
+    parent_dir = tmp_path / "external" / "source-a" / "ops" / "parent-skill"
+    child_dir = parent_dir / "child-skill"
+    stale_dir = tmp_path / "external" / "source-a" / "ops" / "stale-skill"
+    write_skill(parent_dir, "external-source-a-ops-parent-skill")
+    write_skill(child_dir, "external-source-a-ops-parent-skill-child-skill")
+    write_skill(stale_dir, "external-source-a-ops-stale-skill")
+
+    existing = load_existing_external_skills(
+        [source], external_root=tmp_path / "external"
+    )
+
+    original_cwd = Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        prune_removed_source_skills(existing, source, {"ops/parent-skill"})
+    finally:
+        os.chdir(original_cwd)
+
+    assert ("source-a", "ops/parent-skill") in existing
+    assert ("source-a", "ops/parent-skill/child-skill") in existing
+    assert ("source-a", "ops/stale-skill") not in existing
+    assert child_dir.exists()
+    assert not stale_dir.exists()
+
+
 def test_parse_skill_md_falls_back_for_colon_rich_description(tmp_path: Path) -> None:
     skill_dir = tmp_path / "ascendc-operator-code-gen"
     write_raw_skill(
@@ -310,6 +344,68 @@ def test_find_skills_recurses_under_configured_skills_path(tmp_path: Path) -> No
     skills = find_skills(repo, source)
 
     assert {skill.name for skill in skills} == {"npu-smi", "mindspeed-llm-training"}
+    assert {skill.relative_path for skill in skills} == {
+        "npu-smi",
+        "mindspeed-llm-training",
+    }
+
+
+def test_discover_source_skills_uses_external_marketplace_refs(
+    tmp_path: Path,
+) -> None:
+    source = ExternalSource(
+        name="cannbot",
+        url="https://gitcode.com/cann/cannbot-skills",
+        branch="master",
+        sync_mode="marketplace",
+    )
+    repo = tmp_path / "repo"
+    marketplace_dir = repo / ".claude-plugin"
+    marketplace_dir.mkdir(parents=True)
+    (marketplace_dir / "marketplace.json").write_text(
+        json.dumps(
+            {
+                "plugins": [
+                    {
+                        "name": "ops-direct-invoke-skills",
+                        "source": "./ops",
+                        "skills": [
+                            "./ascendc-code-review",
+                            "./nested/ascendc-runtime-debug",
+                        ],
+                        "category": "skills",
+                        "strict": False,
+                    },
+                    {
+                        "name": "plugin-only",
+                        "source": "./plugins-official/plugin-only",
+                        "category": "development",
+                    },
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    write_skill(repo / "ops" / "ascendc-code-review", "ascendc-code-review")
+    write_skill(
+        repo / "ops" / "nested" / "ascendc-runtime-debug",
+        "ascendc-runtime-debug",
+    )
+    write_skill(repo / "ops" / "not-in-marketplace", "not-in-marketplace")
+
+    skills, bundles = discover_source_skills(repo, source)
+
+    assert [(skill.name, skill.relative_path) for skill in skills] == [
+        ("ascendc-code-review", "ops/ascendc-code-review"),
+        ("ascendc-runtime-debug", "ops/nested/ascendc-runtime-debug"),
+    ]
+    assert len(bundles) == 1
+    assert bundles[0].name == "ops-direct-invoke-skills"
+    assert bundles[0].skill_paths == [
+        "./external/cannbot/ops/ascendc-code-review",
+        "./external/cannbot/ops/nested/ascendc-runtime-debug",
+    ]
 
 
 def test_copy_skill_rolls_back_failed_validation(tmp_path: Path, monkeypatch) -> None:
@@ -318,14 +414,11 @@ def test_copy_skill_rolls_back_failed_validation(tmp_path: Path, monkeypatch) ->
     write_skill(skill_dir, "broken-skill")
     skill = Skill(name="broken-skill", path=skill_dir, source=source, has_skill_md=True)
 
-    def fake_run(*args, **kwargs):
-        return SimpleNamespace(
-            returncode=1,
-            stdout="  ❌ ERROR: Missing 'description' field in frontmatter\n",
-            stderr="",
-        )
-
-    monkeypatch.setattr(sync_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        sync_module,
+        "validate_copied_skill_tree",
+        lambda target: (False, "Missing 'description' field in frontmatter"),
+    )
 
     original_cwd = Path.cwd()
     try:
@@ -364,14 +457,11 @@ def test_copy_skill_restores_existing_target_on_failed_validation(
         name="broken-skill", path=updated_dir, source=source, has_skill_md=True
     )
 
-    def fake_run(*args, **kwargs):
-        return SimpleNamespace(
-            returncode=1,
-            stdout="  ❌ ERROR: Missing 'description' field in frontmatter\n",
-            stderr="",
-        )
-
-    monkeypatch.setattr(sync_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        sync_module,
+        "validate_copied_skill_tree",
+        lambda target: (False, "Missing 'description' field in frontmatter"),
+    )
 
     original_cwd = Path.cwd()
     try:
@@ -401,13 +491,6 @@ def test_copy_skill_keeps_backup_when_restore_fails(
 
     backup_dir = tmp_path / "backup-dir"
 
-    def fake_run(*args, **kwargs):
-        return SimpleNamespace(
-            returncode=1,
-            stdout="  ❌ ERROR: Missing 'description' field in frontmatter\n",
-            stderr="",
-        )
-
     real_move = sync_module.shutil.move
 
     def fake_move(src, dst, *args, **kwargs):
@@ -416,7 +499,11 @@ def test_copy_skill_keeps_backup_when_restore_fails(
             raise OSError("restore failed")
         return real_move(src, dst, *args, **kwargs)
 
-    monkeypatch.setattr(sync_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        sync_module,
+        "validate_copied_skill_tree",
+        lambda target: (False, "Missing 'description' field in frontmatter"),
+    )
     monkeypatch.setattr(sync_module.tempfile, "mkdtemp", lambda prefix: str(backup_dir))
     monkeypatch.setattr(sync_module.shutil, "move", fake_move)
 
@@ -453,10 +540,9 @@ def test_copy_skill_syncs_malformed_frontmatter_when_validation_passes(
     )
     skill = Skill(name="broken-skill", path=skill_dir, source=source, has_skill_md=True)
 
-    def fake_run(*args, **kwargs):
-        return SimpleNamespace(returncode=0, stdout="", stderr="")
-
-    monkeypatch.setattr(sync_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        sync_module, "validate_copied_skill_tree", lambda target: (True, "")
+    )
 
     original_cwd = Path.cwd()
     try:
@@ -472,6 +558,73 @@ def test_copy_skill_syncs_malformed_frontmatter_when_validation_passes(
     assert reason == ""
     assert "name: external-source-a-broken-skill" in synced_content
     assert "description: 'invalid: colon-rich description'" in synced_content
+
+
+def test_copy_skill_preserves_marketplace_relative_path(tmp_path: Path, monkeypatch) -> None:
+    source = ExternalSource(
+        name="cannbot",
+        url="https://gitcode.com/cann/cannbot-skills",
+        sync_mode="marketplace",
+    )
+    skill_dir = tmp_path / "repo" / "ops" / "ascendc-code-review"
+    write_skill(skill_dir, "ascendc-code-review")
+    skill = Skill(
+        name="ascendc-code-review",
+        path=skill_dir,
+        source=source,
+        has_skill_md=True,
+        relative_path="ops/ascendc-code-review",
+    )
+
+    monkeypatch.setattr(
+        sync_module, "validate_copied_skill_tree", lambda target: (True, "")
+    )
+
+    original_cwd = Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        success, reason = copy_skill(skill, "abc123")
+        synced_content = (
+            tmp_path
+            / "external"
+            / "cannbot"
+            / "ops"
+            / "ascendc-code-review"
+            / "SKILL.md"
+        ).read_text(encoding="utf-8")
+    finally:
+        os.chdir(original_cwd)
+
+    assert success is True
+    assert reason == ""
+    assert "name: external-cannbot-ops-ascendc-code-review" in synced_content
+
+
+def test_copy_skill_flat_mode_skips_nested_skill_directories(tmp_path: Path) -> None:
+    source = ExternalSource(name="source-a", url="https://example.com/a.git")
+    skill_dir = tmp_path / "repo" / "parent-skill"
+    write_skill(skill_dir, "parent-skill")
+    write_skill(skill_dir / "child-skill", "child-skill")
+    skill = Skill(name="parent-skill", path=skill_dir, source=source, has_skill_md=True)
+
+    original_cwd = Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        success, reason = copy_skill(skill, "abc123")
+    finally:
+        os.chdir(original_cwd)
+
+    assert success is True
+    assert reason == ""
+    assert (tmp_path / "external" / "source-a" / "parent-skill" / "SKILL.md").exists()
+    assert not (
+        tmp_path
+        / "external"
+        / "source-a"
+        / "parent-skill"
+        / "child-skill"
+        / "SKILL.md"
+    ).exists()
 
 
 def test_update_marketplace_preserves_non_external_plugin_order(tmp_path: Path) -> None:
@@ -574,3 +727,138 @@ def test_update_marketplace_adds_category_library_when_creating_file(
     updated = json.loads(marketplace_path.read_text(encoding="utf-8"))
     assert "categoryLibrary" in updated
     assert "external" in updated["categoryLibrary"]["primaryCategories"]
+
+
+def test_update_marketplace_preserves_external_marketplace_bundles(
+    tmp_path: Path,
+) -> None:
+    marketplace_path = tmp_path / "marketplace.json"
+    source = ExternalSource(
+        name="cannbot",
+        url="https://gitcode.com/cann/cannbot-skills",
+        branch="master",
+        sync_mode="marketplace",
+    )
+    first_dir = tmp_path / "external" / "cannbot" / "ops" / "ascendc-code-review"
+    second_dir = (
+        tmp_path / "external" / "cannbot" / "ops" / "ascendc-docs-search"
+    )
+    write_skill(first_dir, "external-cannbot-ops-ascendc-code-review")
+    write_skill(second_dir, "external-cannbot-ops-ascendc-docs-search")
+    bundle = ExternalBundle(
+        name="ops-code-reviewer-skills",
+        source=source,
+        description="上游代码审查技能包",
+        skill_paths=[
+            "./external/cannbot/ops/ascendc-code-review",
+            "./external/cannbot/ops/ascendc-docs-search",
+        ],
+    )
+
+    update_marketplace(
+        [
+            (
+                Skill(
+                    "ascendc-code-review",
+                    first_dir,
+                    source,
+                    True,
+                    relative_path="ops/ascendc-code-review",
+                ),
+                "abc123",
+            ),
+            (
+                Skill(
+                    "ascendc-docs-search",
+                    second_dir,
+                    source,
+                    True,
+                    relative_path="ops/ascendc-docs-search",
+                ),
+                "abc123",
+            ),
+        ],
+        marketplace_path=str(marketplace_path),
+        external_bundles=[bundle],
+    )
+
+    plugins = json.loads(marketplace_path.read_text(encoding="utf-8"))["plugins"]
+    assert [plugin["name"] for plugin in plugins] == [
+        "external-cannbot-ops-code-reviewer-skills"
+    ]
+    assert plugins[0]["description"] == "上游代码审查技能包"
+    assert plugins[0]["skills"] == [
+        "./external/cannbot/ops/ascendc-code-review",
+        "./external/cannbot/ops/ascendc-docs-search",
+    ]
+
+
+def test_update_marketplace_filters_missing_external_bundle_paths(
+    tmp_path: Path,
+) -> None:
+    marketplace_path = tmp_path / "marketplace.json"
+    source = ExternalSource(
+        name="cannbot",
+        url="https://gitcode.com/cann/cannbot-skills",
+        sync_mode="marketplace",
+    )
+    existing_dir = tmp_path / "external" / "cannbot" / "ops" / "kept-skill"
+    write_skill(existing_dir, "external-cannbot-ops-kept-skill")
+    bundles = [
+        ExternalBundle(
+            name="partial-bundle",
+            source=source,
+            description="Partial bundle",
+            skill_paths=[
+                "./external/cannbot/ops/kept-skill",
+                "./external/cannbot/ops/missing-skill",
+            ],
+        ),
+        ExternalBundle(
+            name="empty-bundle",
+            source=source,
+            description="Empty bundle",
+            skill_paths=["./external/cannbot/ops/missing-only"],
+        ),
+    ]
+
+    update_marketplace(
+        [
+            (
+                Skill(
+                    "kept-skill",
+                    existing_dir,
+                    source,
+                    True,
+                    relative_path="ops/kept-skill",
+                ),
+                "abc123",
+            )
+        ],
+        marketplace_path=str(marketplace_path),
+        external_bundles=bundles,
+    )
+
+    plugins = json.loads(marketplace_path.read_text(encoding="utf-8"))["plugins"]
+    assert [plugin["name"] for plugin in plugins] == [
+        "external-cannbot-partial-bundle"
+    ]
+    assert plugins[0]["skills"] == ["./external/cannbot/ops/kept-skill"]
+
+
+def test_validate_config_rejects_unsafe_external_paths(tmp_path: Path) -> None:
+    config_path = tmp_path / "external-sources.yml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "sources:",
+                "  - name: bad-source",
+                "    url: https://example.com/repo.git",
+                "    skills_path: ../outside",
+                "    marketplace_path: /tmp/marketplace.json",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    assert validate_config(config_path) == 1

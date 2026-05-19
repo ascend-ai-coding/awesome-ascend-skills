@@ -10,6 +10,8 @@
 #   branch      - 可选：要同步的分支，默认 main
 #   enabled     - 可选：是否启用同步，默认 true
 #   skills_path - 可选：skills 所在的子目录路径，默认为根目录
+#   sync_mode   - 可选：flat 递归扫描 SKILL.md；marketplace 按 marketplace.json 引用同步
+#   marketplace_path - 可选：sync_mode=marketplace 时的 marketplace.json 路径
 
 sources:
   - name: mindstudio                    # MindStudio Profiler 诊断工具集
@@ -21,4 +23,11 @@ sources:
     url: https://gitcode.com/Ascend/agent-skills
     branch: master
     skills_path: skills                 # skills 在 skills/ 子目录下
+    enabled: true
+
+  - name: cannbot                       # CANN Bot marketplace-defined skill bundles
+    url: https://gitcode.com/cann/cannbot-skills
+    branch: master
+    sync_mode: marketplace              # 只同步外部 marketplace.json 引用的 skill
+    marketplace_path: .claude-plugin/marketplace.json
     enabled: true
