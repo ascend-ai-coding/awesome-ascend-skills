@@ -52,6 +52,9 @@ const els = {
   toast: document.querySelector("#toast"),
 };
 
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+const finePointer = window.matchMedia("(hover: hover) and (pointer: fine)");
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -444,7 +447,6 @@ function renderSkillDetail(skill) {
   if (!skill) return;
   const singleNpx = npxCommand([skill.name]);
   const singleSkillsSh = skillsShUrl(skill.name);
-  const singlePrompt = agentPrompt([skill]);
   const relatedBundles = bundlesForSkill(skill.name);
   const isSelected = state.selected.has(skill.name);
   const externalNotice = skill.syncedFrom
@@ -488,7 +490,6 @@ function renderSkillDetail(skill) {
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12l7 7 7-7" /></svg>
           查看安装命令
         </a>
-        <span class="detail-action-break" aria-hidden="true"></span>
         <button class="button secondary" data-copy="${escapeHtml(singleNpx)}" data-copy-message="已复制下载链接">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7h8M8 12h8M8 17h5" /></svg>
           复制下载链接
@@ -501,14 +502,6 @@ function renderSkillDetail(skill) {
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9" /></svg>
           打开 skills.sh
         </a>
-        <button class="button secondary" data-copy="${escapeHtml(singleSkillsSh)}" data-copy-message="已复制 skills.sh 页面链接">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8h10v10H8zM6 16H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" /></svg>
-          复制链接
-        </button>
-        <button class="button secondary" data-copy="${escapeHtml(singlePrompt)}" data-copy-message="已复制 Agent 下载说明">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8h10M7 12h6M5 20l3-3h11V5H5v15Z" /></svg>
-          复制 Agent 下载说明
-        </button>
       </div>
       ${bundleBlock}
     </div>
@@ -575,6 +568,196 @@ function renderBundles() {
       </article>`;
     })
     .join("");
+}
+
+function setupHeaderMotion() {
+  const syncHeaderState = () => {
+    document.body.classList.toggle("is-scrolled", window.scrollY > 8);
+  };
+  syncHeaderState();
+  window.addEventListener("scroll", syncHeaderState, { passive: true });
+}
+
+function setupScrollReveal() {
+  if (reducedMotion.matches) return;
+  const targets = document.querySelectorAll(".guide-section, .search-shell, .selection-panel, .bundle-section");
+  targets.forEach((target) => target.classList.add("reveal-target"));
+
+  if (!("IntersectionObserver" in window)) {
+    targets.forEach((target) => target.classList.add("is-visible"));
+    return;
+  }
+
+  const observer = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        entry.target.classList.add("is-visible");
+        observer.unobserve(entry.target);
+      });
+    },
+    { threshold: 0.12, rootMargin: "0px 0px -8% 0px" }
+  );
+
+  targets.forEach((target) => observer.observe(target));
+}
+
+function setupMagneticHover() {
+  const magneticSelector = [
+    ".button",
+    ".icon-button",
+    ".small-copy",
+    ".segment-button",
+    ".list-select-all",
+    ".guide-card",
+    ".command-card",
+    ".bundle-card",
+    ".terminal-panel",
+    ".skill-card",
+  ].join(",");
+  let activeTarget = null;
+
+  const isEnabled = () => finePointer.matches && !reducedMotion.matches;
+  const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+  const resetTarget = (target) => {
+    if (!target) return;
+    const isTerminalPanel = target.classList.contains("terminal-panel");
+    target.style.removeProperty("--magnetic-x");
+    target.style.removeProperty("--magnetic-y");
+    if (!isTerminalPanel) {
+      target.style.removeProperty("--terminal-light-x");
+      target.style.removeProperty("--terminal-light-y");
+    }
+    target.style.removeProperty("--terminal-tilt-x");
+    target.style.removeProperty("--terminal-tilt-y");
+    target.classList.remove("magnetic-target");
+  };
+
+  document.addEventListener(
+    "pointermove",
+    (event) => {
+      if (!isEnabled()) {
+        resetTarget(activeTarget);
+        activeTarget = null;
+        return;
+      }
+
+      const target = event.target.closest(magneticSelector);
+      if (!target) {
+        resetTarget(activeTarget);
+        activeTarget = null;
+        return;
+      }
+
+      if (activeTarget && activeTarget !== target) resetTarget(activeTarget);
+      activeTarget = target;
+      activeTarget.classList.add("magnetic-target");
+
+      const rect = activeTarget.getBoundingClientRect();
+      const isTerminalPanel = activeTarget.classList.contains("terminal-panel");
+      if (!isTerminalPanel) {
+        const strength = activeTarget.classList.contains("skill-card") ? 4 : 7;
+        const offsetX = ((event.clientX - rect.left) / rect.width - 0.5) * strength;
+        const offsetY = ((event.clientY - rect.top) / rect.height - 0.5) * strength;
+        activeTarget.style.setProperty("--magnetic-x", `${clamp(offsetX, -6, 6).toFixed(2)}px`);
+        activeTarget.style.setProperty("--magnetic-y", `${clamp(offsetY, -6, 6).toFixed(2)}px`);
+      }
+
+      if (isTerminalPanel) {
+        const lightBleed = 42;
+        const lightX = clamp(((event.clientX - rect.left + lightBleed - 26) / (rect.width + lightBleed * 2)) * 100, 0, 100);
+        const lightY = clamp(((event.clientY - rect.top + lightBleed) / (rect.height + lightBleed * 2)) * 100, 0, 100);
+        const localX = clamp(((event.clientX - rect.left) / rect.width) * 100, 0, 100);
+        const localY = clamp(((event.clientY - rect.top) / rect.height) * 100, 0, 100);
+        const tiltX = clamp((localX - 50) / 18, -2.2, 2.2);
+        const tiltY = clamp((50 - localY) / 18, -2.2, 2.2);
+        activeTarget.style.setProperty("--terminal-light-x", `${lightX.toFixed(1)}%`);
+        activeTarget.style.setProperty("--terminal-light-y", `${lightY.toFixed(1)}%`);
+        activeTarget.style.setProperty("--terminal-tilt-x", `${tiltX.toFixed(2)}deg`);
+        activeTarget.style.setProperty("--terminal-tilt-y", `${tiltY.toFixed(2)}deg`);
+      }
+    },
+    { passive: true }
+  );
+
+  document.addEventListener("pointerleave", () => {
+    resetTarget(activeTarget);
+    activeTarget = null;
+  });
+
+  const syncAvailability = () => {
+    if (isEnabled()) return;
+    resetTarget(activeTarget);
+    activeTarget = null;
+  };
+  reducedMotion.addEventListener("change", syncAvailability);
+  finePointer.addEventListener("change", syncAvailability);
+}
+
+function setupHeroTypewriter() {
+  const target = document.querySelector("[data-typewriter-text]");
+  if (!target) return;
+
+  const text = target.getAttribute("data-typewriter-text") || "";
+  let index = 0;
+  let deleting = false;
+  let timer = 0;
+
+  const stop = () => {
+    clearTimeout(timer);
+    timer = 0;
+    target.textContent = text;
+  };
+
+  const tick = () => {
+    if (reducedMotion.matches) {
+      stop();
+      return;
+    }
+
+    target.textContent = text.slice(0, index);
+
+    let delay = deleting ? 96 : 150;
+    if (deleting) {
+      index -= 1;
+      if (index < 0) {
+        deleting = false;
+        index = 0;
+        delay = 520;
+      }
+    } else {
+      index += 1;
+      if (index > text.length) {
+        deleting = true;
+        index = text.length;
+        delay = 3000;
+      }
+    }
+
+    timer = setTimeout(tick, delay);
+  };
+
+  const syncMotionPreference = () => {
+    if (reducedMotion.matches) {
+      stop();
+      return;
+    }
+    clearTimeout(timer);
+    target.textContent = "";
+    index = 0;
+    deleting = false;
+    timer = setTimeout(tick, 420);
+  };
+
+  syncMotionPreference();
+  reducedMotion.addEventListener("change", syncMotionPreference);
+}
+
+function setupMotionEnhancements() {
+  setupHeaderMotion();
+  setupScrollReveal();
+  setupMagneticHover();
+  setupHeroTypewriter();
 }
 
 function render() {
@@ -659,6 +842,7 @@ document.addEventListener("click", (event) => {
 });
 
 render();
+setupMotionEnhancements();
 
 if (!window.location.hash) {
   window.scrollTo(0, 0);

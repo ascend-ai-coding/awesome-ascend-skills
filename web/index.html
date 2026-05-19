@@ -8,7 +8,7 @@
       content="Awesome Ascend Skills searchable web catalog and installer command generator."
     />
     <title>Awesome Ascend Skills</title>
-    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="./avatar.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="./styles.css" />
     <script>
       window.MathJax = {
@@ -46,7 +46,9 @@
     <main id="top">
       <section class="hero" aria-labelledby="hero-title">
         <div class="hero-copy">
-          <h1 id="hero-title">快速查找并安装<span class="text-ascend title-line">昇腾开发 Skills</span></h1>
+          <h1 id="hero-title" aria-label="快速查找并安装昇腾开发 Skills">
+            快速查找并安装<span class="text-ascend title-line typing-title" data-typewriter-text="昇腾开发 Skills" aria-hidden="true">昇腾开发 Skills</span>
+          </h1>
           <p>
             面向 Claude Code、OpenCode、Cursor、Trae、Codex 等 Agent 工具的昇腾 NPU 技能库。搜索一个场景，复制命令，交给 CLI 或 Agent 完成安装。
           </p>
@@ -62,14 +64,20 @@
           </div>
         </div>
         <div class="terminal-panel" aria-label="安装命令示例">
-          <div class="terminal-title">
-            <span></span><span></span><span></span>
-            <strong>install</strong>
-          </div>
-          <pre><code>npx skills add https://github.com/ascend-ai-coding/awesome-ascend-skills/tree/main/skills/base -s '*'
+          <div class="terminal-window">
+            <div class="terminal-title">
+              <span></span><span></span><span></span>
+              <strong>install</strong>
+            </div>
+            <pre><code>npx skills add https://github.com/ascend-ai-coding/awesome-ascend-skills/tree/main/skills/base -s '*'
 
 npx skills add ascend-ai-coding/awesome-ascend-skills -s npu-smi</code></pre>
+          </div>
         </div>
+        <a class="scroll-cue" href="#skills" aria-label="下滑查看 Skills">
+          <span>下滑查看 Skills</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+        </a>
       </section>
 
       <section class="guide-section" id="guide" aria-labelledby="guide-title">
@@ -178,7 +186,6 @@ npx skills add ascend-ai-coding/awesome-ascend-skills -s npu-smi</code></pre>
     </main>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-
     <script src="./skills-data.js"></script>
     <script src="./app.js"></script>
   </body>
