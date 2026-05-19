@@ -3,7 +3,7 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import List, Tuple
 
 
 @dataclass
@@ -16,6 +16,8 @@ class ExternalSource:
         branch: Branch name to clone (default: "main").
         enabled: Whether this source is active (default: True).
         skills_path: Subdirectory path where skills are located (default: "" for root).
+        sync_mode: "flat" scans all SKILL.md files; "marketplace" follows marketplace.json.
+        marketplace_path: Marketplace path relative to the external repository root.
     """
 
     name: str
@@ -23,6 +25,8 @@ class ExternalSource:
     branch: str = "main"
     enabled: bool = True
     skills_path: str = ""
+    sync_mode: str = "flat"
+    marketplace_path: str = ".claude-plugin/marketplace.json"
 
 
 @dataclass
@@ -34,12 +38,24 @@ class Skill:
         path: Absolute path to skill directory.
         source: ExternalSource this skill comes from.
         has_skill_md: Whether SKILL.md file exists.
+        relative_path: Skill path relative to the external source root.
     """
 
     name: str
     path: Path
     source: ExternalSource
     has_skill_md: bool
+    relative_path: str = ""
+
+
+@dataclass
+class ExternalBundle:
+    """Represents a marketplace-defined external skill bundle."""
+
+    name: str
+    source: ExternalSource
+    description: str
+    skill_paths: List[str]
 
 
 @dataclass

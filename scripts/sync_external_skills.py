@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import posixpath
 import yaml
 from datetime import datetime
 from pathlib import Path
@@ -16,7 +17,8 @@ project_root = script_dir.parent
 sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(script_dir))
 
-from sync_types import ExternalSource, Skill, ConflictInfo, SyncResult
+from sync_types import ExternalBundle, ExternalSource, Skill, ConflictInfo, SyncResult
+from validate_skills import validate_skill_file
 
 
 FRONTMATTER_RE = re.compile(r"\A---\r?\n(.*?)\r?\n---\r?\n?", re.DOTALL)
@@ -121,7 +123,13 @@ def load_config(config_path: str) -> List[ExternalSource]:
             url=source_data["url"],
             branch=source_data.get("branch", "main"),
             enabled=source_data.get("enabled", True),
-            skills_path=source_data.get("skills_path", ""),
+            skills_path=source_config_path(
+                source_data.get("skills_path", ""), allow_empty=True
+            ),
+            sync_mode=source_data.get("sync_mode", "flat"),
+            marketplace_path=source_config_path(
+                source_data.get("marketplace_path", ".claude-plugin/marketplace.json")
+            ),
         )
         sources.append(source)
 
@@ -165,6 +173,10 @@ def detect_config_changes(old_config: str, new_config: str) -> List[ExternalSour
                     branch=new_source_data.get("branch", "main"),
                     enabled=new_source_data.get("enabled", True),
                     skills_path=new_source_data.get("skills_path", ""),
+                    sync_mode=new_source_data.get("sync_mode", "flat"),
+                    marketplace_path=new_source_data.get(
+                        "marketplace_path", ".claude-plugin/marketplace.json"
+                    ),
                 )
             )
 
@@ -179,6 +191,11 @@ def detect_config_changes(old_config: str, new_config: str) -> List[ExternalSour
                     url=new_source_data["url"],
                     branch=new_source_data.get("branch", "main"),
                     enabled=new_source_data.get("enabled", True),
+                    skills_path=new_source_data.get("skills_path", ""),
+                    sync_mode=new_source_data.get("sync_mode", "flat"),
+                    marketplace_path=new_source_data.get(
+                        "marketplace_path", ".claude-plugin/marketplace.json"
+                    ),
                 )
             )
 
@@ -343,6 +360,34 @@ def parse_skill_name_from_file(skill_md: Path) -> str:
     return str(parsed.get("name", "")).strip()
 
 
+def normalize_external_rel_path(path: str) -> str:
+    """Normalize a marketplace path and reject paths outside the source root."""
+    normalized = posixpath.normpath(path.strip().replace("\\", "/"))
+    if normalized in {"", "."}:
+        return ""
+    if normalized.startswith("../") or normalized.startswith("/") or normalized == "..":
+        raise ValueError(f"External skill path escapes source root: {path}")
+    return normalized
+
+
+def source_config_path(value: str, *, allow_empty: bool = False) -> str:
+    """Normalize source config paths before joining them to cloned repos."""
+    normalized = normalize_external_rel_path(value)
+    if not normalized and not allow_empty:
+        raise ValueError("Source config path must not be empty")
+    return normalized
+
+
+def external_skill_rel_path(skill: Skill) -> str:
+    """Return the external storage path for a skill under external/<source>/."""
+    return normalize_external_rel_path(skill.relative_path or skill.name)
+
+
+def skill_name_slug(skill: Skill) -> str:
+    """Return a stable slug for the synced skill frontmatter name."""
+    return external_skill_rel_path(skill).replace("/", "-")
+
+
 def find_skills(repo_path: Path, source: ExternalSource) -> List[Skill]:
     """Find all skills (dirs with SKILL.md) in repo.
 
@@ -370,9 +415,83 @@ def find_skills(repo_path: Path, source: ExternalSource) -> List[Skill]:
                 path=skill_dir,
                 source=source,
                 has_skill_md=True,
+                relative_path=skill_dir.name,
             )
         )
     return skills
+
+
+def resolve_marketplace_skill_path(plugin_source: str, skill_source: str) -> str:
+    """Resolve plugin source + skill entry using marketplace path semantics."""
+    plugin_root = normalize_external_rel_path(plugin_source.removeprefix("./"))
+    skill_path = normalize_external_rel_path(skill_source.removeprefix("./"))
+    return normalize_external_rel_path(posixpath.join(plugin_root, skill_path))
+
+
+def discover_marketplace_skills(
+    repo_path: Path, source: ExternalSource
+) -> Tuple[List[Skill], List[ExternalBundle]]:
+    """Discover skills and bundle definitions from an external marketplace.json."""
+    source_root = repo_path / source.skills_path if source.skills_path else repo_path
+    marketplace_file = repo_path / source.marketplace_path
+    if not marketplace_file.exists():
+        return [], []
+
+    marketplace = yaml.safe_load(marketplace_file.read_text(encoding="utf-8")) or {}
+    skills_by_rel_path: Dict[str, Skill] = {}
+    bundles: List[ExternalBundle] = []
+
+    for plugin in marketplace.get("plugins", []):
+        if not isinstance(plugin, dict):
+            continue
+
+        plugin_skills = plugin.get("skills", [])
+        if not isinstance(plugin_skills, list) or not plugin_skills:
+            continue
+
+        plugin_source = str(plugin.get("source", "./"))
+        bundle_skill_paths: List[str] = []
+
+        for raw_skill_source in plugin_skills:
+            if not isinstance(raw_skill_source, str):
+                continue
+
+            rel_path = resolve_marketplace_skill_path(plugin_source, raw_skill_source)
+            skill_dir = source_root / rel_path
+            if not (skill_dir / "SKILL.md").exists():
+                continue
+
+            if rel_path not in skills_by_rel_path:
+                skills_by_rel_path[rel_path] = Skill(
+                    name=skill_dir.name,
+                    path=skill_dir,
+                    source=source,
+                    has_skill_md=True,
+                    relative_path=rel_path,
+                )
+            bundle_skill_paths.append(f"./external/{source.name}/{rel_path}")
+
+        if bundle_skill_paths:
+            bundles.append(
+                ExternalBundle(
+                    name=str(plugin.get("name", f"{source.name}-skills")),
+                    source=source,
+                    description=str(plugin.get("description", "")),
+                    skill_paths=bundle_skill_paths,
+                )
+            )
+
+    skills = [skills_by_rel_path[key] for key in sorted(skills_by_rel_path.keys())]
+    return skills, bundles
+
+
+def discover_source_skills(
+    repo_path: Path, source: ExternalSource
+) -> Tuple[List[Skill], List[ExternalBundle]]:
+    """Discover skills using the configured sync mode for a source."""
+    if source.sync_mode == "marketplace":
+        return discover_marketplace_skills(repo_path, source)
+    return find_skills(repo_path, source), []
 
 
 def get_local_skills() -> Set[str]:
@@ -413,14 +532,14 @@ def load_existing_external_skills(
         if not source_dir.exists() or not source_dir.is_dir():
             continue
 
-        for skill_dir in source_dir.iterdir():
-            if not skill_dir.is_dir() or not (skill_dir / "SKILL.md").exists():
-                continue
+        for skill_md in sorted(source_dir.rglob("SKILL.md")):
+            skill_dir = skill_md.parent
+            rel_path = skill_dir.relative_to(source_dir).as_posix()
 
             parsed = parse_skill_md(skill_dir)
             commit_sha = str(parsed.get("synced-commit", ""))
             source_url = str(parsed.get("synced-from", source.url))
-            existing_skills[(source_name, skill_dir.name)] = (
+            existing_skills[(source_name, rel_path)] = (
                 Skill(
                     name=skill_dir.name,
                     path=skill_dir,
@@ -430,8 +549,11 @@ def load_existing_external_skills(
                         branch=source.branch,
                         enabled=source.enabled,
                         skills_path=source.skills_path,
+                        sync_mode=source.sync_mode,
+                        marketplace_path=source.marketplace_path,
                     ),
                     has_skill_md=True,
+                    relative_path=rel_path,
                 ),
                 commit_sha,
             )
@@ -443,8 +565,9 @@ def build_synced_skill_index(
     synced_skills: Dict[Tuple[str, str], Tuple[Skill, str]],
 ) -> Dict[str, Set[str]]:
     index: Dict[str, Set[str]] = {}
-    for source_name, skill_name in synced_skills.keys():
-        index.setdefault(skill_name, set()).add(source_name)
+    for source_name, rel_path in synced_skills.keys():
+        skill, _commit = synced_skills[(source_name, rel_path)]
+        index.setdefault(skill.name, set()).add(source_name)
     return index
 
 
@@ -453,11 +576,19 @@ def prune_removed_source_skills(
     source: ExternalSource,
     current_skill_names: Set[str],
 ) -> None:
+    def is_current_path(rel_path: str) -> bool:
+        if source.sync_mode == "marketplace":
+            return any(
+                rel_path == current_path or rel_path.startswith(f"{current_path}/")
+                for current_path in current_skill_names
+            )
+        return rel_path in current_skill_names
+
     source_root = Path("external") / source.name
     removed_keys = [
         key
         for key in existing_skills
-        if key[0] == source.name and key[1] not in current_skill_names
+        if key[0] == source.name and not is_current_path(key[1])
     ]
 
     for key in removed_keys:
@@ -466,8 +597,12 @@ def prune_removed_source_skills(
             shutil.rmtree(skill_path)
         del existing_skills[key]
 
-    if source_root.exists() and not any(source_root.iterdir()):
-        source_root.rmdir()
+    if source_root.exists():
+        for path in sorted(source_root.rglob("*"), key=lambda p: len(p.parts), reverse=True):
+            if path.is_dir() and not any(path.iterdir()):
+                path.rmdir()
+        if not any(source_root.iterdir()):
+            source_root.rmdir()
 
 
 def detect_conflicts(
@@ -508,9 +643,9 @@ def inject_attribution(skill: Skill, commit_sha: str) -> str:
     """
     fm, body = read_skill_md(skill.path)
 
-    # Rename skill to follow nested naming convention: external-{source}-{name}
+    # Rename skill to follow nested naming convention: external-{source}-{path-slug}
     original_name = fm.get("name", skill.name)
-    new_name = f"external-{skill.source.name}-{skill.name}"
+    new_name = f"external-{skill.source.name}-{skill_name_slug(skill)}"
     fm["name"] = new_name
     fm["original-name"] = original_name
 
@@ -555,6 +690,46 @@ def get_validation_failure_reason(output: str) -> str:
     return "Validation failed"
 
 
+def inject_attribution_tree(target: Path, source: ExternalSource, commit_sha: str) -> None:
+    """Inject attribution into every SKILL.md copied under an external skill tree."""
+    source_root = Path("external") / source.name
+    for skill_md in sorted(target.rglob("SKILL.md")):
+        skill_dir = skill_md.parent
+        rel_path = skill_dir.relative_to(source_root).as_posix()
+        copied_skill = Skill(
+            name=skill_dir.name,
+            path=skill_dir,
+            source=source,
+            has_skill_md=True,
+            relative_path=rel_path,
+        )
+        attributed_content = inject_attribution(copied_skill, commit_sha)
+        skill_md.write_text(attributed_content, encoding="utf-8")
+
+
+def validate_copied_skill_tree(target: Path) -> Tuple[bool, str]:
+    """Validate copied SKILL.md files without requiring marketplace to be final yet."""
+    repo_root = Path.cwd().resolve()
+    for skill_md in sorted(target.rglob("SKILL.md")):
+        errors, _warnings = validate_skill_file(skill_md.resolve(), repo_root)
+        if errors:
+            return False, errors[0]
+    return True, ""
+
+
+def ignore_nested_skill_dirs(root_skill_path: Path):
+    """Build a copytree ignore function that skips nested skill directories."""
+
+    def ignore(current_dir: str, names: List[str]) -> Set[str]:
+        ignored = {name for name in names if name == ".git"}
+        current_path = Path(current_dir)
+        if current_path != root_skill_path and "SKILL.md" in names:
+            ignored.update(names)
+        return ignored
+
+    return ignore
+
+
 def copy_skill(skill: Skill, commit_sha: str) -> Tuple[bool, str]:
     """Copy skill to external/ directory, inject attribution, and validate.
 
@@ -565,7 +740,7 @@ def copy_skill(skill: Skill, commit_sha: str) -> Tuple[bool, str]:
     Returns:
         Tuple of (success, reason). Reason is empty on success.
     """
-    target = Path("external") / skill.source.name / skill.name
+    target = Path("external") / skill.source.name / external_skill_rel_path(skill)
     backup_dir: Optional[Path] = None
     backup_target: Optional[Path] = None
     keep_backup = False
@@ -576,18 +751,15 @@ def copy_skill(skill: Skill, commit_sha: str) -> Tuple[bool, str]:
         shutil.move(target, backup_target)
 
     try:
-        shutil.copytree(skill.path, target, ignore=shutil.ignore_patterns(".git"))
+        ignore = shutil.ignore_patterns(".git")
+        if skill.source.sync_mode != "marketplace":
+            ignore = ignore_nested_skill_dirs(skill.path)
 
-        copied_skill = Skill(
-            name=skill.name, path=target, source=skill.source, has_skill_md=True
-        )
-        attributed_content = inject_attribution(copied_skill, commit_sha)
-        (target / "SKILL.md").write_text(attributed_content, encoding="utf-8")
+        shutil.copytree(skill.path, target, ignore=ignore)
 
-        result = subprocess.run(
-            ["python3", "scripts/validate_skills.py"], capture_output=True, text=True
-        )
-        if result.returncode == 0:
+        inject_attribution_tree(target, skill.source, commit_sha)
+        is_valid, validation_reason = validate_copied_skill_tree(target)
+        if is_valid:
             return True, ""
 
         cleanup_copied_skill(target)
@@ -599,8 +771,7 @@ def copy_skill(skill: Skill, commit_sha: str) -> Tuple[bool, str]:
                 False,
                 f"Validation failed and restore did not complete: {restore_exc}",
             )
-        failure_output = result.stdout or result.stderr
-        return False, get_validation_failure_reason(failure_output)
+        return False, validation_reason
     except Exception as exc:
         cleanup_copied_skill(target)
         try:
@@ -737,6 +908,7 @@ def sync_all_sources(config_path: str = ".github/external-sources.yml") -> Dict:
     all_synced_skills = []  # List of (Skill, commit_sha) tuples
     all_skipped = []
     all_errors = []
+    all_bundles: List[ExternalBundle] = []
 
     for source in sources:
         if not source.enabled:
@@ -750,9 +922,9 @@ def sync_all_sources(config_path: str = ".github/external-sources.yml") -> Dict:
             repo_path, commit_sha = clone_external_repo(source)
             print(f"  ✓ Cloned to {repo_path} (commit: {commit_sha[:7]})")
 
-            skills = find_skills(repo_path, source)
+            skills, bundles = discover_source_skills(repo_path, source)
             print(f"  Found {len(skills)} skills")
-            current_skill_names = {skill.name for skill in skills}
+            current_skill_names = {external_skill_rel_path(skill) for skill in skills}
             prune_removed_source_skills(
                 existing_external_skills, source, current_skill_names
             )
@@ -779,12 +951,17 @@ def sync_all_sources(config_path: str = ".github/external-sources.yml") -> Dict:
                         print(f"  ✓ Synced {skill.name}")
                         synced_skill = Skill(
                             name=skill.name,
-                            path=Path("external") / skill.source.name / skill.name,
+                            path=Path("external")
+                            / skill.source.name
+                            / external_skill_rel_path(skill),
                             source=skill.source,
                             has_skill_md=True,
+                            relative_path=external_skill_rel_path(skill),
                         )
                         all_synced_skills.append((synced_skill, commit_sha))
-                        existing_external_skills[(skill.source.name, skill.name)] = (
+                        existing_external_skills[
+                            (skill.source.name, external_skill_rel_path(skill))
+                        ] = (
                             synced_skill,
                             commit_sha,
                         )
@@ -797,6 +974,7 @@ def sync_all_sources(config_path: str = ".github/external-sources.yml") -> Dict:
 
             shutil.rmtree(repo_path)
             print(f"  ✓ Cleaned up {repo_path}")
+            all_bundles.extend(bundles)
 
         except Exception as e:
             print(f"  ❌ Error processing source {source.name}: {e}")
@@ -809,7 +987,7 @@ def sync_all_sources(config_path: str = ".github/external-sources.yml") -> Dict:
     )
 
     print("\nUpdating marketplace.json...")
-    update_marketplace(merged_synced_skills)
+    update_marketplace(merged_synced_skills, external_bundles=all_bundles)
     print("\nUpdating README.md...")
     update_readme(merged_synced_skills)
     print("\nValidating synced repository...")
@@ -870,7 +1048,10 @@ def update_readme(
         source_link = f"[{source_name}]({source_url})"
 
         # Format skill link
-        skill_link = f"[{skill.name}](external/{source_name}/{skill.name}/SKILL.md)"
+        skill_link = (
+            f"[{skill.name}](external/{source_name}/"
+            f"{external_skill_rel_path(skill)}/SKILL.md)"
+        )
 
         # Clean description for markdown table (escape pipe, remove newlines, truncate)
         clean_description = description.replace("|", "\\|").replace("\n", " ").strip()
@@ -916,9 +1097,34 @@ def update_readme(
     readme_file.write_text(content, encoding="utf-8")
 
 
+def filter_external_bundles(
+    external_bundles: List[ExternalBundle], synced_skills: List[Tuple[Skill, str]]
+) -> List[ExternalBundle]:
+    """Keep only bundle skill paths that exist in the final synced skill set."""
+    existing_paths = {
+        f"./external/{skill.source.name}/{external_skill_rel_path(skill)}"
+        for skill, _ in synced_skills
+    }
+    filtered_bundles = []
+    for bundle in external_bundles:
+        skill_paths = [path for path in bundle.skill_paths if path in existing_paths]
+        if not skill_paths:
+            continue
+        filtered_bundles.append(
+            ExternalBundle(
+                name=bundle.name,
+                source=bundle.source,
+                description=bundle.description,
+                skill_paths=skill_paths,
+            )
+        )
+    return filtered_bundles
+
+
 def update_marketplace(
     synced_skills: List[Tuple[Skill, str]],
     marketplace_path: str = ".claude-plugin/marketplace.json",
+    external_bundles: Optional[List[ExternalBundle]] = None,
 ) -> None:
     """Update marketplace.json with external skills entries grouped by source.
 
@@ -926,7 +1132,8 @@ def update_marketplace(
         synced_skills: List of tuples (Skill, commit_sha) that were successfully synced
         marketplace_path: Path to marketplace.json file (default: .claude-plugin/marketplace.json)
 
-    Groups external skills by source and creates one entry per source with skills array.
+    Groups flat external syncs by source. Marketplace-aware syncs can pass
+    external_bundles to preserve upstream bundle entries.
     """
     import json
     from collections import defaultdict
@@ -965,6 +1172,9 @@ def update_marketplace(
         len(plugins),
     )
 
+    external_bundles = filter_external_bundles(external_bundles or [], synced_skills)
+    bundled_sources = {bundle.source.name for bundle in external_bundles}
+
     # Group skills by source
     skills_by_source: Dict[str, List[Tuple[Skill, str]]] = defaultdict(list)
     for skill, commit_sha in synced_skills:
@@ -976,13 +1186,46 @@ def update_marketplace(
 
     # Create grouped entries for each source
     external_plugins = []
+    for bundle in sorted(
+        external_bundles, key=lambda item: (item.source.name, item.name)
+    ):
+        entry_name = f"external-{bundle.source.name}-{bundle.name}"
+        existing_categories = [
+            category
+            for category in existing_external_categories.get(entry_name, [])
+            if isinstance(category, str)
+        ]
+        categories = list(dict.fromkeys(BASE_EXTERNAL_CATEGORIES + existing_categories))
+        description_text = bundle.description or (
+            f"从 {bundle.source.name} 同步的 {bundle.name} 技能包，"
+            f"包含 {len(bundle.skill_paths)} 个技能"
+        )
+        external_plugins.append(
+            {
+                "name": entry_name,
+                "description": description_text,
+                "source": "./",
+                "strict": False,
+                "external": True,
+                "source-url": bundle.source.url,
+                "source-branch": bundle.source.branch,
+                "upstream-name": bundle.name,
+                "category": "external",
+                "categories": categories,
+                "skills": bundle.skill_paths,
+            }
+        )
+
     for source_name, skills_list in sorted(skills_by_source.items()):
+        if source_name in bundled_sources:
+            continue
+
         source = skills_list[0][0].source
         skill_paths = []
         descriptions = []
 
         for skill, _ in skills_list:
-            skill_paths.append(f"./external/{source_name}/{skill.name}")
+            skill_paths.append(f"./external/{source_name}/{external_skill_rel_path(skill)}")
             parsed = parse_skill_md(skill.path)
             desc = parsed.get("description", "")
             if desc:

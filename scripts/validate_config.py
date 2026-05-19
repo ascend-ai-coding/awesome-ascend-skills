@@ -5,12 +5,25 @@ import sys
 import yaml
 from pathlib import Path
 import re
+import posixpath
 
 
 def validate_url_format(url: str) -> bool:
     """Validate URL format using basic regex."""
     pattern = r"^https?://[^\s/$.?#].[^\s]*$"
     return bool(re.match(pattern, url))
+
+
+def is_safe_relative_path(path: str, *, allow_empty: bool = False) -> bool:
+    """Return whether a config path stays inside the cloned source root."""
+    normalized = posixpath.normpath(path.strip().replace("\\", "/"))
+    if normalized in {"", "."}:
+        return allow_empty
+    return not (
+        normalized == ".."
+        or normalized.startswith("../")
+        or normalized.startswith("/")
+    )
 
 
 def validate_config(config_path: Path) -> int:
@@ -93,6 +106,42 @@ def validate_config(config_path: Path) -> int:
             if not isinstance(enabled, bool):
                 print(
                     f"Validation error: Source at index {i} 'enabled' must be a boolean"
+                )
+                return 1
+
+        if "skills_path" in source and not isinstance(source["skills_path"], str):
+            print(
+                f"Validation error: Source at index {i} 'skills_path' must be a string"
+            )
+            return 1
+        if "skills_path" in source and not is_safe_relative_path(
+            source["skills_path"], allow_empty=True
+        ):
+            print(
+                f"Validation error: Source at index {i} 'skills_path' must be a safe relative path"
+            )
+            return 1
+
+        if "marketplace_path" in source and not isinstance(
+            source["marketplace_path"], str
+        ):
+            print(
+                f"Validation error: Source at index {i} 'marketplace_path' must be a string"
+            )
+            return 1
+        if "marketplace_path" in source and not is_safe_relative_path(
+            source["marketplace_path"]
+        ):
+            print(
+                f"Validation error: Source at index {i} 'marketplace_path' must be a safe relative path"
+            )
+            return 1
+
+        if "sync_mode" in source:
+            sync_mode = source["sync_mode"]
+            if sync_mode not in {"flat", "marketplace"}:
+                print(
+                    f"Validation error: Source at index {i} 'sync_mode' must be 'flat' or 'marketplace'"
                 )
                 return 1
 

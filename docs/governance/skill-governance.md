@@ -53,8 +53,10 @@
 
 从外部仓库自动同步的 skills。
 
-- 命名规则：`external-<source>-<skill>`
-- 存储路径：`external/{source-name}/{skill-name}/`
+- 命名规则：`external-<source>-<skill>`；如果外部 marketplace 保留了多级相对路径，则使用 `external-<source>-<path-slug>`
+- 存储路径：
+  - flat 同步：`external/{source-name}/{skill-name}/`
+  - marketplace 同步：`external/{source-name}/{upstream-source-path}/{skill-name}/`
 - 设计原则：
   - 不作为默认新手入口
   - 需要与本仓技能明确边界
@@ -125,7 +127,7 @@
 3. 本地 leaf skill 的主分类应与其 `skills/<domain>/...` 路径一致
 4. bundle / domain skill set 可以包含多个能力标签，但不能用能力标签替代主分类
 5. 带 `skills` 数组的 bundle / skill set 必须引用同一个目录树内的 skills；不要在一个 bundle 中混入其他功能域目录
-6. 外部同步 skill group 统一以 `external` 作为主分类，并补充 `external-skill-set`、`external-sync`
+6. 外部同步 skill group 统一以 `external` 作为主分类，并补充 `external-skill-set`、`external-sync`；如果外部仓提供 marketplace bundle，应保留上游 bundle 分组并映射到 `external/<source>/...` 下的真实路径
 
 ## 4. 命名与收敛规则
 
@@ -137,7 +139,7 @@
 - 本地 leaf skill：仍使用原始 leaf 名称，不额外追加分类前缀
 - 本地 nested skill：名称以前一层领域子目录为前缀，不额外追加 `skills-` 这类路径前缀
 - `skills/ai-for-science/` 下的本地 skill：保持 `ai-for-science-*` 语义前缀
-- external skill：保持同步命名，不在本仓重命名
+- external skill：由同步脚本注入 `external-<source>-...` 前缀；flat 同步使用 skill 名，marketplace 同步使用上游相对路径 slug
 
 ### 4.2 何时新建 bundle
 
