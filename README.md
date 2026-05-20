@@ -249,6 +249,7 @@ cp -r awesome-ascend-skills/skills/ops/npu-op-benchmark your-project/.agents/ski
 | [ais-bench](skills/inference/ais-bench/SKILL.md) | AI 模型评估工具：精度评估、性能压测、Function Call |
 | [diffusers-ascend-skills](skills/inference/diffusers-ascend/diffusers-ascend-pipeline/SKILL.md) | Diffusers 环境、权重准备与推理 |
 | [wan-ascend-adaptation](skills/inference/wan-ascend-adaptation/SKILL.md) | Wan 系列视频生成模型及相似扩散框架的昇腾适配指南 |
+| [migration-ascend-torchnpu-skills](skills/inference/migration-ascend-torchnpu-skills/SKILL.md) | 小模型基于torch_npu迁移至昇腾平台跑通，包含：环境搭建、迁移、报告生成 |
 
 ### 训练与通信
 
