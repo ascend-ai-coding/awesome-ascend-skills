@@ -53,7 +53,7 @@ hooks:
       command: echo '[CHECK] 确认所有 Phase (0-6) 已完成、Gate 1/2/5b/6 已通过后，方可结束任务。'
 original-name: atb-ops-to-aclnn-migration-workflow
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-05-19'
+synced-date: '2026-05-20'
 synced-commit: 61a50580836017810c0ff005bc53c940ca059f06
 license: UNKNOWN
 ---

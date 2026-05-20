@@ -3,7 +3,7 @@ name: external-gitcode-ascend-mindspeed-fsdp2-verification
 description: 用于执行 MindSpeed-MM FSDP2 迁移的功能与可靠性验收门禁。适用于模型/数据/配置改动后，验证一次分布式端到端成功并留存证据时。
 original-name: mindspeed-fsdp2-verification
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-05-19'
+synced-date: '2026-05-20'
 synced-commit: 61a50580836017810c0ff005bc53c940ca059f06
 license: UNKNOWN
 ---

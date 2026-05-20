@@ -3,7 +3,7 @@ name: external-gitcode-ascend-code-comprehension
 description: 在多个尺度上理解和总结代码功能，从函数级到模块级到系统级，帮助快速掌握陌生代码库。特别适用于大语言模型训练框架、分布式训练系统、深度学习框架等复杂代码库的分析。
 original-name: code-comprehension
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-05-19'
+synced-date: '2026-05-20'
 synced-commit: 61a50580836017810c0ff005bc53c940ca059f06
 license: UNKNOWN
 ---

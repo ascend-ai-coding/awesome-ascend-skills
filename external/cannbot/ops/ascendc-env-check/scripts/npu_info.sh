@@ -67,8 +67,8 @@ echo ""
 echo -e "${BLUE}[2/4] 芯片型号...${NC}"
 if [ "$USE_ASYS" = false ]; then
     device_line=$(npu-smi info 2>/dev/null | grep -E '^\|\s*[0-9]+\s+.*\b(OK|Warning|Alarm|Critical|UNKNOWN)\b' | head -1)
-    chip_name=$(echo "$device_line" | awk -F'|' '{gsub(/^ +| +$/, "", $2); print $2}' | awk '{print $2}')
-    echo -e "${GREEN}✓ Ascend $chip_name${NC}"
+    chip_name=$(echo "$device_line" | awk -F'|' '{gsub(/^ +| +$/, "", $3); print $3}')
+    echo -e "${GREEN}✓ $chip_name${NC}"
 else
     chip_name=$("$ASYS_CMD" info -r status 2>/dev/null | grep "Chip Name" | awk -F'|' '{gsub(/^ +| +$/, "", $3); print $3}' || echo "未知")
     echo -e "${GREEN}✓ $chip_name${NC}"
@@ -97,8 +97,9 @@ if [ "$USE_ASYS" = false ]; then
         WARNINGS=$((WARNINGS + 1))
     else
         echo "$device_lines" | while IFS= read -r line; do
-            devid=$(echo "$line" | awk -F'|' '{gsub(/^ +| +$/, "", $2); print $2}' | awk '{print $1}')
-            health=$(echo "$line" | awk -F'|' '{gsub(/^ +| +$/, "", $3); print $3}')
+            devid=$(echo "$line" | awk -F'|' '{gsub(/^ +| +$/, "", $2); print $2}')
+            name=$(echo "$line" | awk -F'|' '{gsub(/^ +| +$/, "", $3); print $3}')
+            health=$(echo "$line" | awk -F'|' '{gsub(/^ +| +$/, "", $4); print $4}')
             case "$health" in
                 OK|Warning)
                     echo -e "${GREEN}✓ Device $devid: $health (可用)${NC}"

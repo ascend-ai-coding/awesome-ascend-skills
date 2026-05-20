@@ -787,6 +787,30 @@
       ]
     },
     {
+      "name": "external-cannbot-triton-op-generator-skills",
+      "description": "Triton-Ascend 算子代码生成与优化 Skills（6 个）。任务提取、算法设计、代码生成、功能验证、性能优化，以及 NPU 架构参考。",
+      "source": "./",
+      "strict": false,
+      "external": true,
+      "source-url": "https://gitcode.com/cann/cannbot-skills",
+      "source-branch": "master",
+      "upstream-name": "triton-op-generator-skills",
+      "category": "external",
+      "categories": [
+        "external",
+        "external-skill-set",
+        "external-sync"
+      ],
+      "skills": [
+        "./external/cannbot/ops/triton-task-extractor",
+        "./external/cannbot/ops/triton-op-designer",
+        "./external/cannbot/ops/triton-op-coding",
+        "./external/cannbot/ops/triton-op-verifier",
+        "./external/cannbot/ops/triton-latency-optimizer",
+        "./external/cannbot/ops/npu-arch"
+      ]
+    },
+    {
       "name": "external-gitcode-ascend-skills",
       "description": "从 gitcode-ascend 同步的 Ascend 技能集，包含 91 个技能：\n- analyse-coverage: 分析测试覆盖率盲区，生成覆盖率分析报告\n- arxiv-recommendation-npu: 自动化推荐系统论文发现流水线。抓取 arxiv 推荐论文，检测源码，生成待迁移任务清单，由 npu-model-migration skill 完成 NPU 适配。\n- ascend-inference-repos-copilot: 昇腾（Ascend）推理生态开源代码仓库智能问答专家旨在为 vLLM、vLLM-Ascend、MindIE-LLM、MindIE-SD、MindIE-Motor、MindIE-Turbo 以及 msM\n- ... 等 88 个技能",
       "source": "./",

@@ -3,8 +3,8 @@ name: external-cannbot-ops-pypto-precision-debug
 description: PyPTO 算子精度问题排查技能。专注于用户代码层面的语法逻辑检查和规避方法尝试。当算子精度验证失败、输出结果异常、计算错误、数值偏差、或任何与精度相关的问题时使用此技能。
 original-name: pypto-precision-debug
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-19'
-synced-commit: 943f3bfc36e24068e065ca7ace72fbff86f4a09c
+synced-date: '2026-05-20'
+synced-commit: 1620d4d47cb1dd005868f4b9a3fc14f73ad28a60
 license: UNKNOWN
 ---
 

@@ -3,7 +3,7 @@ name: external-gitcode-ascend-large_scale_deploy
 description: 自动化大规模集群安装部署工具，用于 ascend-deployer 组件批量部署。当用户需要跨集群部署组件或执行批量安装操作时调用。
 original-name: large_scale_deploy
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-05-19'
+synced-date: '2026-05-20'
 synced-commit: 61a50580836017810c0ff005bc53c940ca059f06
 license: UNKNOWN
 ---

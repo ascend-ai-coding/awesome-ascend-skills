@@ -3,7 +3,7 @@ name: external-gitcode-ascend-tunnel
 description: SSH通道管理，支持本地/远程端口转发、SOCKS代理、反向代理
 original-name: ssh-dev-suite/tunnel
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-05-19'
+synced-date: '2026-05-20'
 synced-commit: 61a50580836017810c0ff005bc53c940ca059f06
 license: UNKNOWN
 ---

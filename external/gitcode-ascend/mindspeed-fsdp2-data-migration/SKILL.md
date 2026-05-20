@@ -3,7 +3,7 @@ name: external-gitcode-ascend-mindspeed-fsdp2-data-migration
 description: 用于将数据预处理与数据加载契约迁移到 MindSpeed-MM FSDP2。适用于实现数据集注册、预处理复用、collate 行为与输入字段兼容时。
 original-name: mindspeed-fsdp2-data-migration
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-05-19'
+synced-date: '2026-05-20'
 synced-commit: 61a50580836017810c0ff005bc53c940ca059f06
 license: UNKNOWN
 ---

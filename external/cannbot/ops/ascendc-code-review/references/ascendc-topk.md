@@ -40,6 +40,8 @@
 
 ### 1. 必须校验函数返回值 `[适用: Host]`
 
+> **交叉引用**：涉及指针返回值的判空检视策略，参见 SEC-3.5。
+
 **问题说明**
 
 Host侧代码调用函数时，必须校验函数返回值，确保操作成功或正确处理错误情况。未校验返回值可能导致程序在错误状态下继续执行，引发后续问题。
@@ -91,6 +93,8 @@ ge::DataType dtype = tensor->GetDataType();  // 不推荐
 ---
 
 ### 3. 生命周期内使用局部变量指针，避免野指针 `[适用: All]`
+
+> **交叉引用**：未初始化导致的野指针检视策略，参见 SEC-3.1；指针判空策略参见 SEC-3.5。
 
 **问题说明**
 
@@ -198,6 +202,8 @@ auto* attrActivateLeft = attrs->GetAttrPointer<int>(INDEX_ATTR_ACTIVATE_LEFT);  
 
 ### 6. 必须考虑nan/inf/+0/-0等特殊值和边界值处理 `[适用: All]`
 
+> **交叉引用**：除零检视策略参见 SEC-2.3。
+
 **问题说明**
 
 算子设计时必须考虑 `nan`、`inf`、`-inf`、`+0`、`-0` 等特殊值和边界值处理。这些特殊值在计算中可能产生非预期结果，导致算子输出异常。
@@ -215,6 +221,8 @@ auto* attrActivateLeft = attrs->GetAttrPointer<int>(INDEX_ATTR_ACTIVATE_LEFT);  
 
 ### 7. 融合规则/InferShape/Tiling外部输入校验 `[适用: Host]`
 
+> **交叉引用**：除零检视策略参见 SEC-2.3；外部输入合法性校验策略参见 SEC-4.1。
+
 **问题说明**
 
 融合规则、InferShape、Tiling 的外部输入使用时必须进行合法性校验。外部输入可能包含非法值，未校验可能导致后续计算错误或程序崩溃。
@@ -229,6 +237,8 @@ auto* attrActivateLeft = attrs->GetAttrPointer<int>(INDEX_ATTR_ACTIVATE_LEFT);  
 ---
 
 ### 8. gm内存偏移或大小必须用int64表示 `[适用: All]`
+
+> **交叉引用**：整数溢出检视策略参见 SEC-2.1。
 
 **问题说明**
 

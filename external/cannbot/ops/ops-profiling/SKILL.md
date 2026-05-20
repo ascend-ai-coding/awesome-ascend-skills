@@ -4,8 +4,8 @@ description: NPU 性能采集与分析，用于采集算子性能数据、定位
   profiling"等场景时触发。
 original-name: ops-profiling
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-19'
-synced-commit: 943f3bfc36e24068e065ca7ace72fbff86f4a09c
+synced-date: '2026-05-20'
+synced-commit: 1620d4d47cb1dd005868f4b9a3fc14f73ad28a60
 license: UNKNOWN
 ---
 

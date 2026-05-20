@@ -4,8 +4,8 @@ description: Ascend C 算子开发环境检查技能。用于：(1) 通过 npu-s
   CANN 环境配置（CANN Toolkit、Ops、自定义算子包），(3) 验证开发依赖是否完整。触发关键词：环境检查、NPU设备、npu-smi、CANN安装、设备查询、资源监控、检查CANN环境变量。
 original-name: ascendc-env-check
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-19'
-synced-commit: 943f3bfc36e24068e065ca7ace72fbff86f4a09c
+synced-date: '2026-05-20'
+synced-commit: 1620d4d47cb1dd005868f4b9a3fc14f73ad28a60
 license: UNKNOWN
 ---
 
@@ -58,13 +58,14 @@ bash scripts/check_env.sh
 | 检查项 | 说明 | 必需 |
 |--------|------|------|
 | ASCEND_HOME_PATH | CANN Toolkit 路径 | 是 |
+| CANN 版本 | 检测版本号及运行时依赖基线 | 建议确认 |
 | ASCEND_OPP_PATH | CANN Ops 路径 | 运行时必需 |
 | 自定义算子包 | op_api 库 | 运行自定义算子必需 |
 | CANN 工具 | msprof/cannsim | 可选 |
 
 > ⚠️ **注意**：官方环境变量为 `ASCEND_HOME_PATH`，不是 `ASCEND_HOME`。部分旧文档或示例代码可能使用 `ASCEND_HOME`，这是错误用法。
 
-详细环境配置见 [env_config_guide.md](references/env_config_guide.md)
+详细环境配置见 [env_config_guide.md](references/env_config_guide.md)，版本配套关系见其中「CANN 版本兼容性」章节
 
 ## 诊断脚本
 

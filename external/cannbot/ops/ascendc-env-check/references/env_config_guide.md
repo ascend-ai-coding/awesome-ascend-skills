@@ -59,11 +59,38 @@ export LD_LIBRARY_PATH=${ASCEND_HOME_PATH}/opp/vendors/${vendor_name}/op_api/lib
 **问题**: 运行自定义算子时报错 561003（Kernel查找失败）。  
 **解决**: `export LD_LIBRARY_PATH=${ASCEND_HOME_PATH}/opp/vendors/${vendor_name}/op_api/lib:$LD_LIBRARY_PATH`
 
+## CANN 版本兼容性
+
+CANN 版本需与固件驱动、子包版本配套使用，无通用最低/最高版本要求。具体配套关系以官方 Release Notes 为准。
+
+### 版本信息来源
+
+| 信息 | 来源路径 |
+|------|---------|
+| CANN 版本号 | `$ASCEND_HOME_PATH/compiler/version.info` 中的 `Version` 字段 |
+| 运行时依赖基线 | 同文件中的 `required_package_runtime_version` 字段 |
+| 全量子包依赖 | 同文件中的 `required_package_*` 系列字段 |
+
+可通过 `check_env.sh` 自动检测并展示上述信息。
+
+### 官方配套关系查询
+
+- CANN 与 Ascend HDK 版本配套关系、组合包配套关系等，请查阅官方 Release Notes：https://www.hiascend.com/cann/document
+- 版本下载与快速安装：https://www.hiascend.com/cann/download
+
+### 常见版本问题
+
+| 问题 | 原因 | 解决方法 |
+|------|------|---------|
+| CANN 与驱动不配套 | 固件驱动版本与 CANN 版本不匹配 | 查阅 Release Notes 配套关系表，升级驱动或 CANN |
+| 子包版本不一致 | runtime/metadef/opbase 等子包版本不匹配 | 检查 `version.info` 中 `required_package_*` 字段，重新安装配套版本 |
+| API 不可用 | 当前 CANN 版本不支持该 API | 查阅 API 文档中的版本要求说明 |
+
 ## 验证环境
 
 ```bash
 bash scripts/check_env.sh
 ```
 
-检查项：ASCEND_HOME_PATH、ASCEND_OPP_PATH、算子安装、调试配置
+检查项：ASCEND_HOME_PATH、CANN 版本、ASCEND_OPP_PATH、算子安装、调试配置
 

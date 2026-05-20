@@ -3,8 +3,8 @@ name: external-cannbot-ops-ascendc-code-review
 description: Ascend C 代码检视技能。基于假设检验方法论对代码进行安全规范检视。当用户提供代码片段和检视规则描述时，可使用此技能进行代码检视，使用时必须明确提供：代码片段和检视规则描述。
 original-name: ascendc-code-review
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-19'
-synced-commit: 943f3bfc36e24068e065ca7ace72fbff86f4a09c
+synced-date: '2026-05-20'
+synced-commit: 1620d4d47cb1dd005868f4b9a3fc14f73ad28a60
 license: UNKNOWN
 ---
 
@@ -140,6 +140,8 @@ license: UNKNOWN
 - **决策规则**：当自信值超过 60% 时，判定代码段存在风险，进入报告生成；否则继续检查下一代码段
 
 ### 阶段三：报告生成
+
+> 若调用方（如 ascendc-ops-reviewer）明确要求不生成报告文件，跳过本阶段，仅返回逐条检视结果。
 
 1. 按代码检视报告模板格式生成报告
 2. 每个问题详情前展示假设检验过程（证据链和自信值计算过程）

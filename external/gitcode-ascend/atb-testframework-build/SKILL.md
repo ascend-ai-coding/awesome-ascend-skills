@@ -34,7 +34,7 @@ hooks:
       command: echo '[COMPILE LIMIT] 编译验证最多 3 次。若第 3 次失败，必须停止并记录错误、向用户提问。'
 original-name: atb-testframework-build
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-05-19'
+synced-date: '2026-05-20'
 synced-commit: 61a50580836017810c0ff005bc53c940ca059f06
 license: UNKNOWN
 ---

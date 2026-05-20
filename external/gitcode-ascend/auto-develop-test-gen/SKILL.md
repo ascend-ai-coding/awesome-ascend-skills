@@ -3,7 +3,7 @@ name: external-gitcode-ascend-auto-develop-test-gen
 description: 开发者测试自动补全技能 - 为函数和类生成高质量单元测试，分析覆盖率盲区并生成高价值补充测试，提升有效覆盖率。
 original-name: auto-develop-test-gen
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-05-19'
+synced-date: '2026-05-20'
 synced-commit: 61a50580836017810c0ff005bc53c940ca059f06
 license: UNKNOWN
 ---

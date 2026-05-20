@@ -5,7 +5,7 @@ description: SwanLab 实验追踪平台配置与登录管理。触发场景：(1
   source scripts/functions.sh 调用。
 original-name: swanlab-setup
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-05-19'
+synced-date: '2026-05-20'
 synced-commit: 61a50580836017810c0ff005bc53c940ca059f06
 license: UNKNOWN
 ---

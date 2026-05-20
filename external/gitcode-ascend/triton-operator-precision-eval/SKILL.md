@@ -4,7 +4,7 @@ description: Triton 算子精度评估。与 PyTorch 参考实现对比，自动
   evaluation、精度报告、accuracy verification。
 original-name: triton-operator-precision-eval
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-05-19'
+synced-date: '2026-05-20'
 synced-commit: 61a50580836017810c0ff005bc53c940ca059f06
 license: UNKNOWN
 ---

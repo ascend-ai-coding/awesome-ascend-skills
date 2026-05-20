@@ -4,8 +4,8 @@ description: 根据算子需求生成 TileLang-Ascend 算子设计文档（desig
   映射、内存层级规划、Tiling 策略、循环结构、同步策略、验证方案等。触发：设计算子、生成 design.md、算子方案设计、新算子开发、算子实现方案。
 original-name: tilelang-op-design
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-19'
-synced-commit: 943f3bfc36e24068e065ca7ace72fbff86f4a09c
+synced-date: '2026-05-20'
+synced-commit: 1620d4d47cb1dd005868f4b9a3fc14f73ad28a60
 license: UNKNOWN
 ---
 

@@ -3,7 +3,7 @@ name: external-gitcode-ascend-ssh-connection
 description: SSH远程开发套件，连接管理、命令执行、文件传输、部署、隧道、调试
 original-name: ssh-dev-suite
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-05-19'
+synced-date: '2026-05-20'
 synced-commit: 61a50580836017810c0ff005bc53c940ca059f06
 license: UNKNOWN
 ---

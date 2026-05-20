@@ -3,7 +3,7 @@ name: external-gitcode-ascend-ascend-mmlab-install-suite
 description: 昇腾NPU环境安装OpenMMLab系列库套件（mmcv/mmdet/mmdet3d/detectron2），支持本地+远程混合开发模式
 original-name: ascend-mmlab-install-suite
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-05-19'
+synced-date: '2026-05-20'
 synced-commit: 61a50580836017810c0ff005bc53c940ca059f06
 license: UNKNOWN
 ---

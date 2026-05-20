@@ -3,7 +3,7 @@ name: external-gitcode-ascend-deploy
 description: 本地项目部署到远程服务器，支持增量同步、部署钩子、回滚
 original-name: ssh-dev-suite/deploy
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-05-19'
+synced-date: '2026-05-20'
 synced-commit: 61a50580836017810c0ff005bc53c940ca059f06
 license: UNKNOWN
 ---

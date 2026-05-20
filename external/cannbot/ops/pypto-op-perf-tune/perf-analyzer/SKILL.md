@@ -3,8 +3,8 @@ name: external-cannbot-ops-pypto-op-perf-tune-perf-analyzer
 description: 分析 PyPTO 算子的性能指标。当需要分析PyPTO算子的性能指标，从性能数据文件中提取关键指标，计算性能评级，或提供性能瓶颈分析和优化建议时使用此技能。
 original-name: perf-analyzer
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-19'
-synced-commit: 943f3bfc36e24068e065ca7ace72fbff86f4a09c
+synced-date: '2026-05-20'
+synced-commit: 1620d4d47cb1dd005868f4b9a3fc14f73ad28a60
 license: UNKNOWN
 ---
 

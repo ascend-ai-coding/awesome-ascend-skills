@@ -8,7 +8,7 @@ description: Analyze and debug upstream vLLM test failures on Ascend NPUs. Adapt
   CI tests, and to validate mainline compatibility on the Ascend hardware.
 original-name: vllm-tests-failure-analysis
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-05-19'
+synced-date: '2026-05-20'
 synced-commit: 61a50580836017810c0ff005bc53c940ca059f06
 license: UNKNOWN
 ---

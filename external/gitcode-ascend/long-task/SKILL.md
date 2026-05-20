@@ -3,7 +3,7 @@ name: external-gitcode-ascend-long-task
 description: 长耗时任务管理，支持checkpoint记忆、agent休息与恢复
 original-name: ssh-dev-suite/long-task
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-05-19'
+synced-date: '2026-05-20'
 synced-commit: 61a50580836017810c0ff005bc53c940ca059f06
 license: UNKNOWN
 ---

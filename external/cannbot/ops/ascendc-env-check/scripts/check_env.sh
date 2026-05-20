@@ -18,7 +18,7 @@ ERRORS=0
 WARNINGS=0
 
 # 1. 检查 CANN Toolkit 环境
-echo -e "${YELLOW}[1/6] 检查 CANN Toolkit 环境...${NC}"
+echo -e "${YELLOW}[1/7] 检查 CANN Toolkit 环境...${NC}"
 if [ -z "$ASCEND_HOME_PATH" ]; then
     echo -e "${RED}✗ ASCEND_HOME_PATH 未设置${NC}"
     echo "  官方配置方法："
@@ -43,8 +43,46 @@ fi
 
 echo ""
 
-# 2. 检查 CANN Ops 环境（运行态依赖）
-echo -e "${YELLOW}[2/6] 检查 CANN Ops 环境（运行态依赖）...${NC}"
+_get_cann_version() {
+    declare -g CANN_VERSION=""
+    declare -g CANN_RUNTIME_REQ=""
+    if [ -n "$ASCEND_HOME_PATH" ]; then
+        if [ -f "$ASCEND_HOME_PATH/compiler/version.info" ]; then
+            CANN_VERSION=$(grep '^Version=' "$ASCEND_HOME_PATH/compiler/version.info" | cut -d'=' -f2)
+            CANN_RUNTIME_REQ=$(grep '^required_package_runtime_version=' "$ASCEND_HOME_PATH/compiler/version.info" | cut -d'=' -f2 | tr -d '"')
+        fi
+        if [ -z "$CANN_VERSION" ]; then
+            CANN_VERSION=$(basename "$ASCEND_HOME_PATH" | sed 's/cann-//' | sed 's/-beta\./\./')
+        fi
+    fi
+    if [ -z "$CANN_VERSION" ] && [ -d "/usr/local/Ascend/ascend-toolkit/latest" ]; then
+        if [ -f "/usr/local/Ascend/ascend-toolkit/latest/version.cfg" ]; then
+            CANN_VERSION=$(head -1 "/usr/local/Ascend/ascend-toolkit/latest/version.cfg")
+        elif [ -f "/usr/local/Ascend/ascend-toolkit/latest/version.info" ]; then
+            CANN_VERSION=$(grep '^Version=' "/usr/local/Ascend/ascend-toolkit/latest/version.info" | cut -d'=' -f2)
+        fi
+    fi
+}
+
+echo -e "${YELLOW}[2/7] 检查 CANN 版本...${NC}"
+_get_cann_version
+
+if [ -z "$CANN_VERSION" ]; then
+    echo -e "${YELLOW}⚠ 无法检测 CANN 版本${NC}"
+    echo "  建议确认 CANN Toolkit 已正确安装"
+    WARNINGS=$((WARNINGS + 1))
+else
+    echo -e "${GREEN}✓ CANN 版本: $CANN_VERSION${NC}"
+    if [ -n "$CANN_RUNTIME_REQ" ]; then
+        echo "  依赖运行时基线: $CANN_RUNTIME_REQ（来自 version.info）"
+    fi
+    echo "  版本配套关系请查阅 CANN 官方 Release Notes：https://www.hiascend.com/cann/document"
+fi
+
+echo ""
+
+# 3. 检查 CANN Ops 环境（运行态依赖）
+echo -e "${YELLOW}[3/7] 检查 CANN Ops 环境（运行态依赖）...${NC}"
 if [ -z "$ASCEND_OPP_PATH" ]; then
     echo -e "${YELLOW}⚠ ASCEND_OPP_PATH 未设置${NC}"
     echo "  说明："
@@ -72,8 +110,8 @@ fi
 
 echo ""
 
-# 3. 检查自定义算子包（可选）
-echo -e "${YELLOW}[3/6] 检查自定义算子包...${NC}"
+# 4. 检查自定义算子包（可选）
+echo -e "${YELLOW}[4/7] 检查自定义算子包...${NC}"
 if [ -z "$ASCEND_HOME_PATH" ]; then
     echo -e "${YELLOW}⚠ 跳过检查（ASCEND_HOME_PATH 未设置）${NC}"
 else
@@ -116,8 +154,8 @@ fi
 
 echo ""
 
-# 4. 检查 CANN 工具
-echo -e "${YELLOW}[4/6] 检查 CANN 工具...${NC}"
+# 5. 检查 CANN 工具
+echo -e "${YELLOW}[5/7] 检查 CANN 工具...${NC}"
 if command -v msprof &> /dev/null; then
     echo -e "${GREEN}✓ msprof 可用${NC}"
 else
@@ -133,8 +171,8 @@ fi
 
 echo ""
 
-# 5. 检查日志目录
-echo -e "${YELLOW}[5/6] 检查日志目录...${NC}"
+# 6. 检查日志目录
+echo -e "${YELLOW}[6/7] 检查日志目录...${NC}"
 LOG_DIR="$HOME/ascend/log/debug/plog"
 if [ -d "$LOG_DIR" ]; then
     log_count=$(ls "$LOG_DIR"/*.log 2>/dev/null | wc -l)
@@ -146,8 +184,8 @@ fi
 
 echo ""
 
-# 6. 检查环境变量配置
-echo -e "${YELLOW}[6/6] 检查调试配置...${NC}"
+# 7. 检查环境变量配置
+echo -e "${YELLOW}[7/7] 检查调试配置...${NC}"
 if [ "$ASCEND_SLOG_PRINT_TO_STDOUT" = "1" ]; then
     echo -e "${GREEN}✓ 日志打屏已开启 (ASCEND_SLOG_PRINT_TO_STDOUT=1)${NC}"
 else

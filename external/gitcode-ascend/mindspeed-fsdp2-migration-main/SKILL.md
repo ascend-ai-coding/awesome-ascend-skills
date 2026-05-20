@@ -3,7 +3,7 @@ name: external-gitcode-ascend-mindspeed-fsdp2-migration-main
 description: 用于统筹 MindSpeed-MM FSDP2 端到端迁移。适用于需要协同模型、数据、配置与验证子流程迁移任意新模型时。
 original-name: mindspeed-fsdp2-migration-main
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-05-19'
+synced-date: '2026-05-20'
 synced-commit: 61a50580836017810c0ff005bc53c940ca059f06
 license: UNKNOWN
 ---

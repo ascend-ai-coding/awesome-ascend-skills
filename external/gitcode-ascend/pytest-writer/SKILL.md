@@ -3,7 +3,7 @@ name: external-gitcode-ascend-pytest-writer
 description: 专业的pytest测试用例编写助手，用于创建、编写和优化Python测试用例。当需要编写测试文件、创建测试代码、重构优化测试、调试失败测试、使用fixtures、参数化测试、断言技巧、测试覆盖率分析时使用此技能。
 original-name: pytest-writer
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-05-19'
+synced-date: '2026-05-20'
 synced-commit: 61a50580836017810c0ff005bc53c940ca059f06
 license: UNKNOWN
 ---
