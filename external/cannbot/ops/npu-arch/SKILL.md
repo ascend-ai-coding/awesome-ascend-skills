@@ -3,8 +3,8 @@ name: external-cannbot-ops-npu-arch
 description: Ascend NPU 架构知识查询技能。通过芯片型号映射、架构代际划分和 archXX 特性说明，帮助判断目标平台能力、特性支持与条件编译策略。当需要确认芯片型号、NpuArch/SocVersion、架构差异、特性支持或编译分支条件时使用。
 original-name: npu-arch
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-20'
-synced-commit: 1620d4d47cb1dd005868f4b9a3fc14f73ad28a60
+synced-date: '2026-05-21'
+synced-commit: a8d00b82024e832193ee3c50e946714376f85580
 license: UNKNOWN
 ---
 

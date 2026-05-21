@@ -4,8 +4,8 @@ description: Ascend C 算子开发环境检查技能。用于：(1) 通过 npu-s
   CANN 环境配置（CANN Toolkit、Ops、自定义算子包），(3) 验证开发依赖是否完整。触发关键词：环境检查、NPU设备、npu-smi、CANN安装、设备查询、资源监控、检查CANN环境变量。
 original-name: ascendc-env-check
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-20'
-synced-commit: 1620d4d47cb1dd005868f4b9a3fc14f73ad28a60
+synced-date: '2026-05-21'
+synced-commit: a8d00b82024e832193ee3c50e946714376f85580
 license: UNKNOWN
 ---
 

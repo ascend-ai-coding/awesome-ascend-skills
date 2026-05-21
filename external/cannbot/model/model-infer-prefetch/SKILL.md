@@ -5,8 +5,8 @@ description: 基于 PyTorch 框架的昇腾 NPU 模型推理权重预取优化�
 user-invocable: true
 original-name: model-infer-prefetch
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-20'
-synced-commit: 1620d4d47cb1dd005868f4b9a3fc14f73ad28a60
+synced-date: '2026-05-21'
+synced-commit: a8d00b82024e832193ee3c50e946714376f85580
 license: UNKNOWN
 ---
 

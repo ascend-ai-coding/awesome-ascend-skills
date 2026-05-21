@@ -187,6 +187,30 @@ def _apply_file_filter(diff_content: str, file_filter: str) -> str:
     return "".join(filtered_lines)
 
 
+def _determine_base_branch(repo_dir: str) -> str:
+    """确定仓库的基础分支（main 或 master）
+
+    在 bare clone 中遍历 refs/heads/ 检查 main/master 是否存在。
+
+    Args:
+        repo_dir: bare 仓库目录
+
+    Returns:
+        str: 基础分支名称（如 "master"、"main"）
+
+    Raises:
+        RuntimeError: 当无法确定基础分支时抛出
+    """
+    result = run_git_command(["git", "branch"], cwd=repo_dir)
+    branches = result.stdout
+
+    for branch in ["main", "master"]:
+        if branch in branches:
+            return branch
+
+    raise RuntimeError("无法确定基础分支（未找到 main 或 master）")
+
+
 def _cleanup_temp_dir(temp_dir: str) -> None:
     """清理临时目录
 
@@ -242,10 +266,14 @@ def get_pr_diff_git(
             ]
         )
 
-        # 获取 PR merge 引用（虚拟合并提交）
+        # 确定基础分支（用于 head ref fallback）
+        base_branch = _determine_base_branch(repo_dir)
+
+        # 优先获取 PR merge 引用（虚拟合并提交），不存在则 fallback 到 head 引用
         logger.info("正在获取 PR #%d merge 引用...", pr_number)
         merge_ref = f"mr_{pr_number}_merge"
-        run_git_command(
+        use_merge_ref = True
+        merge_fetch_result = run_git_command(
             [
                 "git",
                 "fetch",
@@ -253,26 +281,51 @@ def get_pr_diff_git(
                 f"refs/merge-requests/{pr_number}/merge:{merge_ref}",
             ],
             cwd=repo_dir,
+            check=False,
         )
+        if merge_fetch_result.returncode != 0:
+            logger.info("merge 引用不存在，fallback 到 head 引用")
+            use_merge_ref = False
 
-        # 使用 git show 获取 PR diff（显示 merge 提交的变更）
-        # 这会自动显示 PR 分支相对于 target 分支的实际变更
         logger.info("正在生成 diff...")
 
-        if stat_only:
-            result = run_git_command(
-                ["git", "show", "-m", "--stat", merge_ref],
-                cwd=repo_dir,
-            )
+        if use_merge_ref:
+            if stat_only:
+                result = run_git_command(
+                    ["git", "show", "-m", "--stat", merge_ref],
+                    cwd=repo_dir,
+                )
+            else:
+                result = run_git_command(
+                    ["git", "show", "-m", merge_ref],
+                    cwd=repo_dir,
+                )
+            diff_content = result.stdout
+            diff_content = _extract_first_diff(diff_content)
         else:
-            result = run_git_command(
-                ["git", "show", "-m", merge_ref],
+            head_ref = f"pr_{pr_number}_head"
+            run_git_command(
+                [
+                    "git",
+                    "fetch",
+                    "origin",
+                    f"refs/merge-requests/{pr_number}/head:{head_ref}",
+                ],
                 cwd=repo_dir,
             )
 
-        diff_content = result.stdout
-
-        diff_content = _extract_first_diff(diff_content)
+            range_spec = f"{base_branch}...{head_ref}"
+            if stat_only:
+                result = run_git_command(
+                    ["git", "diff", "--stat", range_spec],
+                    cwd=repo_dir,
+                )
+            else:
+                result = run_git_command(
+                    ["git", "diff", range_spec],
+                    cwd=repo_dir,
+                )
+            diff_content = result.stdout
 
         if file_filter and diff_content and not stat_only:
             diff_content = _apply_file_filter(diff_content, file_filter)
