@@ -1,3 +1,13 @@
+---
+schema_version: 1
+op_name: {operator_name}
+supported_dtypes: {supported_dtypes}
+dynamic_axes: {axes_list}
+shape_constraints: {shape_constraints}
+tiling_required: {tiling_required}
+feasibility: {feasibility}
+---
+
 # API 探索报告
 
 > **生成时间**: {timestamp}
@@ -118,9 +128,9 @@
 
 | 信息 | 文档路径 |
 |------|----------|
-| API 存在性 | `docs/api/operation/index.md` |
-| {api} 文档 | `docs/api/operation/pypto-{api}.md` |
-| 入口约束 | `docs/api/others/pypto-from_torch.md` |
+| API 存在性 | `pypto/docs/zh/api/operation/index.md` |
+| {api} 文档 | `pypto/docs/zh/api/operation/pypto-{api}.md` |
+| 入口约束 | `pypto/docs/zh/api/others/pypto-from_torch.md` |
 | 参考实现 | `{example_path}`（如有） |
 
 ---

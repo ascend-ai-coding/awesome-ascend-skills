@@ -4,8 +4,8 @@ description: npugraph_ex（aclgraph）模式使用指南。采用 Capture & Repl
   Host 调度开销，适用于固定 shape 在线推理低延迟场景。涵盖模式配置、FX Pass、编译缓存、多流并行、内存复用、静态 Kernel 编译、限核、性能优化、调试定位、自定义算子入图等。关键词：npugraph_ex、aclgraph、backend="npugraph_ex"、capture、replay、reduce-overhead、config.aclgraph_config。
 original-name: torch-npugraph-ex-knowledge
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-21'
-synced-commit: a8d00b82024e832193ee3c50e946714376f85580
+synced-date: '2026-05-26'
+synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
 license: UNKNOWN
 ---
 

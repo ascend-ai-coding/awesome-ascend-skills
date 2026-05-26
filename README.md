@@ -293,10 +293,12 @@ cp -r awesome-ascend-skills/skills/ops/npu-op-benchmark your-project/.agents/ski
 
 | Skill | 来源 | 描述 |
 |-------|------|------|
+| [aiss-tiling-solver](external/cannbot/ops/aiss-tiling-solver/SKILL.md) | [cannbot](https://gitcode.com/cann/cannbot-skills) | 使用 AISS-TilingSolver 工具自动求解 Ascend C 算子（MatMul / Vector）的最优 Tiling 参数，包括下载安装、构造 JSON 输入、运行求解、结果解读... |
 | [ascendc-api-best-practices](external/cannbot/ops/ascendc-api-best-practices/SKILL.md) | [cannbot](https://gitcode.com/cann/cannbot-skills) | Ascend C API 使用最佳实践。提供算术、归约、数据搬运、Buffer管理、精度转换等 API 的正确用法和限制说明。触发：用户询问具体 API 用法（如"DataCopy 怎么用"）、... |
+| [ascendc-blaze-best-practice](external/cannbot/ops/ascendc-blaze-best-practice/SKILL.md) | [cannbot](https://gitcode.com/cann/cannbot-skills) | Matmul/Cube/GEMM/BMM 单算子直调生成（Blaze/tensor_api 路径）。当用户提到 Blaze 时必须使用此 skill。覆盖纯AIC/StreamK/FixpOpt... |
 | [ascendc-code-review](external/cannbot/ops/ascendc-code-review/SKILL.md) | [cannbot](https://gitcode.com/cann/cannbot-skills) | Ascend C 代码检视技能。基于假设检验方法论对代码进行安全规范检视。当用户提供代码片段和检视规则描述时，可使用此技能进行代码检视，使用时必须明确提供：代码片段和检视规则描述。 |
 | [ascendc-crash-debug](external/cannbot/ops/ascendc-crash-debug/SKILL.md) | [cannbot](https://gitcode.com/cann/cannbot-skills) | Ascend C 算子卡死/崩溃调试技能。用于处理程序无法运行完的场景：(1) 程序卡死/挂起/超时，Kernel 无响应，(2) 程序崩溃（Segmentation Fault、Abort），... |
-| [ascendc-direct-invoke-template](external/cannbot/ops/ascendc-direct-invoke-template/SKILL.md) | [cannbot](https://gitcode.com/cann/cannbot-skills) | Kernel直调工程模板，用于创建 Ascend C Kernel 直调工程项目。提供经过验证的样例工程和清晰的修改指南。触发：当用户需要创建 Kernel 直调工程、学习 Ascend C 编... |
+| [ascendc-direct-invoke-template](external/cannbot/ops/ascendc-direct-invoke-template/SKILL.md) | [cannbot](https://gitcode.com/cann/cannbot-skills) | Kernel直调工程模板，用于创建 Ascend C Kernel 直调工程项目。提供经过验证的 Vector 样例工程（add_custom）和 mxfp8 matmul+eltwise 融合... |
 | [ascendc-docs-search](external/cannbot/ops/ascendc-docs-search/SKILL.md) | [cannbot](https://gitcode.com/cann/cannbot-skills) | Ascend C 开发资源检索技能。通过本地 API 文档索引、示例代码映射和在线文档兜底搜索定位开发资料，优先查本地、缺失时再查在线。当需要查询 API 用法、示例代码、兼容性信息、官方资料入... |
 | [ascendc-env-check](external/cannbot/ops/ascendc-env-check/SKILL.md) | [cannbot](https://gitcode.com/cann/cannbot-skills) | Ascend C 算子开发环境检查技能。用于：(1) 通过 npu-smi 查询 NPU 设备信息（设备列表、状态、资源使用），(2) 检查 CANN 环境配置（CANN Toolkit、Ops... |
 | [ascendc-precision-debug](external/cannbot/ops/ascendc-precision-debug/SKILL.md) | [cannbot](https://gitcode.com/cann/cannbot-skills) | Ascend C 算子精度调试技能，提供精度问题诊断和解决方法。触发：输出异常（全为0、随机值、未初始化）、精度验证失败（rtol/atol 不达标）、FP16 精度差于预期、Cast 后数据错... |
@@ -318,7 +320,7 @@ cp -r awesome-ascend-skills/skills/ops/npu-op-benchmark your-project/.agents/ski
 | [ops-precision-standard](external/cannbot/ops/ops-precision-standard/SKILL.md) | [cannbot](https://gitcode.com/cann/cannbot-skills) | 算子精度标准。描述 Ascend C 算子各种 dtype 输出对应的精度比对标准（atol/rtol）。当需要（1）评估算子精度是否达标，（2）编写 ST 测试验证精度，（3）处理 FP16/... |
 | [ops-profiling](external/cannbot/ops/ops-profiling/SKILL.md) | [cannbot](https://gitcode.com/cann/cannbot-skills) | NPU 性能采集与分析，用于采集算子性能数据、定位性能瓶颈并给出优化建议。当用户在算子开发过程中提到"上板性能"、"算子性能测试"、"硬件性能验证"、"NPU性能采集"、"NPU profili... |
 | [perf-analyzer](external/cannbot/ops/pypto-op-perf-tune/perf-analyzer/SKILL.md) | [cannbot](https://gitcode.com/cann/cannbot-skills) | 分析 PyPTO 算子的性能指标。当需要分析PyPTO算子的性能指标，从性能数据文件中提取关键指标，计算性能评级，或提供性能瓶颈分析和优化建议时使用此技能。 |
-| [pypto-api-explore](external/cannbot/ops/pypto-api-explore/SKILL.md) | [cannbot](https://gitcode.com/cann/cannbot-skills) | 探索 PyPTO API，为算子开发提供 API 映射、约束检查和 Tiling 需求分析。当需要查找 PyPTO 是否支持某个操作、验证 API 约束、分析算子可行性时使用。Triggers:... |
+| [pypto-api-explore](external/cannbot/ops/pypto-api-explore/SKILL.md) | [cannbot](https://gitcode.com/cann/cannbot-skills) | 探索 PyPTO API，为算子开发提供 API 映射、约束检查和 Tiling 需求分析。当需要查找 PyPTO 是否支持某个操作、验证 API 约束、分析算子可行性时使用。触发词：API 探... |
 | [pypto-golden-generate](external/cannbot/ops/pypto-golden-generate/SKILL.md) | [cannbot](https://gitcode.com/cann/cannbot-skills) | 当需要生成 golden 参考实现时使用此 skill。基于算子规格信息，生成纯 PyTorch golden 参考实现 `{op}_golden.py`，导出 `{op}_golden()` ... |
 | [pypto-intent-understand](external/cannbot/ops/pypto-intent-understand/SKILL.md) | [cannbot](https://gitcode.com/cann/cannbot-skills) | PyPTO 算子需求意图理解。将用户的自然语言算子描述转化为结构化需求文档。当用户描述要开发、实现、创建某个算子时触发，例如：'开发一个 sinh 算子'、'实现 GELU'、'参考 PyTor... |
 | [pypto-op-design](external/cannbot/ops/pypto-op-design/SKILL.md) | [cannbot](https://gitcode.com/cann/cannbot-skills) | 当需要设计 PyPTO 算子实现方案时使用此 skill。基于算子规格与相关上下文，生成 DESIGN.md（含 API 映射、Tiling 策略、Loop 结构）。Triggers: 生成设计... |

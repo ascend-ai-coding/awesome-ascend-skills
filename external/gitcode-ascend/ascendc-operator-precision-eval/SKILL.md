@@ -4,8 +4,8 @@ description: AscendC算子精度评估。对已编译安装的算子生成全面
   evaluation、精度报告、accuracy、误差分析。执行完成后 MUST 在当前对话中展示总览、失败摘要与关键发现，不得仅附报告路径。
 original-name: ascendc-operator-precision-eval
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-05-21'
-synced-commit: 349fa44adc6ad5adeb12efcdf390fd47ea0ea0d4
+synced-date: '2026-05-26'
+synced-commit: 1f7666e7768a0ceb21bb1d40ce4b5179fcb6f1d6
 license: UNKNOWN
 ---
 

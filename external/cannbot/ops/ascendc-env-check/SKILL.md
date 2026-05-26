@@ -4,8 +4,8 @@ description: Ascend C 算子开发环境检查技能。用于：(1) 通过 npu-s
   CANN 环境配置（CANN Toolkit、Ops、自定义算子包），(3) 验证开发依赖是否完整。触发关键词：环境检查、NPU设备、npu-smi、CANN安装、设备查询、资源监控、检查CANN环境变量。
 original-name: ascendc-env-check
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-21'
-synced-commit: a8d00b82024e832193ee3c50e946714376f85580
+synced-date: '2026-05-26'
+synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
 license: UNKNOWN
 ---
 
@@ -78,6 +78,6 @@ bash scripts/check_env.sh
 
 - **NPU 不可见**：检查 `npu-smi list` 是否能识别设备
 - **算子运行失败**：优先运行 `check_env.sh` 检查环境配置
-- **设备被占用**：使用 `npu-smi info` 查看设备状态
+- **确认是否有进程占用 NPU**：使用 `npu-smi info -t usages -i <device_id>` 查看运行中的进程；注意空闲设备仍会有少量 HBM 被驱动占用（正常现象），不应误判为设备被占用
 
 详细排查见 [troubleshooting.md](references/troubleshooting.md)

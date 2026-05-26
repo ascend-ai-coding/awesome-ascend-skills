@@ -4,8 +4,8 @@ description: Ascend C API 使用最佳实践。提供算术、归约、数据搬
   API 用法（如"DataCopy 怎么用"）、遇到 API 参数错误或限制报错（如 repeatTimes、对齐问题）、需要查看 API 最佳实践或避坑指南时。
 original-name: ascendc-api-best-practices
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-21'
-synced-commit: a8d00b82024e832193ee3c50e946714376f85580
+synced-date: '2026-05-26'
+synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
 license: UNKNOWN
 ---
 

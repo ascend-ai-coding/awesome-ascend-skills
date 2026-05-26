@@ -4,8 +4,8 @@ description: 完成AscendC算子设计 - 帮助用户完成算子的架构设计
   kernel设计、两级tiling、核间切分、核内切分时，使用此skill。
 original-name: ascendc-operator-design
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-05-21'
-synced-commit: 349fa44adc6ad5adeb12efcdf390fd47ea0ea0d4
+synced-date: '2026-05-26'
+synced-commit: 1f7666e7768a0ceb21bb1d40ce4b5179fcb6f1d6
 license: UNKNOWN
 ---
 

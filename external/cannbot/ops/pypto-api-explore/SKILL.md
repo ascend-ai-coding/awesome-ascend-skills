@@ -1,12 +1,12 @@
 ---
 name: external-cannbot-ops-pypto-api-explore
-description: '探索 PyPTO API，为算子开发提供 API 映射、约束检查和 Tiling 需求分析。当需要查找 PyPTO 是否支持某个操作、验证
-  API 约束、分析算子可行性时使用。Triggers: API 探索、查找 API、PyPTO 有没有 xxx、支持什么 dtype、约束是什么、tiling
-  怎么配、API 映射、可行性分析、这个算子能做吗。'
+description: 探索 PyPTO API，为算子开发提供 API 映射、约束检查和 Tiling 需求分析。当需要查找 PyPTO 是否支持某个操作、验证
+  API 约束、分析算子可行性时使用。触发词：API 探索、查找 API、PyPTO 有没有 xxx、支持什么 dtype、约束是什么、tiling 怎么配、API
+  映射、可行性分析、这个算子能做吗。
 original-name: pypto-api-explore
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-21'
-synced-commit: a8d00b82024e832193ee3c50e946714376f85580
+synced-date: '2026-05-26'
+synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
 license: UNKNOWN
 ---
 
@@ -27,8 +27,9 @@ license: UNKNOWN
 ## 输出
 
 - **输出件**：API_REPORT.md
-- **格式**：markdown，使用 [templates/API_REPORT.md](templates/API_REPORT.md) 模板
+- **格式**：markdown，使用 [templates/api_report.md](templates/api_report.md) 模板
 - **输出路径**：当前目录或用户指定位置
+- **front matter**：至少填写 `schema_version`、`op_name`，并建议填充 `supported_dtypes`、`axes_list`、`shape_constraints`、`tiling_required`、`feasibility`（其中 `axes_list` 应为 YAML 列表，例如 `['N']` 或 `['N','M']`）
 
 ---
 
@@ -36,7 +37,7 @@ license: UNKNOWN
 
 **注意**：必须使用 `Explore` subagent 进行 API 和约束探索，确保搜索的全面性和准确性。
 
-### Stage 1: 输入解析
+### 步骤 1: 输入解析
 
 接受任意形式输入，提取：
 - 算子名称（如有）
@@ -44,7 +45,7 @@ license: UNKNOWN
 - 输入输出规格（shape、dtype）
 - 其他约束条件
 
-### Stage 2: 公式分解
+### 步骤 2: 公式分解
 
 将计算逻辑分解为原子操作序列：
 
@@ -56,69 +57,78 @@ license: UNKNOWN
 - index: gather, scatter, index_select...
 - activation: relu, sigmoid, softmax...
 
-### Stage 3: API 探索
+### 步骤 3: 并行探索
 
-搜索 PyPTO 文档获取 API 信息：
+将 API 探索、参考实现搜索和约束探索合并为**三个并行的 Explore subagent**，分别负责不同的一级目录。必须在**同一条消息中同时发起所有 Agent 调用**，确保并行执行。
 
-1. 查 `docs/api/operation/index.md` 确认 API 存在性
-2. 读取具体 API 文档 `docs/api/operation/pypto-*.md` 获取参数和约束
+#### Explore subagent 1: `pypto/docs/zh/` — API 文档与约束
+
+**搜索范围**：`pypto/docs/zh/` 目录
+
+**任务**：
+1. 查 `pypto/docs/zh/api/operation/index.md` 确认 API 存在性
+2. 读取具体 API 文档 `pypto/docs/zh/api/operation/pypto-*.md` 获取参数和约束
 3. 未找到 → 标记 unsupported，尝试 substitute 方案
+4. 提取入口约束（`pypto/docs/zh/api/others/pypto-from_torch.md`）：dtype、contiguous、format
+5. 提取 API 约束：dtype 支持、shape 范围、广播规则、特殊值限制
+6. 提取 Tiling 约束（`pypto/docs/zh/api/config/pypto-set_vec_tile_shapes.md`、`pypto/docs/zh/api/config/pypto-set_cube_tile_shapes.md`）
+7. 查阅 `pypto/docs/zh/api/datatype/` 获取 DataType、TileOpFormat 枚举信息
 
-### Stage 4: 参考实现搜索
+**返回内容**：API 映射表、三层约束检查结果、Tiling 需求、证据索引路径列表
 
-在 `models/` 和 `examples/` 目录中搜索与当前算子相关的官方示例（具体目录见「搜索目录」），提取可复用的实现模式。
+#### Explore subagent 2: `models/` — 生产级参考实现
 
-> **⚠️ 不要找到一个就停止**
-> - 遍历所有候选目录，收集**所有匹配的参考实现**
-> - 对多个候选进行对比评估，选择**最佳匹配**（相似度最高、置信度最高、可复用点最多）
-> - 若存在多个高质量参考，在报告中列出 Top 3，并说明推荐首选及理由
+**搜索范围**：`models/` 目录，**排除 `models/experimental/`**（实验性实现，未充分验证，禁止参考）
 
-排除 `models/experimental/`，该目录为实验性实现，未充分验证，禁止参考。
+**任务**：
+1. 搜索与当前算子相关的生产级模型算子实现
+2. 提取可复用的实现模式：API 调用方式、Tiling 配置、Loop 结构、数据类型处理
+3. 不要找到一个就停止，遍历所有候选，收集**所有匹配的参考实现**
 
-**提取内容**：
-- API 实际调用方式和参数用法
-- Tiling 配置（tile shape 设置、分块策略）
-- Loop 结构（循环方式、边界处理）
-- 数据类型处理、cast 用法
+**返回内容**：每个匹配实现的路径、相似度、置信度、可复用点；若无匹配标注「无匹配」
 
-**输出**：
-- 找到匹配 → 记录路径、相似度、置信度、可复用点，写入报告「参考实现」章节
-- 未找到匹配 → 在报告中标注「无匹配参考实现」
+#### Explore subagent 3: `examples/` — 官方示例实现
 
-### Stage 5: 约束探索
+**搜索范围**：`examples/` 目录
 
-三层验证：
+**任务**：
+1. 在 `pypto/examples/02_intermediate/operators/` 搜索完整算子参考实现
+2. 在 `pypto/examples/03_advanced/patterns/` 搜索高级组合模式
+3. 提取可复用的实现模式：API 调用方式、Tiling 配置、Loop 结构、边界处理
+4. 不要找到一个就停止，遍历所有候选，收集**所有匹配的参考实现**
 
-**Layer 1 - 入口约束（from_torch）**：
-- dtype、contiguous、format
-- 证据：`docs/api/others/pypto-from_torch.md`
+**返回内容**：每个匹配实现的路径、相似度、置信度、可复用点；若无匹配标注「无匹配」
 
-**Layer 2 - API 约束（从具体 API 文档提取）**：
-- dtype 支持、shape 范围、广播规则、特殊值限制
+---
 
-**Layer 3 - Tiling 约束（从 config API 文档提取）**：
-- Vector: `set_vec_tile_shapes()`
-- Cube: `set_cube_tile_shapes()`
+#### 并行探索结果汇总
 
-### Stage 6: 生成报告
+等待三个 Explore subagent 全部返回后：
+1. 合并 API 映射与约束检查结果（来自 subagent 1）
+2. 合并参考实现搜索结果（来自 subagent 2 和 3），对比评估选择**最佳匹配**
+3. 若存在多个高质量参考，在报告中列出 Top 3，并说明推荐首选及理由
 
-基于 [templates/API_REPORT.md](templates/API_REPORT.md) 模板生成 API_REPORT.md。
+### 步骤 4: 生成报告
+
+基于 [templates/api_report.md](templates/api_report.md) 模板生成 API_REPORT.md。
 
 ---
 
 ## 搜索目录
 
-| 目录 | 搜索内容 | 优先级 |
-|------|----------|--------|
-| `docs/api/operation/index.md` | API 列表，确认存在性 | **入口** |
-| `docs/api/operation/pypto-*.md` | 具体 API 文档 | **主要** |
-| `docs/api/others/pypto-from_torch.md` | 入口约束 | **必查** |
-| `docs/api/config/pypto-set_vec_tile_shapes.md` | Vector Tiling | 条件 |
-| `docs/api/config/pypto-set_cube_tile_shapes.md` | Cube Tiling | 条件 |
-| `docs/api/datatype/` | DataType、TileOpFormat 枚举 | 参考 |
-| `models/`（排除 experimental） | 生产级模型算子实现 | 首选 |
-| `examples/02_intermediate/operators/` | 完整算子参考实现 | 次选 |
-| `examples/03_advanced/patterns/` | 高级组合模式 | 参考 |
+按一级目录分配到对应的 Explore subagent：
+
+| Subagent | 目录 | 搜索内容 | 优先级 |
+|----------|------|----------|--------|
+| **1: pypto/docs/zh/** | `pypto/docs/zh/api/operation/index.md` | API 列表，确认存在性 | **入口** |
+| | `pypto/docs/zh/api/operation/pypto-*.md` | 具体 API 文档 | **主要** |
+| | `pypto/docs/zh/api/others/pypto-from_torch.md` | 入口约束 | **必查** |
+| | `pypto/docs/zh/api/config/pypto-set_vec_tile_shapes.md` | Vector Tiling | 条件 |
+| | `pypto/docs/zh/api/config/pypto-set_cube_tile_shapes.md` | Cube Tiling | 条件 |
+| | `pypto/docs/zh/api/datatype/` | DataType、TileOpFormat 枚举 | 参考 |
+| **2: models/** | `models/`（排除 experimental） | 生产级模型算子实现 | 首选 |
+| **3: examples/** | `pypto/examples/02_intermediate/operators/` | 完整算子参考实现 | 次选 |
+| | `pypto/examples/03_advanced/patterns/` | 高级组合模式 | 参考 |
 
 ---
 
@@ -142,7 +152,8 @@ license: UNKNOWN
 
 **常见 Substitute（无直接 API）**：
 - `mean` → `sum/count`
-- `gelu` → 组合 mul/add/tanh/pow
+- `gelu` → 组合 `mul + sigmoid + mul`（x * sigmoid(1.702 * x)），与 activation.py 一致
+- `sigmoid` → 仅支持 FP32；需在其他 dtype 场景下先 `cast` 到 FP32 再调用
 
 ### 算子类型判断
 
@@ -160,11 +171,14 @@ license: UNKNOWN
 
 | 约束类型 | 规则 | 来源 |
 |----------|------|------|
-| dtype 入口 | FP16/BF16/FP32/INT8-64/BOOL | from_torch 文档 |
+| dtype 入口 | FP16/BF16/FP32/FP64/INT8/INT16/INT32/INT64/UINT8/UINT16/UINT32/UINT64/BOOL | from_torch 文档 |
 | shape 入口 | 非空 Tensor | from_torch 文档 |
 | contiguous | 必须连续 | from_torch 文档 |
 | TileShape | 每维 > 0，最多 4 维 | set_vec_tile_shapes 文档 |
+| Cube TileShape | 32 字节对齐；buffer 空间需满足 K 轴 × 2 ≤ L1 容量 | set_cube_tile_shapes 文档 |
 | shape size | ≤ INT32_MAX | 各 API 文档 |
+| sigmoid dtype | 仅支持 DT_FP32 | pypto.sigmoid API 文档 |
+| **动态 shape 兼容性** | **matmul / 归约类 等计算 API 在编译期需要 concrete shape，不接受含 DYNAMIC 维度的 tensor（报错：`has invalid shape value: -1`）。若算子有动态轴且用到这类 API，必须在风险评估中标注，并说明需采用"loop 切 tile"策略（见 execution-constraints.md §5）
 
 ---
 
@@ -172,10 +186,11 @@ license: UNKNOWN
 
 验证 API_REPORT.md 的门禁条件：
 1. 文件存在
-2. 以下 5 个章节存在且内容不为空：
+2. 以下 6 个章节存在且内容不为空：
    - `## 1. 概述`
    - `## 3. API 映射`
    - `## 6. 参考实现`（可标注「无匹配」但不可缺失）
+   - `## 7. 风险评估`
    - `## 8. 证据索引`
    - `## 9. 结论`
 

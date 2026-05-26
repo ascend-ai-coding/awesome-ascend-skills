@@ -3,8 +3,8 @@ name: external-gitcode-ascend-fault_diagnose
 description: Ascend 故障诊断工具，提供日志采集、清洗、诊断全流程。支持集群/单机/超节点故障诊断，当用户需要排查 NPU 训练推理故障或性能劣化问题时调用。
 original-name: fault_diagnose
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-05-21'
-synced-commit: 349fa44adc6ad5adeb12efcdf390fd47ea0ea0d4
+synced-date: '2026-05-26'
+synced-commit: 1f7666e7768a0ceb21bb1d40ce4b5179fcb6f1d6
 license: UNKNOWN
 ---
 

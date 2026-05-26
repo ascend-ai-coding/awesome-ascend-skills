@@ -6,8 +6,8 @@ description: 基于 PyTorch 框架的昇腾 NPU 模型推理多流整网优化�
 user-invocable: true
 original-name: model-infer-multi-stream
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-21'
-synced-commit: a8d00b82024e832193ee3c50e946714376f85580
+synced-date: '2026-05-26'
+synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
 license: UNKNOWN
 ---
 

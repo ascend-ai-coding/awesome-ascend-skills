@@ -3,8 +3,8 @@ name: external-cannbot-ops-ascendc-code-review
 description: Ascend C 代码检视技能。基于假设检验方法论对代码进行安全规范检视。当用户提供代码片段和检视规则描述时，可使用此技能进行代码检视，使用时必须明确提供：代码片段和检视规则描述。
 original-name: ascendc-code-review
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-21'
-synced-commit: a8d00b82024e832193ee3c50e946714376f85580
+synced-date: '2026-05-26'
+synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
 license: UNKNOWN
 ---
 
@@ -44,6 +44,8 @@ license: UNKNOWN
 
 ## 规范文档体系
 
+### 一、通用规则
+
 | 文档名称 | 文档路径 | 检视范围 | 适用场景 | 条款数 |
 |---------|---------|---------|---------|-------|
 | **C++ 安全编码规范** | `references/cpp-secure.md` | 数值安全、内存安全、输入验证、资源管理、并发安全 | C++ 代码安全性检视 | 47 条 |
@@ -55,6 +57,14 @@ license: UNKNOWN
 | **Ascend C 高性能编程** | `references/ascendc-perf.md` | 性能优化、精度标准、Tiling 设计 | Ascend C 高性能编程检视（仅 Kernel 侧） | 12 条 |
 | **TOPK 问题清单** | `references/ascendc-topk.md` | Host侧高频问题、属性获取、特殊值处理、核间同步 | 算子开发重点检视 | 13 条 |
 | **SIMT API C风格化规范** | `references/simt-api-analysis.md` | C++风格API转换为C风格API、变量名冲突、头文件位置 | SIMT kernel代码API检视（仅 Kernel 侧） | 13 条 |
+
+### 二、领域特定规则
+
+> **重要**：领域特定规则需先分析代码所属的适用场景，再启用对应的领域检视规则，不应无条件全量启用。
+
+| 文档名称 | 文档路径 | 检视范围 | 适用场景 | 条款数 |
+|---------|---------|---------|---------|-------|
+| **MC² 领域规则** | `references/mc2-specific.md` | 通信同步、MoE专家路由、量化精度、硬件约束、HCCL通信与安全 | MC²（Matrix Computation & Communication）通算融合算子代码检视。满足核心特征（C1~C2）且不属于排除场景时启用，检视方法见 `references/mc2-specific.md` 的「PR 差异→规则速查」表 | 19 条 |
 
 ## API 文档检索
 

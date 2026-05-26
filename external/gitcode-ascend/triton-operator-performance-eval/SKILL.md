@@ -4,8 +4,8 @@ description: 评估 Ascend NPU 上 Triton 算子性能。使用 msprof/msprof op
   瓶颈，测量硬件利用率，生成性能报告。
 original-name: triton-operator-performance-eval
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-05-21'
-synced-commit: 349fa44adc6ad5adeb12efcdf390fd47ea0ea0d4
+synced-date: '2026-05-26'
+synced-commit: 1f7666e7768a0ceb21bb1d40ce4b5179fcb6f1d6
 license: UNKNOWN
 ---
 

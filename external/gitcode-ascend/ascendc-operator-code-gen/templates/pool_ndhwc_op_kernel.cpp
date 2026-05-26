@@ -17,6 +17,25 @@
 
 #include "kernel_operator.h"
 
+using namespace AscendC;
+
+// Precise sync helpers
+__aicore__ inline void MTE2ToVSync() {
+    event_t e = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::MTE2_V));
+    SetFlag<HardEvent::MTE2_V>(e);
+    WaitFlag<HardEvent::MTE2_V>(e);
+}
+__aicore__ inline void VToMTE3Sync() {
+    event_t e = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::V_MTE3));
+    SetFlag<HardEvent::V_MTE3>(e);
+    WaitFlag<HardEvent::V_MTE3>(e);
+}
+__aicore__ inline void MTE3ToMTE2Sync() {
+    event_t e = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::MTE3_MTE2));
+    SetFlag<HardEvent::MTE3_MTE2>(e);
+    WaitFlag<HardEvent::MTE3_MTE2>(e);
+}
+
 template <typename T>
 class KernelPooling {
 public:
@@ -29,8 +48,9 @@ public:
                                  uint32_t padD, uint32_t padH, uint32_t padW,
                                  uint32_t countIncludePad, uint32_t ceilMode,
                                  uint64_t formerNum, uint64_t formerLength, uint64_t tailLength,
-                                 uint64_t windowWNum) { //...用例信息和host中tiling切分信息传递
-
+                                 // AvgPool3d额外参数: divisorOverride (MaxPool3d不需要, 可传0)
+                                 uint64_t divisorOverride,
+                                 uint64_t windowWNum) {
         // 保存用例参数
         this->batchSize = batchSize;  this->channels = channels;
         this->inputD = inputD;   this->inputH = inputH;   this->inputW = inputW;
@@ -53,8 +73,8 @@ public:
             : formerNum * formerLength + tailLength * (GetBlockIdx() - formerNum);
 
         // 设置全局内存
-        inputGm.SetGlobalBuffer((__gm__ T*)input, ...);
-        outputGm.SetGlobalBuffer((__gm__ T*)output, ...);
+        inputGm.SetGlobalBuffer((__gm__ T*)input, (uint64_t)batchSize * inputD * inputH * inputW * channels);
+        outputGm.SetGlobalBuffer((__gm__ T*)output, (uint64_t)batchSize * outputD * outputH * outputW * channels);
 
         // UB空间分配
         uint32_t rowElements = windowWNum * strideW + kernelW - 1;
@@ -62,76 +82,120 @@ public:
         uint64_t castSize = (uint64_t)rowElements * alignC;
         uint64_t sumSize  = (uint64_t)windowWNum * alignC;
 
+        // 无索引版本
         pipe.InitBuffer(shareBuf, dataSize * sizeof(T) + castSize * sizeof(float) + sumSize * sizeof(float));
-        dataLocal = shareBuf.Get<T>(dataSize);
+        dataLocal = shareBuf.GetWithOffset<T>(dataSize, 0);
         castLocal = shareBuf.GetWithOffset<float>(castSize, dataSize * sizeof(T));
         sumBufLocal = shareBuf.GetWithOffset<float>(sumSize, dataSize * sizeof(T) + castSize * sizeof(float));
-        // ...maxpool额外增加需要indice空间,shareBuf.GetWithOffset<T>(元素个数, 起始字节偏移)
 
-        this->isRepeatSum = (padW == 0 && !ceilMode); // isRepeatSum: padW==0且非ceilMode时，所有W方向数据连续有效，跳过边界分段扫描和Duplicate清零
-        this->isSamePoolSize = divisorOverride || (countIncludePad || padW == 0) && !ceilMode; // isSamePoolSize: countIncludePad或padW==0且非ceilMode时，所有窗口poolCount相同，直接Muls批量除
+        // 有索引版本(MaxPool3d专用): 额外分配 indicesLocal + indicesUpdLocal + maskBufLocal
+        // uint64_t idxSize = windowWNum * alignC * sizeof(int32_t);
+        // uint64_t maskU16 = windowWNum * ((C + 63) / 64 * 16); // ceil(C/64) chunks × 16 u16 (32B对齐)
+        // pipe.InitBuffer(shareBuf, dataSize*sizeof(T) + castSize*sizeof(float) + sumSize*sizeof(float)
+        //                  + idxSize*2 + maskU16*sizeof(uint16_t) + 64);
+        // indicesLocal = shareBuf.GetWithOffset<int32_t>(windowWNum*alignC, ...);
+        // indicesUpdLocal = shareBuf.GetWithOffset<int32_t>(windowWNum*alignC, ...);
+        // maskBufLocal = shareBuf.GetWithOffset<uint16_t>(maskU16, ...); // 32B对齐
+
+        // 预计算高维切分参数和填充参数
+        this->rightPadding = static_cast<uint8_t>(alignC - channels);
+        constexpr uint32_t MAX_MASK_FP32 = 64;
+        this->maskLoopCount = (alignC + MAX_MASK_FP32 - 1) / MAX_MASK_FP32;
+        this->dstRepStride = static_cast<uint8_t>(alignC / 8);
+        this->src1RepStride = static_cast<uint8_t>(strideW * alignC / 8);
+
+        this->isRepeat = (padW == 0 && !ceilMode); // padW==0且非ceilMode时所有W方向数据连续有效，可走快速高维切分路径跳过边界分段扫描
+        this->isSamePoolSize = divisorOverride || ((countIncludePad || padW == 0) && !ceilMode); // AvgPool3d专用。为true时所有窗口poolSize相同直接Muls批量除, false时逐窗口单独计算除数
     }
 
     __aicore__ inline void Process() {
-        uint32_t blockIdx = AscendC::GetBlockIdx();
-        uint32_t totalBlocks = AscendC::GetBlockNum();
         int64_t curWindowWNum = windowWNum;
         for (int64_t outputPointIdx = outputPointOffset, count = 0;
                 outputPointIdx < outputPointOffset + outputPointNum; outputPointIdx += curWindowWNum, count += curWindowWNum) {
 
-                // windowNum处理越界，跨行时截断，每次最多处理w方向同一行的的窗口
-                curWindowWNum = (count + windowWNum) < outputPointNum ? windowWNum : outputPointNum - count;
-                int64_t newRowWindowWNum = (outputPointIdx + curWindowWNum) % outputShape.W;
-                curWindowWNum = newRowWindowWNum != 0 && newRowWindowWNum < curWindowWNum
-                                ? curWindowWNum - newRowWindowWNum : curWindowWNum;
+            // windowWNum处理越界，跨行时截断，每次最多处理w方向同一行的窗口
+            curWindowWNum = (count + windowWNum) < outputPointNum ? windowWNum : outputPointNum - count;
+            int64_t newRowWindowWNum = (outputPointIdx + curWindowWNum) % outputW;
+            curWindowWNum = newRowWindowWNum != 0 && newRowWindowWNum < curWindowWNum
+                            ? curWindowWNum - newRowWindowWNum : curWindowWNum;
 
-                if (){  // 同时处理一个/多个windows个窗口数据，当kw>sw时可复用GM数据
-                    processOneOrMultiWindow(outputPointIdx, curWindowWNum);
-                } else{// 单次不足以处理一个窗口数据，每个窗口每个位置单独累加/最大值计算处理，兜底方案
-                    processSmallerOneWindow(outputPointIdx, curWindowWNum);
-                }
+            // 条件说明: UB空间足够处理至少一个完整窗口(含kW个W位置)时走processOneOrMultiWindow,
+            // 否则走processSmallerOneWindow兜底（遇到概率极小），K极大时单窗口逐个处理，C极大放不下时for循环对C切块处理
+            if (curWindowWNum >= 1) {
+                processOneOrMultiWindow(outputPointIdx, curWindowWNum);
+            } else {
+                processSmallerOneWindow(outputPointIdx, curWindowWNum);
             }
+        }
     }
 
 private:
     __aicore__ inline void CopyIn(int64_t offset, uint16_t blockCount, uint32_t blockLen, uint8_t rightPadding) {
-        DataCopyExtParams copyParams{blockCount, blockLen * sizeof(T), 0, 0, 0}; //blockCount是搬运次数，blockLen * sizeof(T)是每次搬运字节长度可32字节不对齐（会自动对齐）
-        DataCopyPadExtParams<T> padParams{true, 0, rightPadding, 0};    //rightPadding是blockCount每次填充元素个数（但所占字节数不能超过32字节），processOneOrMultiWindow下rightPadding=alignC-C
-        AscendC::DataCopyPad(dataLocal, inputGm[offset], copyParams, padParams);
+        // blockCount: 搬运次数, blockLen: 每次搬运元素个数
+        // srcStride=0 表示源地址连续，dstStride=0 表示目的地址连续
+        DataCopyExtParams copyParams{blockCount, static_cast<uint32_t>(blockLen * sizeof(T)), 0, 0, 0};
+        DataCopyPadExtParams<T> padParams{true, 0, rightPadding, 0}; // rightPadding: 每行尾部填充元素个数,（但所占字节数不能超过32字节）
+        DataCopyPad(dataLocal, inputGm[offset], copyParams, padParams);
+        MTE2ToVSync();
     }
 
     __aicore__ inline void CopyOut(int64_t offset, uint16_t blockCount, uint32_t blockLen) {
         // 注意搬出时长度不要超过GM内容空间，如果超过应该截断
-        DataCopyExtParams copyParamsOut{blockCount, blockLen * sizeof(T), 0, 0, 0};
-        AscendC::DataCopyPad(outputGm[outputOffset], dataLocal, copyParamsOut);
+        VToMTE3Sync();
+        DataCopyExtParams copyParamsOut{blockCount, static_cast<uint32_t>(blockLen * sizeof(T)), 0, 0, 0};
+        DataCopyPad(outputGm[offset], dataLocal, copyParamsOut);
+        MTE3ToMTE2Sync();
     }
 
     __aicore__ inline void castXToFp32(LocalTensor<float> dstTensor, LocalTensor<T> srcTensor, uint32_t len) {
         if constexpr (std::is_same_v<T, float> ) {
-            AscendC::Add(dstTensor, srcTensor, 0.0f, len);
+            Adds(dstTensor, srcTensor, 0.0f, len);
         } else {
-            AscendC::Cast(dstTensor, srcTensor, AscendC::RoundMode::CAST_NONE, len);
+            Cast(dstTensor, srcTensor, RoundMode::CAST_NONE, len);
         }
     }
 
-    __aicore__ inline void castFp32ToX(LocalTensor<float> dstTensor, LocalTensor<T> srcTensor, uint32_t len) {
+    __aicore__ inline void castFp32ToX(LocalTensor<T> dstTensor, LocalTensor<float> srcTensor, uint32_t len) {
         if constexpr (std::is_same_v<T, float> ) {
-            AscendC::Add(dstTensor, srcTensor, 0.0f, len);
+            Adds(dstTensor, srcTensor, 0.0f, len);
         } else if constexpr (std::is_same_v<T, half> ) {
-            AscendC::Cast(dstTensor, srcTensor, AscendC::RoundMode::CAST_NONE, len);
+            Cast(dstTensor, srcTensor, RoundMode::CAST_NONE, len);
         } else {
-            AscendC::Cast(dstTensor, srcTensor, AscendC::RoundMode::CAST_RINT, len);
+            Cast(dstTensor, srcTensor, RoundMode::CAST_RINT, len);
         }
     }
 
-    __aicore__ inline void processOneOrMultiWindow(int64_t outputPointIdx, int64_t windowNum) {
+    // 高维切分辅助函数: 构造BinaryRepeatParams并遍历maskLoop执行向量操作
+    // <OP>: AvgPool3d使用Add, MaxPool3d使用Max
+    __aicore__ inline void doHighDimOp(LocalTensor<float> dstBase,
+                                        LocalTensor<float> src1Base,
+                                        uint32_t src1Offset, uint32_t repeatTime) {
+        constexpr uint32_t MAX_MASK = 64;
+        BinaryRepeatParams params;
+        params.dstBlkStride = 1;
+        params.src0BlkStride = 1;
+        params.src1BlkStride = 1;
+        params.dstRepStride = dstRepStride;
+        params.src0RepStride = dstRepStride;
+        params.src1RepStride = src1RepStride;
 
-        // 初始化累加器
-        AscendC::Duplicate(sumBufLocal, 0.0f, windowWNum * alignC);
+        for (uint32_t loop = 0; loop < maskLoopCount; loop++) {
+            uint32_t cStart = loop * MAX_MASK;
+            uint32_t curMask = MAX_MASK;
+            if (cStart + curMask > alignC) curMask = alignC - cStart;
+            // AvgPool3d: Add, MaxPool3d: Max
+            <OP>(dstBase[cStart], dstBase[cStart],
+                          src1Base[src1Offset + cStart],
+                          curMask, static_cast<uint8_t>(repeatTime), params);
+        }
+    }
+
+    __aicore__ inline void processOneOrMultiWindow(int64_t outputPointIdx, int64_t windowWNum) {
+
+        // 初始化：AvgPool3d用0.0f累加，MaxPool3d用float最小负值做max比较（-3.4028235e38f）
+        Duplicate(sumBufLocal, <INIT_VALUE>, windowWNum * alignC);
+        // <INIT_VALUE>: AvgPool3d=0.0f, MaxPool3d=-3.4028235e38f
         PipeBarrier<PIPE_V>();
-
-        // 计算右填充: channels → alignC 对齐
-        uint8_t rightPadding = static_cast<uint8_t>(alignC - channels);
 
         // 遍历窗口
         for (uint32_t kd = 0; kd < kernelD; kd++) {
@@ -139,118 +203,74 @@ private:
             for (uint32_t kh = 0; kh < kernelH; kh++) {
                 // 计算h位置索引
 
-                uint32_t rowLen = windowNum * strideW + kernelW - 1;
-
-                // isRepeatSum优化: padW==0且非ceilMode时，整行数据连续有效，无需预先清零
-                if (!isRepeatSum) {
-                    AscendC::Duplicate(dataLocal, (T)(0), rowLen * alignC);
-                    PipeBarrier<PIPE_V>();
-                }
+                uint32_t rowLen = windowWNum * strideW + kernelW - 1;
 
                 // 计算w位置需要搬入数据的起止索引，搬入GM数据到UB,同时搬运windowWNum个窗口位置w方向的输入数据，每个W位置是C个元素,rightPadding将channels填充到alignC字节对齐
-                CopyIn(offset, wEnd - wStart, channels, rightPadding); 
+                CopyIn(offset, wEnd - wStart, channels, rightPadding);
 
                 // 参考cast方法fp16、bf16升精度
                 castXToFp32(castLocal, dataLocal, rowLen * alignC);
                 PipeBarrier<PIPE_V>();
 
-                // 累加: Add高维切分优化
-                {
-                    constexpr uint32_t MAX_MASK_FP32 = 64;
-                    uint32_t maskLoopCount = (alignC + MAX_MASK_FP32 - 1) / MAX_MASK_FP32;
-                    uint32_t dstRepStride = alignC / 8;
-                    uint32_t src1RepStride = strideW * alignC / 8;
+                if (isRepeat) [[likely]] {
+                    // 快速路径: 所有W位置连续有效，直接按kw偏移做高维切分
+                    for (uint32_t kw = 0; kw < kernelW; kw++) {
+                        doHighDimOp(sumBufLocal, castLocal, kw * alignC, windowWNum);
+                        PipeBarrier<PIPE_V>();
+                    }
+                } else {
+                    // 边界分段扫描: 需要判断每个W位置是否在有效范围内，分段累加/最大值计算
+                    for (uint32_t kw = 0; kw < kernelW; kw++) {
+                        int32_t segStart = -1;
+                        for (uint32_t j = 0; j <= windowWNum; j++) {
+                            int32_t iw = (j < windowWNum)
+                                ? (int32_t)((startOw + j) * strideW + kw) - (int32_t)padW
+                                : -1;
+                            bool isValid = (j < windowWNum) && (iw >= 0 && (uint32_t)iw < inputW);
 
-                    if (isRepeatSum) [[likely]] {
-                        // 快速路径: 所有W位置连续有效，直接按kw偏移做Add高维切分
-                        for (uint32_t kw = 0; kw < kernelW; kw++) {
-                            for (uint32_t loop = 0; loop < maskLoopCount; loop++) {
-                                uint32_t cStart = loop * MAX_MASK_FP32;
-                                uint32_t curMask = MAX_MASK_FP32;
-                                if (cStart + curMask > alignC) curMask = alignC - cStart;
+                            if (isValid && segStart < 0) {
+                                segStart = (int32_t)j;
+                            } else if (!isValid && segStart >= 0) {
+                                uint32_t segLen = j - (uint32_t)segStart;
+                                // segIw: 窗口segStart在kw位置的全局W坐标
+                                int32_t segIw = (int32_t)((startOw + segStart) * strideW + kw) - (int32_t)padW;
+                                uint32_t src1Start = (uint32_t)(segIw - clipWStart) * alignC;
 
-                                AscendC::BinaryRepeatParams params;
-                                params.dstBlkStride = 1;
-                                params.src0BlkStride = 1;
-                                params.src1BlkStride = 1;
-                                params.dstRepStride = static_cast<uint8_t>(dstRepStride);
-                                params.src0RepStride = static_cast<uint8_t>(dstRepStride);
-                                params.src1RepStride = static_cast<uint8_t>(src1RepStride);
+                                doHighDimOp(sumBufLocal[(uint32_t)segStart * alignC],
+                                            castLocal, src1Start, segLen);
 
-                                uint32_t src1Offset = kw * alignC + cStart;
-                                AscendC::Add(sumBufLocal[cStart], sumBufLocal[cStart],
-                                             castLocal[src1Offset],
-                                             curMask, static_cast<uint8_t>(windowNum), params);
+                                segStart = -1;
                             }
-                            PipeBarrier<PIPE_V>();
                         }
-                    } else {
-                        // 边界分段扫描: 需要判断每个W位置是否在有效范围内，分段累加
-                        for (uint32_t kw = 0; kw < kernelW; kw++) {
-                            int32_t segStart = -1;
-                            for (uint32_t j = 0; j <= windowNum; j++) {
-                                int32_t iw = (j < windowNum)
-                                    ? (int32_t)((startOw + j) * strideW + kw) - (int32_t)padW
-                                    : -1;
-                                bool isValid = (j < windowNum) && (iw >= 0 && (uint32_t)iw < inputW);
-
-                                if (isValid && segStart < 0) {
-                                    segStart = (int32_t)j;
-                                } else if (!isValid && segStart >= 0) {
-                                    uint32_t segLen = j - (uint32_t)segStart;
-                                    uint32_t src1Start = ((uint32_t)segStart * strideW + kw) * alignC;
-
-                                    for (uint32_t loop = 0; loop < maskLoopCount; loop++) {
-                                        uint32_t cStart = loop * MAX_MASK_FP32;
-                                        uint32_t curMask = MAX_MASK_FP32;
-                                        if (cStart + curMask > alignC) curMask = alignC - cStart;
-
-                                        AscendC::BinaryRepeatParams params;
-                                        params.dstBlkStride = 1;
-                                        params.src0BlkStride = 1;
-                                        params.src1BlkStride = 1;
-                                        params.dstRepStride = static_cast<uint8_t>(dstRepStride);
-                                        params.src0RepStride = static_cast<uint8_t>(dstRepStride);
-                                        params.src1RepStride = static_cast<uint8_t>(src1RepStride);
-
-                                        AscendC::Add(
-                                            sumBufLocal[(uint32_t)segStart * alignC + cStart],
-                                            sumBufLocal[(uint32_t)segStart * alignC + cStart],
-                                            castLocal[src1Start + cStart],
-                                            curMask, static_cast<uint8_t>(segLen), params);
-                                    }
-                                    segStart = -1;
-                                }
-                            }
-                            PipeBarrier<PIPE_V>();
-                        }
+                        PipeBarrier<PIPE_V>();
                     }
                 }
             }
         }
 
-        // 求均值
-        if (isSamePoolSize) { //poolsize窗口一致
-            float poolSize = divisorOverride ? divisorOverride : (1.0f / static_cast<float>(kd * kh * kw));
-            AscendC::Muls(sumLocal, sumLocal, poolSize, windowWNum * alignC);
-        } else {
-            // 遍历windowWNum，每个位置单独计算窗口大小，同一个W位置下的channel窗口除同一个数
-        }
+        // ==== AvgPool3d专用: 求均值 ====
+        // MaxPool3d请删除以下if块
+        // if (isSamePoolSize) { //poolsize窗口一致
+        //     float poolSize = divisorOverride ? divisorOverride : (1.0f / static_cast<float>(kernelD * kernelH * kernelW));
+        //     Muls(sumLocal, sumLocal, poolSize, windowWNum * alignC);
+        // } else {
+        //     // 遍历windowWNum，每个位置单独计算窗口大小，同一个W位置下的channel窗口除同一个数
+        // }
 
         // 参考cast方法fp16、bf16恢复原有精度
-        castFp32ToX(dataLocal, sumBufLocal, windowNum * alignC);
+        castFp32ToX(dataLocal, sumBufLocal, windowWNum * alignC);
         PipeBarrier<PIPE_V>();
 
         // 搬出UB数据到GM
-        CopyOut(offset, windowNum, channels);
+        CopyOut(offset, windowWNum, channels);
     }
 
-    __aicore__ inline void processSmallerOneWindow(int64_t outputPointIdx, int64_t windowNum) {
+    __aicore__ inline void processSmallerOneWindow(int64_t outputPointIdx, int64_t windowWNum) {
 
         // 遍历窗口
         for (uint32_t loop = 0; loop < loops; loop++){  //单个窗口单个位置需要loops次处理完C个元素，每次处理len个元素，最后一次特殊处理，loops=1表示单个窗口单个处理C个值（此时len=C）
             // 初始化累加器
-            AscendC::Duplicate(sumBufLocal, 0.0f, alignC);
+            Duplicate(sumBufLocal, <INIT_VALUE>, alignC);
             curProcessLen = (loop == loops - 1) ? (channels - (loops-1) * len) : len;
 
             for (uint32_t kd = 0; kd < kernelD; kd++) {
@@ -266,14 +286,17 @@ private:
                         // 参考cast方法fp16、bf16升精度
                         castXToFp32(castLocal, dataLocal, curProcessLen);
 
-                        // 累加
-                        AscendC::Add(sumBufLocal, sumBufLocal, castLocal, curProcessLen);
+                        // AvgPool3d: Add, MaxPool3d: Max
+                        <OP>(sumBufLocal, sumBufLocal, castLocal, curProcessLen);
+
+                        // 最大值索引(MaxPool3d专用): 需要分配mask buffer(32B对齐, ceil(C/64)*32B/窗口),
+                        // C>64需分块循环Compare+Select, Select需ReinterpretCast<float>绕过vsel限制
                     }
                 }
             }
-            // 平均并写出
-            float poolSize = divisorOverride ? divisorOverride : (1.0f / static_cast<float>(kd * kh * kw));
-            AscendC::Muls(sumBufLocal, sumBufLocal, poolSize, alignC);
+            // 求均值-AvgPool3d专用, MaxPool3d删除以下两行
+            // float poolSize = divisorOverride ? divisorOverride : (1.0f / static_cast<float>(kernelD * kernelH * kernelW));
+            // Muls(sumBufLocal, sumBufLocal, poolSize, alignC);
 
             // 参考cast方法fp16、bf16恢复原有精度
             castFp32ToX(dataLocal, sumBufLocal, curProcessLen);
@@ -284,13 +307,13 @@ private:
     }
 
 private:
-    AscendC::TPipe pipe;
+    TPipe pipe;
 
-    AscendC::GlobalTensor<T> inputGm, outputGm;
+    GlobalTensor<T> inputGm, outputGm;
     TBuf<TPosition::VECCALC> shareBuf;
     LocalTensor<T> dataLocal;
     LocalTensor<float> castLocal;
-    LocalTensor<float> sumBufLocal;
+    LocalTensor<float> sumBufLocal;  // MaxPool3d下为maxBufLocal
 
     uint32_t batchSize, channels;
     uint32_t inputD, inputH, inputW;
@@ -300,25 +323,46 @@ private:
     uint32_t padD, padH, padW;
     uint32_t countIncludePad, ceilMode;
     uint32_t alignC;
-    uint64_t formerNum, formerLength, tailLength, windowWNum;
+    uint32_t maskLoopCount;
+    uint8_t dstRepStride, src1RepStride, rightPadding;
+    uint64_t windowWNum;
     uint64_t outputPointNum, outputPointOffset;
-    bool isRepeatSum;
+    bool isRepeat;
     bool isSamePoolSize;
 };
 
-extern "C" __global__ __aicore__ void pool3d_fp32(GM_ADDR input, GM_ADDR output,
-    uint32_t N, uint32_t C, uint32_t iD, uint32_t iH, uint32_t iW,
-    uint32_t oD, uint32_t oH, uint32_t oW,
-    uint32_t kD, uint32_t kH, uint32_t kW,
-    uint32_t sD, uint32_t sH, uint32_t sW,
-    uint32_t pD, uint32_t pH, uint32_t pW,
-    uint32_t countIncludePad, uint32_t ceilMode,
-    uint64_t formerNum, uint64_t formerLength, uint64_t tailLength,
-    uint64_t windowWNum)
-{
-    KernelPooling<float> op;  //float可替换half、bfloat16_t适配不同数据类型
-    op.Init(input, output, N, C, iD, iH, iW, oD, oH, oW,
-            kD, kH, kW, sD, sH, sW, pD, pH, pW, countIncludePad, ceilMode,
-            formerNum, formerLength, tailLength, windowWNum);
-    op.Process();
-}
+  // 多数据类型入口: 通过宏统一参数列表, 仅 name 和 dtype 不同
+  #define KERNEL_ENTRY(name, dtype) \
+  extern "C" __global__ __aicore__ void name( \
+      GM_ADDR input, GM_ADDR output, \
+      uint32_t N, uint32_t C, uint32_t iD, uint32_t iH, uint32_t iW, \
+      uint32_t oD, uint32_t oH, uint32_t oW, \
+      uint32_t kD, uint32_t kH, uint32_t kW, \
+      uint32_t sD, uint32_t sH, uint32_t sW, \
+      uint32_t pD, uint32_t pH, uint32_t pW, \
+      uint32_t dilD, uint32_t dilH, uint32_t dilW, \
+      uint32_t countIncludePad, uint32_t ceilMode, \
+      uint64_t divisorOverride, \
+      uint64_t formerNum, uint64_t formerLength, uint64_t tailLength, \
+      uint64_t windowWNum) \
+  { \
+      KernelPooling<dtype> op; \
+      op.Init(input, output, N, C, iD, iH, iW, oD, oH, oW, \
+              kD, kH, kW, sD, sH, sW, pD, pH, pW, \
+              countIncludePad, ceilMode, \
+              divisorOverride, \
+              formerNum, formerLength, tailLength, windowWNum); \
+      op.Process(); \
+  }
+
+  KERNEL_ENTRY(pool3d_fp32, float)
+  KERNEL_ENTRY(pool3d_fp16, half)
+  KERNEL_ENTRY(pool3d_bf16, bfloat16_t)
+
+  // 有索引版本(MaxPool3d专用): 额外包含 GM_ADDR indices 参数和 returnIndices 标志
+  // #define KERNEL_ENTRY_INDICES(name, dtype, ret_indices) \
+  //     ... \
+  //     op.Init(input, output, indices, ..., ceilMode, (uint32_t)ret_indices, ...); \
+  // KERNEL_ENTRY_INDICES(pool3d_indices, float, 1)
+  // KERNEL_ENTRY_INDICES(pool3d_fp16_indices, half, 1)
+  // KERNEL_ENTRY_INDICES(pool3d_bf16_indices, bfloat16_t, 1)

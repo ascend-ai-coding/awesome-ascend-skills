@@ -41,10 +41,7 @@ npu-smi info -t power -i 0
 
 ```bash
 # 查看占用 NPU 的进程
-npu-smi info -t usages
-
-# 查看指定设备的进程
-npu-smi info -t usages -i 0
+npu-smi info -t usages -i <device_id>
 
 # 强制释放进程
 npu-smi release -i 0 -p <pid>

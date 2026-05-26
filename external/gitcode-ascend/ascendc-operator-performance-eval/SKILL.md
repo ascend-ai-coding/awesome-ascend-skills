@@ -8,8 +8,8 @@ argument-hint: 可选：算子名、对比 API（自定义算子 torch.ops.npu.*
   对齐。
 original-name: ascendc-operator-performance-eval
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-05-21'
-synced-commit: 349fa44adc6ad5adeb12efcdf390fd47ea0ea0d4
+synced-date: '2026-05-26'
+synced-commit: 1f7666e7768a0ceb21bb1d40ce4b5179fcb6f1d6
 license: UNKNOWN
 ---
 

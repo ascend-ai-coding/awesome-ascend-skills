@@ -39,7 +39,7 @@ dmesg | grep -i npu
 **排查命令**：
 ```bash
 # 查看设备使用情况
-npu-smi info -t usages
+npu-smi info -t usages -i <device_id>
 
 # 强制释放（如确认可释放）
 npu-smi release -i 0 -p <pid>

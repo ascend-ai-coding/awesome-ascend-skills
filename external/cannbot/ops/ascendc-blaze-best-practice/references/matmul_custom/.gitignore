@@ -1,0 +1,11 @@
+# Build artifacts
+build/
+.cache/
+
+# IDE
+*.swp
+.vscode/
+.idea/
+
+# Third-party (pulled at runtime)
+third_party/tensor_api/

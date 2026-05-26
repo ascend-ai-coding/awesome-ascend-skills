@@ -4,8 +4,8 @@ description: Python unittest 框架的专业测试用例编写助手。用于创
   模式以及命令行执行。当需要编写测试文件、创建测试代码、重构优化测试、调试失败测试时使用此技能。
 original-name: unittest-writer
 synced-from: https://gitcode.com/Ascend/agent-skills
-synced-date: '2026-05-21'
-synced-commit: 349fa44adc6ad5adeb12efcdf390fd47ea0ea0d4
+synced-date: '2026-05-26'
+synced-commit: 1f7666e7768a0ceb21bb1d40ce4b5179fcb6f1d6
 license: UNKNOWN
 ---
 

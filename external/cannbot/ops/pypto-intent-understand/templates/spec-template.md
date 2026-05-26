@@ -1,10 +1,35 @@
+---
+schema_version: 1
+op_name: {operator_name}
+supported_dtypes: [bfloat16]
+p0_shapes: [[1024, 128], [1024, 256], [1024, 512]]
+tolerance: {tolerance}
+dynamic_axes: {axes_list}
+dynamic_axes_ranges: {axes_ranges}
+shape_constraints: {shape_constraints}
+default_params: {'eps': 1e-4, 'min_v': -128.0, 'max_v': 127.0}
+perf_target: {performance_target}
+---
+
 ## 算子需求规范
 
 ### 1. 基础信息
-- **算子名称**: {name}
+- **算子名称**: {operator_name}
 - **算子分类**: {category}  <!-- element-wise / reduction / matmul / attention / custom -->
-- **数学公式**: ${formula}$
-- **功能描述**: {description}
+
+### 1.1 功能描述
+
+{description}
+
+### 1.2 算法参数
+
+{algorithm_params}  <!-- 如 epsilon, momentum, beta 等超参数，无则填写 "无" -->
+
+### 1.3 数学公式
+
+$$
+{formula}
+$$
 
 ### 2. 关键特性
 <!-- 复杂算子必须填写，简单算子可省略 -->
@@ -26,19 +51,19 @@ Algorithm: {algorithm_name}
 
 {ASCII数据流图}
 
-### 5. 数据规格
+### 5. 输入输出规格
 
 **输入规格**:
 
-| 变量 | Shape | Dtype | 动态轴 | 说明 |
-|------|-------|-------|--------|------|
-| {name} | {shape} | {dtype} | {dynamic_axes} | {description} |
+| 变量 | Shape | Dtype | 动态轴 | 置信度 | 说明 |
+|------|-------|-------|--------|--------|------|
+| {name} | {shape} | {dtype} | {dynamic_axes} | {confidence} | {description} |
 
 **输出规格**:
 
-| 变量 | Shape | Dtype | 动态轴 | 说明 |
-|------|-------|-------|--------|------|
-| {name} | {shape} | {dtype} | {dynamic_axes} | {description} |
+| 变量 | Shape | Dtype | 动态轴 | 置信度 | 说明 |
+|------|-------|-------|--------|--------|------|
+| {name} | {shape} | {dtype} | {dynamic_axes} | {confidence} | {description} |
 
 ### 6. 数据类型支持
 
@@ -81,3 +106,4 @@ Algorithm: {algorithm_name}
 ---
 *生成时间: {timestamp}*
 *确认状态: 已确认*
+*置信度说明: ✓ 高（自身知识库/框架知识） / ⚠ 中（外部材料提取，需确认）*

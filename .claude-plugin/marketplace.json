@@ -633,6 +633,25 @@
       ]
     },
     {
+      "name": "external-cannbot-aiss-tiling-solver",
+      "description": "AISS-TilingSolver：Ascend C 算子 Tiling 参数自动求解工具（MatMul / Vector）。下载安装、构造 JSON 输入、运行求解、结果解读与故障排查。",
+      "source": "./",
+      "strict": false,
+      "external": true,
+      "source-url": "https://gitcode.com/cann/cannbot-skills",
+      "source-branch": "master",
+      "upstream-name": "aiss-tiling-solver",
+      "category": "external",
+      "categories": [
+        "external",
+        "external-skill-set",
+        "external-sync"
+      ],
+      "skills": [
+        "./external/cannbot/ops/aiss-tiling-solver"
+      ]
+    },
+    {
       "name": "external-cannbot-model-infer-skills",
       "description": "NPU 模型推理优化原子 Skills（11 个）。覆盖框架适配、并行策略、KVCache/FA、融合算子、图模式、精度/运行时调试、多流、预取和 SuperKernel。",
       "source": "./",
@@ -699,6 +718,7 @@
       "skills": [
         "./external/cannbot/ops/ascendc-api-best-practices",
         "./external/cannbot/ops/ascendc-regbase-best-practice",
+        "./external/cannbot/ops/ascendc-blaze-best-practice",
         "./external/cannbot/ops/ascendc-code-review",
         "./external/cannbot/ops/ascendc-direct-invoke-template",
         "./external/cannbot/ops/ascendc-docs-search",
