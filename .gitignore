@@ -45,5 +45,4 @@ venv/
 
 # Local overrides
 CLAUDE.md
-_*
 .local/*
