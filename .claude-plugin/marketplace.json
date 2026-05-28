@@ -983,6 +983,18 @@
         "training-workflow",
         "environment-setup"
       ]
+    },
+    {
+      "name": "migration-ascend-torchnpu-skills",
+      "description": "Guides migration of traditional models from CPU/GPU to Ascend NPU. Invoke when user needs to adapt PyTorch code for Ascend devices, set up NPU environment, or verify migration correctness.",
+      "source": "./skills/inference/migration-ascend-torchnpu-skills",
+      "category": "inference",
+      "categories": [
+        "domain-skill-set",
+        "inference",
+        "training",
+        "base"
+      ]
     }
   ],
   "categoryLibrary": {

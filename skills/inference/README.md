@@ -12,6 +12,7 @@
 - [`ais-bench/`](ais-bench/)：精度与性能评测
 - [`diffusers-ascend/`](diffusers-ascend/)：Diffusers 环境、权重与推理
 - [`wan-ascend-adaptation/`](wan-ascend-adaptation/)：Wan 系列模型昇腾适配
+- [`migration-ascend-torchnpu-skills`](migration-ascend-torchnpu-skills/)：小模型基于torch_npu迁移至昇腾平台跑通，包含：环境搭建、迁移、报告生成
 
 推荐场景：
 
