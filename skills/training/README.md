@@ -9,7 +9,7 @@
 - [`mindspeed-llm/`](mindspeed-llm/)：MindSpeed-LLM 环境、数据、权重与训练全流程
 - [`mindspeed-mm/`](mindspeed-mm/)：MindSpeed-MM 多模态训练环境、权重、VLM、生成模型与流水线
 - [`verl-quickstart/`](verl-quickstart/)：VERL 强化学习训练 quickstart
-- [`verl-msprobe-dump/`](verl-msprobe-dump/)：VERL msprobe 精度采集（训练 profiler / 推理 vLLM·SGLang / 训推一致性，自动识别模式）
+- [`rl-msprobe/`](rl-msprobe/)：VERL msprobe 精度采集（训练 profiler / 推理 vLLM·SGLang / 训推一致性，自动识别模式）
 - [`../profiling/training-mfu-calculator/`](../profiling/training-mfu-calculator/)：训练 MFU 计算与分析
 
 推荐场景：

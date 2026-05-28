@@ -13,6 +13,20 @@
 
 ## 训推并行切分对齐（consistency 必检）
 
+## msprobe 环境
+
+采集前在 verl 使用的 Python 环境中确认 msprobe 可用：
+
+```bash
+bash scripts/ensure-msprobe-env.sh
+# PyPI: pip install mindstudio-probe
+# 校验: python3 -c "from msprobe.pytorch import PrecisionDebugger; print('OK')"
+```
+
+安装失败时由用户自行安装后再继续；勿在未 import 成功时启动 dump。
+
+---
+
 训推一致比对要求**两侧 dump 在每张卡上的 tensor 切分一致**，否则 `rank_M` 无法一一对应。推理侧 msprobe 的 rank 数 = **vLLM 进程组大小**（通常等于 rollout 的 TP 组大小），与训练侧 world_size **无必然相等**；须通过下面规则主动对齐。
 
 ### FSDP 后端

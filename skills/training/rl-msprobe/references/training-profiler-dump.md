@@ -172,6 +172,7 @@ PrecisionDebugger 是**重量级**精度工具，非轻量 profiler：
 
 ## 质量检查清单
 
+- [ ] `bash scripts/ensure-msprobe-env.sh` 通过（或已手动 `pip install mindstudio-probe`）
 - [ ] `global_profiler.tool=precision_debugger`
 - [ ] `global_profiler.steps` 含目标 step
 - [ ] `config_path` 已设置且 msprobe 可 import

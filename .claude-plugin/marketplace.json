@@ -61,9 +61,9 @@
       ]
     },
     {
-      "name": "verl-msprobe-dump",
+      "name": "rl-msprobe",
       "description": "Automates verl msprobe precision dump workflows on Ascend/NPU: training profiler (global_profiler + precision_debugger stages), rollout inference dump (vLLM/SGLang), and train-inference consistency (engine patch + PROMPTS_ONLY). Use when users mention verl dump, msprobe, precision_debugger, rollout dump, or train-inference consistency.",
-      "source": "./skills/training/verl-msprobe-dump",
+      "source": "./skills/training/rl-msprobe",
       "category": "training",
       "categories": [
         "training",
@@ -365,7 +365,7 @@
         "./skills/training/mindspeed-llm/mindspeed-llm-weight-prep",
         "./skills/training/mindspeed-llm/mindspeed-llm-training",
         "./skills/training/verl-quickstart",
-        "./skills/training/verl-msprobe-dump",
+        "./skills/training/rl-msprobe",
         "./skills/training/mindspeed-mm/mindspeed-mm-pipeline",
         "./skills/training/mindspeed-mm/mindspeed-mm-env-setup",
         "./skills/training/mindspeed-mm/mindspeed-mm-weight-prep",

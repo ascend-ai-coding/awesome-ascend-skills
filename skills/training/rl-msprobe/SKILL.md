@@ -1,6 +1,6 @@
 ---
-name: verl-msprobe-dump
-description: 自动化 verl msprobe 精度数据采集，自动识别三种模式：(1) 训练采集——通过 global_profiler 按 stage（actor_compute_log_prob、ref_compute_log_prob、actor_update）采集；(2) 推理采集——按 vLLM/SGLang 后端配置 rollout dump；(3) 训推一致性——训练 engine patch + 推理 dump + PROMPTS_ONLY。触发词：verl dump、msprobe、训练采集、推理采集、训推一致性、PrecisionDebugger。
+name: rl-msprobe
+description: 自动化 verl msprobe 精度数据采集；开始前检查/预装 msprobe（pip install mindstudio-probe）。自动识别三种模式：(1) 训练采集——global_profiler + precision_debugger stages；(2) 推理采集——vLLM/SGLang rollout dump；(3) 训推一致性——engine patch + PROMPTS_ONLY。触发词：verl dump、msprobe、mindstudio-probe、训练采集、推理采集、训推一致性、PrecisionDebugger。
 keywords:
     - verl
     - msprobe
@@ -15,11 +15,37 @@ keywords:
     - megatron
     - enforce_eager
     - global_profiler
+    - mindstudio-probe
 ---
 
 # verl msprobe 精度数据采集
 
-自动识别并执行三类 msprobe 采集。**第一步必须判定采集模式**。
+自动识别并执行三类 msprobe 采集。**最先检查 msprobe 环境**，再判定采集模式。
+
+## 前置：msprobe 环境（必做）
+
+三种模式（training / inference / consistency）均依赖 **msprobe**。在改脚本、patch 或启动训练**之前**执行：
+
+```bash
+bash scripts/ensure-msprobe-env.sh
+```
+
+| 项 | 说明 |
+|----|------|
+| PyPI 包名 | `mindstudio-probe` |
+| Python import | `from msprobe.pytorch import PrecisionDebugger` |
+| 环境 | 与 **verl 训练/推理同一 Python**（容器内请在容器里执行） |
+| 自动安装 | 脚本默认执行 `pip install mindstudio-probe` |
+| 仅检测 | `bash scripts/ensure-msprobe-env.sh --no-install` |
+
+**安装失败时**：停止后续 dump 配置，提示用户自行安装并校验：
+
+```bash
+pip install mindstudio-probe
+python3 -c "from msprobe.pytorch import PrecisionDebugger; print('OK')"
+```
+
+未通过环境检查前，不要进入路径 A/B/C。
 
 默认 verl 源码：`VERL_ROOT=/home/zhouyang/skill/verl`（**以用户实际训练/容器内使用的 verl 树为准**，可能与默认路径不同）
 
@@ -232,6 +258,7 @@ python3 scripts/check-consistency-patch.py \
 
 ## 禁止事项
 
+- 禁止在未确认 `msprobe` 可 import 时继续配置或启动 dump
 - 禁止 `enforce_eager=False` 下做推理 dump
 - 禁止未判模式就 patch engine
 - 禁止直接改用户原始训练脚本

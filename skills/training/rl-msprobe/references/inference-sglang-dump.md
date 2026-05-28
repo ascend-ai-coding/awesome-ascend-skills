@@ -125,6 +125,7 @@ SGLang msprobe dump 默认写入 config 中 `dump_path`：
 
 ## 校验清单
 
+- [ ] `bash scripts/ensure-msprobe-env.sh` 通过
 - [ ] `actor_rollout_ref.rollout.name=sglang`
 - [ ] `actor_rollout_ref.rollout.enforce_eager=True`
 - [ ] SGLang 版本与采集路径（S1/S2）匹配

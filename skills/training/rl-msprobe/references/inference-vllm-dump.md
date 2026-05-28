@@ -80,6 +80,7 @@ vLLM-Ascend 在 `enforce_eager=True` 且 `dump_config_path` 有效时，每次 `
 
 ## 校验清单
 
+- [ ] `bash scripts/ensure-msprobe-env.sh` 通过
 - [ ] `actor_rollout_ref.rollout.name=vllm`
 - [ ] `actor_rollout_ref.rollout.enforce_eager=True`
 - [ ] `dump_config_path` 指向存在的 json
