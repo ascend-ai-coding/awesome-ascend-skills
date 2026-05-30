@@ -169,6 +169,18 @@
       ]
     },
     {
+      "name": "inference-precision-tensor-dump-compare",
+      "description": "模型层 Tensor 打点与精度对比工具。用于在模型 forward 过程中捕获模型各层中间 tensor，实现 GPU/NPU 精度对比调试。支持 vLLM、SGLang 推理框架。When to use：When you need to debug precision issues between GPU and NPU, or validate layer-wise tensor outputs during inference.",
+      "source": "./skills/inference/inference-precision/inference-precision-tensor-dump-compare",
+      "category": "inference",
+      "categories": [
+        "inference",
+        "leaf-skill",
+        "evaluation",
+        "pytorch-npu"
+      ]
+    },
+    {
       "name": "ais-bench",
       "description": "AI model evaluation tool for Ascend NPU. Supports accuracy evaluation (text, multimodal datasets), performance evaluation (latency, throughput, stress testing), vLLM/Triton inference, 15+ benchmarks (MMLU, GSM8K, MMMU, BFCL), multi-turn dialogue, Function Call, and custom datasets.",
       "source": "./skills/inference/ais-bench",
@@ -337,7 +349,8 @@
         "./skills/inference/wan-ascend-adaptation",
         "./skills/inference/msmodelslim/msmodelslim-quant",
         "./skills/inference/vllm-ascend-server",
-        "./skills/inference/vllm-bench-serve"
+        "./skills/inference/vllm-bench-serve",
+        "./skills/inference/inference-precision/inference-precision-tensor-dump-compare"
       ],
       "category": "bundle",
       "categories": [
