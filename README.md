@@ -250,6 +250,7 @@ cp -r awesome-ascend-skills/skills/ops/npu-op-benchmark your-project/.agents/ski
 | [diffusers-ascend-skills](skills/inference/diffusers-ascend/diffusers-ascend-pipeline/SKILL.md) | Diffusers 环境、权重准备与推理 |
 | [wan-ascend-adaptation](skills/inference/wan-ascend-adaptation/SKILL.md) | Wan 系列视频生成模型及相似扩散框架的昇腾适配指南 |
 | [migration-ascend-torchnpu-skills](skills/inference/migration-ascend-torchnpu-skills/SKILL.md) | 小模型基于torch_npu迁移至昇腾平台跑通，包含：环境搭建、迁移、报告生成 |
+| [npu-torchair-infer](skills/inference/npu-torchair-infer/SKILL.md) | HuggingFace 模型迁移到昇腾 NPU torchair 图模式（torch.compile），并与 NPU eager / CPU eager 做精度与性能对比 |
 
 ### 训练与通信
 

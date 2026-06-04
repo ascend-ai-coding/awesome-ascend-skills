@@ -13,6 +13,7 @@
 - [`diffusers-ascend/`](diffusers-ascend/)：Diffusers 环境、权重与推理
 - [`wan-ascend-adaptation/`](wan-ascend-adaptation/)：Wan 系列模型昇腾适配
 - [`migration-ascend-torchnpu-skills`](migration-ascend-torchnpu-skills/)：小模型基于torch_npu迁移至昇腾平台跑通，包含：环境搭建、迁移、报告生成
+- [`npu-torchair-infer/`](npu-torchair-infer/)：HuggingFace 模型迁移到昇腾 NPU torchair 图模式并做精度/性能对比
 
 推荐场景：
 

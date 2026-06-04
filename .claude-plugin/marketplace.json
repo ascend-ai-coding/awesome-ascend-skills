@@ -351,6 +351,7 @@
         "./skills/inference/vllm-ascend-server",
         "./skills/inference/vllm-bench-serve",
         "./skills/inference/inference-precision/inference-precision-tensor-dump-compare"
+        "./skills/inference/npu-torchair-infer"
       ],
       "category": "bundle",
       "categories": [
@@ -1021,6 +1022,19 @@
         "inference",
         "training",
         "base"
+      ]
+    },
+    {
+      "name": "npu-torchair-infer",
+      "description": "Migrate any HuggingFace model to Ascend NPU torchair graph mode (torch.compile) and benchmark it for accuracy and performance against NPU eager and CPU eager. Use when running, compiling, or benchmarking HF models (vision, text, image-text encoders such as SigLIP2, DINOv3, ViT, CLIP, Qwen-VL, SAM) on Ascend 910B/CANN with torch_npu and torchair; when a torch.compile graph-mode run on NPU fails (Dynamo TorchRuntimeError, unsupported op, interpolate/contiguous errors); or when comparing torchair vs npu_eager vs cpu with cosine similarity, max abs diff, and p50/p95/p99 latency.",
+      "source": "./skills/inference/npu-torchair-infer",
+      "category": "inference",
+      "categories": [
+        "inference",
+        "leaf-skill",
+        "pytorch-npu",
+        "benchmarking",
+        "performance-analysis"
       ]
     }
   ],
