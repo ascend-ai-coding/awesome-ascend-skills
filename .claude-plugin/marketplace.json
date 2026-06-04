@@ -350,7 +350,7 @@
         "./skills/inference/msmodelslim/msmodelslim-quant",
         "./skills/inference/vllm-ascend-server",
         "./skills/inference/vllm-bench-serve",
-        "./skills/inference/inference-precision/inference-precision-tensor-dump-compare"
+"./skills/inference/inference-precision/inference-precision-tensor-dump-compare",
         "./skills/inference/npu-torchair-infer"
       ],
       "category": "bundle",
