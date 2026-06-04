@@ -57,11 +57,22 @@ def npu_available() -> bool:
 
 
 def resolve_device(requested: str, npu_id: int) -> Tuple[str, torch.device]:
-    """Map a --device request to (kind, torch.device). 'auto' prefers NPU."""
-    if requested in ("auto", "npu") and npu_available():
+    """Map a --device request to (kind, torch.device). 'auto' prefers NPU.
+
+    An explicit ``--device npu`` that cannot be satisfied is a hard error: silently
+    falling back to CPU would turn an intended CPU-vs-NPU comparison into a
+    meaningless CPU-vs-CPU one.
+    """
+    if requested == "npu":
+        if not npu_available():
+            raise RuntimeError(
+                "--device npu requested but NPU is unavailable "
+                f"(torch_npu imported: {_HAS_TORCH_NPU}). Refusing to fall back to CPU; "
+                "fix the environment (see references/environment.md) or pass --device cpu."
+            )
         return "npu", torch.device(f"npu:{npu_id}")
-    if requested == "npu" and not npu_available():
-        print("[WARN] NPU requested but unavailable; falling back to CPU.", file=sys.stderr)
+    if requested == "auto" and npu_available():
+        return "npu", torch.device(f"npu:{npu_id}")
     return "cpu", torch.device("cpu")
 
 
