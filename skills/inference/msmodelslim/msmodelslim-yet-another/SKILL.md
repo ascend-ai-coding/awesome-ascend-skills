@@ -1,29 +1,26 @@
-______________________________________________________________________
-
+---
 name: msmodelslim-config
 description: Model quantization on Ascend NPUs using msmodelslim. Use whenever the user wants to quantize an LLM or VLM (W4A8, W8A8, W4A16, W4A4, or other dtypes), write a quantization YAML config, run sensitive layer analysis, compress model weights for NPU serving, or debug quantization accuracy. Covers custom YAML authoring, mixed precision for MoE models, VLM calibration, and adding new model adapters.
 argument-hint: quantize / config / analyze / adapter
 keywords:
-
-- msmodelslim
-- quant
-- model quantization
-- YAML config
-- Ascend NPU
-- 昇腾
-- W4A8
-- W8A8
-- W4A16
-- mixed precision
-- sensitive layer analysis
-- model adapter
-- MoE quantization
-- VLM quantization
-- outlier suppression
-- AutoRound
-- SmoothQuant
-
-______________________________________________________________________
+    - msmodelslim
+    - quant
+    - model quantization
+    - YAML config
+    - Ascend NPU
+    - 昇腾
+    - W4A8
+    - W8A8
+    - W4A16
+    - mixed precision
+    - sensitive layer analysis
+    - model adapter
+    - MoE quantization
+    - VLM quantization
+    - outlier suppression
+    - AutoRound
+    - SmoothQuant
+---
 
 # msmodelslim-config
 

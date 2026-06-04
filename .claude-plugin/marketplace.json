@@ -157,7 +157,8 @@
       "source": "./",
       "strict": false,
       "skills": [
-        "./skills/inference/msmodelslim/msmodelslim-quant"
+        "./skills/inference/msmodelslim/msmodelslim-quant",
+        "./skills/inference/msmodelslim/msmodelslim-yet-another"
       ],
       "category": "inference",
       "categories": [
@@ -336,6 +337,7 @@
         "./skills/inference/diffusers-ascend/diffusers-ascend-pipeline",
         "./skills/inference/wan-ascend-adaptation",
         "./skills/inference/msmodelslim/msmodelslim-quant",
+        "./skills/inference/msmodelslim/msmodelslim-yet-another",
         "./skills/inference/vllm-ascend-server",
         "./skills/inference/vllm-bench-serve"
       ],
