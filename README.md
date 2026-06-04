@@ -139,7 +139,7 @@ npx skills add https://github.com/ascend-ai-coding/awesome-ascend-skills -s '*'
 | `ascend-base` | 所有新同学 | 基础环境、服务器连接、容器环境、设备检查、硬件诊断、虚拟化与 PyTorch NPU 基础能力 |
 | `ascend-inference` | 推理、模型转换、服务部署 | ATC、vLLM-Ascend、vLLM 服务部署、在线压测、ais-bench、量化、Diffusers、Wan 适配 |
 | `ascend-training` | 训练、通信、MindSpeed-LLM、MindSpeed-MM、VERL | HCCL、torch 通信测试、MindSpeed-LLM/MM 全流程、VERL quickstart、VERL msprobe 精度采集 |
-| `ascend-profiling` | Profiling 采集、性能分析 | Profiling 分析、训练 Profiling 采集、MFU 分析 |
+| `ascend-profiling` | Profiling 采集、性能分析 | Profiling 分析、MindSpeed-LLM 训练 Profiling 采集、通用 torch_npu Profiling 采集、MFU 分析 |
 | `ascend-ops` | 算子开发、迁移、调优 | AscendC、op-plugin、Triton-Ascend 迁移、算子基准测试 |
 | `ascend-ai-for-science` | AI for Science 专项用户 | AI for Science 总入口及其子技能 |
 
@@ -270,6 +270,7 @@ cp -r awesome-ascend-skills/skills/ops/npu-op-benchmark your-project/.agents/ski
 |------|------|
 | [profiling-analysis](skills/profiling/profiling-analysis/SKILL.md) | Profiling 性能分析技能集：识别下发、通信、计算瓶颈 |
 | [mindspeed-llm-train-profiler](skills/profiling/mindspeed-llm-train-profiler/SKILL.md) | 自动化完成 MindSpeed-LLM 训练 Profiling 数据采集 |
+| [pytorch-profiling-collection](skills/profiling/pytorch-profiling-collection/SKILL.md) | 基于 torch_npu.profiler 的通用训练/推理脚本 Profiling 采集（非 MindSpeed 场景） |
 | [npu-op-benchmark](skills/ops/npu-op-benchmark/SKILL.md) | 昇腾 NPU 算子性能基准测试 |
 
 ### 算子开发与迁移
