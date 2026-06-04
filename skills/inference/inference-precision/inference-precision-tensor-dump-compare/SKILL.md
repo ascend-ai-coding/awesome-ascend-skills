@@ -1,7 +1,6 @@
 ---
 name: inference-precision-tensor-dump-compare
-description: 模型层 Tensor 打点与精度对比工具。用于在模型 forward 过程中捕获模型各层中间 tensor，
-    实现 GPU/NPU 精度对比调试。支持 vLLM、SGLang 推理框架。When to use： When you need to debug precision issues between GPU and NPU,or validate layer-wise tensor outputs during inference.
+description: 模型层 Tensor 打点与精度对比工具。用于在模型 forward 过程中捕获模型各层中间 tensor，实现 GPU/NPU 精度对比调试。支持 vLLM、SGLang 推理框架。When to use： When you need to debug precision issues between GPU and NPU,or validate layer-wise tensor outputs during inference.
 keywords:
     - tensor dump
     - tensor打点
