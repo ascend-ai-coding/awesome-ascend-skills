@@ -207,15 +207,15 @@
     },
     {
       "name": "ascendc",
-      "description": "AscendC development helper, provides AscendC development environment, compiler, and debugger. Supports C/C++ and Python programming on Ascend NPU. Includes sample code, tutorials, and best practices for AscendC development.",
+      "description": "End-to-end AscendC custom operator development for Ascend NPU in an ascend-kernel (csrc/ops + build.sh + torch_npu PyTorch custom op) project. Drives a new operator from a name and a math spec through project init, two-level tiling design, op_host/op_kernel code generation and framework registration, compile/install/debug, PyTorch-style API docs, precision evaluation and root-cause debugging, torch_npu.profiler performance benchmarking, performance optimization, and security code review. Use to design, generate, build, test, document, and tune an AscendC operator.",
       "source": "./skills/ops/ascendc",
       "category": "ops",
       "categories": [
         "ops",
         "leaf-skill",
         "operator-development",
-        "environment-setup",
-        "performance-analysis"
+        "performance-analysis",
+        "evaluation"
       ]
     },
     {

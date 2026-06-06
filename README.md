@@ -278,7 +278,7 @@ cp -r awesome-ascend-skills/skills/ops/npu-op-benchmark your-project/.agents/ski
 
 | Skill | 描述 |
 |------|------|
-| [ascendc](skills/ops/ascendc/SKILL.md) | AscendC 算子开发：Transformer 算子实现、CANN API 示例 |
+| [ascendc](skills/ops/ascendc/SKILL.md) | AscendC 算子端到端开发（ascend-kernel 自定义算子）：环境→工程初始化→两级 tiling 设计→用例→op_host/op_kernel 代码生成与框架注册→编译调试→接口文档→精度评估与精度调试→torch_npu.profiler 性能评估→性能优化→代码检视（自包含模板/脚本/样例） |
 | [ascend-opplugin](skills/ops/ascend-opplugin/SKILL.md) | op-plugin 环境安装与 torch_npu 自定义算子接入 |
 | [triton-ascend-migration](skills/ops/triton-ascend-migration/SKILL.md) | GPU/CUDA Triton 算子迁移到 Triton-Ascend |
 
