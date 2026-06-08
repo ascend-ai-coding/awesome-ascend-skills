@@ -596,6 +596,17 @@
       ]
     },
     {
+      "name": "process-daily-report",
+      "description": "Process daily work reports with LLM: extract progress, risks, and action items, preview highlighted Markdown, then send to a DingTalk group (with optional Yuque source link). Use when user wants to summarize 日报, send daily report to DingTalk, or extract 进展/风险/Action from a local markdown file or Yuque URL.",
+      "source": "./skills/agent-tools/process-daily-report",
+      "category": "agent-tools",
+      "categories": [
+        "agent-tools",
+        "leaf-skill",
+        "team-collaboration"
+      ]
+    },
+    {
       "name": "hiascend-forum",
       "description": "基于华为昇腾社区论坛开发者反馈内容，按时间范围抓取帖子并识别特定领域的易用性、故障和报错类问题，用于产品改进分析。",
       "source": "./",
@@ -1107,6 +1118,7 @@
       "issue-analysis": "GitHub issue 总结、RCA、案例沉淀",
       "gitcode-workflow": "GitCode issue、PR、流水线、review 和合入流程",
       "community-feedback": "昇腾社区论坛抓取、反馈筛选和问题分析",
+      "team-collaboration": "日报摘要、团队协作通知与消息同步",
       "ai4s-model-migration": "AI for Science 模型、TensorFlow/PyTorch 路线与专项迁移",
       "external-sync": "外部来源技能同步和来源分组"
     }
