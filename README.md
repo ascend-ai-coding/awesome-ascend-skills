@@ -241,6 +241,7 @@ cp -r awesome-ascend-skills/skills/ops/npu-op-benchmark your-project/.agents/ski
 
 | Skill | 描述 |
 |------|------|
+| [ascend-migration-analysis](skills/inference/ascend-migration-analysis/SKILL.md) | PyTorch 项目 Ascend NPU 迁移可行性分析：扫描 CUDA 依赖，按 7 大域评估，估算迁移工作量 |
 | [atc-model-converter](skills/inference/atc-model-converter/SKILL.md) | ATC 模型转换：ONNX 转 .om 格式、OM 推理、精度对比、YOLO 端到端部署 |
 | [vllm-ascend](skills/inference/vllm-ascend/SKILL.md) | vLLM 推理引擎：离线批推理、OpenAI 兼容 API、量化模型服务、分布式推理 |
 | [vllm-ascend-server](skills/inference/vllm-ascend-server/SKILL.md) | vLLM 推理服务部署：模型发现、量化检测、张量并行、graph/eager 模式、健康检查 |
@@ -250,6 +251,7 @@ cp -r awesome-ascend-skills/skills/ops/npu-op-benchmark your-project/.agents/ski
 | [diffusers-ascend-skills](skills/inference/diffusers-ascend/diffusers-ascend-pipeline/SKILL.md) | Diffusers 环境、权重准备与推理 |
 | [wan-ascend-adaptation](skills/inference/wan-ascend-adaptation/SKILL.md) | Wan 系列视频生成模型及相似扩散框架的昇腾适配指南 |
 | [migration-ascend-torchnpu-skills](skills/inference/migration-ascend-torchnpu-skills/SKILL.md) | 小模型基于torch_npu迁移至昇腾平台跑通，包含：环境搭建、迁移、报告生成 |
+| [npu-torchair-infer](skills/inference/npu-torchair-infer/SKILL.md) | HuggingFace 模型迁移到昇腾 NPU torchair 图模式（torch.compile），并与 NPU eager / CPU eager 做精度与性能对比 |
 
 ### 训练与通信
 
@@ -276,7 +278,7 @@ cp -r awesome-ascend-skills/skills/ops/npu-op-benchmark your-project/.agents/ski
 
 | Skill | 描述 |
 |------|------|
-| [ascendc](skills/ops/ascendc/SKILL.md) | AscendC 算子开发：Transformer 算子实现、CANN API 示例 |
+| [ascendc](skills/ops/ascendc/SKILL.md) | AscendC 算子端到端开发（ascend-kernel 自定义算子）：环境→工程初始化→两级 tiling 设计→用例→op_host/op_kernel 代码生成与框架注册→编译调试→接口文档→精度评估与精度调试→torch_npu.profiler 性能评估→性能优化→代码检视（自包含模板/脚本/样例） |
 | [ascend-opplugin](skills/ops/ascend-opplugin/SKILL.md) | op-plugin 环境安装与 torch_npu 自定义算子接入 |
 | [triton-ascend-migration](skills/ops/triton-ascend-migration/SKILL.md) | GPU/CUDA Triton 算子迁移到 Triton-Ascend |
 

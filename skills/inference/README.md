@@ -4,6 +4,7 @@
 
 当前 `skills/inference/` 已承载真实 skill 目录；请按下面链接进入对应 skill 开发：
 
+- [`ascend-migration-analysis/`](ascend-migration-analysis/)：PyTorch 项目 Ascend NPU 迁移可行性分析
 - [`atc-model-converter/`](atc-model-converter/)：ATC 模型转换与 OM 推理
 - [`vllm-ascend/`](vllm-ascend/)：vLLM-Ascend 推理引擎与部署指南
 - [`vllm-ascend-server/`](vllm-ascend-server/)：vLLM 推理服务启动、配置与健康检查
@@ -13,6 +14,7 @@
 - [`diffusers-ascend/`](diffusers-ascend/)：Diffusers 环境、权重与推理
 - [`wan-ascend-adaptation/`](wan-ascend-adaptation/)：Wan 系列模型昇腾适配
 - [`migration-ascend-torchnpu-skills`](migration-ascend-torchnpu-skills/)：小模型基于torch_npu迁移至昇腾平台跑通，包含：环境搭建、迁移、报告生成
+- [`npu-torchair-infer/`](npu-torchair-infer/)：HuggingFace 模型迁移到昇腾 NPU torchair 图模式并做精度/性能对比
 
 推荐场景：
 

@@ -1,139 +1,296 @@
 ---
 name: ascendc
-description: AscendC transformer/GMM/MoE 算子与 Matmul/Cube Kernel 的统一开发规范。用于在 ops-transformer 下新增或修改 op_host、tiling/infershape、op_kernel（含 MatmulImpl/Cube 调用）、以及对应的 CANN aclnn 示例和单测。
+description: End-to-end AscendC custom operator development for Ascend NPU in an ascend-kernel (csrc/ops + build.sh + torch_npu PyTorch custom op) project. Use to design, generate, build, test, document, and tune a new AscendC operator from a name and a math/functional spec. Covers project init, two-level tiling design, op_host/op_kernel code generation, framework registration, compile/install/debug, PyTorch-style API docs, precision evaluation and root-cause debugging, torch_npu.profiler performance benchmarking, performance optimization, and security code review.
 keywords:
   - ascend
   - ascendc
+  - operator
   - kernel
   - npu
-  - 开发环境
-  - 算子
-  - 昇腾
+  - ascend-kernel
+  - op_host
+  - op_kernel
+  - tiling
+  - code generation
+  - precision
+  - performance
+  - profiler
+  - code review
+  - end-to-end
 ---
 
-# AscendC Transformer 算子开发
+# AscendC Operator Development (All-in-One)
 
-指导 Agent 按现有模式开发/修改 AscendC 的 FFN、GMM、MoE 类算子及对应 CANN `aclnn_*` 示例。**具体约定与代码模板见同目录下 `references/`；执行任务前请先通读本 SKILL.md，再按「References 索引」打开对应文档。**
+This skill drives a **new AscendC custom operator from a spec to a production-ready,
+benchmarked operator** inside an **ascend-kernel** project (a PyTorch custom-op project
+that exposes operators as `torch.ops.npu.<op>` via `csrc/ops/`, `csrc/register.cpp`,
+and `build.sh`). It is **self-contained**: every phase, template, and reference lives
+under this skill directory.
 
----
+> Scope note: this skill targets the **ascend-kernel / `csrc/ops` PyTorch custom-op**
+> workflow (vector / row / index / sort / pool operators, FP16/BF16 up-cast, two-level
+> tiling). It is **not** for the `ops-transformer` aclnn/genop flow.
 
-## 如何读取本 Skill（能力与使用方式）
+## How to use this skill
 
-- **本 skill 能做什么**：在 ops-transformer 工程中新增/修改 AscendC 算子（op_host、tiling、infershape、op_kernel）、Matmul/Cube 调用、以及 aclnn 示例与单测；所有约定与模板集中在 `references/` 中，本文件提供索引与工作流。
-- **推荐读取顺序**：① 本 SKILL.md 全文（When to Use、References 索引、Overall Workflow、各 Step）；② 根据当前任务从「References 索引」表打开对应 `references/0X-*.md`；③ **以 CANN 官方文档与 references 中的「官方文档参考」为准**，工程内同类型算子可作实现参考。
-- **references 路径**：与 SKILL.md 同级的 `references/` 目录，文档名为 `01-type-format.md`～`08-genop.md`，表中已按主题与何时查阅列出。
+1. Read this `SKILL.md` fully first (lifecycle, gates, anti-patterns).
+2. For each phase, **MUST** open the matching `references/NN-*.md` before acting.
+3. Reuse the bundled `templates/`, `examples/`, and `scripts/`; do not invent project
+   structure or APIs.
+4. Honor the **stage gates**: never start a phase until the previous phase's checklist
+   passes. Never skip the in-chat result display rules.
 
----
+## When to use
 
-## 使用本 Skill 的方式（Agent 必读）
+- "Develop / implement / create a new AscendC operator `<name>`" (e.g. `acosh`, `rms_norm`).
+- "Continue operator development" → detect the current phase from artifacts and resume.
+- Any single phase on an existing operator: design only, code-gen only, precision eval
+  only, performance benchmark only, optimization only, or code review only.
 
-1. **先读本文件**：确认 When to Use、Overall Workflow、References 索引与各 Step 摘要。
-2. **按需读 references**：根据当前任务打开下表对应文档（如做 tiling 则读 `06-tiling.md`，做 Matmul 则读 `02-kernel-guide.md`），按文档内约定实现或修改代码。
-3. **以官方文档为参考示例**：规范与示例以 CANN 官方文档（算子开发、Ascend C API、Tiling、单算子调用等）及 references 内列出的官方链接为准；工程内同类型算子可作实现参考，不凭空发明模式。
+## Lifecycle overview
 
----
+```
+Phase 0  Environment + requirements
+Phase 1  Project init        -> references/01-project-init.md
+Phase 2  Design (design.md)  -> references/02-design.md
+Phase 3  Test cases          -> references/03-testcase-gen.md
+Phase 4  Code generation     -> references/04-code-gen.md (+ 04a-kernel-api.md)
+Phase 5  Compile / debug     -> references/05-compile-debug.md
+Phase 6  Interface docs      -> references/06-doc-gen.md
+Phase 7  Precision eval      -> references/07-precision-eval.md (fail -> 07b-precision-debug.md)
+Phase 8  Performance eval    -> references/08-performance-eval.md
+Phase 9  Performance optim   -> references/09-performance-optim.md
+Phase 10 Code review         -> references/10-code-review.md
+(opt)    Memory check        -> references/11-mssanitizer.md
+```
 
-## When to Use
+Input: operator name (snake_case) + functional/math spec.
+Output: built & installed operator, `design.md`, unified test-case doc, PyTorch-style
+README, precision report, performance report (and optimization/review reports if run).
 
-- **算子层面**：在 `ops-transformer` 下新增或修改 FFN / GMM / MoE / 路由类 AscendC 算子（含前向、反向、路由融合等）。
-- **Kernel 层面**：在 AscendC `op_kernel` 中实现或调整 Matmul/Cube 调用（如 `MatmulImpl`、分块 GEMM、AIC/AIV 协作、确定性 GMM、`grouped_matmul_finalize_routing` 风格）。
-- **Tiling / Infershape**：补充或修改 `*_tiling*.h/.cpp`、`*_infershape.cpp`，或理解 shape→tiling→kernel 的完整映射。
-- **示例与单测**：编写或调整 CANN `aclnn_*` 示例与 Python/CPP 单测，接口、dtype、格式与 op_host/op_kernel 精确对齐。
-- **对齐与重构**：重构、修 bug 或新增功能时，严格沿用现有 FFN/GMM/MoE 模式。
+## Phase 0 — Environment and requirements
 
----
+Confirm the build/run environment **before any development action**.
 
-## References 索引（按执行顺序与主题）
+- **CANN**: `echo $ASCEND_HOME_PATH`. If set, use it as `CANN_PATH`. If unset, **MUST**
+  ask the user for the CANN install path. Activate per shell with
+  `source ${CANN_PATH}/*/set_env.sh`.
+- **Conda**: `echo $CONDA_DEFAULT_ENV`. If non-empty and not `base`, use it. Otherwise
+  **MUST** ask the user for the conda env name; activate with `conda activate <env>`.
+- **Requirements**: operator name (snake_case, required), functional spec / math formula
+  (required), supported dtypes (optional, default `float16, float32`, may add `bfloat16`),
+  SoC (optional, default `ascend910b`, obtained via platform API at runtime).
 
-| 文档 | 说明 | 何时查阅 |
-|------|------|----------|
-| [references/01-type-format.md](references/01-type-format.md) | op_host 类型/格式：DataType·Format·UnknownShapeFormat 个数约定、JSON 映射 | 定义或修改 Input/Output 时 |
-| [references/02-kernel-guide.md](references/02-kernel-guide.md) | Kernel：GlobalTensor/TQue、CopyIn/Compute/CopyOut；Matmul/Cube 模板；GMM 转置说明 | 写/改 op_kernel、Matmul 调用时 |
-| [references/03-op-host-examples.md](references/03-op-host-examples.md) | FFN/GMM/MoE 的 Input/Output/Attr 定义示例代码 | 写 *_def.cpp 时 |
-| [references/04-op-kernel-skeletons.md](references/04-op-kernel-skeletons.md) | FFN/GMM/MoE 的 op_kernel 命名空间与主类骨架 | 写/改 op_kernel 主类时 |
-| [references/05-json-types-flow.md](references/05-json-types-flow.md) | JSON + graph/types.h 驱动 op_host/infershape/tiling 对齐流程 | 接口与 JSON/types 对齐时 |
-| [references/06-tiling.md](references/06-tiling.md) | Tiling 实现：标准 C++ 与宏定义两种方式及取值/写回差异 | 实现或修改 tiling 时 |
-| [references/07-aclnn-template.md](references/07-aclnn-template.md) | aclnn 示例通用模板与生成步骤 | 写 test_aclnn_* 时 |
-| [references/08-genop.md](references/08-genop.md) | genop 命令、生成结构、生成后定制与常见问题 | 从零生成新算子目录时 |
+Details and the decision tree: [references/00-environment.md](references/00-environment.md).
 
-**官方文档为参考示例**：本 skill 以 CANN 官方文档为规范与示例来源，不依赖本地工程路径。
+Gate: CANN path resolved and activatable; conda env resolved and activatable; operator
+name and functional spec confirmed.
 
-- **Ascend C API**：[Ascend C API 列表](https://www.hiascend.com/document/detail/zh/canncommercial/850/API/ascendcopapi/atlasascendc_api_07_0003.html)（LocalTensor、GlobalTensor、TQue、Matmul 等）
-- **Tiling**：[Host侧Tiling实现 - 基本流程](https://www.hiascend.com/document/detail/zh/canncommercial/850/opdevg/Ascendcopdevg/atlas_ascendc_10_00021.html)、[使用标准C++语法定义Tiling结构体](https://www.hiascend.com/document/detail/zh/canncommercial/850/opdevg/Ascendcopdevg/atlas_ascendc_10_00024.html)
-- **样例代码**：[Gitee ascend/samples - operator/ascendc](https://gitee.com/ascend/samples/tree/master/operator/ascendc)
+## Phase 1 — Project init
 
-各 references 文档内均设有「官方文档参考」小节，列出对应官方链接。
+Locate or create the ascend-kernel project, then scaffold `csrc/ops/<op>/`.
 
----
+- Detect with `scripts/detect_ascend_kernel_project.sh`. If none, copy the bundled
+  template `templates/ascend-kernel/` and `chmod +x build.sh`.
+- Create `csrc/ops/<op>/{op_host/<op>.cpp, op_kernel/<op>.cpp, CMakeLists.txt, design.md}`
+  (placeholders).
+- Flag the **three registration update points** for later phases: `csrc/ops.h`,
+  `csrc/register.cpp`, `csrc/CMakeLists.txt`.
 
-## Overall Workflow
+Read [references/01-project-init.md](references/01-project-init.md).
 
-1. **以官方文档与 references 为准**：规范与示例见 CANN 官方文档及本 skill 的 references；工程内可在 `ops-transformer/ffn/`、`gmm/`、`moe/` 下对照同类型算子的 `*_def.cpp`、`*_tiling*.h/.cpp`、`op_kernel/*.h`、`examples/test_aclnn_*.cpp` 作实现参考。
-2. **op_host 定义图算子接口**：Input/Output/Attr、AICore 配置、OP_ADD。见 [01-type-format](references/01-type-format.md)、[03-op-host-examples](references/03-op-host-examples.md)。
-3. **op_kernel 实现 AscendC 内核**：Init、Process、队列与 UB 管理、Matmul 时见 [02-kernel-guide](references/02-kernel-guide.md)、[04-op-kernel-skeletons](references/04-op-kernel-skeletons.md)。
-4. **完成 tiling、infershape 与注册**：见 [06-tiling](references/06-tiling.md)、[05-json-types-flow](references/05-json-types-flow.md)。
-5. **编写或更新 CANN 示例与单测**：见 [07-aclnn-template](references/07-aclnn-template.md)。
-6. **若有 Python 前端**：按现有 test 模板补用例并做数值/形状校验。
+Gate: project exists (`build.sh`, `CMakeLists.txt`, `csrc/`); `csrc/ops/<op>/` skeleton
+created with the four files.
 
-**新算子从零开始时**：先执行 `bash build.sh --genop=op_class/op_name`，再按 [08-genop](references/08-genop.md) 与上述步骤定制。
+## Phase 2 — Design (`design.md`)
 
----
+Produce a complete design document; it is the direct input for code generation.
 
-## Step 1：复用现有模式
+- Pick an implementation path (default **AscendC Kernel**; CATLASS only for matmul/cube).
+- Map the math to an AscendC API call sequence; design **two-level tiling** (block-level
+  inter-core + UB-level intra-core); fill the **UB allocation table** and derive
+  `bufferCoefficient` per dtype; describe the **FP16/BF16 → FP32 up-cast** path.
+- Fill `templates/design-template.md` → write to `csrc/ops/<op>/design.md`.
 
-- **参考示例以官方文档为准**：类型/格式见 [01-type-format](references/01-type-format.md)（含 CANN/graph/types.h）；Kernel 与 Matmul 见 [02-kernel-guide](references/02-kernel-guide.md)（含 Ascend C API、Gitee samples）。工程内可对照同类型算子（FFN/GMM/MoE 的 op_host、tiling、op_kernel、examples）做实现参考。
-- **行为准则**：以官方规范与 references 为准，先完整复制同类型算子骨架再做最小必要修改；保持命名、宏（如 ASCEND_IS_AIC）、队列与 UB 管理、AICore 与芯片配置一致。
+Read [references/02-design.md](references/02-design.md) (tiling-by-op-type, UB allocation,
+API map, hardware constraints).
 
----
+Gate: `design.md` has function signature, supported dtypes, API pseudocode, UB allocation
+table with `bufferCoefficient` per dtype, tiling struct, and up-cast path.
 
-## Step 2：op_host 定义
+## Phase 3 — Test cases
 
-- **模式**：继承 `OpDef`，在 `namespace ops` 内定义；Input 用 `Input("name")` + `.ParamType(REQUIRED/OPTIONAL)` + `.DataType({...})`、`.Format({...})`、`.UnknownShapeFormat({...})`（个数一致）；Output 同理；属性用 `.Attr("name").AttrType(...).Int/Float/ListInt(...)`；AICore 用 `OpAICoreConfig` 并 `AddConfig("ascend910b", config)`；最后 `OP_ADD(YourOpClassName)`。
-- **示例**：[03-op-host-examples](references/03-op-host-examples.md)。新算子从参考算子完整复制类与构造函数，只改类名、输入输出名与个数、DataType/Format、属性与默认值；需 aclnn 时沿用 `"aclnnSupport.value", "support_aclnn"`。
+Generate one unified test-case document reused by precision and performance later.
 
----
+- Read `design.md`; produce `SUPPORTED_DTYPES`, `TEST_SHAPES`, `GENERAL_SHAPES`,
+  `BOUNDARY_VALUES`, and the operator baseline (CPU reference + NPU call).
+- Total cases `(TEST_SHAPES + GENERAL_SHAPES) x SUPPORTED_DTYPES >= 30`; keep single-shape
+  element count reasonable (<= ~200K for regular cases).
+- Fill `templates/test-cases-template.md` → write
+  `csrc/ops/<op>/test/<op>-test-cases.md`.
 
-## Step 3：op_kernel 实现
+Read [references/03-testcase-gen.md](references/03-testcase-gen.md).
 
-- **共性**：命名空间与算子一致；包含 `kernel_operator.h`，矩阵类用 `lib/matmul_intf.h`；类型别名与 `MatmulImpl` 按参考算子；用模板区分 dtype/量化/激活等。
-- **骨架**：[04-op-kernel-skeletons](references/04-op-kernel-skeletons.md)。确认是否基于 `MatmulImpl` 及 tiling 字段；只增删 GM 输入、调整 ComputeDequantAndActivate 等业务逻辑；保持队列/UB、PipeBarrier、DataCopyPad、SetAtomicAdd 等模式不变。
+Gate: test-case doc exists with dtypes, shapes, boundary values, and baseline; values
+respect `design.md` constraints.
 
-### Matmul / Cube 子流程
+## Phase 4 — Code generation + framework adaptation
 
-- **何时**：新增或修改基于 Matmul 的内核（如 GMM、MoE finalize routing）。
-- **步骤概要**：（1）按 [02-kernel-guide](references/02-kernel-guide.md) 与官方 Matmul 高阶 API 定义 `MatmulType`/`MatmulImpl`，按 A:GM+ND、B:GM+NZ、C:GM+ND 复用或微调；（2）Init 中把 Host 传入的 GM 绑定为 `GlobalTensor`，保存 tiling 的 baseM/baseN/baseK、stepKa/stepKb、coreNum/parallNum 等；（3）Process 中按 tiling 划分 M×N×K block，算 A/B/C 的 GM 与 workspace 偏移；（4）每 block 按 [02-kernel-guide](references/02-kernel-guide.md) 调用 `SetOrgShape`/`SetSingleShape`/`SetTensorA`/`SetTensorB`/`Iterate`+`GetTensorC`，仅 AIC 执行；需 AIV 协作或确定性时参考官方多核/同步文档与 Gitee 样例，不自行发明同步方案。详见 [02-kernel-guide](references/02-kernel-guide.md)。
+Generate `op_host` and `op_kernel`, then wire them into the framework.
 
----
+- Select a template pair from `templates/code-gen/` by operator type (elementwise / row /
+  index / index-per-elem / sort / pool); copy into `csrc/ops/<op>/` and adapt.
+- op_host: signature, input checks, platform API for `coreNum`/`ubSize` (never hardcode),
+  `bufferCoefficient`, left-value `EXEC_KERNEL_CMD` args.
+- op_kernel: `BUFFER_NUM=2`, Init core offsets, `InitBuffer` sizes, Compute logic, tail-tile
+  alignment, **FP16/BF16 up-cast to FP32**, `DataCopyPad` for GM↔UB, backup before Reduce.
+- Framework: add declaration to `csrc/ops.h`, `m.def`+`m.impl` to `csrc/register.cpp`,
+  host+kernel sources to `csrc/CMakeLists.txt`.
 
-## Step 4：Tiling / Infershape 与 JSON 对齐
+Read [references/04-code-gen.md](references/04-code-gen.md) and the API essentials in
+[references/04a-kernel-api.md](references/04a-kernel-api.md).
 
-- 在 `op_host/` 下找 `*_tiling*.h/.cpp`、`*_infershape.cpp`，按官方 Tiling 文档与同类型算子分析 tiling 参数与 shape→tiling 映射。
-- **JSON + types.h**：[05-json-types-flow](references/05-json-types-flow.md)（JSON 接口 → op_host 映射 → infershape 对齐 → tiling 校验 → op_kernel 命名一致）。
-- **Tiling 两种方式**：[06-tiling](references/06-tiling.md)。标准 C++：结构体在 **op_kernel** 目录，Host 用 `GetTilingData<YourTilingData>()` 后直接对成员赋值，无需 SaveToBuffer/SetDataSize；Kernel 用 `REGISTER_TILING_DEFAULT(YourTilingData)`。宏定义：op_host 用 BEGIN/TILING_DATA_FIELD_DEF/REGISTER_TILING_DATA_CLASS；Host 需先创建 tiling 实例，set 完后 **必须** `SaveToBuffer` + `SetDataSize` 写回 context。**参考示例**：见 [06-tiling](references/06-tiling.md) 内「官方文档参考」— 标准 C++ 见官方「使用标准C++语法定义Tiling结构体」与 Gitee MatmulCustomMultiCore；宏定义见官方「基本流程」Add 算子示例。
+Gate: both sources generated; three registration points updated; checklist in the
+reference satisfied.
 
----
+## Phase 5 — Compile, install, test, debug
 
-## Step 5：CANN aclnn 示例
+Build the project, install the wheel, generate a basic test, run it, and debug.
 
-- **流程**：Init(aclInit/SetDevice/CreateStream) → 为每个输入/输出 CreateAclTensor → aclnnXxxGetWorkspaceSize → 按需 aclrtMalloc workspace → aclnnXxx(...) → aclrtSynchronizeStream → 拷回并打印 → 销毁张量/释放内存/ResetDevice/aclFinalize。
-- **模板**：[07-aclnn-template](references/07-aclnn-template.md)。新示例时复制模板，替换 include、dtype、张量构造与 aclnnXxx 调用，保持 CHECK_RET 与成对释放。
+- `chmod +x build.sh && bash build.sh`; confirm `output/ascend_kernel*.whl`.
+- `pip install output/ascend_kernel*.whl --force-reinstall --no-deps`.
+- Generate `tests/test_<op>.py`; run functional test (`python ...`) then precision test
+  (`pytest -v`). Source the environment before **every** shell command.
+- On failure, run the **debug loop (max 3 attempts)** using the error decision trees.
 
----
+Read [references/05-compile-debug.md](references/05-compile-debug.md).
 
-## Step 6：测试与验证
+Gate: wheel built and installed; functional test exits 0; precision pytest green.
 
-- 若有 Python 单测：以 CANN 单测规范为准，构造典型与边界 shape，用参考实现或简单算法算期望值，断言 shape/dtype 与数值误差在可接受范围；工程内若有同类型 `test_npu_*` 可作模板参考。
+## Phase 6 — Interface docs
 
----
+Extract interface facts from source and emit a PyTorch-style README.
 
-## 约束与示例
+- Pull schema from `register.cpp` (`m.def`), C++ signature from `ops.h`, algorithm/dtype/
+  constraints from `design.md`, `TORCH_CHECK` from op_host, example from the test file.
+- Assemble the fixed sections and write `csrc/ops/<op>/README.md`. Default language is
+  English; switch to Chinese on request.
+- **MUST** display the full README content in chat, not just the path.
 
-- **约束**：不凭空发明模式，先搜索并对齐相邻算子；改文件前先通读；涉及芯片/动态 shape/确定性时与现有算子一致；示例与测试宜小且可手算验证。
-- **示例**：用户要求“新增类似 grouped_matmul_finalize_routing 的 GMM 路由算子”时，Agent 应以 **官方文档与 references 为参考示例**：按 [02-kernel-guide](references/02-kernel-guide.md)、[05-json-types-flow](references/05-json-types-flow.md)、[06-tiling](references/06-tiling.md) 实现 op_host、tiling、op_kernel 与 Graph→kernel 映射；按 [07-aclnn-template](references/07-aclnn-template.md) 写 aclnn 示例并补单测；工程内同类型算子（如 gmm 目录下同名或相近算子）可作实现参考。
+Read [references/06-doc-gen.md](references/06-doc-gen.md).
 
----
+Gate: README has signature, params, dtypes, shape, constraints, example, returns; matches
+`register.cpp` schema; displayed in chat.
 
-## genop 与通用示例生成
+## Phase 7 — Precision evaluation
 
-- **genop**：在 ops-transformer 下执行 `bash build.sh --genop=op_class/op_name` 生成新算子目录与占位文件。详见 [08-genop](references/08-genop.md)。
-- **aclnn 示例生成**：从 op_host/op_kernel 提取输入输出与属性，按 [07-aclnn-template](references/07-aclnn-template.md) 填充分支；缺失处用 FILL IN 注释并提示用户补全。
+Run a comprehensive precision suite and produce a report.
+
+- Load the Phase 3 test-case doc; adapt `(shapes + boundary) x dtypes >= 30`.
+- Generate `test_<op>_precision.py` and `run_<op>_precision_report.py` from
+  `templates/precision/`; run pytest then the report generator.
+- Pass rule (MERE/MARE, ecosystem open-source standard): `MERE < Threshold` **and**
+  `MARE < 10 x Threshold`. Standards table in
+  [references/07a-precision-standards.md](references/07a-precision-standards.md).
+- On precision failure that thresholds cannot fix, run root-cause debugging per
+  [references/07b-precision-debug.md](references/07b-precision-debug.md).
+- **MUST** display in chat: overview (totals + pass rate), any failures, and >=3 key
+  findings — then the report path.
+
+Read [references/07-precision-eval.md](references/07-precision-eval.md).
+
+Gate: pytest green; JSON + Markdown report written; results displayed in chat.
+
+## Phase 8 — Performance evaluation
+
+Benchmark the custom operator against a baseline with `torch_npu.profiler`.
+
+- Build a JSONL case file (`>= 8` cases) from the test-case doc + `design.md`; always run
+  a **dual-path** comparison (custom vs baseline; baseline must run on NPU — use a small-op
+  composition when no equivalent API exists).
+- Fixed schedule `warmup=5, active=5`; aggregate `Total Time(us)` from
+  `ASCEND_PROFILER_OUTPUT/op_statistic.csv`. Copy `examples/layer_norm_profiler_reference/`
+  as the starting point.
+- **MUST** display in chat: the unified comparison table (with DType column), the summary,
+  and >=3 short conclusions — then the report path.
+
+Read [references/08-performance-eval.md](references/08-performance-eval.md),
+[references/08a-profiler-and-metrics.md](references/08a-profiler-and-metrics.md), and
+[references/08b-perf-case-jsonl.md](references/08b-perf-case-jsonl.md).
+
+Gate: dual-path report written; displayed in chat with table + summary + conclusions.
+
+## Phase 9 — Performance optimization (optional, closed loop)
+
+Investigate, modify, and verify — at most 3 rounds.
+
+- Investigate across 5 dimensions (tiling, data copy, API usage, memory, pipeline) and
+  emit a ranked report; snapshot a baseline.
+- Apply changes obeying the anti-pattern list; re-run precision (must pass) then the same
+  performance cases; compare to baseline; iterate.
+
+Read [references/09-performance-optim.md](references/09-performance-optim.md).
+
+Gate: precision still passes; performance compared to baseline; results displayed in chat.
+
+## Phase 10 — Code review (optional)
+
+Hypothesis-testing security review against the coding red lines (numeric, memory/pointer,
+resource, input validation, concurrency, operator interface, ABI compatibility).
+
+Read [references/10-code-review.md](references/10-code-review.md).
+
+## Optional — Memory check
+
+Run mssanitizer to detect illegal access / leaks / UB out-of-bounds.
+Read [references/11-mssanitizer.md](references/11-mssanitizer.md).
+
+## Unified anti-patterns (NEVER)
+
+- NEVER skip design and write code directly; code-gen consumes `design.md`.
+- NEVER let FP16/BF16 go through complex math directly — up-cast to FP32 first.
+- NEVER use `DataCopy` for GM↔UB — use `DataCopyPad`.
+- NEVER pass r-values (temporaries/literals/expressions) into `EXEC_KERNEL_CMD`.
+- NEVER hardcode core count or UB size — query the platform API.
+- NEVER modify files under `cmake/` or `csrc/utils/`.
+- NEVER reuse a source tensor right after `ReduceSum`/`ReduceMax` (reduction may modify it).
+- NEVER use `std::min/max/abs/sqrt/exp` etc. inside a kernel.
+- NEVER pass `repeatTime > 255` to high-dim split APIs (silent uint8 truncation).
+- NEVER use a non-profiler timing method as a performance conclusion.
+- NEVER report only a file path for precision/performance/optimization — show the tables
+  and conclusions in chat.
+
+## Resume from interruption
+
+| Detected state | Phase not done | Resume at |
+|---|---|---|
+| `csrc/ops/<op>/` missing | 1 | Phase 1 |
+| `design.md` placeholder/empty | 2 | Phase 2 |
+| `<op>-test-cases.md` missing | 3 | Phase 3 |
+| op_host still skeleton | 4 | Phase 4 |
+| wheel not built / basic test failing | 5 | Phase 5 |
+| `README.md` missing | 6 | Phase 6 |
+| no precision report / precision failing | 7 | Phase 7 |
+| precision report present, no perf report | 8 | Phase 8 |
+
+## Status tracker
+
+| Phase | Precondition | Reference | Key artifact |
+|---|---|---|---|
+| 0 Env + req | — | 00-environment | CANN + conda + name + spec |
+| 1 Init | 0 | 01-project-init | `csrc/ops/<op>/` skeleton |
+| 2 Design | 1 | 02-design | `design.md` |
+| 3 Test cases | 2 | 03-testcase-gen | `<op>-test-cases.md` |
+| 4 Code-gen | 3 | 04-code-gen | op_host + op_kernel + registration |
+| 5 Compile/debug | 4 | 05-compile-debug | installed wheel + green tests |
+| 6 Docs | 5 | 06-doc-gen | `README.md` |
+| 7 Precision | 6 | 07-precision-eval | precision report |
+| 8 Performance | 7 | 08-performance-eval | performance report |
+| 9 Optimize | 8 | 09-performance-optim | optim summary |
+| 10 Review | 4+ | 10-code-review | review report |
+
+## Dependencies
+
+This skill is self-contained (templates, references, examples, and scripts are bundled).
+It only needs a working CANN toolkit and a PyTorch + `torch_npu` conda environment on a
+host with Ascend NPUs to compile and run the operator.
