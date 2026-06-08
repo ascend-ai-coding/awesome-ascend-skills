@@ -596,6 +596,18 @@
       ]
     },
     {
+      "name": "vllm-daily-pr-issue-tracker",
+      "description": "Track daily PRs and Issues from vllm-project/vllm and vllm-project/vllm-ascend, filter by model (DeepSeek/Qwen/GLM/MiniMax/Kimi) and tech topics (PD disaggregation, MTP, quantization, graph mode, performance), analyze with LLM, and generate a Markdown report. Use when user wants vllm daily tracker, PR/Issue digest, or Ascend inference ecosystem monitoring.",
+      "source": "./skills/agent-tools/vllm-daily-pr-issue-tracker",
+      "category": "agent-tools",
+      "categories": [
+        "agent-tools",
+        "leaf-skill",
+        "issue-analysis",
+        "model-serving"
+      ]
+    },
+    {
       "name": "hiascend-forum",
       "description": "基于华为昇腾社区论坛开发者反馈内容，按时间范围抓取帖子并识别特定领域的易用性、故障和报错类问题，用于产品改进分析。",
       "source": "./",
