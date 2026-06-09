@@ -258,6 +258,19 @@
       ]
     },
     {
+      "name": "inferencex-report",
+      "description": "Automatically fetch InferenceX benchmark data and generate daily performance reports for LLM inference on various hardware (NVIDIA, AMD, etc.). Supports email delivery, data change detection, and 8k1k sequence length performance analysis. Use when needing to track LLM inference performance trends, compare hardware configurations, or monitor benchmark updates.",
+      "source": "./skills/inference/inferencex-report",
+      "category": "inference",
+      "categories": [
+        "inference",
+        "leaf-skill",
+        "benchmarking",
+        "performance-analysis",
+        "model-serving"
+      ]
+    },
+    {
       "name": "torch_npu",
       "description": "华为昇腾 Ascend Extension for PyTorch (torch_npu) 的环境检查、部署与能力指引。在用户使用 @torch_npu、昇腾 NPU、CANN、或需要将 PyTorch 迁移到 NPU 时自动应用；当用户使用 @torch_npu_doc 时，基于 skill 的 reference 文档提供项目内中文文档能力说明。",
       "source": "./skills/base/torch_npu",
