@@ -287,6 +287,7 @@ cp -r awesome-ascend-skills/skills/ops/npu-op-benchmark your-project/.agents/ski
 
 | Skill | 描述 |
 |------|------|
+| [process-daily-report](skills/agent-tools/process-daily-report/SKILL.md) | 日报智能摘要：提取进展/风险/Action，预览后发送到钉钉群（支持语雀链接） |
 | [github-issue-summary](skills/agent-tools/github-issue-summary/SKILL.md) | 从已关闭 issue 生成故障排查案例、根因分析、经验总结 |
 | [github-issue-rca](skills/agent-tools/github-issue-rca/SKILL.md) | GitHub Issue 根因分析与调查方向评估 |
 | [gitcode-merge-flow](skills/agent-tools/gitcode-merge-flow/SKILL.md) | GitCode 开源仓合入流程：commit、push、issue、PR、流水线、review 与 merge |
