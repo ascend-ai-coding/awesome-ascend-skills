@@ -248,6 +248,24 @@ c = a.to(tl.float32) // b.to(tl.float32)            # 转换float32类型
 d = a - (a // b) * b  # 公式转换
 ```
 
+### 8. atomic_* 标量操作 → atomic_* 向量操作
+
+**原始代码（scalar 操作）**
+
+```python
+for idx in range(0, BLOCK_SIZE):
+    tl.atomic_add(output_ptr + idx, block_sum)      # 标量的原子加
+```
+
+**优化后代码（vector 操作）**
+
+```python
+h_offs = tl.arange(0, BLOCK_SIZE)
+block_vals = tl.full((BLOCK_SIZE,), block_sum, dtype=output_dtype)
+tl.atomic_add(output_ptr + h_offs, block_vals)      # 向量化的原子加
+# 其他可向量化的 atomic_* 操作：tl.atomic_max, tl.atomic_min 等
+```
+
 ## 关键点
 
 1. **类型一致性**：确保 vector 操作中的数据类型一致，避免隐式类型转换回退到 scalar
@@ -259,6 +277,7 @@ d = a - (a // b) * b  # 公式转换
 7. **标量比较类型转换**：对于 `int32` 和 `int64` 整数标量比较，先 .to(tl.float32) 再比较，以启用向量比较指令。
 8. **标量除法类型转换**：对于 `int32` 和 `int64` 中的整数除法操作，先 .to(tl.float32) 再计算，以启用向量计算指令。
 9. **标量取余类型转换**：对于 `int32` 和 `int64` 中的整数取余操作， 使用`a - (a // b) * b`的形式计算，以启用向量计算指令。
+10. **原子操作向量化**：对 `atomic_add` 这一类的 `atomic_*` 标量操作进行向量化，可消除循环的标量操作开销
 
 ## 性能收益
 

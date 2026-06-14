@@ -3,8 +3,8 @@ name: external-cannbot-ops-pypto-precision-debug
 description: PyPTO 算子精度问题排查技能。专注于用户代码层面的语法逻辑检查和规避方法尝试。当算子精度验证失败、输出结果异常、计算错误、数值偏差、或任何与精度相关的问题时使用此技能。
 original-name: pypto-precision-debug
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-26'
-synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
+synced-date: '2026-06-14'
+synced-commit: f2b0db65abdced502b1cd1956e2e48e6e0197add
 license: UNKNOWN
 ---
 
@@ -38,34 +38,32 @@ license: UNKNOWN
 
 | 优先级 | 问题现象 | 规避方法 | 代码示例 | 原因说明 |
 |-------|---------|---------|---------|---------|
-| 1 ★推荐 | 使用旧前端写法 | 切换到 `pypto.frontend.jit` | `@pypto.frontend.jit` | 新前端是 PyPTO 推荐写法，旧前端已不再维护，可避免多种已知问题 |
-| 2 | view + reshape 精度异常 | 避免 `inplace=True` | `pypto.reshape(tensor, shape, inplace=False)` | inplace=True 在 view 后会错误修改内存地址，导致数据指向错误区域 |
+| 1 ★推荐 | 未使用 pypto.frontend.jit | 使用 `pypto.frontend.jit` | `@pypto.frontend.jit` | pypto.frontend.jit 是 PyPTO 推荐写法，可避免多种已知问题 |
+| 2 | view + reshape 精度异常 | view 后避免 `inplace=True`（单独 reshape 可安全使用 `inplace=True`） | `pypto.reshape(tensor_view, shape, inplace=False)` | view 后 inplace=True 会错误修改内存地址 |
 | 3 | 循环展开后精度异常 | `unroll_list=[1]` | `pypto.loop(range(n), unroll_list=[1])` | 关闭循环展开，规避 RegisterCopy pass 的寄存器拷贝 bug |
 | 4 | 嵌套循环精度异常 | `submit_before_loop=True` | `pypto.loop(range(m), submit_before_loop=True)` | 确保子循环正确提交，避免并行执行时的内存覆盖 |
 | 5 | 特定 shape 精度异常 | 调整 shape | 避免尾轴为 1，避免非整除 | 特定 shape 可能触发 Pass 推导边界情况，导致 valid_shape 错误 |
 | 6 | 编译器优化异常 | `+0.0` 技巧 | `result = compute(...) + 0.0` | 阻止编译器过度优化，保留计算操作完整性 |
+| 7 | 未初始化 Tensor | 使用 pypto.zeros() | `output = pypto.zeros(shape, dtype)` | pypto.Tensor 创建后是未初始化随机值，使用 zeros 初始化 |
+| 8 | view 未传 valid_shape | 添加 valid_shape | `pypto.view(tensor, shape, valid_shape=actual_size)` | 动态数据范围最后一块可能小于固定块大小 |
+
 ---
 
-## ⭐ 重要提示：使用新前端写法
+## ⭐ 重要提示：使用标准前端装饰器 pypto.frontend.jit
 
-**强烈建议使用 `pypto.frontend.jit` 而非 `pypto.jit`！**
+**PyPTO 算子开发必须使用 `pypto.frontend.jit`！**
 
-新前端（`pypto.frontend.jit`）是 PyPTO 推荐的写法，旧前端（`pypto.jit`）已不再维护。使用新前端可避免许多已知问题。
+`pypto.frontend.jit` 是 PyPTO 推荐的前端写法，使用此写法可避免多种已知问题。
 
 **推荐写法**：
 
 ```python
-# ✅ 推荐：新前端写法
+# 使用 pypto.frontend.jit
 @pypto.frontend.jit
 def my_kernel(
     input_tensor: pypto.Tensor(shape, pypto.DT_FP32),
     output_tensor: pypto.Tensor(shape, pypto.DT_FP32),
 ):
-    ...
-
-# ❌ 不推荐：旧前端写法（已废弃）
-@pypto.jit
-def my_kernel(input_tensor, output_tensor):
     ...
 ```
 
@@ -77,7 +75,7 @@ def my_kernel(input_tensor, output_tensor):
 精度问题
     │
     ├─ 步骤 0：前端写法检查
-    │   └─ 使用 pypto.jit？ ──是──▶ 切换到 pypto.frontend.jit 重试
+    │   └─ 确认使用 pypto.frontend.jit
     │
     ├─ 步骤 1：用户代码语法检查
     │   ├─ 数据类型正确？
@@ -88,7 +86,10 @@ def my_kernel(input_tensor, output_tensor):
     │   ├─ 避免 view + reshape inplace=True
     │   ├─ unroll_list=[1]
     │   ├─ submit_before_loop=True
-    │   └─ +0.0 技巧
+    │   ├─ +0.0 技巧
+    │   ├─ 调整 shape
+    │   ├─ 初始化 Tensor（pypto.zeros()）
+    │   └─ 添加 valid_shape 参数
     │
     ├─ 步骤 3：二分定位（如需要）
     │
@@ -103,26 +104,21 @@ def my_kernel(input_tensor, output_tensor):
 
 ### 步骤 0：检查前端写法
 
-**⚠️ 最高优先级：首先检查用户是否使用了旧前端写法！**
+**⚠️ 最高优先级：首先确认用户使用了正确的前端写法！**
 
-**检查内容**：查看用户代码中的装饰器是 `pypto.jit` 还是 `pypto.frontend.jit`
+**检查内容**：查看用户代码中的装饰器是否为 `pypto.frontend.jit`
 
 **依据参考**：
-- [docs/tutorials/development/compile.md](../../../docs/tutorials/development/compile.md)：官方文档使用 `@pypto.frontend.jit` 作为标准写法
-- [docs/tutorials/introduction/quick_start.md](../../../docs/tutorials/introduction/quick_start.md)：快速入门示例使用 `@pypto.frontend.jit`
+- [docs/tutorials/development/compile.md](../../../docs/zh/tutorials/development/compile.md)：官方文档使用 `@pypto.frontend.jit` 作为标准写法
+- [docs/tutorials/introduction/quick_start.md](../../../docs/zh/tutorials/introduction/quick_start.md)：快速入门示例使用 `@pypto.frontend.jit`
 
-**如果用户使用 `pypto.jit`**：
+**如果用户未使用 `pypto.frontend.jit`**：
 
-1. **立即建议用户切换到新前端**
-2. **向用户展示修改示例**：
+1. **立即建议用户使用 `pypto.frontend.jit`**
+2. **向用户展示正确写法**：
 
 ```python
-# 修改前
-@pypto.jit
-def my_kernel(input_tensor, output_tensor):
-    ...
-
-# 修改后
+# ✅ 正确写法
 @pypto.frontend.jit
 def my_kernel(
     input_tensor: pypto.Tensor(shape, pypto.DT_FP32),
@@ -133,7 +129,7 @@ def my_kernel(
 
 3. 重新运行测试验证精度
 
-**如果问题解决**：结束排查，建议用户使用新前端写法
+**如果问题解决**：结束排查，建议用户使用 `pypto.frontend.jit`
 
 **如果问题未解决**：继续下一步
 
@@ -142,8 +138,7 @@ def my_kernel(
 ## 步骤 0 总结：前端写法检查
 
 ### 检查结果
-- 使用的前端：[pypto.jit / pypto.frontend.jit]
-- 是否切换：[是/否]
+- 是否使用 pypto.frontend.jit：[是 / 否]
 
 ### 结论
 - [问题已解决 / 需要继续排查]
@@ -196,8 +191,8 @@ def my_kernel(
 - [ ] 动态 shape 场景下 valid_shape 表达式是否正确
 
 **依据参考**：
-- [pypto.view API 文档](../../../docs/api/operation/pypto-view.md)：`valid_shape` 是 `view` 方法的参数，用于指定视图的有效数据大小
-- [pypto.reshape API 文档](../../../docs/api/operation/pypto-reshape.md)：`valid_shape` 是 `reshape` 方法的参数，用于指定输出 Tensor 的有效数据 Shape
+- [pypto.view API 文档](../../../docs/zh/api/operation/pypto-view.md)：`valid_shape` 是 `view` 方法的参数，用于指定视图的有效数据大小
+- [pypto.reshape API 文档](../../../docs/zh/api/operation/pypto-reshape.md)：`valid_shape` 是 `reshape` 方法的参数，用于指定输出 Tensor 的有效数据 Shape
 
 **示例**：
 
@@ -298,7 +293,7 @@ for i in pypto.loop(range(n)):
 
 **判断**：问题是否解决
 
-**依据参考**：[docs/api/controlflow/pypto-loop.md](../../../docs/api/controlflow/pypto-loop.md) - `submit_before_loop` 参数用于控制嵌套循环的调度行为，确保子循环在父循环迭代前正确提交，避免并行执行时的内存覆盖问题。
+**依据参考**：[docs/api/controlflow/pypto-loop.md](../../../docs/zh/api/controlflow/pypto-loop.md) - `submit_before_loop` 参数用于控制嵌套循环的调度行为，确保子循环在父循环迭代前正确提交，避免并行执行时的内存覆盖问题。
 
 #### 2.4 尝试 +0.0 技巧
 
@@ -329,6 +324,41 @@ result = compute(...) + 0.0
 
 **依据参考**：Issue #498, #787 - 特定 shape（如尾轴为 1、非整除）可能触发 Pass 推导的边界情况，导致 valid_shape 传播错误或 buffer 越界。调整 shape 可规避这些边界场景。
 
+#### 2.6 初始化 Tensor
+
+**适用场景**：输出 tensor 在写入前被读取，导致未初始化随机值参与计算
+
+**问题现象**：输出包含随机异常值，每次运行结果不一致
+
+**操作**：
+
+```python
+# 使用 pypto.zeros() 创建并初始化为全 0
+output = pypto.zeros(shape, dtype)
+```
+
+**判断**：问题是否解决
+
+**依据参考**：`pypto.Tensor` 创建后内存为未初始化状态，若存在"先读后写"路径（如循环体中 read-modify-write），未初始化的随机值会混入计算结果。应使用 `pypto.zeros()` 创建并初始化为全 0 的 Tensor。
+
+#### 2.7 添加 valid_shape 参数
+
+**适用场景**：动态数据范围最后一块小于固定块大小，导致 view/reshape 后数据越界
+
+**问题现象**：特定 shape 下精度异常，尾块数据不正确
+
+**操作**：
+
+```python
+# view/reshape 时传入 valid_shape 参数
+tensor_view = pypto.view(tensor, shape, valid_shape=actual_size)
+tensor_reshaped = pypto.reshape(tensor, new_shape, valid_shape=actual_size)
+```
+
+**判断**：问题是否解决
+
+**依据参考**：动态 shape 场景下，最后一块可能小于固定块大小。`valid_shape` 参数告知框架实际有效数据范围，避免读取越界数据。
+
 **阶段总结**：
 ```markdown
 ## 步骤 2 总结：快速规避方法尝试
@@ -341,6 +371,8 @@ result = compute(...) + 0.0
 | submit_before_loop=True | [是/否] | [有效/无效] | [描述] |
 | +0.0 技巧 | [是/否] | [有效/无效] | [描述] |
 | 调整 shape | [是/否] | [有效/无效] | [描述] |
+| 初始化 Tensor | [是/否] | [有效/无效] | [描述] |
+| 添加 valid_shape | [是/否] | [有效/无效] | [描述] |
 
 ### 有效的规避方法
 [如果有，列出有效的方法]
@@ -352,6 +384,8 @@ result = compute(...) + 0.0
 ---
 
 ### 步骤 3：二分定位（如需要）
+
+**转入标准**：当步骤 2 所有 7 种规避方法均尝试且无效时，进入此步骤。
 
 如果上述方法无法定位问题，使用 `pypto-precision-compare` skill 查找定位具体问题 op。
 
@@ -412,7 +446,7 @@ result = compute(...) + 0.0
 ...
 
 ### 结论
-经过多种规避方法尝试，问题仍未解决。**可能是底层框架层面的问题**。
+经过多种规避方法尝试，问题仍未解决。**判定前提**：步骤 0-2 全部尝试完毕 + 代码审查无逻辑错误 + 步骤 3 已执行。**可能是底层框架层面的问题**。
 ```
 
 ---
@@ -422,20 +456,21 @@ result = compute(...) + 0.0
 使用此 skill 时，确保：
 
 - [ ] **步骤 0**：检查前端写法（最高优先级）
-  - [ ] 检查是否使用 `pypto.jit`
-  - [ ] 如使用旧写法，建议切换到 `pypto.frontend.jit`
+  - [ ] 确认使用 `pypto.frontend.jit`
 
 - [ ] **步骤 1**：用户代码语法检查
   - [ ] 数据类型
   - [ ] Shape 定义
   - [ ] valid_shape 配置
 
-- [ ] **步骤 2**：快速规避方法尝试
+  - [ ] **步骤 2**：快速规避方法尝试
   - [ ] 避免 view + reshape inplace=True
   - [ ] unroll_list=[1]
   - [ ] submit_before_loop=True
   - [ ] +0.0 技巧
   - [ ] 调整 shape
+  - [ ] 初始化 Tensor
+  - [ ] 添加 valid_shape
 
 - [ ] **步骤 3**：二分定位（如需要）
 
@@ -451,16 +486,16 @@ result = compute(...) + 0.0
 
 | 文档 | 路径 | 说明 |
 |------|------|------|
-| 已知问题文档 | [docs/tutorials/appendix/issue.md](../../../docs/tutorials/appendix/issue.md) | 常见问题及解决方案 |
-| 循环开发指南 | [docs/tutorials/development/loops.md](../../../docs/tutorials/development/loops.md) | loop 使用方法 |
+| 已知问题文档 | [docs/tutorials/appendix/issue.md](../../../docs/zh/tutorials/appendix/issue.md) | 常见问题及解决方案 |
+| 循环开发指南 | [docs/tutorials/development/loops.md](../../../docs/zh/tutorials/development/loops.md) | loop 使用方法 |
 
 ### API 文档
 
 | API | 文档路径 | 说明 |
 |-----|---------|------|
-| pypto.loop | [docs/api/controlflow/pypto-loop.md](../../../docs/api/controlflow/pypto-loop.md) | 循环接口，含 submit_before_loop 参数 |
-| pypto.loop_unroll | [docs/api/controlflow/pypto-loop_unroll.md](../../../docs/api/controlflow/pypto-loop_unroll.md) | 循环展开接口，含 unroll_list 参数 |
-| pypto.tensor | [docs/tutorials/development/tensor_creation.md](../../../docs/tutorials/development/tensor_creation.md) | Tensor 创建方法 |
-| pypto.reshape | [docs/api/operation/pypto-reshape.md](../../../docs/api/operation/pypto-reshape.md) | reshape 操作，含 inplace 参数 |
-| pypto.view | [docs/api/operation/pypto-view.md](../../../docs/api/operation/pypto-view.md) | view 操作 |
-| valid_shape | [docs/tutorials/development/tensor_operation.md](../../../docs/tutorials/development/tensor_operation.md) | Tensor 操作方法，含 valid_shape 说明 |
+| pypto.loop | [docs/api/controlflow/pypto-loop.md](../../../docs/zh/api/controlflow/pypto-loop.md) | 循环接口，含 submit_before_loop 参数 |
+| pypto.loop_unroll | [docs/api/controlflow/pypto-loop_unroll.md](../../../docs/zh/api/controlflow/pypto-loop_unroll.md) | 循环展开接口，含 unroll_list 参数 |
+| pypto.tensor | [docs/tutorials/development/tensor_creation.md](../../../docs/zh/tutorials/development/tensor_creation.md) | Tensor 创建方法 |
+| pypto.reshape | [docs/api/operation/pypto-reshape.md](../../../docs/zh/api/operation/pypto-reshape.md) | reshape 操作，含 inplace 参数 |
+| pypto.view | [docs/api/operation/pypto-view.md](../../../docs/zh/api/operation/pypto-view.md) | view 操作 |
+| valid_shape | [docs/tutorials/development/tensor_operation.md](../../../docs/zh/tutorials/development/tensor_operation.md) | Tensor 操作方法，含 valid_shape 说明 |

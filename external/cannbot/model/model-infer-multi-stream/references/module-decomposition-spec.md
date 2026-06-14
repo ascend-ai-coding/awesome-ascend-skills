@@ -38,16 +38,16 @@ agent 必须完成下面 4 件事：
 
 分析结果统一输出为一个 Markdown 文件，放在：
 
-`cann-recipes-infer/docs/common/multi-stream-analysis/<network_or_case_name>.md`
+`docs/common/multi-stream-analysis/<network_or_case_name>.md`
 
 命名规则：
 
 - 使用小写英文、短横线连接
 - 名字描述“整网分析对象”，不要只写某个局部函数名
 - 示例：
-  - `cann-recipes-infer/docs/common/multi-stream-analysis/deepseek-r1-decode.md`
-  - `cann-recipes-infer/docs/common/multi-stream-analysis/longcat-flash-decode.md`
-  - `cann-recipes-infer/docs/common/multi-stream-analysis/hunyuanimage3-moe-path.md`
+  - `docs/common/multi-stream-analysis/deepseek-r1-decode.md`
+  - `docs/common/multi-stream-analysis/longcat-flash-decode.md`
+  - `docs/common/multi-stream-analysis/hunyuanimage3-moe-path.md`
 
 模板文件固定放在：
 

@@ -88,11 +88,8 @@ public:
     uint64_t l0cPingPong_{0UL};
     bool enableL0cPingPong_{false};
 
-    // A 行主序 ND → AL1 = NZ；B 行主序 ND → BL1 = ZN。
-    using MakeLayoutAL1 = AscendC::Te::FrameLayoutFormat<
-        AscendC::Te::NZLayoutPtn, AscendC::Std::Int<BLOCK_CUBE>>;
-    using MakeLayoutBL1 = AscendC::Te::FrameLayoutFormat<
-        AscendC::Te::ZNLayoutPtn, AscendC::Std::Int<BLOCK_CUBE>>;
+    using MakeLayoutAL1 = typename L1LayoutHelper<LayoutA, AType, transA>::type;
+    using MakeLayoutBL1 = typename L1LayoutHelper<LayoutB, BType, transB>::type;
 
     struct Params {
         GM_ADDR aGmAddr{nullptr};
@@ -270,8 +267,9 @@ public:
             abL1LoopCnt_++;
         }
 
-        auto CopyL0C2GM = AscendC::Te::MakeCopy(AscendC::Te::CopyL0C2GM{});
-        AscendC::Te::Copy(CopyL0C2GM, gmC, tensorL0C, AscendC::Te::FixpipeParams{FINAL_ACCUMULATION});
+        // L0C → GM via Fixpipe（纯 AIC 路径）。
+        auto copyL0C2GM = AscendC::Te::MakeCopy(AscendC::Te::CopyL0C2GM{});
+        copyL0C2GM.Call(gmC, tensorL0C, AscendC::Te::FixpipeParams{FINAL_ACCUMULATION});
         if (enableL0cPingPong_) {
             l0cPingPong_++;
         }

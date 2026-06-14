@@ -1,5 +1,14 @@
 # MC2 领域代码检视规则
 
+<适用>
+语言: C++
+侧别: Host, Kernel
+领域: true
+触发: hccl_, AllGather, AllReduce, ReduceScatter, AlltoAll, SyncAll, SetFlag, WaitFlag, PipeBarrier, SyncFunc, expert, expertIds, dispatch, combine, moeExpertNum, quant, BasicQuantMode, PERTENSOR, PERCHANNEL, AlltoAllV, sendCounts, InitV2, Finalize, SetCcTiling, CCU, AICPU
+默认启用: true
+排除场景: 纯通信无计算融合(有hccl_无Matmul/GroupedMatmul/quant), 纯计算无集合通信(有计算无hccl_)
+</适用>
+
 > **MC² = Matrix Computation & Communication**（通算融合算子框架）
 >
 > 将 HCCL 集合通信与计算融合为单一算子，减少 kernel launch 开销，实现通信与计算流水线并行。

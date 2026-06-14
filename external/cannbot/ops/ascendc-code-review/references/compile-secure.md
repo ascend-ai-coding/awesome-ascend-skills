@@ -1,5 +1,12 @@
 # CANN 安全编译选项规范
 
+<适用>
+语言: Build
+侧别: Tiling
+领域: false
+默认启用: true
+</适用>
+
 > **适用场景**：Tiling 侧（Host 侧）动态库和可执行程序编译配置
 >
 > **Kernel 侧不适用**：Kernel 编译为 NPU 二进制，不是 ELF 格式，不适用以下选项。

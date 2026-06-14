@@ -1,5 +1,13 @@
 # Ascend C API 最佳实践规范
 
+<适用>
+语言: C++
+侧别: Kernel
+领域: true
+触发: AscendC::, pipe.InitBuffer, DataCopy, DataCopyPad, AllocTensor, FreeTensor, CrossCoreSetFlag, CrossCoreWaitFlag, GetValue, SetValue
+默认启用: true
+</适用>
+
 > **适用场景**：Kernel 侧（Device 侧）
 >
 > **Tiling 侧不适用**：Tiling 侧不使用 Ascend C API。

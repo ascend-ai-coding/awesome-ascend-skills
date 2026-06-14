@@ -1,10 +1,11 @@
 ---
 name: external-cannbot-ops-pypto-op-perf-tune-perf-analyzer
-description: 分析 PyPTO 算子的性能指标。当需要分析PyPTO算子的性能指标，从性能数据文件中提取关键指标，计算性能评级，或提供性能瓶颈分析和优化建议时使用此技能。
+description: 分析 PyPTO 算子的性能指标。用于分析 PyPTO 算子的性能指标，从性能数据文件中提取关键指标，计算性能评级，并提供性能瓶颈分析和优化建议。
+  当需要分析 PyPTO 算子性能数据、计算性能评级或定位性能瓶颈时使用此技能。
 original-name: perf-analyzer
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-26'
-synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
+synced-date: '2026-06-14'
+synced-commit: f2b0db65abdced502b1cd1956e2e48e6e0197add
 license: UNKNOWN
 ---
 
@@ -29,25 +30,49 @@ license: UNKNOWN
 使用技能中的性能分析脚本自动生成报告：
 
 **重要提示**
-性能分析脚本 `analyze_perf.py` 的位置在 `pypto-op-perf-tune/perf-analyzer/scripts/analyze_perf.py`
-性能数据目录位于**算子目录**下的 `output/` 目录中
+- 性能分析脚本位置：`pypto-op-perf-tune/perf-analyzer/scripts/analyze_perf.py`
+- 性能数据目录位于**执行算子命令时的工作目录**下的 `output/output_*/` 目录中
 
-示例：
+### 使用方法
+
 ```bash
-python3 scripts/analyze_perf.py <output_dir>
+# 传入完整的 output 目录路径（推荐使用绝对路径）
+python3 <脚本路径>/analyze_perf.py <output_dir>
+
+# 示例1：在算子目录下执行的，output 就在算子目录下
+python3 pypto/.agents/skills/pypto-op-perf-tune/perf-analyzer/scripts/analyze_perf.py custom/operator_name/output/output_20260304_171658_543682_529508
+
+# 示例2：使用绝对路径
+python3 pypto/.agents/skills/pypto-op-perf-tune/perf-analyzer/scripts/analyze_perf.py /home/user/project/custom/operator_name/output/output_20260304_171658_543682_529508
 ```
+
+**⚠️ 路径说明**：
+- `output_dir` 应为包含 `bubble_analysis.log` 的具体 output 时间戳目录
+- 如果不确定 output 目录位置，先使用 `find <搜索范围> -name "bubble_analysis.log"` 查找
+- 脚本支持自动递归查找：如果传入的目录下没有 `bubble_analysis.log`，脚本会自动在子目录中搜索 `output_*/bubble_analysis.log`
 
 ### 步骤 1：定位性能数据文件
 
-性能数据文件位于 `output/output_*/` 目录下：
+**⚠️ 性能数据文件位置取决于执行算子命令时的工作目录**：
+
+| 执行场景 | output 目录位置 |
+|---------|----------------|
+| 在算子目录下执行 `python3 op.py --run-mode npu` | `<算子目录>/output/output_*/` |
+| 在项目根目录执行 `python3 custom/op/op.py --run-mode npu` | `./output/output_*/` |
+
+性能数据文件位于 `output/output_<时间戳>/` 目录下：
 
 - `bubble_analysis.log` - 气泡分析报告
 - `merged_swimlane.json` - 泳道图数据文件
 - `machine_runtime_operator_trace.json` - 性能追踪文件
 
-**查找最新输出目录：**
+**查找最新输出目录**（需在对应的工作目录下执行）：
 ```bash
+# 方法1：直接列出 output 下的目录
 ls -lt output/ | head -n 2
+
+# 方法2：不确定位置时，从项目根目录搜索
+find . -name "bubble_analysis.log" -type f
 ```
 
 ### 步骤 2：提取核心性能指标
@@ -112,7 +137,7 @@ AicoreTime = 核心总工作时间 - 总等待时间
 
 #### 5.1 气泡率分析
 
-**高气泡率（>10%）可能原因：**
+**高气泡率（>20%）可能原因：**
 - 任务粒度过小
 - 调度策略不当
 - stitch 参数过小
@@ -180,6 +205,7 @@ AicoreTime = 核心总工作时间 - 总等待时间
 - 主要瓶颈识别
 - 瓶颈原因分析
 - 影响程度评估
+
 
 ## 性能分析报告模板
 

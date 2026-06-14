@@ -116,7 +116,7 @@ cd cann-recipes-infer/models/${MODEL_NAME}
 
 # 运行基线测试
 echo "=== Running Baseline Test ==="
-python -u cann-recipes-infer/models/runner_*.py \
+python -u models/runner_*.py \
     --config config.yaml \
     --output baseline_output.json \
     2>&1 | tee baseline.log

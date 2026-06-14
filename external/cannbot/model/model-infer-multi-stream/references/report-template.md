@@ -1,6 +1,6 @@
 # <network_or_case_name> 多流优化报告
 
-> 结果文件固定放在 `cann-recipes-infer/docs/common/multi-stream-analysis/<network_or_case_name>.md`。  
+> 结果文件固定放在 `docs/common/multi-stream-analysis/<network_or_case_name>.md`。  
 > 如果任务当前只做到分析，开发、调试、验收部分可先写 `N/A`，但章节必须保留。
 
 ## 1. 分析范围

@@ -61,8 +61,11 @@ public:
     using EpilogueParams = typename Epilogue::Params;
     using ProblemShapeType = AscendC::Shape<int64_t, int64_t, int64_t, int64_t>;
 
-    using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA>;
-    using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB>;
+    // [MODIFY] C0 must match dtype for NZ/ZN fractal layouts (int8/fp8: C0=32, bf16/fp16: C0=16)
+    static constexpr uint64_t A_C0 = 32 / sizeof(AType);
+    static constexpr uint64_t B_C0 = 32 / sizeof(BType);
+    using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA, AscendC::Std::Int<A_C0>>;
+    using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB, AscendC::Std::Int<B_C0>>;
 
     struct QBMMTiling {
         uint32_t baseM;
@@ -166,6 +169,9 @@ public:
                 AscendC::CrossCoreWaitFlag<AIC_SYNC_AIV_MODE_4, PIPE_V>(
                     AIC_SYNC_AIV_FLAG + countId);
                 epilogueOp({curM, curN, 1, 1}, offsetC, (AIV_SYNC_AIC_FLAG + countId));
+                AscendC::PipeBarrier<PIPE_ALL>();
+                AscendC::CrossCoreSetFlag<AIC_SYNC_AIV_MODE_4, PIPE_MTE3>(
+                    AIV_SYNC_AIC_FLAG + countId);
             }
         }
 

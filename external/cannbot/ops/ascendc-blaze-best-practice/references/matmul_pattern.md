@@ -197,47 +197,21 @@ GM ─CopyGM2L1─▶ L1 ─CopyL12L0A/B─▶ L0A/L0B ─Mmad─▶ L0C ─Copy
 
 ## 5. LayoutA / LayoutB 运行时选择
 
-Launcher 直接传 tensor_api pattern 作为模板参数（不经过 RowMajor/ColumnMajor 中间层）：
+Launcher 直接传 tensor_api pattern 作为模板参数：
 
-| Pattern | 含义 | 构成 GM shape |
+| Pattern | 含义 | trans 值 |
 |---|---|---|
-| `AscendC::Te::NDExtLayoutPtn` | 行主序（ND） | A: (M,K); B: (K,N); C: (M,N) |
-| `AscendC::Te::DNExtLayoutPtn` | 列主序（DN） | A: (K,M); B: (N,K) |
+| `NDExtLayoutPtn` | 行主序 | false |
+| `DNExtLayoutPtn` | 列主序 | true |
+| `NZLayoutPtn` | NZ 分形预重排 | false |
+| `ZNLayoutPtn` | ZN 分形预重排（转置场景） | true |
 
-`TagToTrans<Pattern>` 在 `layout_utils.h` 派生 transA/transB：NDExt→false，DNExt→true。
-
-**L1 layout 必须与 trans 标志同步**：`transA=false` → AL1=NZ，`transA=true` → AL1=ZN；B 同理。必须用 `conditional_t<transA/ZN/NZ>`，不能硬编码。
-
-**常见错误**：新增 transA=true 但 launcher 里 layoutA 仍硬编码 NDExtLayoutPtn → 编译过但 ≈100% mismatch（K 维和 M 维错位）。
-
-### 5.4 B-NZ 输入变体
-
-B 离线重排为 NZ 分形格式，节省 GM→L1 的 ND→NZ 随路转换带宽。适用：`transB=true` + fp8 + 32/16 对齐。
-
-**两步预防**：
-1. `layout_utils.h` 加 `TagToTrans<NZLayoutPtn> { value = true }` 特化
-2. baseN 必须 32 对齐（fp8 NZ fractal C0=32），双层保险：host 断言 + tiling `BASIC_BLOCK_SIZE_32`
-
-```python
-# gen_data: B (K,N) → NZ (N_blocks, K_blocks, 16, 32)
-K0, N0 = 16, 32
-b_4d = b.reshape(K//K0, K0, N//N0, N0)
-b_nz = b_4d.transpose(2, 0, 1, 3).copy()  # 必须 .copy() 保证物理连续
-```
-
-Kernel 端：`MakeLayoutB` / `MakeLayoutBL1` 用 `conditional_t<is_same_v<LayoutB, NZ>, FrameLayoutFormat<NZ, Int<32>>, ...>` 分支。
-
-| b_layout | transB | 实例化 LayoutB |
-|---|---|---|
-| `nd` | true | `DNExtLayoutPtn` |
-| `nd` | false | `NDExtLayoutPtn` |
-| `nz` | true | `NZLayoutPtn` |
-| `nz` | false | `ZNLayoutPtn` |
+> 格式定义、数据生成、kernel 适配、排障等完整开发指导详见 [`matmul_layout_guide.md`](matmul_layout_guide.md)。
 
 ## 6. Launcher `<<<>>>` 启动
 
 ```cpp
-matmul_custom<LayoutB><<<tilingData.usedCoreNum, nullptr, stream>>>(dA, dB, dC, tilingData);
+matmul_custom<LayoutA, LayoutB><<<tilingData.usedCoreNum, nullptr, stream>>>(dA, dB, dC, tilingData);
 ```
 
 `Params` 聚合初始化字段顺序必须与声明完全一致（错位 → `excess elements in scalar initializer`）：
@@ -261,7 +235,7 @@ struct Params {
 | M / N | baseM/baseN 是 16 倍数（tiling 自动兜底） |
 | K | `kL1` 是 `baseK` 整数倍；`baseK` ≤ 256（L0A 限制） |
 | fp8 BLOCK_CUBE | C0 = **32**（与 bf16/fp16=16 不同） |
-| B-NZ | baseN 必须 32 对齐 + K%16==0 + N%32==0 |
+| NZ 输入 | dim0 对齐到 16，dim1 对齐到 C0（fp16/bf16: C0=16, fp8/int8: C0=32） |
 | GM 地址 | 1B 对齐即可 |
 
 ## 8. 排障速查
@@ -282,12 +256,11 @@ struct Params {
 | 现象 | 根因 |
 |---|---|
 | fixpipe 写回全 0 | `cmatrixInitVal` 第二次 K 迭代仍为 true；或 unitFlag 未设 `FINAL_ACCUMULATION` |
-| ≈100% mismatch，仅 transA/B 某方向触发 | launcher 里 layout 硬编码未跟 trans 标志同步 |
 | 精度偏大（rtol 略超 1e-3） | `kL1` 非 `baseK` 整数倍；或首次 `cmatrixInitVal=false` |
 | 大 K（>2K）退化 | baseK 过小，bf16 累加误差累积；可 `dbL0c=2` |
 | 每个 tile 前 16 列对，后续错 | `BLOCK_CUBE_L0C` 错写成 `32/sizeof(L0CType)` |
 | 单 tile PASS，多 tile FAIL | L0C ping-pong 半区重叠（`HALF_L0C_SIZE` 多除了 `sizeof`） |
-| B-NZ 路径全错 | gen_data transpose 维度错位；或 baseN 未 32 对齐；或 `TagToTrans<NZ>` 漏特化 |
+| Layout/NZ 相关问题 | 详见 [`matmul_layout_guide.md`](matmul_layout_guide.md) §8 排障速查 |
 
 定位流程：先单 tile（32×32×32）验证计算逻辑，再多 tile（256×256×256）暴露同步/半区/fixpipe 问题。
 
@@ -349,6 +322,13 @@ Matmul 单算子需求
     │
     └── 需要 AIC/AIV 流水重叠、epilogue 可定制？
             └── FixpOpti — Fixpipe→UB 后由 AIV MT3 写回
+                    │
+                    ├── 复杂 vector 融合（GELU / SwiGLU / 多中间值链）？【推荐】
+                    │       └── RegBase epilogue (epilogue_fusion_regbase.h)
+                    │           详见 matmul_fixpopti_regbase_epilogue.md
+                    │
+                    └── 简单 epilogue（仅单个 vector 操作 + 现成 AscendC API）？
+                            └── MemBase epilogue (epilogue_fusion_membase.h)
 ```
 
 ### 10.3 模板核心差异
