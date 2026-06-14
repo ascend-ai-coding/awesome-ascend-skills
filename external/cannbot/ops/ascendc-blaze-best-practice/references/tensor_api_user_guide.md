@@ -87,8 +87,8 @@ constexpr uint32_t CURRENT_ARCH_VERSION = GetArchVersion{}();  // 取自 __NPU_A
 | `DNExtLayoutPtn` | 二维嵌套 DN，**外层 GM Tensor** | GM 转置入口 |
 | `NDLayoutPtn` | 普通 ND（行主） | UB / 内层工作 Tensor |
 | `DNLayoutPtn` | 普通 DN（列主） | UB / 内层 |
-| `NZLayoutPtn` | NZ 分形（FRACTAL=16 × C0） | L1 A / L0A / 写回 L1 C |
-| `ZNLayoutPtn` | ZN 分形 | L1 B（转置）/ L0B |
+| `NZLayoutPtn` | NZ 分形（FRACTAL=16 × C0） | L1 A/B / L0A / 写回 L1 C / **GM 入口（NZ 预重排）** |
+| `ZNLayoutPtn` | ZN 分形 | L1 A/B（转置）/ L0B / **GM 入口（ZN 预重排）** |
 | `ZZLayoutPtn` | ZZ 分形 | L1 ScaleA（MX 量化） |
 | `NNLayoutPtn` | NN 分形（C0=2，e8m0） | L1 ScaleB（MX 量化） |
 | `ScaleANDLayoutPtn` / `ScaleADNLayoutPtn` | A 侧 scale 输入（ND/DN） | GM → L1 ZZ |
@@ -199,7 +199,7 @@ auto layoutScale = MakeFrameLayout<ZZLayoutPtn, LayoutTraitScale<fp8_e8m0_t>>(cu
 **陷阱**：
 
 - L1 layout 必须与 `transA/B` 标志同步：`transA=false` → AL1 用 `NZLayoutPtn`；`transA=true` → AL1 用 `ZNLayoutPtn`。launcher 端硬编码 `NDExtLayoutPtn` 但 trans 标志改了 → 编译过但近 100% mismatch。
-- B-NZ 离线重排（fp8）：`baseN` 必须 32 对齐，需自定义 `TagToTrans<NZLayoutPtn>{value=true}` 特化。
+- NZ/ZN 离线重排：`baseN` 必须 C0 对齐（fp16/bf16: 16, int8/fp8: 32），需确保 `TagToTrans<NZLayoutPtn>` 和 `TagToTrans<ZNLayoutPtn>` 均已特化（NZ 对应 `value=false`，ZN 对应 `value=true`）。
 
 ### 2.3 Tensor 构造 — `MakeTensor`
 
@@ -392,8 +392,8 @@ Routing 表是 tensor_api 的编译期派发核心。组合不在表中 → `sta
 | `ZNLayoutPtn` | `NDExtLayoutPtn` | `CopyGmToCbufMultiND2Zn` | B 入口（transB=true） |
 | `NZLayoutPtn` | `DNExtLayoutPtn` | `CopyGmToCbufMultiDN2Nz` | A 转置入口 |
 | `ZNLayoutPtn` | `DNExtLayoutPtn` | `CopyGmToCbufMultiDN2Zn` | B 转置入口 |
-| `NZLayoutPtn` | `NZLayoutPtn` | `CopyGmToCbufAlignV2NZ` | B-NZ 离线重排（fp8） |
-| `ZNLayoutPtn` | `ZNLayoutPtn` | `CopyGmToCbufAlignV2ZN` | ZN 直存 |
+| `NZLayoutPtn` | `NZLayoutPtn` | `CopyGmToCbufAlignV2NZ` | A/B NZ 预重排（任意 dtype） |
+| `ZNLayoutPtn` | `ZNLayoutPtn` | `CopyGmToCbufAlignV2ZN` | A/B ZN 预重排（任意 dtype） |
 | `ZZLayoutPtn` | `ScaleANDLayoutPtn` | `CopyGmToCbufScaleAND2Zz` | A 量化 scale (ND) |
 | `ZZLayoutPtn` | `ScaleADNLayoutPtn` | `CopyGmToCbufScaleADN2Zz` | A 量化 scale (DN) |
 | `ZZLayoutPtn` | `ZZLayoutPtn` | `CopyGmToCbufScaleAZz2Zz` | A scale 直存 |
@@ -518,8 +518,7 @@ Copy(MakeCopy(CopyL0C2GM{}), gmC, tensorL0C, FixpipeParams{/*unitFlag=*/FINAL_AC
 | 编译报 `cannot bind non-const lvalue reference to ... rvalue` | `MakeMemPtr<L1, T>(offset)` 的 offset 未乘 `sizeof(T)` | offset **必须是字节偏移** |
 | 每个 tile 前 16 列对、后续错 | `BLOCK_CUBE_L0C` 错写成 `32/sizeof(L0CType)` | dav-3510 上**恒硬编码 = 16** |
 | 单 tile PASS、多 tile FAIL | L0C ping-pong 半区重叠：`HALF_L0C_SIZE` 多除了 `sizeof` | `HALF_L0C_SIZE = L0C_SIZE / 2`，**不要**再除 `sizeof(L0CType)` |
-| ≈100% mismatch，仅 transA/B 某方向触发 | launcher 里 LayoutA/B 硬编码未跟 trans 标志同步 | 用 `conditional_t<trans, ZN, NZ>`，不要硬编码 |
-| B-NZ 路径全错 | gen_data transpose 维度错位；或 baseN 未 32 对齐；或缺 `TagToTrans<NZLayoutPtn>` 特化 | 三步预防：①重排维度对、②baseN%32==0、③加 TagToTrans 特化 |
+| Layout/NZ 相关问题（mismatch、路径全错、stride 不匹配、C0 错误等） | launcher layout 未跟 trans 同步、gen_data 未按规则转换、Slice 顺序错误、FrameLayoutFormat C0 错误等 | 详见 [`matmul_layout_guide.md`](matmul_layout_guide.md) §8 排障速查 |
 | FP4/FP8 stride 错位 | 自定义 stride 未考虑 B4/B8 底层差异 | 用 `LayoutTraitFP4` / `LayoutTraitDefault<fp8_*>`，库内部已处理 |
 | dav-2201 上 routing 静默不搬运 | 当前 routing 表仅 V3510 有特化，其他架构落到 `*Ignore` | 编译期校验 `CURRENT_ARCH_VERSION == ArchVersion::V3510`，否则 `static_assert` |
 

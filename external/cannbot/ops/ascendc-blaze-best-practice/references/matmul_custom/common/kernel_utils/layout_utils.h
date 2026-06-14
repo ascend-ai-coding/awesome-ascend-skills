@@ -39,4 +39,36 @@ struct TagToTrans<AscendC::Te::DNExtLayoutPtn> {
     static constexpr bool value = true;   // DN = column-major, transposed.
 };
 
+template <>
+struct TagToTrans<AscendC::Te::NZLayoutPtn> {
+    static constexpr bool value = false;  // NZ = non-transposed fractal.
+};
+
+template <>
+struct TagToTrans<AscendC::Te::ZNLayoutPtn> {
+    static constexpr bool value = true;   // ZN = transposed fractal.
+};
+
+template <typename T>
+struct IsNzOrZn {
+    static constexpr bool value =
+        AscendC::Std::is_same_v<T, AscendC::Te::NZLayoutPtn> ||
+        AscendC::Std::is_same_v<T, AscendC::Te::ZNLayoutPtn>;
+};
+
+// L1LayoutHelper: 根据 GM pattern 自动选择 L1 layout。
+// - NZ/ZN 输入：L1 与 GM 同 pattern（走块拷贝 CopyGmToCbufAlignV2NZ/ZN）
+// - ND/DN 输入：按 trans 标志选 NZ/ZN（走硬件格式转换 ND→NZ / DN→ZN）
+template <typename LayoutPtn, typename Type, bool TransVal>
+struct L1LayoutHelper {
+    static constexpr size_t C0 = 32 / sizeof(Type);
+    using type = AscendC::Std::conditional_t<
+        IsNzOrZn<LayoutPtn>::value,
+        AscendC::Te::FrameLayoutFormat<LayoutPtn, AscendC::Std::Int<C0>>,
+        AscendC::Std::conditional_t<
+            TransVal,
+            AscendC::Te::FrameLayoutFormat<AscendC::Te::ZNLayoutPtn, AscendC::Std::Int<C0>>,
+            AscendC::Te::FrameLayoutFormat<AscendC::Te::NZLayoutPtn, AscendC::Std::Int<C0>>>>;
+};
+
 #endif

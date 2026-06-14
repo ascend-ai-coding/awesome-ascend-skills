@@ -1,330 +1,188 @@
-# {operator_name} 算子设计文档
+---
+schema_version: "2.1"
+op_name: "{op_name}"
+status: draft                       # draft | reviewed | final
+last_updated: "{YYYY-MM-DD}"
 
-> **算子名称**: {operator_name}
-> **算子分类**: {category}
-> **生成时间**: {timestamp}
-> **基于**: SPEC.md
+# 关键接口契约（详细形参在 §2 写明）
+compute_kind: "{vector|cube|mixed}"
+dtypes: ["{fp32|bf16|fp16}"]
+dynamic_axes: {dynamic_axes}        # 例如 ["B","S"]；无则填 []
+precision: { rtol: 1e-3, atol: 1e-3 }
+---
+
+# {op_name} 设计方案
+
+## 1. 计算图与精度路由
+
+### 1.1 API 调用序列
+
+| 步骤 | 操作 | PyPTO API | 输入 dtype | 输出 dtype | 输出 shape | 备注 |
+|------|------|-----------|------------|------------|-----------|------|
+| 1    | {op} | `{api}`   |            |            |           |      |
+
+### 1.2 精度路由
+
+```text
+输入({dtype}) → [步骤 N: cast] → 计算({dtype}) → [步骤 M: cast] → 输出({dtype})
+```
+
+| 转换位置 | 转换方向 | 原因 |
+|---------|---------|------|
+| 步骤 N 前 | BF16 → FP32 | `pypto.sum` 要求 FP32 |
+
+### 1.3 替代方案（已排除）
+
+| 替代方案 | 排除原因 |
+|---------|---------|
+|         |         |
 
 ---
 
-## 1. 概述
+## 2. 数据规格
 
-### 1.1 功能描述
-
-{description}
-
-### 1.2 数学公式
-
-${formula}$
-
-### 1.3 算法描述
-
-<!-- 简单算子省略此节；复杂算子（涉及分块、循环、在线更新等）填写 -->
-
-```
-Algorithm: {algorithm_name}
-────────────────────────────────────
-{算法伪代码步骤}
-```
-
-### 1.4 数据流图
-
-```
-{ASCII数据流图，从 SPEC.md §3 复制}
-```
-
----
-
-## 2. API 映射设计
-
-### 2.1 数学公式分解
-
-将公式拆解为基本操作步骤：
-
-| 步骤 | 数学表达 | 说明 |
-|------|----------|------|
-| 1 | {sub_formula_1} | {step_desc_1} |
-| 2 | {sub_formula_2} | {step_desc_2} |
-
-### 2.2 PyPTO API 映射表
-
-| 步骤 | 数学表达 | PyPTO API | 参数 | 文档路径 |
-|------|----------|-----------|------|----------|
-| 1 | {sub_formula_1} | {pypto_api_1} | {params_1} | {doc_path_1} |
-| 2 | {sub_formula_2} | {pypto_api_2} | {params_2} | {doc_path_2} |
-
-### 2.3 计算步骤序列
+### 2.1 Kernel 函数签名
 
 ```python
-# 伪代码展示计算流程
-{step_1_code}
-{step_2_code}
-{output_code}
-```
-
-### 2.4 设计依据
-
-- 来源：{spec / api_report / docs / example}
-- 说明：{为何选择这些 API}
-
----
-
-## 3. 数据规格设计
-
-### 3.1 OperatorInput dataclass
-
-```python
-@dataclass
-class {OperatorName}Input:
-    {input_field_1}: Tensor  # {input_desc_1}, shape: {input_shape_1}, dtype: {input_dtype_1}
-    {input_field_2}: Tensor  # {input_desc_2}, shape: {input_shape_2}, dtype: {input_dtype_2}
-```
-
-### 3.2 OperatorOutput dataclass
-
-```python
-@dataclass
-class {OperatorName}Output:
-    {output_field}: Tensor  # {output_desc}, shape: {output_shape}, dtype: {output_dtype}
-```
-
-### 3.3 中间 Tensor 定义
-
-| 名称 | Shape | Dtype | 说明 |
-|------|-------|-------|------|
-| {intermediate_name} | {intermediate_shape} | {intermediate_dtype} | {intermediate_desc} |
-
-### 3.4 数据格式选择
-
-| Tensor | 格式 | 说明 |
-|--------|------|------|
-| {tensor_name} | ND / NZ | {format_reason} |
-
-### 3.5 动态轴定义
-
-<!-- 如有动态轴 -->
-
-| 轴名称 | 含义 | 取值范围 |
-|--------|------|----------|
-| {axis_name} | {axis_meaning} | {axis_range} |
-
-### 3.6 JIT 装饰器配置
-
-```python
-@pypto.frontend.jit(
-    runtime_options={"{runtime_option_key}": {runtime_option_value}}
-)
-def {operator_name}(inputs: {OperatorName}Input) -> {OperatorName}Output:
+@pypto.frontend.jit(runtime_options={"run_mode": "npu"})
+def {op_name}_kernel(
+    {input}: pypto.Tensor([{shape}], pypto.{dtype}),    # 输入说明
+    {output}: pypto.Tensor([{shape}], pypto.{dtype}),   # 输出说明
+):
     ...
 ```
 
----
+### 2.2 动态轴分析
 
-## 4. Tiling 策略
+> 仅运行时才确定大小的轴标 `pypto.DYNAMIC`；编译期已知的轴写常量。
 
-### 4.1 算子类型判断
+| 维度名 | 是否动态 | 取值范围 / 常量 | 标注方式 |
+|--------|---------|-----------------|---------|
+| {axis} | 是/否    | {range/const}   | `pypto.DYNAMIC` / 数值 |
 
-- **类型**: {Cube / Vector / 混合}
-- **判断依据**: {type_reason}
+### 2.3 值类型分析（避免 SymbolicScalar 误用）
 
-### 4.2 TileShape 初值设置
-
-```python
-{tiling_api_call}
-```
-
-### 4.3 设置依据
-
-{tiling_rationale}
-
-### 4.4 注意事项
-
-- {tiling_note_1}
-- {tiling_note_2}
-
-### 4.5 判断依据与适用条件
-
-- 判断依据：{为什么采用该 tiling}
-- 适用条件：{适用于哪些 shape / dtype / 动态轴场景}
-- 不适用场景：{哪些情况需要人工调整}
+| 变量 | 来源 | 类型 | 注意事项 |
+|------|------|------|---------|
+| {var} | `x.shape[i]`（动态轴） | SymbolicScalar | 不可用于 Python `if/range`，不可索引 list |
+| {var} | 字面量 / 编译期常量 | int / float | 常规使用 |
+| {var} | `pypto.Element(...)` | Element | 用于标量参与 op 计算 |
 
 ---
 
-## 5. Loop 结构设计
+## 3. Tiling 策略
 
-<!-- 根据 quick_ref.md §2.1 判据表的结论选择对应模板 -->
+### 3.1 算子类型
 
-### 场景 A：不需要 Loop
+{Vector / Cube / Hybrid}
 
-> 适用于所有轴编译期已知、单次 Tile 可处理的算子（如逐元素运算）。
+### 3.2 Tiling 推导
 
-- **结论**：不需要 pypto.loop
-- **原因**：{no_loop_reason}（如"所有轴编译期已知，单次 Tile 可覆盖全部数据"）
-- **适用条件**：{no_loop_applicable_conditions}
-- **限制**：{no_loop_limitations}
-- **处理方式**：编译器自动处理数据切分，无需手动循环
+- **同时驻留 UB 的 Tensor**：
 
-### 场景 B：需要 Loop
+| Tensor | 用途 | shape | dtype | 大小估算 |
+|--------|------|-------|-------|------|
+| {name} | {role} | {shape} | {dtype} | {bytes} |
 
-#### 5.1 Loop 判断结论
+- **推导步骤**：
+  1. 尾轴对齐：{dtype} → {N} 元素对齐
+  2. UB 预算：tensor_count × tile_size × dtype_bytes ≤ UB
+  3. 展开约束：`tile_size × repeat ≤ 展开上限 18000`
 
-- **结论**: 需要 Loop
-- **原因**: {loop_reason}
-- **Loop 类型**: {pypto.loop / pypto.loop_unroll / Python for}
-- **适用条件**: {loop_applicable_conditions}
-- **限制**: {loop_limitations}
-
-#### 5.2 静态轴 vs 动态轴处理
-
-| 轴 | 类型 | 处理方式 |
-|----|------|----------|
-| {axis} | 静态 / 动态 | Python for / pypto.loop |
-
-#### 5.3 Loop 合并策略
-
-{loop_merge_strategy}
-
-#### 5.4 数据依赖处理
-
-{data_dependency_handling}
-
-#### 5.5 尾块处理策略
-
-{tail_block_strategy}
-
-#### 5.6 loop_unroll 配置
-
-<!-- 动态轴范围跨度大（如 1~64k）时使用，可在编译期生成多版本代码 -->
+- **最终 tile**：
 
 ```python
-{loop_unroll_config}
+pypto.set_vec_tile_shapes({tile_dims})
+# 若含 matmul：
+pypto.set_cube_tile_shapes([{M}, {K}], [{K}, {N}], [{M}, {N}])
 ```
+
+### 3.3 替代方案
+
+| 备选 tile | 否决理由 |
+|-----------|---------|
+| {tile} | {reason} |
+
+---
+
+## 4. Loop 与数据流
+
+### 4.1 维度判定
+
+| 轴 | 维度大小 | 编译期 / 运行期 | Loop 处理 |
+|----|---------|----------------|----------|
+| {axis} | {N} | 编译期已知 | 不需要 loop |
+| {axis} | DYNAMIC | 运行期 | `pypto.loop(N, name=...)` |
+
+### 4.2 完整伪代码
+
+> 必须标注每个变量类型（SymbolicScalar / int / Tensor），以及 view/assemble 的 offset。
+
+```python
+@pypto.frontend.jit
+def {op}_kernel(
+    x: pypto.Tensor([pypto.DYNAMIC, D], pypto.DT_BF16),
+    out: pypto.Tensor([pypto.DYNAMIC, D], pypto.DT_BF16),
+):
+    pypto.set_vec_tile_shapes(...)
+
+    B = x.shape[0]    # SymbolicScalar
+    for b in pypto.loop(B, name="batch"):
+        x_tile = pypto.view(x, [1, D], [b, 0])
+        # 计算
+        ...
+        pypto.assemble(result, [b, 0], out)
+```
+
+### 4.3 跨迭代状态（如有）
+
+| 状态名 | 初始化 | 更新方式 | submit_before_loop |
+|--------|--------|---------|--------------------|
+|        |        |         |                    |
+
+### 4.4 尾块处理
+
+- **方案**：valid_shape / padding / 不需要（说明原因）
+
+---
+
+## 5. 约束自检清单
+
+| # | 约束 | 是否满足 | 备注 |
+|---|------|---------|------|
+| 1 | 所有 sum 输入已转 FP32 |  |  |
+| 2 | matmul 两侧 dtype 一致 |  |  |
+| 3 | TileShape 维度数 = 操作数维度数 |  |  |
+| 4 | 尾轴满足对齐 |  |  |
+| 5 | 同阶段 UB 占用 ≤ 容量 |  |  |
+| 6 | 表达式展开 < 18000 |  |  |
+| 7 | 输出经 `[:]` / `assemble` 显式写回 |  |
+| 8 | 无 view/assemble 同张量回环 |  |
+| 9 | 动态轴标 `pypto.DYNAMIC` |  |
+| 10 | 动态 loop 提供 `unroll_list` |  |
+| 11 | 跨迭代状态用 `submit_before_loop=True` |  |
+| 12 | 尾块用 `valid_shape` 处理 |  |
+| 13 | 无 SymbolicScalar 用作 `**` / list index / Python `if` |  |
+
+### 开放问题
+
+| # | 问题 | 影响范围 | 待解决方式 |
+|---|------|---------|-----------|
 
 ---
 
 ## 6. 验证方案
 
-### 6.1 Golden 函数设计
+### 6.1 测试配置
 
-```python
-def {operator_name}_golden({golden_params}) -> {golden_return_type}:
-    """{operator_name} 参考实现"""
-    {golden_impl}
-```
+| 用例 | 输入 shape | dtype | 重点验证 |
+|------|----------|-------|---------|
+|      |          |       |         |
 
-### 6.2 测试用例设计
+### 6.2 精度容忍度
 
-#### 基于 SPEC.md 所有典型配置
-
-| 配置名称 | 类型 | 优先级 | 参数 | 输入 Shape | 输出 Shape | 说明 |
-|----------|------|--------|------|------------|------------|------|
-| {config_name} | {type} | {priority} | {params} | {input_shapes} | {output_shapes} | {config_desc} |
-
-#### 边界情况测试（可选）
-
-| 场景 | 参数 | 说明 |
-|------|------|------|
-| {boundary_scenario} | {boundary_params} | {boundary_desc} |
-
-### 6.3 精度验证标准
-
-| Dtype | atol | rtol |
+| dtype | rtol | atol |
 |-------|------|------|
-| {dtype} | {atol} | {rtol} |
+| FP32  | 1e-5 | 1e-5 |
+| BF16  | 1e-3 | 1e-3 |
 
----
-
-## 7. 性能指标与开箱配置
-
-### 7.1 性能目标
-
-基于 SPEC.md 典型配置（性能类）的预期性能：
-
-| 配置名称 | 类型 | 优先级 | 参数 | 输入 Shape | 输出 Shape | 预期 kernel 耗时 |
-|----------|------|--------|------|------------|------------|------------------|
-| {perf_config_name} | 性能 | {priority} | {params} | {input_shapes} | {output_shapes} | {expected_time} |
-
-### 7.2 开箱性能配置
-
-```python
-{tiling_config}
-```
-
-### 7.3 pass_options 配置
-
-{pass_options_config}
-
-### 7.4 runtime_options 配置
-
-```python
-{runtime_options_config}
-```
-
----
-
-## 8. 风险点与注意事项
-
-### 8.1 已知约束
-
-- {constraint_1}
-- {constraint_2}
-
-### 8.2 常见错误规避
-
-| 风险 / 错误 | 触发场景 | 影响 / 原因 | 规避方法 |
-|-------------|----------|-------------|----------|
-| {error_1} | {trigger_1} | {reason_1} | {solution_1} |
-
-### 8.3 特殊场景处理
-
-{special_scenario_handling}
-
-### 8.4 实现建议
-
-<!-- 记录影响后续 PyPTO 算子实现的关键提示 -->
-
-| 建议项 | 说明 |
-|--------|------|
-| {impl_hint_1} | {hint_desc_1} |
-
----
-
-## 9. 交付件清单
-
-### 9.1 目录结构
-
-```
-custom/{operator_name}/
-├── SPEC.md                          # 需求规范（已有）
-├── DESIGN.md                        # 设计文档（本文件）
-├── {operator_name}_golden.py        # Golden 参考实现
-├── {operator_name}_impl.py          # 算子实现代码
-├── test_{operator_name}.py          # 测试代码
-└── output/                          # 运行输出（自动生成）
-```
-
-### 9.2 文件清单
-
-| 文件 | 类型 | 说明 | 生成方式 |
-|------|------|------|----------|
-| SPEC.md | 需求 | 算子需求规范 | pypto-intent-understand |
-| DESIGN.md | 设计 | 算子设计文档 | pypto-op-design（本 skill） |
-| {operator_name}_golden.py | 代码 | Golden 参考实现 | pypto-golden-generate |
-| {operator_name}_impl.py | 代码 | 算子核心实现 | 后续实现 |
-| test_{operator_name}.py | 代码 | 测试用例 | 后续实现 |
-
-### 9.3 命名规范
-
-| 项目 | 规范 | 示例 |
-|------|------|------|
-| 算子名称 | 小写字母 + 下划线 | `fast_gelu` |
-| 目录名 | 与算子名称一致 | `custom/fast_gelu/` |
-| Golden 文件 | `{op}_golden.py` | `fast_gelu_golden.py` |
-| 实现文件 | `{op}_impl.py` | `fast_gelu_impl.py` |
-| 测试文件 | `test_{op}.py` | `test_fast_gelu.py` |
-
-### 9.4 生成顺序
-
-```
-SPEC.md → DESIGN.md → {op}_golden.py → {op}_impl.py → test_{op}.py
-```

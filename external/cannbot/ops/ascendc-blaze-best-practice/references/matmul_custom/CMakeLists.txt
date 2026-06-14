@@ -92,7 +92,8 @@ target_link_libraries(matmul_ascend_base INTERFACE m dl platform tiling_api)
 
 add_library(matmul_tensor_api INTERFACE)
 target_include_directories(matmul_tensor_api INTERFACE
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tensor_api)
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tensor_api
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tensor_api/include)
 
 # [CONFIG] Ascend C matmul 编译选项
 #  -xasc             : Bisheng ASC 模式

@@ -77,10 +77,10 @@
 
 | 阶段 | 数学操作 | ascendc API | 关键参数 | 标注级别 | 官方文档 |
 |------|---------|------------|---------|---------|---------|
-| GM → UB | 融合输入搬运 | `DataCopy(dLocal, gmD, len)` 或 `DataCopyPad(...)` | 32 字节对齐；`curN < N` 时必须用 `DataCopyPad` | `[USER]` | [DataCopy](asc-devkit/docs/api/context/data_copy.md) / [DataCopyPad](asc-devkit/docs/api/context/data_copy_pad.md) |
+| GM → UB | 融合输入搬运 | `DataCopy(dLocal, gmD, len)` 或 `DataCopyPad(...)` | 32 字节对齐；`curN < N` 时必须用 `DataCopyPad` | `[USER]` | [DataCopy](asc-devkit/docs/api/context/DataCopy.md) / [DataCopyPad](asc-devkit/docs/api/context/DataCopyPad(ISASI).md) |
 | 计算 | 融合操作 | `Div` / `Mul` / `Add` / `Relu` / ... | float 操作；`count` 为有效数据长度 | `[USER]` | [AscendC API](asc-devkit/docs/api/context/) |
-| Cast | 类型转换（如需） | `Cast(dst, src, roundMode, count)` | `CAST_NONE` / `CAST_RINT` | `[USER]` | [Cast](asc-devkit/docs/api/context/cast.md) |
-| UB → GM | 结果写回 | `DataCopy(gmC, out, len)` 或 `DataCopyPad(...)` | 32 字节对齐；`curN < N` 时必须用 `DataCopyPad` | `[USER]` | [DataCopy](asc-devkit/docs/api/context/data_copy.md) / [DataCopyPad](asc-devkit/docs/api/context/data_copy_pad.md) |
+| Cast | 类型转换（如需） | `Cast(dst, src, roundMode, count)` | `CAST_NONE` / `CAST_RINT` | `[USER]` | [Cast](asc-devkit/docs/api/context/Cast.md) |
+| UB → GM | 结果写回 | `DataCopy(gmC, out, len)` 或 `DataCopyPad(...)` | 32 字节对齐；`curN < N` 时必须用 `DataCopyPad` | `[USER]` | [DataCopy](asc-devkit/docs/api/context/DataCopy.md) / [DataCopyPad](asc-devkit/docs/api/context/DataCopyPad(ISASI).md) |
 
 ##### API 语义验证表
 

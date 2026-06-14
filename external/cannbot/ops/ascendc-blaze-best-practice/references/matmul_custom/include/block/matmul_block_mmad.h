@@ -52,6 +52,16 @@
 namespace Block {
 using namespace AscendC;
 
+struct CopyL0C2UBSplitMTrait {
+    using TraitType = AscendC::Te::CopyL0C2UBTrait;
+    static constexpr const TraitType value{
+        AscendC::Te::RoundMode::DEFAULT,
+        false,
+        false,
+        AscendC::Te::DualDstMode::DUAL_DST_SPLIT_M
+    };
+};
+
 template <
     class DispatchPolicy_, class AType_, class LayoutA_, class BType_,
     class LayoutB_, class CType_, class LayoutC_>
@@ -108,11 +118,10 @@ public:
     uint64_t l0cPingPong_{0UL};
     bool enableL0cPingPong_{false};
 
-    // A 按 NZ，B 按 ZN 存进 L1（Cube 的固定输入格式）。
-    using MakeLayoutAL1 = AscendC::Te::FrameLayoutFormat<
-        AscendC::Te::NZLayoutPtn, AscendC::Std::Int<BLOCK_CUBE>>;
-    using MakeLayoutBL1 = AscendC::Te::FrameLayoutFormat<
-        AscendC::Te::ZNLayoutPtn, AscendC::Std::Int<BLOCK_CUBE>>;
+    // L1 layout 由 L1LayoutHelper 根据 GM pattern 自动选择：
+    // NZ/ZN 输入 → L1 与 GM 同 pattern（块拷贝）；ND/DN 输入 → 按 trans 选 NZ/ZN（格式转换）。
+    using MakeLayoutAL1 = typename L1LayoutHelper<LayoutA, AType, transA>::type;
+    using MakeLayoutBL1 = typename L1LayoutHelper<LayoutB, BType, transB>::type;
 
     struct Params {
         GM_ADDR aGmAddr{nullptr};
@@ -267,9 +276,19 @@ public:
             abL1LoopCnt_++;
         }
 
-        // L0C -> GM，由 fixpipe 完成 L0C(fp32/int32) -> CType 的量化/cast。
-        auto CopyL0C2GM = AscendC::Te::MakeCopy(AscendC::Te::CopyL0C2GM{});
-        AscendC::Te::Copy(CopyL0C2GM, gmC, tensorL0C, AscendC::Te::FixpipeParams{FINAL_ACCUMULATION});
+        // FixpOpti/Fusion: L0C→UB via CopyL0C2UB + SPLIT_M Trait
+        (void)gmC;
+        auto curMPad = (curM + 1L) & ~1L;
+        constexpr int64_t UB_N_ALIGN_ELEM = 32L / static_cast<int64_t>(sizeof(L0CType));
+        auto curNUbAlign = ((curN + UB_N_ALIGN_ELEM - 1L) / UB_N_ALIGN_ELEM) * UB_N_ALIGN_ELEM;
+
+        auto layoutUB = AscendC::Te::MakeFrameLayout<
+            AscendC::Te::NDExtLayoutPtn, AscendC::Std::Int<BLOCK_CUBE_L0C>>(curMPad, curNUbAlign);
+        auto ubTensor = AscendC::Te::MakeTensor(
+            AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, float>(0), layoutUB);
+
+        auto copyOp = AscendC::Te::MakeCopy(AscendC::Te::CopyL0C2UB{}, CopyL0C2UBSplitMTrait{});
+        copyOp.Call(ubTensor, tensorL0C, AscendC::Te::FixpipeParams{FINAL_ACCUMULATION});
         if (enableL0cPingPong_) {
             l0cPingPong_++;
         }

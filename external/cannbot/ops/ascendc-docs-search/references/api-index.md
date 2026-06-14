@@ -149,7 +149,7 @@ AI CPU 处理器相关 API。
 
 1. **API 文档查找优先级**：
    ```
-   asc-devkit/docs/api/context/  →  基础数据结构
+   asc-devkit/docs/api/context/  →  全部 API 文档
    asc-devkit/docs/api/basic_api/ →  基础 API
    asc-devkit/docs/api/adv_api/   →  高阶 API
    ```

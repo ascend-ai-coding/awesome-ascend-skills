@@ -3,8 +3,8 @@ name: external-cannbot-ops-npu-arch
 description: Ascend NPU 架构知识查询技能。通过芯片型号映射、架构代际划分和 archXX 特性说明，帮助判断目标平台能力、特性支持与条件编译策略。当需要确认芯片型号、NpuArch/SocVersion、架构差异、特性支持或编译分支条件时使用。
 original-name: npu-arch
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-26'
-synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
+synced-date: '2026-06-14'
+synced-commit: f2b0db65abdced502b1cd1956e2e48e6e0197add
 license: UNKNOWN
 ---
 
@@ -75,6 +75,7 @@ platform_ascendc::SocVersion socVer = ascendcPlatform.GetSocVersion();
 `references/` 按需加载：
 
 - **`npu-hardware-params.md`** — 硬件参数参考：各架构子型号一致参数、典型SKU示例、基于公开资料与经验值的规格
+- **`simt-arch-guide.md`** — SIMT 架构概念参考：线程层次结构、Warp调度机制、内存空间、UB分区、数据类型、函数调用层级、LAUNCH_BOUND与寄存器数量、SIMT与SIMD核心差异
 - **`npu-arch-guide.md`**：
   - **典型硬件参数与获取方式**：核数 / Buffer 容量典型值，`GetCoreNumA*` / `GetCoreMemSize` / `aclrtGetDeviceInfo` 接口用法（含硬编码反例）
   - **DAV_3510 微架构**：AI Core Buffer 层级、MTE 引擎、CV 数据通路改动、BufferID 同步

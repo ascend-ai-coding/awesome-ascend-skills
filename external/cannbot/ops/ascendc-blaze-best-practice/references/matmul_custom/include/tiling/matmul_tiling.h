@@ -154,18 +154,20 @@ private:
         if (singleBlockNum < 1.0) {
             CalcBasicBlock();
         }
-        runInfo_.baseM = Align(runInfo_.baseM, BASIC_BLOCK_SIZE_16);
-        runInfo_.baseN = Align(runInfo_.baseN, BASIC_BLOCK_SIZE_16);
+        // [MODIFY] NZ 场景需要 C0 对齐（C0 = 32 / sizeof(dtype)），此处统一用 C0 对齐（过度约束）
+        constexpr uint64_t C0 = 32 / DATA_SIZE_FP16;
+        runInfo_.baseM = Align(runInfo_.baseM, C0);
+        runInfo_.baseN = Align(runInfo_.baseN, C0);
         runInfo_.dbL0c =
             runInfo_.baseM * runInfo_.baseN * DATA_SIZE_FP32 * DB_SIZE <= platformInfo_.l0cSize ? DB_SIZE : 1UL;
 
         mCore = CeilDiv(args_.m, runInfo_.baseM);
         nCore = CeilDiv(args_.n, runInfo_.baseN);
         runInfo_.usedCoreNum = std::min(mCore * nCore, static_cast<uint64_t>(platformInfo_.aicNum));
-        uint64_t kValueAlign = Align(args_.k, BASIC_BLOCK_SIZE_16);
+        uint64_t kValueAlign = Align(args_.k, C0);
         uint64_t kValueMax = FloorAlign(
             platformInfo_.l0aSize / DB_SIZE / DATA_SIZE_FP16 / std::max(runInfo_.baseM, runInfo_.baseN),
-            BASIC_BLOCK_SIZE_16);
+            C0);
         runInfo_.baseK = std::min(kValueAlign, kValueMax);
     }
 

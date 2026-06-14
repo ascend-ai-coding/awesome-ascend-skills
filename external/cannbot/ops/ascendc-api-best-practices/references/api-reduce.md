@@ -200,6 +200,28 @@ AscendC::ReduceMax<float, AscendC::Pattern::Reduce::AR, true>(dst, src, tmpLocal
 // ✅ 方案2：预留临时空间（详见 api-reduce-pattern.md）
 ```
 
+### 错误6：Reduce dst 起始地址未 8 字节对齐
+
+`ReduceMax<float>` / `ReduceSum<float>` 等 Reduce API 要求 **dst 起始地址 8 字节对齐**（对 fp32 即 2 个元素对齐）。在"小组归约"场景下（每行多组、每组结果仅占 4 字节）容易出现奇数 offset 位置违反对齐。
+
+```cpp
+// ❌ dst 用 stride 1 fp32：每组结果占 4 字节，
+// 写到 dstBuf[r * groupsPerRow + g] 在 g 为奇数时只满足 4B 对齐
+const uint32_t groupsPerRow = 4;
+AscendC::ReduceMax<float>(dstBuf[r * groupsPerRow + g], src, tmp, 32, false);  // g=1,3 → 4B 对齐
+```
+
+修复：dst buffer 用 stride 2 fp32（每组结果占 8 字节槽位）：
+
+```cpp
+// ✅ stride 2 fp32 → 每个 dst 结果占 8 字节，任何 g 都满足 8B 对齐
+AscendC::ReduceMax<float>(dstBuf[r * groupsPerRow * 2 + g * 2], src, tmp, 32, false);
+```
+
+下游读取时索引同步乘 2。
+
+**症状**：Reduce API 返回静默错误（结果残留旧值或写到错位置），不一定立刻 trap。
+
 ---
 
 ## 最佳实践

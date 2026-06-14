@@ -60,7 +60,8 @@ cp -r references/matmul_custom <your_project> && cd <your_project>
 | # | 文件 | 操作 |
 |---|------|------|
 | A1 | 启动器 `.cpp` | `NO_FULL_LOAD_MODE` → `A_FULL_LOAD_MODE`；`MatmulTilingSwat` → `MatmulTilingAFullLoad` |
-| E1 | 启动器 `.cpp` | `IdentityEpilogue<CType>` → 自定义 Epilogue 类 |
+| A2 | 启动器 `.cpp` | NZ/ZN 分形预重排输入（A-NZ / B-NZ），GM→L1 走块拷贝省掉格式转换带宽。改造步骤详见 [`matmul_pattern.md`](matmul_pattern.md) §5.4 |
+| E1 | 启动器 `.cpp` | `IdentityEpilogue<CType>` → 自定义 Epilogue 类。**推荐 RegBase 路径**：<br>- **RegBase（推荐）**：`epilogue_fusion_regbase.h` 模板，用 `__VEC_SCOPE__` + `Reg::Cast/Mul/Exp` 等 RegTensor API，详见 [`matmul_fixpopti_regbase_epilogue.md`](matmul_fixpopti_regbase_epilogue.md)<br>- **MemBase（仅限简单场景）**：`epilogue_fusion_membase.h` 参考样例，仅当 vector 操作为单个 AscendC API 调用（如 `AscendC::Mul/Add/Div`）时使用 |
 
 ### 3.5 BlockMmad Fixpipe 改造（必做）
 
@@ -119,6 +120,8 @@ struct CopyL0C2UBSplitMTrait {
 | `matmul_fixpopti.cpp` | FixpOpti 启动器（`__mix__(1, 2)`，AIC+AIV + CV 同步） |
 | `include/kernel/matmul_kernel_fused.h` | AIC+AIV 统一循环驱动 |
 | `include/epilogue/identity_epilogue.h` | float→bf16 Cast + DataCopyPad + SetFlag |
+| `include/epilogue/epilogue_fusion_regbase.h` | RegBase 后融合框架（推荐） |
+| `include/epilogue/epilogue_fusion_membase.h` | MemBase 后融合参考样例（简单 vector 场景） |
 | `include/epilogue/cv_sync_constants.h` | CV Flag 常量 |
 
 ## 4. 常见陷阱
@@ -145,5 +148,5 @@ struct CopyL0C2UBSplitMTrait {
 | AIV 行为 | `return` | Epilogue 循环 |
 | BlockMmad | `CopyL0C2GM` | `CopyL0C2UB` + SPLIT_M Trait |
 | CV 同步 | 无 | CrossCoreSetFlag/WaitFlag |
-| 新增文件 | — | fused kernel、epilogue × 2 |
+| 新增文件 | — | fused kernel、epilogue × 4（identity + cv_sync + regbase + membase_sample） |
 | 共享文件 | common/ tiling/ scheduler/ utils/ | 完全复用 |

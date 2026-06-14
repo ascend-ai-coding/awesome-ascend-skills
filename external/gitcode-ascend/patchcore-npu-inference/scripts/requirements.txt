@@ -1,0 +1,19 @@
+click>=8.0.3
+faiss-cpu  # 可选（仅 CPU 模式需，NPU 模式使用 BaihuNN）
+matplotlib>=3.5.0
+numpy>=1.20.0
+pillow>=8.4.0
+pretrainedmodels>=0.7.4
+pytest>=7.0.0
+pyyaml>=5.4
+scikit-image>=0.18.3
+scikit-learn>=1.0.1
+scipy>=1.7.1
+timm>=0.6.0
+torch>=1.9.0
+torchvision>=0.10.0
+tqdm>=4.62.3
+# torch_npu — 昇腾 NPU 支持（可选，需从官方源安装）
+# 安装方法:
+#   pip install torch_npu==2.1.0 -f https://gitee.com/ascend/pytorch/releases
+# 或参考: https://gitee.com/ascend/pytorch
