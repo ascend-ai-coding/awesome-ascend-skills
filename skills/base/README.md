@@ -11,6 +11,7 @@
 - [`npu-docker-launcher/`](npu-docker-launcher/)：昇腾 NPU 服务器 Docker 容器一键启动
 - [`ascend-dmi/`](ascend-dmi/)：NPU 硬件状态、带宽、算力、功耗、诊断与复位
 - [`ascend-avi-vnpu/`](ascend-avi-vnpu/)：AVI 模式与 vNPU 实例管理
+- [`remote-npu-test/`](remote-npu-test/)：连接远程服务器在指定docker镜像中进行端到端脚本验证
 
 推荐场景：
 
