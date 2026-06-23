@@ -1102,6 +1102,17 @@
         "benchmarking",
         "performance-analysis"
       ]
+    },
+    {
+      "name": "remote-npu-test",
+      "description": "Auto run NPU inference/training tests on a remote SSH server with Docker container(specified by user,default: vllm-ascend). Use when the user asks to test models on NPU, run inference on Ascend devices, or deploy models to an SSH server.",
+      "source": "./skills/base/remote-npu-test",
+      "category": "base",
+      "categories": [
+        "base",
+        "inference",
+        "leaf-skill"
+      ]
     }
   ],
   "categoryLibrary": {
