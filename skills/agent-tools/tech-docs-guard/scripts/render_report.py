@@ -331,7 +331,7 @@ def render_html(repo: str) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser(description="渲染 tech-docs-guard 体检报告(MD + HTML,含自校验闸/去重/未评标注)")
     ap.add_argument("--repo", required=True)
-    ap.add_argument("--out", help="REPORT.md 输出路径(默认 CWD/cann-ops-report/tech-docs-guard/<repo>/REPORT.md)")
+    ap.add_argument("--out", help="REPORT.md 输出路径(默认 CWD/tech-docs-report/tech-docs-guard/<repo>/REPORT.md)")
     ap.add_argument("--format", choices=["md", "html", "both"], default="both")
     ap.add_argument("--with-minor", action="store_true", help="保留 minor(瑕疵)条目;默认舍弃")
     args = ap.parse_args()
