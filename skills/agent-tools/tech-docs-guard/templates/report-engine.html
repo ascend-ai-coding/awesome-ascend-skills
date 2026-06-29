@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>算子文档体检报告 · 按问题类型</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23C7000B'/%3E%3Cpath d='M16 8v16M8 16h16' stroke='white' stroke-width='3.4' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:#F4F1EC;color:#1B1A18;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei','Segoe UI',system-ui,sans-serif;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-variant-numeric:tabular-nums;font-size:14px}
+  details>summary{list-style:none;cursor:pointer}
+  details>summary::-webkit-details-marker{display:none}
+  ::selection{background:#FBD3D5}
+  .bad{color:#A60A12;font-weight:600}
+  .fign b{font-weight:700;color:#1B1A18}
+  a{color:inherit}
+  .ovrow:hover{background:#F7F4F0}
+  .card:hover{background:#FCFAF7}
+  .chip{cursor:pointer;font-family:inherit}
+  .chip:active{transform:scale(.97)}
+  .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(6px);background:#1B1A18;color:#fff;font-size:12.5px;padding:9px 18px;border-radius:10px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:100;box-shadow:0 8px 24px -6px rgba(60,45,30,.4)}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+<div style="max-width:1120px;margin:0 auto;padding:0 26px 120px">
+
+  <div style="padding:40px 0 4px">
+    <div style="display:flex;align-items:baseline;gap:11px;flex-wrap:wrap">
+      <div style="font-size:27px;font-weight:800;letter-spacing:-.02em;color:#1B1A18">算子文档体检报告</div>
+      <span style="font-family:ui-monospace,Menlo,monospace;font-size:12.5px;font-weight:600;color:#5B554E;background:#F7F4F0;border:1px solid #EAE5DF;border-radius:7px;padding:3px 10px">按问题类型</span>
+    </div>
+    <div id="metarow" style="display:flex;gap:7px 22px;flex-wrap:wrap;margin-top:14px;font-size:12.5px;color:#938C83"></div>
+  </div>
+
+  <div id="summary"></div>
+  <div id="banner"></div>
+  <div id="overview"></div>
+
+  <div style="position:sticky;top:0;z-index:30;margin-top:20px;padding:13px 0 12px;background:rgba(244,241,236,.86);backdrop-filter:saturate(1.4) blur(10px);-webkit-backdrop-filter:saturate(1.4) blur(10px);box-shadow:0 1px 0 #EAE5DF">
+    <div id="filterTop" style="display:flex;gap:7px;align-items:center;flex-wrap:wrap"></div>
+    <div id="filterCat" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:9px"></div>
+  </div>
+
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-top:16px;flex-wrap:wrap;gap:10px">
+    <div id="shown" style="font-size:12.5px;color:#7C766D"></div>
+    <button id="copyBtn" class="chip" style="cursor:pointer;font-size:12px;font-weight:600;color:#5B554E;background:#fff;border:1px solid #EAE5DF;border-radius:8px;padding:6px 14px">复制修改清单</button>
+  </div>
+
+  <div id="sections"></div>
+
+  <div style="margin-top:40px;padding-top:18px;border-top:1px solid #EAE5DF;font-size:11.5px;color:#A39B91;line-height:1.7">
+    工具通读 CANN 算子仓文档、对照代码静态查证，逐条带证据列出「漏讲 / 对不上代码 / 讲错」。<b style="color:#7C766D;font-weight:600">C1–C6</b> 可对着代码客观核对（对错分明）；<b style="color:#7C766D;font-weight:600">J1–J2</b> 靠教学判断，最多标「疑似」、需维护者复核。每条带三轴：严重度（阻断 / 误导）· 缺陷类型（不可信 / 缺失 / 易读）· 确定度（确认 / 疑似）。默认已舍弃瑕疵（minor）。
+  </div>
+</div>
+<div class="toast" id="toast">已复制</div>
+
+<script>
+"use strict";
+var DATA = __DATA_JSON__;
+var CODEROOT = "__CODEROOT__";
+var GENTIME = "__GENTIME__";
+
+var CATS=[['C1','引用找不到','A'],['C2','名字 / 接口 / 参数与代码对不上','A'],['C3','贴出的代码片段本身有错','A'],
+  ['C4','文档自相矛盾','A'],['C5','支持范围声明有误','A'],['C6','运行结果 / 数值 / 行为说错','A'],
+  ['J1','概念讲错 / 术语用混','B'],['J2','缺步骤 / 没讲为什么 / 指代含糊','B']];
+var CATNAME={},CATSEG={},CATIDX={};
+CATS.forEach(function(c,i){CATNAME[c[0]]=c[1];CATSEG[c[0]]=c[2];CATIDX[c[0]]=i;});
+var CHECK={code:'须查代码',doc:'查文档',rule:'查规则'};
+var st={view:'type',sev:null,conf:null,cat:null};
+
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function el(html){var t=document.createElement('template');t.innerHTML=html.trim();return t.content.firstChild;}
+function pct(n,d){return d? (n/d*100).toFixed(1)+'%':'0%';}
+function toast(m){var t=document.getElementById('toast');t.textContent=m||'已复制';t.classList.add('show');setTimeout(function(){t.classList.remove('show');},1100);}
+function copyText(s){try{navigator.clipboard.writeText(s);}catch(e){var ta=document.createElement('textarea');ta.value=s;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');}catch(_){}document.body.removeChild(ta);}toast('已复制');}
+function pass(d){if(st.sev&&d.impact!==st.sev)return false;if(st.conf==='confirmed'&&d.suspected)return false;if(st.conf==='suspected'&&!d.suspected)return false;if(st.cat&&d.cat!==st.cat)return false;return true;}
+
+/* ---------- Finding 卡片(移植自 Finding.dc.html) ---------- */
+function renderFig(fig){
+  if(!fig) return '';
+  if(fig.kind==='conflict'){
+    return '<div style="display:flex;gap:10px;align-items:stretch;margin-top:14px;flex-wrap:wrap">'
+      +'<div style="flex:1 1 240px;min-width:0;background:#FBECEC;border:1px solid #EFCDCE;border-radius:9px;padding:11px 14px"><div style="font-size:10px;font-weight:700;letter-spacing:.05em;color:#A60A12;margin-bottom:5px;text-transform:uppercase">文档写的 · '+esc(fig.a&&fig.a.tag)+'</div><div style="font-size:12.5px;line-height:1.55;color:#1B1A18;font-family:ui-monospace,Menlo,monospace;word-break:break-word">'+esc(fig.a&&fig.a.val)+'</div></div>'
+      +'<div style="display:flex;align-items:center;color:#C2BAAF;font-size:16px;font-weight:700">→</div>'
+      +'<div style="flex:1 1 240px;min-width:0;background:#EDF6F0;border:1px solid #CBE5D5;border-radius:9px;padding:11px 14px"><div style="font-size:10px;font-weight:700;letter-spacing:.05em;color:#0F6A3C;margin-bottom:5px;text-transform:uppercase">实际应为 · '+esc(fig.b&&fig.b.tag)+'</div><div style="font-size:12.5px;line-height:1.55;color:#1B1A18;font-family:ui-monospace,Menlo,monospace;word-break:break-word">'+esc(fig.b&&fig.b.val)+'</div></div></div>';
+  }
+  if(fig.kind==='gap'){
+    var have=(fig.have&&fig.have.items||[]).map(function(x){return '<div style="font-size:12px;line-height:1.5;color:#26352C;font-family:ui-monospace,Menlo,monospace;padding:2px 0">'+esc(x)+'</div>';}).join('');
+    var doc=(fig.doc&&fig.doc.items||[]).map(function(x){return '<div style="font-size:12px;line-height:1.5;color:#6B6258;font-family:ui-monospace,Menlo,monospace;padding:2px 0">'+esc(x)+'</div>';}).join('');
+    return '<div style="display:flex;gap:10px;align-items:stretch;margin-top:14px;flex-wrap:wrap">'
+      +'<div style="flex:1 1 240px;min-width:0;background:#EDF6F0;border:1px solid #CBE5D5;border-radius:9px;padding:11px 14px"><div style="font-size:10px;font-weight:700;letter-spacing:.05em;color:#0F6A3C;margin-bottom:6px;text-transform:uppercase">实际有 · '+esc(fig.have&&fig.have.tag)+'</div>'+have+'</div>'
+      +'<div style="flex:1 1 240px;min-width:0;background:#FBF6EF;border:1px dashed #DDC79E;border-radius:9px;padding:11px 14px"><div style="font-size:10px;font-weight:700;letter-spacing:.05em;color:#8E6418;margin-bottom:6px;text-transform:uppercase">文档声称 · '+esc(fig.doc&&fig.doc.tag)+'</div>'+doc+'</div></div>';
+  }
+  if(fig.kind==='incons'){
+    var rows=(fig.items||[]).map(function(it){return '<div style="display:flex;gap:12px;padding:9px 14px;border-bottom:1px solid #F1ECE5;background:#FCFAF7"><span style="flex:0 0 34%;font-size:11px;color:#8E6418;font-weight:600;font-family:ui-monospace,Menlo,monospace;word-break:break-word">'+esc(it.loc)+'</span><span style="flex:1;font-size:12.5px;color:#1B1A18;font-family:ui-monospace,Menlo,monospace;word-break:break-word">'+esc(it.val)+'</span></div>';}).join('');
+    var nt=fig.note?'<div style="padding:9px 14px;font-size:12px;color:#0F6A3C;background:#EDF6F0">统一方向：'+esc(fig.note)+'</div>':'';
+    return '<div style="margin-top:14px;border:1px solid #EAE5DF;border-radius:9px;overflow:hidden">'+rows+nt+'</div>';
+  }
+  return '';
+}
+function renderCard(d){
+  var sev = d.impact==='blocker'
+    ? '<span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;color:#A60A12;background:#FBECEC;border:1px solid #EFCDCE;border-radius:6px;padding:3px 9px"><span style="width:7px;height:7px;border-radius:50%;background:#C7000B"></span>阻断</span>'
+    : '<span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;color:#8E6418;background:#F7EFE0;border:1px solid #E7D6B4;border-radius:6px;padding:3px 9px"><span style="width:7px;height:7px;border-radius:50%;background:#BE8B3C"></span>误导</span>';
+  var conf = d.suspected
+    ? '<span style="font-size:11px;font-weight:600;color:#938C83;background:transparent;border:1px dashed #CDC7BE;border-radius:6px;padding:3px 9px">疑似</span>'
+    : '<span style="font-size:11px;font-weight:600;color:#5B554E;background:#F7F4F0;border:1px solid #EAE5DF;border-radius:6px;padding:3px 9px">确认</span>';
+  var catCheck = esc(d.cat||'') + (d.check?(' · '+(CHECK[d.check]||d.check)):'');
+  var conseq='';
+  if(d.conseq) conseq = d.conseqBad
+    ? '<div style="margin-top:7px;font-size:13px;line-height:1.6;color:#A60A12"><span style="opacity:.65">→ </span>'+esc(d.conseq)+'</div>'
+    : '<div style="margin-top:7px;font-size:13px;line-height:1.6;color:#5B554E"><span style="opacity:.5">→ </span>'+esc(d.conseq)+'</div>';
+  var note = d.figNote ? '<div style="margin-top:10px;font-size:12.5px;line-height:1.62;color:#5B554E"><span class="fign">'+d.figNote+'</span></div>' : '';
+  var fix = d.fix ? '<div style="margin-top:13px;display:flex;gap:10px;background:#EDF6F0;border:1px solid #CBE5D5;border-left:3px solid #1C7A4A;border-radius:8px;padding:10px 14px"><span style="color:#0F6A3C;font-weight:800;font-size:13px;flex:0 0 auto;line-height:1.5">✓</span><div style="font-size:13px;line-height:1.55;color:#15482F"><b style="font-weight:700;color:#0F6A3C">应改为</b>　'+esc(d.fix)+'</div></div>' : '';
+  var more='';
+  if(d.quote){
+    more='<details style="margin-top:12px"><summary style="font-size:11.5px;font-weight:600;color:#7C766D;display:inline-flex;align-items:center;gap:6px;user-select:none">＋ 原文引证 · 代码位置</summary><div style="margin-top:9px">'
+      +'<div style="font-size:10px;font-weight:700;letter-spacing:.08em;color:#A39B91;margin-bottom:5px">原文引证</div>'
+      +'<pre style="margin:0;font-size:11.5px;line-height:1.6;color:#3C372F;font-family:ui-monospace,Menlo,monospace;background:#F7F4F0;border:1px solid #EAE5DF;border-radius:7px;padding:11px 13px;white-space:pre-wrap;word-break:break-word">'+esc(d.quote)+'</pre>'
+      +(d.code?'<div style="font-size:10px;font-weight:700;letter-spacing:.08em;color:#A39B91;margin:11px 0 5px">代码位置 / 去仓核对</div><div style="font-size:11.5px;line-height:1.6;color:#5B554E;font-family:ui-monospace,Menlo,monospace;background:#FCFAF7;border:1px solid #F1ECE5;border-radius:7px;padding:9px 12px;white-space:pre-wrap;word-break:break-word">'+esc(d.code)+'</div>':'')
+      +(d.rc?'<div style="margin-top:9px;font-size:11px;color:#A39B91;font-family:ui-monospace,Menlo,monospace">成因：'+esc(d.rc)+'</div>':'')
+      +'</div></details>';
+  }
+  var c=el('<article class="card" id="card-'+d.idx+'" style="border-top:1px solid #F1ECE5;padding:20px 26px;scroll-margin-top:150px;transition:background .12s"></article>');
+  c.innerHTML='<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:11px">'
+    +sev+conf
+    +'<span style="font-size:11px;color:#A39B91;font-family:ui-monospace,Menlo,monospace">'+catCheck+'</span>'
+    +'<span style="flex:1 1 30px"></span>'
+    +'<span style="font-size:11px;color:#B7B0A6;font-family:ui-monospace,Menlo,monospace">#'+d.idx+'</span>'
+    +'<span style="font-size:11px;color:#7C766D;font-family:ui-monospace,Menlo,monospace;max-width:46%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(d.doc)+'">'+esc(d.doc)+'</span>'
+    +'</div>'
+    +'<div style="font-size:15.5px;font-weight:650;color:#1B1A18;line-height:1.5;letter-spacing:-.005em">'+esc(d.prob)+'</div>'
+    +conseq+renderFig(d.fig)+note+fix+more;
+  return c;
+}
+
+/* ---------- chip / 分组 ---------- */
+function chipBtn(label,n,on,red,cb){
+  var bg=on?(red?'#C7000B':'#1B1A18'):'#fff', col=on?'#fff':'#5B554E', bd=on?(red?'#C7000B':'#1B1A18'):'#EAE5DF';
+  var b=el('<button class="chip" style="font-size:12.5px;font-weight:600;border-radius:9px;padding:6px 13px;display:inline-flex;align-items:center;gap:7px;background:'+bg+';color:'+col+';border:1px solid '+bd+'"></button>');
+  b.innerHTML=esc(label)+(n!=null?' <span style="font-weight:700;opacity:.6">'+n+'</span>':'');
+  b.addEventListener('click',cb);return b;
+}
+function groupKey(d){return st.view==='file'?d.doc:d.cat;}
+function buildGroups(items){
+  var map={},order=[];
+  items.forEach(function(d){var k=groupKey(d);if(!map[k]){map[k]=[];order.push(k);}map[k].push(d);});
+  var gs=order.map(function(k){
+    var arr=map[k].slice().sort(function(a,b){return (a.impact==='blocker'?0:1)-(b.impact==='blocker'?0:1)||a.idx-b.idx;});
+    var blk=arr.filter(function(x){return x.impact==='blocker';}).length;
+    return {key:k,items:arr,blk:blk,mis:arr.length-blk};
+  });
+  if(st.view==='type') gs.sort(function(a,b){return CATIDX[a.key]-CATIDX[b.key];});
+  else gs.sort(function(a,b){return b.blk-a.blk || b.items.length-a.items.length;});
+  return gs;
+}
+function numBox(v,l){return '<div style="background:#FAF7F2;border:1px solid #EFEAE2;border-radius:12px;padding:14px 20px;text-align:center;min-width:90px"><div style="font-size:27px;font-weight:800;line-height:1;letter-spacing:-.02em">'+v+'</div><div style="font-size:11px;color:#938C83;margin-top:7px">'+l+'</div></div>';}
+
+/* ---------- 渲染 ---------- */
+function renderAll(){
+  var total=DATA.length;
+  var docs={};DATA.forEach(function(d){docs[d.doc]=1;});
+  var nBlocker=DATA.filter(function(d){return d.impact==='blocker';}).length, nMis=total-nBlocker;
+  var nUntrust=DATA.filter(function(d){return d.type==='untrust';}).length;
+  var nMissing=DATA.filter(function(d){return d.type==='missing';}).length;
+  var nReadable=DATA.filter(function(d){return d.type==='readable';}).length;
+  var nA=DATA.filter(function(d){return CATSEG[d.cat]==='A';}).length, nB=total-nA;
+  var nSus=DATA.filter(function(d){return d.suspected;}).length;
+
+  document.getElementById('metarow').innerHTML=
+     '<span>问题 <b style="color:#5B554E;font-weight:600">'+total+' 条</b></span>'
+    +'<span>覆盖文档 <b style="color:#5B554E;font-weight:600">'+Object.keys(docs).length+' 篇</b></span>'
+    +'<span>分类 <b style="color:#5B554E;font-weight:600">8 类 · C1–C6 / J1–J2</b></span>'
+    +'<span>受众 <b style="color:#5B554E;font-weight:600">算子仓维护者</b></span>'
+    +'<span>代码根 <code style="font-family:ui-monospace,Menlo,monospace;color:#5B554E">'+esc(CODEROOT)+'</code></span>'
+    +'<span>生成 <code style="font-family:ui-monospace,Menlo,monospace;color:#5B554E">'+esc(GENTIME)+'</code></span>';
+
+  document.getElementById('summary').innerHTML=
+    '<div style="background:#fff;border:1px solid #EAE5DF;border-radius:16px;padding:24px 28px;margin-top:20px;box-shadow:0 1px 2px rgba(60,45,30,.04),0 14px 32px -14px rgba(60,45,30,.12)"><div style="display:flex;gap:42px;flex-wrap:wrap;align-items:flex-start"><div style="flex:1 1 360px;min-width:300px">'
+    +'<div style="font-size:11px;font-weight:700;color:#A39B91;letter-spacing:.08em;margin-bottom:11px">开发者影响分布 · 阻断优先修</div>'
+    +'<div style="display:flex;height:32px;border-radius:9px;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(60,45,30,.05)"><span style="background:#C7000B;width:'+pct(nBlocker,total)+';display:flex;align-items:center;justify-content:center;color:#fff;font-size:11.5px;font-weight:700;min-width:24px">'+nBlocker+'</span><span style="background:#BE8B3C;width:'+pct(nMis,total)+';display:flex;align-items:center;justify-content:center;color:#fff;font-size:11.5px;font-weight:700;min-width:24px">'+nMis+'</span></div>'
+    +'<div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:13px;font-size:12.5px;color:#5B554E"><span style="display:inline-flex;align-items:center;gap:7px"><span style="width:9px;height:9px;border-radius:3px;background:#C7000B"></span>阻断 <b style="color:#1B1A18">'+nBlocker+'</b> <span style="color:#A39B91">照做必失败</span></span><span style="display:inline-flex;align-items:center;gap:7px"><span style="width:9px;height:9px;border-radius:3px;background:#BE8B3C"></span>误导 <b style="color:#1B1A18">'+nMis+'</b> <span style="color:#A39B91">理解出偏差</span></span></div>'
+    +'<div style="font-size:11px;font-weight:700;color:#A39B91;letter-spacing:.08em;margin:22px 0 11px">缺陷类型分布 · 决定图示形态</div>'
+    +'<div style="display:flex;height:10px;border-radius:5px;overflow:hidden;background:#F1ECE5"><span style="background:#B0703F;width:'+pct(nUntrust,total)+'"></span><span style="background:#A39A8C;width:'+pct(nMissing,total)+'"></span><span style="background:#CBB377;width:'+pct(nReadable,total)+'"></span></div>'
+    +'<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:11px;font-size:12px;color:#5B554E"><span style="display:inline-flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:2px;background:#B0703F"></span>不可信 · 冲突图 <b style="color:#1B1A18">'+nUntrust+'</b></span><span style="display:inline-flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:2px;background:#A39A8C"></span>缺失 · 缺口图 <b style="color:#1B1A18">'+nMissing+'</b></span><span style="display:inline-flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:2px;background:#CBB377"></span>易读 · 并列图 <b style="color:#1B1A18">'+nReadable+'</b></span></div>'
+    +'</div><div style="display:flex;gap:10px;flex-wrap:wrap">'
+    +numBox(total,'问题总数')+numBox(nA,'代码可核 A')+numBox(nB,'教学判断 B')+numBox(nSus,'疑似 · 待复核')
+    +'</div></div></div>';
+
+  var blk=DATA.filter(function(d){return d.impact==='blocker';}).sort(function(a,b){return a.idx-b.idx;});
+  var bn=document.getElementById('banner');
+  if(blk.length){
+    var bitems=blk.map(function(b){return '<a href="#card-'+b.idx+'" style="font-size:11.5px;color:#A60A12;background:#fff;border:1px solid #EFCDCE;border-radius:7px;padding:4px 9px;text-decoration:none;font-family:ui-monospace,Menlo,monospace;white-space:nowrap" title="'+esc(b.prob)+'">'+esc(b.cat)+' · #'+b.idx+'</a>';}).join('');
+    bn.innerHTML='<div style="margin-top:18px;background:linear-gradient(100deg,#FBECEC,#FDF6F1);border:1px solid #EFCDCE;border-left:4px solid #C7000B;border-radius:12px;padding:16px 22px;box-shadow:0 1px 2px rgba(60,45,30,.05)"><div style="display:flex;align-items:baseline;gap:11px;flex-wrap:wrap"><span style="font-weight:800;color:#C7000B;font-size:13.5px">阻断级 · '+blk.length+' 条须优先修</span><span style="font-size:12px;color:#9A6A5A">照文档照做会直接编译 / 链接 / 运行失败 — 点徽章跳到对应条目</span></div><div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:11px">'+bitems+'</div></div>';
+  } else bn.innerHTML='';
+
+  var ov=document.getElementById('overview');
+  if(st.view==='type'){
+    var rows=CATS.map(function(c){
+      var code=c[0],arr=DATA.filter(function(d){return d.cat===code;});
+      var b=arr.filter(function(x){return x.impact==='blocker';}).length,m=arr.length-b;
+      var active=st.cat===code, seg=c[2]==='A'?'代码可核':'教学判断';
+      var chipBg=active?'#1B1A18':'#F2EEE8',chipCol=active?'#fff':'#5B554E';
+      return '<div class="ovrow" data-cat="'+code+'" style="display:flex;align-items:center;gap:13px;padding:10px 14px;border-radius:9px;cursor:pointer;'+(active?'background:#F7F4F0;':'')+'">'
+        +'<span style="font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:700;color:'+chipCol+';background:'+chipBg+';border-radius:6px;padding:3px 9px;flex:0 0 auto">'+code+'</span>'
+        +'<div style="flex:1 1 220px;min-width:0"><div style="font-size:13.5px;font-weight:650;color:#1B1A18;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c[1])+'</div><div style="font-size:11px;color:#A39B91">'+seg+'</div></div>'
+        +'<div style="flex:0 0 130px;height:8px;border-radius:5px;overflow:hidden;display:flex;background:#F1ECE5"><span style="background:#C7000B;width:'+pct(b,arr.length)+'"></span><span style="background:#BE8B3C;width:'+pct(m,arr.length)+'"></span></div>'
+        +'<div style="flex:0 0 132px;text-align:right;font-size:11.5px;color:#7C766D;font-family:ui-monospace,Menlo,monospace"><span style="color:#C7000B;font-weight:700">'+b+'</span> 阻断 · <span style="color:#8E6418;font-weight:700">'+m+'</span> 误导</div>'
+        +'<div style="flex:0 0 40px;text-align:right;font-size:17px;font-weight:800;color:#1B1A18">'+arr.length+'</div></div>';
+    }).join('');
+    ov.innerHTML='<div style="margin-top:22px"><div style="display:flex;align-items:baseline;gap:10px;margin-bottom:10px"><div style="font-size:15px;font-weight:700;color:#1B1A18">8 类问题速览</div><div style="font-size:12px;color:#A39B91">点任意一行 = 只看该类 · 各类形态相似，可批量处理</div></div><div style="background:#fff;border:1px solid #EAE5DF;border-radius:14px;padding:8px;box-shadow:0 1px 2px rgba(60,45,30,.04)">'+rows+'</div></div>';
+    Array.prototype.forEach.call(ov.querySelectorAll('.ovrow'),function(r){r.addEventListener('click',function(){var c=r.getAttribute('data-cat');st.cat=(st.cat===c?null:c);renderAll();});});
+  } else ov.innerHTML='';
+
+  var ft=document.getElementById('filterTop');ft.innerHTML='';
+  ft.appendChild(el('<span style="font-size:11px;color:#A39B91;letter-spacing:.04em">视图</span>'));
+  [['type','按类型'],['file','按文件']].forEach(function(v){ft.appendChild(chipBtn(v[1],null,st.view===v[0],false,function(){st.view=v[0];if(v[0]==='file')st.cat=null;renderAll();}));});
+  ft.appendChild(el('<span style="width:1px;height:18px;background:#E0DACF;margin:0 5px"></span>'));
+  ft.appendChild(el('<span style="font-size:11px;color:#A39B91;letter-spacing:.04em">严重度</span>'));
+  ft.appendChild(chipBtn('阻断',nBlocker,st.sev==='blocker',true,function(){st.sev=st.sev==='blocker'?null:'blocker';renderAll();}));
+  ft.appendChild(chipBtn('误导',nMis,st.sev==='misleading',false,function(){st.sev=st.sev==='misleading'?null:'misleading';renderAll();}));
+  ft.appendChild(el('<span style="font-size:11px;color:#A39B91;letter-spacing:.04em;margin-left:4px">确定度</span>'));
+  ft.appendChild(chipBtn('确认',total-nSus,st.conf==='confirmed',false,function(){st.conf=st.conf==='confirmed'?null:'confirmed';renderAll();}));
+  ft.appendChild(chipBtn('疑似',nSus,st.conf==='suspected',false,function(){st.conf=st.conf==='suspected'?null:'suspected';renderAll();}));
+  if(st.sev||st.conf||st.cat){
+    ft.appendChild(el('<span style="flex:1 1 20px"></span>'));
+    var rb=el('<button class="chip" style="font-size:12px;font-weight:600;color:#A60A12;background:transparent;border:1px solid #EFCDCE;border-radius:8px;padding:5px 12px">✕ 清除筛选</button>');
+    rb.addEventListener('click',function(){st.sev=null;st.conf=null;st.cat=null;renderAll();});ft.appendChild(rb);
+  }
+  var fc=document.getElementById('filterCat');fc.innerHTML='';
+  fc.appendChild(el('<span style="font-size:11px;color:#A39B91;letter-spacing:.04em">类型</span>'));
+  CATS.forEach(function(c){var n=DATA.filter(function(d){return d.cat===c[0];}).length;fc.appendChild(chipBtn(c[0],n,st.cat===c[0],false,function(){st.cat=st.cat===c[0]?null:c[0];renderAll();}));});
+
+  var visible=DATA.filter(pass);
+  document.getElementById('shown').innerHTML='显示 <b style="color:#1B1A18;font-weight:700">'+visible.length+'</b> / '+total+' 条问题';
+  var host=document.getElementById('sections');host.innerHTML='';
+  if(!visible.length){host.appendChild(el('<div style="margin-top:24px;text-align:center;font-size:13px;color:#A39B91;padding:40px 0">没有符合当前筛选的问题。</div>'));return;}
+  buildGroups(visible).forEach(function(g){
+    var chip = st.view==='type' ? g.key : '文档';
+    var title = st.view==='type' ? CATNAME[g.key] : g.key;
+    var sub = st.view==='type' ? (CATSEG[g.key]==='A'?'代码可核 · 对错分明':'教学判断 · 需复核') : '';
+    var d=el('<div style="margin-top:16px;border:1px solid #EAE5DF;border-radius:14px;overflow:hidden;background:#fff;box-shadow:0 1px 2px rgba(60,45,30,.04),0 14px 32px -16px rgba(60,45,30,.10);scroll-margin-top:150px"></div>');
+    d.innerHTML='<div style="display:flex;align-items:center;gap:13px;padding:15px 24px;background:#FCFAF7;border-bottom:1px solid #F1ECE5"><span style="font-family:ui-monospace,Menlo,monospace;font-size:12.5px;font-weight:700;color:#5B554E;background:#F2EEE8;border:1px solid #E6E0D8;border-radius:7px;padding:4px 10px;white-space:nowrap">'+esc(chip)+'</span><div style="flex:1 1 auto;min-width:0"><div style="font-size:15px;font-weight:700;color:#1B1A18;letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(title)+'</div><div style="font-size:11.5px;color:#A39B91">'+esc(sub)+'</div></div><div style="flex:0 0 110px;height:8px;border-radius:5px;overflow:hidden;display:flex;background:#F1ECE5"><span style="background:#C7000B;width:'+pct(g.blk,g.items.length)+'"></span><span style="background:#BE8B3C;width:'+pct(g.mis,g.items.length)+'"></span></div><span style="flex:0 0 auto;font-size:13px;font-weight:800;color:#1B1A18;white-space:nowrap">'+g.items.length+' 条</span></div>';
+    var body=el('<div></div>');
+    g.items.forEach(function(it){body.appendChild(renderCard(it));});
+    d.appendChild(body);host.appendChild(d);
+  });
+}
+
+document.getElementById('copyBtn').addEventListener('click',function(){
+  var arr=DATA.filter(pass).slice().sort(function(a,b){return (a.impact==='blocker'?0:1)-(b.impact==='blocker'?0:1)||a.idx-b.idx;});
+  var txt=arr.map(function(d){return '['+(d.impact==='blocker'?'阻断':'误导')+'] '+d.cat+' #'+d.idx+' '+d.doc+'\n  应改为：'+(d.fix||'');}).join('\n\n');
+  copyText(txt);
+});
+renderAll();
+</script>
+</body>
+</html>
