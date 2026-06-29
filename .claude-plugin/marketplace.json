@@ -376,7 +376,7 @@
         "./skills/inference/msmodelslim/msmodelslim-quant",
         "./skills/inference/vllm-ascend-server",
         "./skills/inference/vllm-bench-serve",
-"./skills/inference/inference-precision/inference-precision-tensor-dump-compare",
+        "./skills/inference/inference-precision/inference-precision-tensor-dump-compare",
         "./skills/inference/npu-torchair-infer"
       ],
       "category": "bundle",
@@ -636,6 +636,17 @@
         "domain-skill-set",
         "community-feedback",
         "issue-analysis"
+      ]
+    },
+    {
+      "name": "tech-docs-guard",
+      "description": "评估 CANN 算子仓「进阶教程 / 开发指南」类文档质量:通读文档 + 对照算子代码静态查证(默认不跑),找出 漏讲 / 对不上代码 / 过时 / 概念讲错,产出带证据与改进建议的体检报告(MD + HTML)。用于文档审稿、文档对照代码、tutorial 体检、文档可信度核查。",
+      "source": "./skills/agent-tools/tech-docs-guard",
+      "category": "agent-tools",
+      "categories": [
+        "agent-tools",
+        "leaf-skill",
+        "documentation"
       ]
     },
     {
@@ -1158,7 +1169,8 @@
       "gitcode-workflow": "GitCode issue、PR、流水线、review 和合入流程",
       "community-feedback": "昇腾社区论坛抓取、反馈筛选和问题分析",
       "ai4s-model-migration": "AI for Science 模型、TensorFlow/PyTorch 路线与专项迁移",
-      "external-sync": "外部来源技能同步和来源分组"
+      "external-sync": "外部来源技能同步和来源分组",
+      "documentation": "文档质量审查、文档与代码一致性核对、文档体检报告"
     }
   }
 }

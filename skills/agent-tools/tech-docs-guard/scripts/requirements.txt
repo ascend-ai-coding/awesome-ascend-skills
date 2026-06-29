@@ -1,0 +1,2 @@
+# tech-docs-guard 只用 Python 标准库 + 系统 grep,无第三方依赖。
+# (codecheck 用系统 grep;render/findings 纯 stdlib。API 签名级 AST 留作可选增强,默认不引 libclang。)
