@@ -1,6 +1,6 @@
 """tech-docs-guard 产物读写 + 数据模型(三态 / 两类 / 自校验闸)。
 
-产物落 CWD/cann-ops-report/tech-docs-guard/<repo>/。findings.json 是机读缺陷台账,
+产物落 CWD/tech-docs-report/tech-docs-guard/<repo>/。findings.json 是机读缺陷台账,
 每条遵守「干净交接」格式;render 前过自校验闸:可量化条必带代码位置,不可量化条必带判例+steelman。
 """
 from __future__ import annotations
@@ -10,7 +10,7 @@ import os
 import re
 from pathlib import Path
 
-REPORT_ROOT = Path.cwd() / "cann-ops-report"
+REPORT_ROOT = Path.cwd() / "tech-docs-report"
 TUTEVAL_ROOT = REPORT_ROOT / "tech-docs-guard"
 
 # 五轴
