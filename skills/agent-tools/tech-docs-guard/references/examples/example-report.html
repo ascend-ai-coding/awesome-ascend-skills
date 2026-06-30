@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>算子文档体检报告 · 按问题类型</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23C7000B'/%3E%3Cpath d='M16 8v16M8 16h16' stroke='white' stroke-width='3.4' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:#F4F1EC;color:#1B1A18;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei','Segoe UI',system-ui,sans-serif;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-variant-numeric:tabular-nums;font-size:14px}
+  details>summary{list-style:none;cursor:pointer}
+  details>summary::-webkit-details-marker{display:none}
+  ::selection{background:#FBD3D5}
+  .bad{color:#A60A12;font-weight:600}
+  .fign b{font-weight:700;color:#1B1A18}
+  a{color:inherit}
+  .ovrow:hover{background:#F7F4F0}
+  .card:hover{background:#FCFAF7}
+  .chip{cursor:pointer;font-family:inherit}
+  .chip:active{transform:scale(.97)}
+  .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(6px);background:#1B1A18;color:#fff;font-size:12.5px;padding:9px 18px;border-radius:10px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:100;box-shadow:0 8px 24px -6px rgba(60,45,30,.4)}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+<div style="max-width:1120px;margin:0 auto;padding:0 26px 120px">
+
+  <div style="padding:40px 0 4px">
+    <div style="display:flex;align-items:baseline;gap:11px;flex-wrap:wrap">
+      <div style="font-size:27px;font-weight:800;letter-spacing:-.02em;color:#1B1A18">算子文档体检报告</div>
+      <span style="font-family:ui-monospace,Menlo,monospace;font-size:12.5px;font-weight:600;color:#5B554E;background:#F7F4F0;border:1px solid #EAE5DF;border-radius:7px;padding:3px 10px">按问题类型</span>
+    </div>
+    <div id="metarow" style="display:flex;gap:7px 22px;flex-wrap:wrap;margin-top:14px;font-size:12.5px;color:#938C83"></div>
+  </div>
+
+  <div id="summary"></div>
+  <div id="banner"></div>
+  <div id="overview"></div>
+
+  <div style="position:sticky;top:0;z-index:30;margin-top:20px;padding:13px 0 12px;background:rgba(244,241,236,.86);backdrop-filter:saturate(1.4) blur(10px);-webkit-backdrop-filter:saturate(1.4) blur(10px);box-shadow:0 1px 0 #EAE5DF">
+    <div id="filterTop" style="display:flex;gap:7px;align-items:center;flex-wrap:wrap"></div>
+    <div id="filterCat" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:9px"></div>
+  </div>
+
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-top:16px;flex-wrap:wrap;gap:10px">
+    <div id="shown" style="font-size:12.5px;color:#7C766D"></div>
+    <button id="copyBtn" class="chip" style="cursor:pointer;font-size:12px;font-weight:600;color:#5B554E;background:#fff;border:1px solid #EAE5DF;border-radius:8px;padding:6px 14px">复制修改清单</button>
+  </div>
+
+  <div id="sections"></div>
+
+  <div style="margin-top:40px;padding-top:18px;border-top:1px solid #EAE5DF;font-size:11.5px;color:#A39B91;line-height:1.7">
+    工具通读 CANN 算子仓文档、对照代码静态查证，逐条带证据列出「漏讲 / 对不上代码 / 讲错」。<b style="color:#7C766D;font-weight:600">C1–C6</b> 可对着代码客观核对（对错分明）；<b style="color:#7C766D;font-weight:600">J1–J2</b> 靠教学判断，最多标「疑似」、需维护者复核。每条带三轴：严重度（阻断 / 误导）· 缺陷类型（不可信 / 缺失 / 易读）· 确定度（确认 / 疑似）。默认已舍弃瑕疵（minor）。
+  </div>
+</div>
+<div class="toast" id="toast">已复制</div>
+
+<script>
+"use strict";
+var DATA = [{"idx": 20, "doc": "docs/zh/install/compile.md", "cat": "C2", "impact": "blocker", "type": "untrust", "check": "code", "suspected": false, "prob": "set_env.bash 路径缺 _nn 后缀,vendor 目录名与代码及同篇不符", "conseq": "照此 source 报「文件不存在」,自定义算子包无法在当前环境生效,aclnn 调不到自定义算子", "conseqBad": true, "fix": "L80 路径改为 vendors/${vendor_name}_nn/bin/set_env.bash,与代码 VENDOR_PACKAGE_NAME 及同篇 L84/L87 对齐", "quote": "在使用自定义算子包前，需执行source ${install_path}/vendors/${vendor_name}/bin/set_env.bash命令", "code": "cmake/variables.cmake:23 set(VENDOR_PACKAGE_NAME ${VENDOR_NAME}_nn);cmake/package.cmake:21 VENDOR_NAME \"${VENDOR_PACKAGE_NAME}\";scripts/custom/install.sh:300-310 写入 ${targetdir}/${vendordir}/bin/set_env.bash(vendordir=vendors/<name>_nn)", "rc": "", "fig": {"kind": "conflict", "a": {"tag": "compile.md L80", "val": "vendors/${vendor_name}/bin/set_env.bash"}, "b": {"tag": "variables.cmake L23 + 同篇 L84/L87", "val": "vendors/${vendor_name}_nn/bin/set_env.bash"}}, "figNote": "安装实际目录恒为 <b>${vendor_name}_nn<\/b>(VENDOR_PACKAGE_NAME=${VENDOR_NAME}_nn);同篇 L84/L87 已写 _nn,唯独 L80 漏 <span class=\"bad\">_nn<\/span>"}, {"idx": 24, "doc": "docs/zh/op_api_list.md", "cat": "C5", "impact": "blocker", "type": "untrust", "check": "doc", "suspected": false, "prob": "A2/A3确定性列填\"默认确定性实现\"(=支持),但7个算子文档产品表 A2/A3=×", "conseq": "Atlas A2/A3 用户据本列误判这7个接口可用并去选用,实际算子不支持该产品线,调用会失败", "conseqBad": true, "fix": "按各算子产品支持表,把不支持 A2/A3 的接口该列改为\"-\"(若实际支持则反向修正算子文档)", "quote": "| [aclnnFusedMatmul](../../matmul/fused_mat_mul/docs/aclnnFusedMatmul.md) | 矩阵乘与通用向量计算融合。 | 默认确定性实现 | 默认确定性实现 |", "code": "索引行: L240 aclnnFusedMatmul / L317 aclnnMatmulCompress / L318 aclnnMatmulCompressDequant / L368 aclnnRepeatInterleaveGrad / L430 aclnnTransposeQuantBatchMatMul / L431 aclnnTransposeQuantBatchMatMulWeightNz / L441 aclnnWeightQuantBatchMatmulNz。对应算子文档产品表均为 A2=×、A3=×,例 matmul/fused_mat_mul/docs/aclnnFusedMatmul.md L8-9", "rc": "copy_paste_not_updated", "fig": {"kind": "conflict", "a": {"tag": "op_api_list 确定性说明(A2/A3)列", "val": "aclnnFusedMatmul 等7个 = 默认确定性实现(按图例legend=支持)"}, "b": {"tag": "各算子 docs/ 产品支持情况表", "val": "Atlas A2/A3 训练&推理系列 = ×(不支持)"}}, "figNote": "图例规定非\"-\"即支持;索引列 <span class=\"bad\">默认确定性实现(隐含支持A2/A3)<\/span> 与算子文档 <b>A2/A3=×<\/b> 直接冲突"}, {"idx": 25, "doc": "docs/zh/op_api_list.md", "cat": "C5", "impact": "blocker", "type": "untrust", "check": "doc", "suspected": false, "prob": "Ascend 950确定性列填支持,但3个算子文档产品表 Ascend 950PR/950DT=×", "conseq": "Ascend 950 用户据本列误判这3个接口可用并选用,实际算子不支持 950,调用会失败", "conseqBad": true, "fix": "按各算子产品支持表,把这3个接口的 Ascend 950 列改为\"-\"(若实际支持则反向修正算子文档)", "quote": "| [aclnnAscendQuant](../../quant/ascend_quant_v2/docs/aclnnAscendQuant.md) | 根据输入的scale和offset对输入x进行量化... | 默认确定性实现 | 默认确定性实现 |", "code": "索引行: L56 aclnnRmsNormDynamicQuant / L73 aclnnAscendQuant / L410 aclnnSoftshrinkBackward。算子文档 950 行均为 ×: quant/ascend_quant_v2/docs/aclnnAscendQuant.md L9、norm/rms_norm_dynamic_quant/docs/aclnnRmsNormDynamicQuant.md L9、activation/softshrink_grad/docs/aclnnSoftshrinkBackward.md L9", "rc": "copy_paste_not_updated", "fig": {"kind": "conflict", "a": {"tag": "op_api_list 确定性说明(Ascend 950)列", "val": "aclnnAscendQuant/aclnnRmsNormDynamicQuant/aclnnSoftshrinkBackward = 默认确定性实现(=支持)"}, "b": {"tag": "各算子 docs/ 产品支持情况表", "val": "Ascend 950PR/Ascend 950DT = ×(不支持)"}}, "figNote": "索引 <span class=\"bad\">950列=默认确定性实现(隐含支持950)<\/span> 与算子文档 <b>950=×<\/b> 冲突"}, {"idx": 1, "doc": "docs/QUICKSTART.md", "cat": "C3", "impact": "misleading", "type": "untrust", "check": "code", "suspected": false, "prob": "§二改Mul片段用 tileLength_/int32_t progress,与实际kernel不符", "conseq": "新手若整段粘贴 Compute 函数,会因 tileLength_ 未定义而编译失败", "conseqBad": false, "fix": "片段同步为实际签名 Compute(int64_t currentNum) 并用 currentNum,删除 tileLength_;或仅高亮“将 Add 改为 Mul”一行不贴整段", "quote": "__aicore__ inline void AddExample<T>::Compute(int32_t progress)\n{\n    ...\n    // AscendC::Add(zLocal, xLocal, yLocal, tileLength_);\n    AscendC::Mul(zLocal, xLocal, yLocal, tileLength_);", "code": "examples/add_example/op_kernel/add_example.h:102-111(Compute 实际签名与变量)", "rc": "copy_paste_not_updated", "fig": {"kind": "conflict", "a": {"tag": "QUICKSTART §二 片段", "val": "Compute(int32_t progress) … Mul(…, tileLength_)"}, "b": {"tag": "add_example.h 实际", "val": "Compute(int64_t currentNum) … Add(…, currentNum);类成员仅 blockLength_/ubLength_,无 tileLength_"}}, "figNote": "片段照搬<b>旧版<\/b>kernel:<span class=\"bad\">tileLength_<\/span> 在当前文件不存在,正确变量是 <b>currentNum<\/b>"}, {"idx": 2, "doc": "docs/QUICKSTART.md", "cat": "C3", "impact": "misleading", "type": "untrust", "check": "code", "suspected": false, "prob": "§三打印片段引用 tileNum_/tileLength_/totalLength/tileNum,均非实际成员", "conseq": "照贴打印片段会因 tileNum_/tileLength_、tilingData->totalLength/tileNum 未定义而编译失败", "conseqBad": false, "fix": "打印片段改用实际成员(blockLength_ 由 blockFactor/totalNum 推导)或只示意“新增一行 PRINTF”,删除过时的 tileNum_/tileLength_ 计算块", "quote": "blockLength_ = (tilingData->totalLength + AscendC::GetBlockNum() - 1) / AscendC::GetBlockNum();\n    tileNum_ = tilingData->tileNum;\n    tileLength_ = ((blockLength_ + tileNum_ - 1) / tileNum_ / BUFFER_NUM) ? ...\n    AscendC::PRINTF(\"Tiling blockLength is %llu\\n\", blockLength_);", "code": "examples/add_example/op_kernel/add_example.h:57-70(Init)、add_example_tiling_data.h:19-22(结构体字段)", "rc": "copy_paste_not_updated", "fig": {"kind": "conflict", "a": {"tag": "QUICKSTART §三 打印片段", "val": "tilingData->totalLength / tileNum_ / tileLength_"}, "b": {"tag": "add_example.h + tiling_data.h 实际", "val": "Init 用 tilingData->totalNum/blockFactor/ubFactor;结构体仅 totalNum/blockFactor/ubFactor"}}, "figNote": "片段里的 <span class=\"bad\">totalLength / tileNum / tileNum_ / tileLength_<\/span> 在当前 tiling 结构与 kernel 中都不存在;真实字段是 <b>totalNum / blockFactor / ubFactor<\/b>"}, {"idx": 3, "doc": "docs/QUICKSTART.md", "cat": "C4", "impact": "misleading", "type": "untrust", "check": "doc", "suspected": false, "prob": "§二重编译硬编码 --soc=ascend910b,与§一 ${soc_version} 占位不一致", "conseq": "非910b芯片(910_93/950)用户照贴会把包编成910b,§二重验证在真机上跑失败", "conseqBad": false, "fix": "§二“重新编译”命令改用 --soc=${soc_version},与§一保持一致", "quote": "bash build.sh --pkg --soc=ascend910b --ops=add_example -j16", "code": "build.sh:13(SUPPORT_COMPUTE_UNIT_SHORT 含 ascend910b/ascend910_93/ascend950);docs/QUICKSTART.md §一 L55 vs §二 L152", "rc": "", "fig": {"kind": "incons", "items": [{"loc": "§一 L55", "val": "--soc=${soc_version}"}, {"loc": "§二 L152", "val": "--soc=ascend910b"}], "note": "同一个编译命令,§一 用占位符让读者填本机芯片,§二 却写死 ascend910b;应统一为 ${soc_version}"}, "figNote": "§一 已教按硬件选 <b>${soc_version}<\/b>(910b/910_93/950),§二 重编译却写死 <span class=\"bad\">ascend910b<\/span>"}, {"idx": 4, "doc": "docs/zh/context/broadcast关系.md", "cat": "C4", "impact": "misleading", "type": "untrust", "check": "doc", "suspected": false, "prob": "规则3「维度数不一致且均无1维则报错」与本文 a(2,2,3)+b(2,3) 成功例及规则1自相矛盾", "conseq": "读者按规则3会把 (2,2,3)+(2,3) 这类合法广播误判为报错,与本文示例和规则1直接打架", "conseqBad": false, "fix": "规则3 改为「对齐(规则1)后,某对应维度大小不相等且两者均不为1,则报错」,把「维度数」改为「对应维度大小」", "quote": "规则3：如果数组间维度数不一致，且均没有等于1的维度，则会报错。", "code": "docs/zh/context/broadcast关系.md L24(规则3) vs L17(举例2)/L26-44(完整示例,a=(2,2,3),b=(2,3) 广播成功)", "rc": "", "fig": {"kind": "conflict", "a": {"tag": "规则3 (L24)", "val": "维度数不一致且均无1维 → 报错"}, "b": {"tag": "本文示例 (L26-44)", "val": "a(2,2,3)+b(2,3) 广播成功"}}, "figNote": "规则3 误把<span class=\"bad\">「维度数(rank)不一致」<\/span>当作报错条件;真正报错条件是<b>对齐后对应维度大小既不相等又均不为1<\/b>。同样的 (2,2,3)/(2,3) 既被规则1拿来扩维、又被完整示例算出结果,却又被规则3判为报错。"}, {"idx": 5, "doc": "docs/zh/context/编译与运行样例.md", "cat": "C6", "impact": "misleading", "type": "untrust", "check": "doc", "suspected": false, "prob": "运行结果示例 result[0..7] 与被引 aclnnAddmm 示例的实算输出对不上", "conseq": "开发者按文档指引复制被引示例代码编译运行，得到的数值与文档展示的完全不同，会误以为自己运行出错或环境异常", "conseqBad": false, "fix": "用被引示例实算输出 7.2,9.4,11.6,13.8,18.4,21.8,25.2,28.6 替换 L122-129，或与被引示例的输入数据同步", "quote": "以AddMatMul算子的运行结果为例，运行后的结果示例如下：\n```bash\nresult[0] is: 1.200000\nresult[1] is: 2.200000\nresult[2] is: 3.200000\nresult[3] is: 5.400000\nresult[4] is: 6.400000\nresult[5] is: 7.400000\nresult[6] is: 9.600000\nresult[7] is: 10.600000\n```", "code": "matmul/mat_mul_v3/docs/aclnnAddmm&aclnnInplaceAddmm.md L599-619（输入数据 self={0..7}、mat1={1,1,1,2,2,2}、mat2={1,1,1,2,2,2,3,3,3,4,4,4}、α=1.2、β=1.0）", "rc": "copy_paste_not_updated", "fig": {"kind": "conflict", "a": {"tag": "编译与运行样例.md L122-129 结果示例", "val": "result[0..7]=1.2,2.2,3.2,5.4,6.4,7.4,9.6,10.6"}, "b": {"tag": "被引 aclnnAddmm.md 示例实算输出", "val": "7.2,9.4,11.6,13.8,18.4,21.8,25.2,28.6"}}, "figNote": "按被引示例输入(self=0..7、mat1/mat2、α=1.2、β=1，out=β·self+α·(mat1@mat2))实算应为 <b>7.2,9.4,11.6,13.8,18.4,21.8,25.2,28.6<\/b>，文档展示的 <span class=\"bad\">1.2,2.2,3.2,5.4,6.4,7.4,9.6,10.6<\/span> 与之不符"}, {"idx": 7, "doc": "docs/zh/context/非连续的Tensor.md", "cat": "C4", "impact": "misleading", "type": "untrust", "check": "doc", "suspected": false, "prob": "示例2同句\"间隔\"口径自相矛盾:stride2说间隔1、stride20说间隔20", "conseq": "读者无法确定\"间隔N个元素\"指步长值还是跳过的元素数,对stride含义产生混淆", "conseqBad": false, "fix": "统一\"间隔\"口径:stride20对应改为\"间隔19个元素\"(跳过数),或两处都按步长值表述(stride2→间隔2)", "quote": "如果在维度1上的stride为2，该维度上间隔1个元素；如果在维度0上的stride为20，那么相邻的元素间隔20个元素，即非连续。", "code": "无对应代码契约(概念说明页);坐实于文档自身 L38 与 L21 对照", "rc": "", "fig": {"kind": "conflict", "a": {"tag": "文档L38 stride=20", "val": "相邻元素间隔20个元素"}, "b": {"tag": "按同句stride=2口径(=跳过数)", "val": "应为间隔19个元素"}}, "figNote": "同句 stride=2 说\"间隔1个元素\"(跳过1=步长-1),stride=20 却按步长值说\"间隔20\";<span class=\"bad\">两处口径不一致,按跳过数应为19<\/span>"}, {"idx": 9, "doc": "docs/zh/debug/op_debug_prof.md", "cat": "C4", "impact": "misleading", "type": "untrust", "check": "doc", "suspected": false, "prob": "plog 路径自相矛盾:正文 $HOME/ascendc/log 与代码块 $HOME/ascend/log 不一致", "conseq": "开发者按正文去 $HOME/ascendc/log 找日志会扑空(实际日志在 $HOME/ascend/log)", "conseqBad": false, "fix": "将正文的 \"$HOME/ascendc/log\" 改为 \"$HOME/ascend/log\",与下方代码块路径一致", "quote": "程序执行结束后，默认可在\"$HOME/ascendc/log\"下查看，host日志文件存储路径如下：\n   $HOME/ascend/log/debug/plog/plog-pid_*.log", "code": "docs/zh/debug/op_debug_prof.md L11(正文) vs L14(代码块);标准 plog 根目录为 $HOME/ascend/log/debug/plog/", "rc": "", "fig": {"kind": "incons", "items": [{"loc": "L11 正文", "val": "$HOME/ascendc/log"}, {"loc": "L14 代码块", "val": "$HOME/ascend/log"}], "note": "标准 CANN plog 路径为 $HOME/ascend/log,正文 ascendc/log 为笔误"}, "figNote": "<span class=\"bad\">$HOME/ascendc/log<\/span> 应为 <b>$HOME/ascend/log<\/b>"}, {"idx": 10, "doc": "docs/zh/debug/op_debug_prof.md", "cat": "C4", "impact": "misleading", "type": "untrust", "check": "doc", "suspected": false, "prob": "trace_core0.json 路径漏 /report 子目录,与同算子 cann_sim.md 不一致", "conseq": "开发者在 cannsim_* 目录下直接找 trace_core0.json 会找不到(实际在 cannsim_*/report)", "conseqBad": false, "fix": "把流水文件路径补成 examples/add_example/examples/build/bin/cannsim_*/report,与 cann_sim.md 对齐", "quote": "仿真结果在本项目`examples/add_example/examples/build/bin/cannsim_*`目录，流水相关文件为：\n      trace_core0.json", "code": "op_debug_prof.md L168(cannsim_*) vs cann_sim.md L71(cannsim_*/report);二者均述同一 AddExample 仿真流水文件 trace_core0.json", "rc": "", "fig": {"kind": "conflict", "a": {"tag": "op_debug_prof.md L168", "val": "cannsim_*/ 下放 trace_core0.json"}, "b": {"tag": "cann_sim.md L71", "val": "cannsim_*/report/ 下放 trace_core0.json"}}, "figNote": "本篇写 <span class=\"bad\">cannsim_*<\/span>,被链接的 cann_sim.md 写 <b>cannsim_*/report<\/b>"}, {"idx": 11, "doc": "docs/zh/develop/aicore_develop_guide.md", "cat": "C2", "impact": "misleading", "type": "untrust", "check": "code", "suspected": false, "prob": "新增算子分类称改CMakeLists加add_subdirectory,实际靠variables.cmake的OP_C…", "conseq": "按文档手改 CMakeLists.txt 后新分类仍不被编译;真正的注册位置(OP_CATEGORY_LIST)文档只字未提", "conseqBad": false, "fix": "改为在 cmake/variables.cmake 的 OP_CATEGORY_LIST 中追加新分类名(如本例并无 nn 分类)", "quote": "若`${op_class}`为全新算子分类需额外在`CMakeLists.txt`中添加`add_subdirectory(${op_class})`，否则无法正常编译。\n```bash\nif(ENABLE_EXPERIMENTAL)\n \tadd_subdirectory(experimental/nn)\nelse()\n \tadd_subdirectory(nn)\nendif()\n```", "code": "cmake/variables.cmake:12 (OP_CATEGORY_LIST);cmake/func.cmake:402-434 (add_category_subdirectory 遍历);顶层 CMakeLists.txt 无对应 add_subdirectory 块;无顶层 nn/ 目录", "rc": "", "fig": {"kind": "conflict", "a": {"tag": "文档(工程创建)", "val": "在 CMakeLists.txt 加 add_subdirectory(${op_class})"}, "b": {"tag": "cmake/variables.cmake", "val": "分类由 OP_CATEGORY_LIST 列举,func.cmake 据此遍历"}}, "figNote": "文档展示的 <span class=\"bad\">if(ENABLE_EXPERIMENTAL)/add_subdirectory(nn)<\/span> 代码块在仓内任何 cmake 文件都搜不到;且顶层无 nn/ 分类目录。<b>实际新增分类应改 OP_CATEGORY_LIST<\/b>"}, {"idx": 12, "doc": "docs/zh/develop/aicore_develop_guide.md", "cat": "C1", "impact": "misleading", "type": "untrust", "check": "code", "suspected": false, "prob": "称参考 add_example 的 add_example_data 目录,该目录不存在,链接实指向 clipped_…", "conseq": "读者到 add_example 下找 add_example_data 目录白费查找;须自行意会两条链接其实指向别的算子", "conseqBad": false, "fix": "正文改为参考 clipped_swiglu_data / fatrelu_mul_data(与链接一致),或为 add_example 补建 add_example_data 目录", "quote": "结合`gen_data.py`/`compare_data.py`脚本生成与比对数据，可参考`add_example`的`add_example_data`目录：\n  [gen_data.py](../../../activation/clipped_swiglu/tests/ut/op_kernel/\nclipped_swiglu_data/gen_data.py)、\n  [compare_data.py](../../../activation/fatrelu_mul/tests/ut/op_kernel/fatrelu_mul_data/compare_data.py)。", "code": "examples/add_example/tests/ut/op_kernel/ 无 *_data 目录;链接实际目标存在:activation/clipped_swiglu/tests/ut/op_kernel/clipped_swiglu_data/gen_data.py、activation/fatrelu_mul/tests/ut/op_kernel/fatrelu_mul_data/compare_data.py", "rc": "copy_paste_not_updated", "fig": {"kind": "conflict", "a": {"tag": "文档正文(Kernel UT)", "val": "可参考 add_example 的 add_example_data 目录"}, "b": {"tag": "仓内实际", "val": "add_example 下无 *_data 目录;链接实指 clipped_swiglu_data / fatrelu_mul_data"}}, "figNote": "正文点名 <span class=\"bad\">add_example/add_example_data<\/span> 在仓内不存在;紧随的两条链接 <b>实际指向 activation/clipped_swiglu 与 activation/fatrelu_mul<\/b> 两个不同算子"}, {"idx": 13, "doc": "docs/zh/develop/aicpu_develop_guide.md", "cat": "C3", "impact": "misleading", "type": "untrust", "check": "code", "suspected": false, "prob": "Compute 示意片段用未声明的 input、PARAM_INVALID", "conseq": "读者若把这段当可编译代码拼接,会撞到 input/PARAM_INVALID/int32 未声明;但片段含 ... 占位符且已链向真实文件,多数人能识别为示意伪码、自行适配,影响有限。", "conseqBad": false, "fix": "把 input->GetTensorShape() 改为 input0->GetTensorShape()(或删除这行未使用的 shape 获取),default 分支统一为 kParamInvalid,int32 改 int32_t,使示意片段内部自洽。", "quote": "  auto input0_shape = input->GetTensorShape();\n...\n    default : return PARAM_INVALID;", "code": "对照真实实现 examples/add_example_aicpu/op_kernel_aicpu/add_example_aicpu.cpp(L48-69 用 input0、统一 kParamInvalid、模板 T/int32_t,且无 GetTensorShape 一行);文档片段 L157-160 仅声明 input0/input1/output,L149 声明 kParamInvalid。", "rc": "", "fig": {"kind": "conflict", "a": {"tag": "片段使用处", "val": "input->GetTensorShape() / return PARAM_INVALID / AddCompute<int32>"}, "b": {"tag": "同片段声明处", "val": "只声明了 input0/input1/output;错误码用 kParamInvalid;真实代码用 int32_t"}}, "figNote": "段内未声明 <span class=\"bad\">input<\/span>(应为 <b>input0<\/b>);default 用 <span class=\"bad\">PARAM_INVALID<\/span>(空指针校验处用的是 <b>kParamInvalid<\/b>);<span class=\"bad\">int32<\/span> 应为 <b>int32_t<\/b>。"}, {"idx": 14, "doc": "docs/zh/develop/cross_platform_migration_guide.md", "cat": "C6", "impact": "misleading", "type": "untrust", "check": "code", "suspected": false, "prob": "gather_v2 模板选择阈值写成「尾轴≤2048」,实为按字节且分dtype多档", "conseq": "读者照此预判模板会与实际不符:B16/B32小尾轴在远低于2048处已转SIMD", "conseqBad": false, "fix": "改为按尾轴字节数(innerSize×dtype)判定,并注明B8/B16/B32各有更低阈值(218/360/620字节),2048 仅为通用上限", "quote": "模板选择的依据是：尾轴 ≤ 2048时走SIMT模板，尾轴 > 2048时走SIMD模板。", "code": "index/gather_v2/op_host/arch35/gather_v2_tiling.cpp:32-36(SIMD_THRES=2048,SIMD_B8/B16/B32_THRES=218/360/620),558-561 与 601-609(选择逻辑比较 innerSize_*improveDtypeSize_)", "rc": "", "fig": {"kind": "conflict", "a": {"tag": "文档", "val": "尾轴(元素)≤2048→SIMT,>2048→SIMD"}, "b": {"tag": "gather_v2_tiling.cpp", "val": "innerSize×dtype字节≥2048,或B8≥218/B16≥360/B32≥620字节→SIMD,否则SIMT"}}, "figNote": "实际比较的是<b>尾轴字节数(innerSize×improveDtypeSize)<\/b>,且有<span class=\"bad\">多档dtype阈值<\/span>,非单一 2048 元素门限"}, {"idx": 15, "doc": "docs/zh/develop/graph_develop_guide.md", "cat": "C2", "impact": "misleading", "type": "untrust", "check": "code", "suspected": false, "prob": "文档称 InferDataType 在 op_graph/graph_infer.cpp（IMPL_OP），但主示例 …", "conseq": "读者按文中点名的 AI Core 主示例 add_example 交叉核对时，在其 op_graph 目录找不到 add_example_graph_infer.cpp；InferDataType 实际与 InferShape 链式注册在 op_host/add_example_infershape.cpp，与文档描述的文件位置和注册宏不一致，产生困惑", "conseqBad": false, "fix": "说明两种合法注册方式（AI Core 在 op_host 用 IMPL_OP_INFERSHAPE 链式 .InferDataType；AI CPU 在 op_graph 用 IMPL_OP 单独注册），或把主示例改用与结构一致的 add_example_aicpu，避免读者按 add_example 对照时扑空", "quote": "│   ├── ${op_name}_graph_infer.cpp      # InferDataType文件，实现算子类型推导，在运行时推导输出dataType … // 注册InferDataType\nIMPL_OP(AddExample).InferDataType(InferDataTypeAddExample);", "code": "文档主示例链接 add_example；实际 InferDataType 注册在 examples/add_example/op_host/add_example_infershape.cpp:87（IMPL_OP_INFERSHAPE 链式），add_example/op_graph 无 graph_infer.cpp；符合文档结构的是 examples/add_example_aicpu/op_graph/add_example_graph_infer.cpp:46", "rc": "", "fig": {"kind": "conflict", "a": {"tag": "文档结构/交付件2", "val": "op_graph/${op_name}_graph_infer.cpp，IMPL_OP(AddExample).InferDataType(...)"}, "b": {"tag": "add_example 实际(AI Core)", "val": "op_host/add_example_infershape.cpp，IMPL_OP_INFERSHAPE(AddExample).InferShape(...).InferDataType(...)，op_graph 内无 graph_infer.cpp"}}, "figNote": "文中点名的 <b>AI Core 主示例 add_example<\/b> 把 InferDataType 与 InferShape <b>合并注册在 op_host<\/b>，并无 <span class=\"bad\">独立 graph_infer.cpp<\/span>；仅 add_example_aicpu 才符合文档所述结构（op_graph/add_example_graph_infer.cpp 用 IMPL_OP 单独注册）"}, {"idx": 17, "doc": "docs/zh/install/build.md", "cat": "C6", "impact": "misleading", "type": "untrust", "check": "code", "suspected": false, "prob": "-j 默认非8(实为CPU核数),且无超核自动clamp", "conseq": "开发者以为默认仅8线程并相信超核会被裁剪，实际默认按整机核数并发、传入大值也不收敛", "conseqBad": false, "fix": "改为：默认线程数为机器CPU核心数(nproc)，-j 指定值不会自动裁剪到核数", "quote": "-j${n} | 可选 | 指定编译线程数，${n}为具体线程数，默认值为8（如：-j8）；若线程数超过CPU核心数，会自动调整为CPU核心数。", "code": "build.sh:643 `THREAD_NUM=$(grep -c ^processor /proc/cpuinfo)`(默认=核数);build.sh:797 `j) THREAD_NUM=$OPTARG`(无clamp)", "rc": "", "fig": {"kind": "conflict", "a": {"tag": "build.md -j 说明", "val": "默认值为8;超CPU核数自动调整为核数"}, "b": {"tag": "build.sh:643/797", "val": "默认=nproc(CPU核数);-j 直接透传不clamp"}}, "figNote": "<span class=\"bad\">默认8/超核自动调整<\/span> 实为 <b>默认=CPU核数、不做裁剪<\/b>"}, {"idx": 18, "doc": "docs/zh/install/build.md", "cat": "C6", "impact": "misleading", "type": "untrust", "check": "code", "suspected": false, "prob": "--soc 称每次只支持1个SOC,实支持逗号分隔多个", "conseq": "开发者误以为不能一次构建多SOC，会拆成多次 build 浪费时间，或不知可生成多SOC合并包", "conseqBad": false, "fix": "改为：--soc 支持逗号分隔指定多个NPU型号，一次编译生成多SOC产物", "quote": "--soc | 可选 | 指定NPU型号，每次编译只支持1个NPU型号。", "code": "build.sh:1027 `IFS=',' read -ra COMPUTE_UNIT`+1029-1037 校验循环+1131-1136 逐 unit 编译;build.sh:379 --help `--soc=ascend910b,ascend910_93,ascend950 use ',' to separate different SoC`", "rc": "", "fig": {"kind": "conflict", "a": {"tag": "build.md --soc", "val": "每次编译只支持1个NPU型号"}, "b": {"tag": "build.sh:1027/--help(L379)", "val": "逗号分隔多SOC,循环逐个编译"}}, "figNote": "脚本 --help 自带示例 <b>--soc=ascend910b,ascend910_93,ascend950<\/b>,与文档<span class=\"bad\">只支持1个<\/span>互相矛盾"}, {"idx": 19, "doc": "docs/zh/install/build.md", "cat": "C2", "impact": "misleading", "type": "untrust", "check": "code", "suspected": false, "prob": "参数表列 --valgrind,但脚本无此选项会报错退出", "conseq": "开发者若按表使用 --valgrind，build 立即 `Invalid option: --valgrind` 退出1，整次构建失败", "conseqBad": false, "fix": "删除 --valgrind 行，或在 build.sh 补 valgrind 解析分支后再保留", "quote": "| --valgrind       | 可选     | 预留参数，开发者暂不需要关注。 |", "code": "build.sh:805-919 case 无 `valgrind)` 分支;RELEASE_TARGETS(build.sh:12)=ophost/opapi/onnxplugin/opgraph/tfplugin 不含 valgrind→落入 892 `*)`→895 `print_error \"Invalid option: --$OPTARG\"; exit 1`。ENABLE_VALGRIND(666) 恒为 FALSE,无任何选项可置 TRUE", "rc": "", "fig": {"kind": "conflict", "a": {"tag": "build.md 参数表", "val": "--valgrind 可选(预留参数)"}, "b": {"tag": "build.sh 解析(805-919)", "val": "无 valgrind 分支→Invalid option 退出1"}}, "figNote": "`--cov` 同标『预留参数』但脚本有解析；<span class=\"bad\">--valgrind<\/span> 无解析分支,传入即 <b>报错退出<\/b>"}, {"idx": 21, "doc": "docs/zh/install/quick_install.md", "cat": "C6", "impact": "misleading", "type": "untrust", "check": "code", "suspected": false, "prob": "install_deps.sh 不装 make/googletest，与「一键安装上述依赖」不符", "conseq": "缺 make 的环境照做后仍无 make，后续 build 才报错且脚本不提示", "conseqBad": false, "fix": "文档注明 install_deps.sh 仅覆盖 python/gcc/cmake/pigz/dos2unix/patch，make 与 googletest 需另行安装(或脚本补齐)", "quote": "上述依赖可通过项目脚本一键安装，操作步骤如下：……先通过项目根目录install_deps.sh一键安装上述依赖", "code": "install_deps.sh:513-529 main()(只调 install_python/gcc/cmake/pigz/dos2unix/patch);425-511 check_dependencies_silent 也只查 Python/GCC/CMake/dos2unix/pigz,无 make/googletest", "rc": "", "fig": {"kind": "conflict", "a": {"tag": "文档:一键安装上述依赖", "val": "列表含 make、googletest"}, "b": {"tag": "install_deps.sh main()", "val": "仅装 python/gcc/cmake/pigz/dos2unix/patch"}}, "figNote": "install_deps.sh 既<span class=\"bad\">不安装也不检查<\/span> make 与 googletest"}, {"idx": 22, "doc": "docs/zh/invocation/quick_op_invocation.md", "cat": "C6", "impact": "misleading", "type": "untrust", "check": "code", "suspected": false, "prob": "aclnn示例输出贴错:test_aclnn_add_example实际不打印\"mean result[2046]\"", "conseq": "开发者照做后看到完全不同格式/索引的输出,误以为没跑对或贴错算子", "conseqBad": false, "fix": "按 test_aclnn_add_example.cpp 真实打印格式贴示例输出(result[0..9],格式 add_example first input[i]... result[i] is: 2.000000)", "quote": "运行结果以test_aclnn_add_example为例：\n\n   mean result[2046] is 2.000000\n   mean result[2047] is 2.000000", "code": "examples/add_example/examples/test_aclnn_add_example.cpp:46-50 (size=min(shape,10);LOG_PRINT(\"add_example first input[%ld] is: %f, second input[%ld] is: %f, result[%ld] is: %f\"))", "rc": "copy_paste_not_updated", "fig": {"kind": "conflict", "a": {"tag": "文档示例输出", "val": "mean result[2046] is 2.000000"}, "b": {"tag": "test_aclnn_add_example.cpp", "val": "add_example first input[0] is:... result[0] is: 2.000000(仅前10个)"}}, "figNote": "代码只 LOG_PRINT 前10个元素(index 0-9)且无 <span class=\"bad\">mean result<\/span> 字样;<b>结果值2.0对、格式与索引2046/2047全错<\/b>"}, {"idx": 23, "doc": "docs/zh/invocation/quick_op_invocation.md", "cat": "C6", "impact": "misleading", "type": "untrust", "check": "doc", "suspected": false, "prob": "GE图模式称产物在/build/bin,但其run.sh从build/直接运行、CMakeLists未设./bin输出", "conseq": "开发者到 build/bin 找不到可执行文件(实际在 build/ 下),定位产物受阻", "conseqBad": false, "fix": "GE 段产物位置改为 build/(或给 GE CMakeLists 也设 ./bin 输出并在 run.sh 加 cd bin),与本段 run.sh 一致", "quote": "默认在当前执行路径`/build/bin`下生成可执行文件${test_geir_op_name}，运行结果如下：", "code": "文档内 GE run.sh(L538-543 无 cd bin)与 GE CMakeLists(L478-521 无 CMAKE_RUNTIME_OUTPUT_DIRECTORY),对比 aclnn 段 L337/L392 cd bin", "rc": "copy_paste_not_updated", "fig": {"kind": "conflict", "a": {"tag": "GE正文 L553", "val": "/build/bin 下生成可执行文件"}, "b": {"tag": "GE run.sh L538-543 / CMakeLists L478-521", "val": "make 后直接 ./${test_geir_op_name}(build/ 下),无 cd bin、未设 ./bin 输出"}}, "figNote": "aclnn 段 run.sh 有 <b>cd bin<\/b> 且 CMakeLists 设 CMAKE_RUNTIME_OUTPUT_DIRECTORY \"./bin\";GE 段两者都没有,正文的 <span class=\"bad\">/build/bin<\/span> 是从 aclnn 段复制未改"}, {"idx": 26, "doc": "docs/zh/op_api_list.md", "cat": "C4", "impact": "misleading", "type": "untrust", "check": "doc", "suspected": false, "prob": "aclnnLayerNormBackward 说明把正向写成 aclnnNorm(lp_norm_v2),应为 acl…", "conseq": "读者误以为该反向算子配 aclnnNorm(矩阵/向量范数),去看错正向文档、误判输入输出语义", "conseqBad": false, "fix": "说明改为\"[aclnnLayerNorm](../../norm/layer_norm_v4/docs/aclnnLayerNorm...)的反向传播\"", "quote": "| [aclnnLayerNormBackward](../../norm/layer_norm_grad_v3/docs/aclnnLayerNormBackward.md) | [aclnnNorm](../../norm/lp_norm_v2/docs/aclnnNorm.md)的反向传播。用于计算输入张量的梯度...", "code": "正向 aclnnLayerNorm 在 norm/layer_norm_v4(索引 L299);被误引的 aclnnNorm 在 norm/lp_norm_v2/docs/aclnnNorm.md(索引 L346,功能为\"返回矩阵/向量范数\",与 LayerNorm 无关)", "rc": "copy_paste_not_updated", "fig": {"kind": "conflict", "a": {"tag": "L300 说明", "val": "aclnnLayerNormBackward = \"aclnnNorm(lp_norm_v2)的反向传播\""}, "b": {"tag": "接口名/路径+同类行惯例", "val": "实为 aclnnLayerNorm(layer_norm_v4)的反向(grad_v3)"}}, "figNote": "全表所有反向行均链向真正向(如 aclnnGroupNormBackward→aclnnGroupNorm、aclnnRmsNormGrad→aclnnRmsNorm),仅 L300 <span class=\"bad\">链到无关的 aclnnNorm<\/span>"}, {"idx": 28, "doc": "docs/zh/op_list.md", "cat": "C1", "impact": "misleading", "type": "untrust", "check": "code", "suspected": false, "prob": "softshrink 行 href 误指 softsign_grad,落到错算子", "conseq": "点击列表中的 softshrink 进入的是 SoftsignGrad 文档(前向激活↔反向梯度,完全不同算子);真正的 activation/softshrink/README.md(# Softshrink)在整张算子表中没有任何入口可达,读者无法从列表导航到该算子的说明与示例。", "conseqBad": false, "fix": "将该行 href 改为 ../../activation/softshrink/README.md", "quote": "<td><a href=\"../../activation/softsign_grad/README.md\">softshrink<\/a><\/td> ... <td>对输入张量应用Softshrink激活函数。<\/td>", "code": "activation/softshrink/README.md 存在(标题 # Softshrink);docs/zh/op_list.md L632 href 误指 activation/softsign_grad/README.md(与 L652 softsign_grad 行 href 相同);grep 确认无任何 href 指向 activation/softshrink/README", "rc": "copy_paste_not_updated", "fig": {"kind": "conflict", "a": {"tag": "op_list L632(文档)", "val": "\"softshrink\" → activation/softsign_grad/README.md(# SoftsignGrad)"}, "b": {"tag": "实际目录", "val": "activation/softshrink/README.md(# Softshrink)存在,应指向它"}}, "figNote": "点击 softshrink 落到 <span class=\"bad\">SoftsignGrad<\/span> 文档;真正的 <b>Softshrink<\/b> README 全表无入口。href 与 L652 softsign_grad 行完全相同,系复制后未改。"}];
+var CODEROOT = "ops-nn";
+var GENTIME = "2026-06-27 15:48";
+
+var CATS=[['C1','引用找不到','A'],['C2','名字 / 接口 / 参数与代码对不上','A'],['C3','贴出的代码片段本身有错','A'],
+  ['C4','文档自相矛盾','A'],['C5','支持范围声明有误','A'],['C6','运行结果 / 数值 / 行为说错','A'],
+  ['J1','概念讲错 / 术语用混','B'],['J2','缺步骤 / 没讲为什么 / 指代含糊','B']];
+var CATNAME={},CATSEG={},CATIDX={};
+CATS.forEach(function(c,i){CATNAME[c[0]]=c[1];CATSEG[c[0]]=c[2];CATIDX[c[0]]=i;});
+var CHECK={code:'须查代码',doc:'查文档',rule:'查规则'};
+var st={view:'type',sev:null,conf:null,cat:null};
+
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function el(html){var t=document.createElement('template');t.innerHTML=html.trim();return t.content.firstChild;}
+function pct(n,d){return d? (n/d*100).toFixed(1)+'%':'0%';}
+function toast(m){var t=document.getElementById('toast');t.textContent=m||'已复制';t.classList.add('show');setTimeout(function(){t.classList.remove('show');},1100);}
+function copyText(s){try{navigator.clipboard.writeText(s);}catch(e){var ta=document.createElement('textarea');ta.value=s;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');}catch(_){}document.body.removeChild(ta);}toast('已复制');}
+function pass(d){if(st.sev&&d.impact!==st.sev)return false;if(st.conf==='confirmed'&&d.suspected)return false;if(st.conf==='suspected'&&!d.suspected)return false;if(st.cat&&d.cat!==st.cat)return false;return true;}
+
+/* ---------- Finding 卡片(移植自 Finding.dc.html) ---------- */
+function renderFig(fig){
+  if(!fig) return '';
+  if(fig.kind==='conflict'){
+    return '<div style="display:flex;gap:10px;align-items:stretch;margin-top:14px;flex-wrap:wrap">'
+      +'<div style="flex:1 1 240px;min-width:0;background:#FBECEC;border:1px solid #EFCDCE;border-radius:9px;padding:11px 14px"><div style="font-size:10px;font-weight:700;letter-spacing:.05em;color:#A60A12;margin-bottom:5px;text-transform:uppercase">文档写的 · '+esc(fig.a&&fig.a.tag)+'</div><div style="font-size:12.5px;line-height:1.55;color:#1B1A18;font-family:ui-monospace,Menlo,monospace;word-break:break-word">'+esc(fig.a&&fig.a.val)+'</div></div>'
+      +'<div style="display:flex;align-items:center;color:#C2BAAF;font-size:16px;font-weight:700">→</div>'
+      +'<div style="flex:1 1 240px;min-width:0;background:#EDF6F0;border:1px solid #CBE5D5;border-radius:9px;padding:11px 14px"><div style="font-size:10px;font-weight:700;letter-spacing:.05em;color:#0F6A3C;margin-bottom:5px;text-transform:uppercase">实际应为 · '+esc(fig.b&&fig.b.tag)+'</div><div style="font-size:12.5px;line-height:1.55;color:#1B1A18;font-family:ui-monospace,Menlo,monospace;word-break:break-word">'+esc(fig.b&&fig.b.val)+'</div></div></div>';
+  }
+  if(fig.kind==='gap'){
+    var have=(fig.have&&fig.have.items||[]).map(function(x){return '<div style="font-size:12px;line-height:1.5;color:#26352C;font-family:ui-monospace,Menlo,monospace;padding:2px 0">'+esc(x)+'</div>';}).join('');
+    var doc=(fig.doc&&fig.doc.items||[]).map(function(x){return '<div style="font-size:12px;line-height:1.5;color:#6B6258;font-family:ui-monospace,Menlo,monospace;padding:2px 0">'+esc(x)+'</div>';}).join('');
+    return '<div style="display:flex;gap:10px;align-items:stretch;margin-top:14px;flex-wrap:wrap">'
+      +'<div style="flex:1 1 240px;min-width:0;background:#EDF6F0;border:1px solid #CBE5D5;border-radius:9px;padding:11px 14px"><div style="font-size:10px;font-weight:700;letter-spacing:.05em;color:#0F6A3C;margin-bottom:6px;text-transform:uppercase">实际有 · '+esc(fig.have&&fig.have.tag)+'</div>'+have+'</div>'
+      +'<div style="flex:1 1 240px;min-width:0;background:#FBF6EF;border:1px dashed #DDC79E;border-radius:9px;padding:11px 14px"><div style="font-size:10px;font-weight:700;letter-spacing:.05em;color:#8E6418;margin-bottom:6px;text-transform:uppercase">文档声称 · '+esc(fig.doc&&fig.doc.tag)+'</div>'+doc+'</div></div>';
+  }
+  if(fig.kind==='incons'){
+    var rows=(fig.items||[]).map(function(it){return '<div style="display:flex;gap:12px;padding:9px 14px;border-bottom:1px solid #F1ECE5;background:#FCFAF7"><span style="flex:0 0 34%;font-size:11px;color:#8E6418;font-weight:600;font-family:ui-monospace,Menlo,monospace;word-break:break-word">'+esc(it.loc)+'</span><span style="flex:1;font-size:12.5px;color:#1B1A18;font-family:ui-monospace,Menlo,monospace;word-break:break-word">'+esc(it.val)+'</span></div>';}).join('');
+    var nt=fig.note?'<div style="padding:9px 14px;font-size:12px;color:#0F6A3C;background:#EDF6F0">统一方向：'+esc(fig.note)+'</div>':'';
+    return '<div style="margin-top:14px;border:1px solid #EAE5DF;border-radius:9px;overflow:hidden">'+rows+nt+'</div>';
+  }
+  return '';
+}
+function renderCard(d){
+  var sev = d.impact==='blocker'
+    ? '<span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;color:#A60A12;background:#FBECEC;border:1px solid #EFCDCE;border-radius:6px;padding:3px 9px"><span style="width:7px;height:7px;border-radius:50%;background:#C7000B"></span>阻断</span>'
+    : '<span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;color:#8E6418;background:#F7EFE0;border:1px solid #E7D6B4;border-radius:6px;padding:3px 9px"><span style="width:7px;height:7px;border-radius:50%;background:#BE8B3C"></span>误导</span>';
+  var conf = d.suspected
+    ? '<span style="font-size:11px;font-weight:600;color:#938C83;background:transparent;border:1px dashed #CDC7BE;border-radius:6px;padding:3px 9px">疑似</span>'
+    : '<span style="font-size:11px;font-weight:600;color:#5B554E;background:#F7F4F0;border:1px solid #EAE5DF;border-radius:6px;padding:3px 9px">确认</span>';
+  var catCheck = esc(d.cat||'') + (d.check?(' · '+(CHECK[d.check]||d.check)):'');
+  var conseq='';
+  if(d.conseq) conseq = d.conseqBad
+    ? '<div style="margin-top:7px;font-size:13px;line-height:1.6;color:#A60A12"><span style="opacity:.65">→ </span>'+esc(d.conseq)+'</div>'
+    : '<div style="margin-top:7px;font-size:13px;line-height:1.6;color:#5B554E"><span style="opacity:.5">→ </span>'+esc(d.conseq)+'</div>';
+  var note = d.figNote ? '<div style="margin-top:10px;font-size:12.5px;line-height:1.62;color:#5B554E"><span class="fign">'+d.figNote+'</span></div>' : '';
+  var fix = d.fix ? '<div style="margin-top:13px;display:flex;gap:10px;background:#EDF6F0;border:1px solid #CBE5D5;border-left:3px solid #1C7A4A;border-radius:8px;padding:10px 14px"><span style="color:#0F6A3C;font-weight:800;font-size:13px;flex:0 0 auto;line-height:1.5">✓</span><div style="font-size:13px;line-height:1.55;color:#15482F"><b style="font-weight:700;color:#0F6A3C">应改为</b>　'+esc(d.fix)+'</div></div>' : '';
+  var more='';
+  if(d.quote){
+    more='<details style="margin-top:12px"><summary style="font-size:11.5px;font-weight:600;color:#7C766D;display:inline-flex;align-items:center;gap:6px;user-select:none">＋ 原文引证 · 代码位置</summary><div style="margin-top:9px">'
+      +'<div style="font-size:10px;font-weight:700;letter-spacing:.08em;color:#A39B91;margin-bottom:5px">原文引证</div>'
+      +'<pre style="margin:0;font-size:11.5px;line-height:1.6;color:#3C372F;font-family:ui-monospace,Menlo,monospace;background:#F7F4F0;border:1px solid #EAE5DF;border-radius:7px;padding:11px 13px;white-space:pre-wrap;word-break:break-word">'+esc(d.quote)+'</pre>'
+      +(d.code?'<div style="font-size:10px;font-weight:700;letter-spacing:.08em;color:#A39B91;margin:11px 0 5px">代码位置 / 去仓核对</div><div style="font-size:11.5px;line-height:1.6;color:#5B554E;font-family:ui-monospace,Menlo,monospace;background:#FCFAF7;border:1px solid #F1ECE5;border-radius:7px;padding:9px 12px;white-space:pre-wrap;word-break:break-word">'+esc(d.code)+'</div>':'')
+      +(d.rc?'<div style="margin-top:9px;font-size:11px;color:#A39B91;font-family:ui-monospace,Menlo,monospace">成因：'+esc(d.rc)+'</div>':'')
+      +'</div></details>';
+  }
+  var c=el('<article class="card" id="card-'+d.idx+'" style="border-top:1px solid #F1ECE5;padding:20px 26px;scroll-margin-top:150px;transition:background .12s"></article>');
+  c.innerHTML='<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:11px">'
+    +sev+conf
+    +'<span style="font-size:11px;color:#A39B91;font-family:ui-monospace,Menlo,monospace">'+catCheck+'</span>'
+    +'<span style="flex:1 1 30px"></span>'
+    +'<span style="font-size:11px;color:#B7B0A6;font-family:ui-monospace,Menlo,monospace">#'+d.idx+'</span>'
+    +'<span style="font-size:11px;color:#7C766D;font-family:ui-monospace,Menlo,monospace;max-width:46%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(d.doc)+'">'+esc(d.doc)+'</span>'
+    +'</div>'
+    +'<div style="font-size:15.5px;font-weight:650;color:#1B1A18;line-height:1.5;letter-spacing:-.005em">'+esc(d.prob)+'</div>'
+    +conseq+renderFig(d.fig)+note+fix+more;
+  return c;
+}
+
+/* ---------- chip / 分组 ---------- */
+function chipBtn(label,n,on,red,cb){
+  var bg=on?(red?'#C7000B':'#1B1A18'):'#fff', col=on?'#fff':'#5B554E', bd=on?(red?'#C7000B':'#1B1A18'):'#EAE5DF';
+  var b=el('<button class="chip" style="font-size:12.5px;font-weight:600;border-radius:9px;padding:6px 13px;display:inline-flex;align-items:center;gap:7px;background:'+bg+';color:'+col+';border:1px solid '+bd+'"></button>');
+  b.innerHTML=esc(label)+(n!=null?' <span style="font-weight:700;opacity:.6">'+n+'</span>':'');
+  b.addEventListener('click',cb);return b;
+}
+function groupKey(d){return st.view==='file'?d.doc:d.cat;}
+function buildGroups(items){
+  var map={},order=[];
+  items.forEach(function(d){var k=groupKey(d);if(!map[k]){map[k]=[];order.push(k);}map[k].push(d);});
+  var gs=order.map(function(k){
+    var arr=map[k].slice().sort(function(a,b){return (a.impact==='blocker'?0:1)-(b.impact==='blocker'?0:1)||a.idx-b.idx;});
+    var blk=arr.filter(function(x){return x.impact==='blocker';}).length;
+    return {key:k,items:arr,blk:blk,mis:arr.length-blk};
+  });
+  if(st.view==='type') gs.sort(function(a,b){return CATIDX[a.key]-CATIDX[b.key];});
+  else gs.sort(function(a,b){return b.blk-a.blk || b.items.length-a.items.length;});
+  return gs;
+}
+function numBox(v,l){return '<div style="background:#FAF7F2;border:1px solid #EFEAE2;border-radius:12px;padding:14px 20px;text-align:center;min-width:90px"><div style="font-size:27px;font-weight:800;line-height:1;letter-spacing:-.02em">'+v+'</div><div style="font-size:11px;color:#938C83;margin-top:7px">'+l+'</div></div>';}
+
+/* ---------- 渲染 ---------- */
+function renderAll(){
+  var total=DATA.length;
+  var docs={};DATA.forEach(function(d){docs[d.doc]=1;});
+  var nBlocker=DATA.filter(function(d){return d.impact==='blocker';}).length, nMis=total-nBlocker;
+  var nUntrust=DATA.filter(function(d){return d.type==='untrust';}).length;
+  var nMissing=DATA.filter(function(d){return d.type==='missing';}).length;
+  var nReadable=DATA.filter(function(d){return d.type==='readable';}).length;
+  var nA=DATA.filter(function(d){return CATSEG[d.cat]==='A';}).length, nB=total-nA;
+  var nSus=DATA.filter(function(d){return d.suspected;}).length;
+
+  document.getElementById('metarow').innerHTML=
+     '<span>问题 <b style="color:#5B554E;font-weight:600">'+total+' 条</b></span>'
+    +'<span>覆盖文档 <b style="color:#5B554E;font-weight:600">'+Object.keys(docs).length+' 篇</b></span>'
+    +'<span>分类 <b style="color:#5B554E;font-weight:600">8 类 · C1–C6 / J1–J2</b></span>'
+    +'<span>受众 <b style="color:#5B554E;font-weight:600">算子仓维护者</b></span>'
+    +'<span>代码根 <code style="font-family:ui-monospace,Menlo,monospace;color:#5B554E">'+esc(CODEROOT)+'</code></span>'
+    +'<span>生成 <code style="font-family:ui-monospace,Menlo,monospace;color:#5B554E">'+esc(GENTIME)+'</code></span>';
+
+  document.getElementById('summary').innerHTML=
+    '<div style="background:#fff;border:1px solid #EAE5DF;border-radius:16px;padding:24px 28px;margin-top:20px;box-shadow:0 1px 2px rgba(60,45,30,.04),0 14px 32px -14px rgba(60,45,30,.12)"><div style="display:flex;gap:42px;flex-wrap:wrap;align-items:flex-start"><div style="flex:1 1 360px;min-width:300px">'
+    +'<div style="font-size:11px;font-weight:700;color:#A39B91;letter-spacing:.08em;margin-bottom:11px">开发者影响分布 · 阻断优先修</div>'
+    +'<div style="display:flex;height:32px;border-radius:9px;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(60,45,30,.05)"><span style="background:#C7000B;width:'+pct(nBlocker,total)+';display:flex;align-items:center;justify-content:center;color:#fff;font-size:11.5px;font-weight:700;min-width:24px">'+nBlocker+'</span><span style="background:#BE8B3C;width:'+pct(nMis,total)+';display:flex;align-items:center;justify-content:center;color:#fff;font-size:11.5px;font-weight:700;min-width:24px">'+nMis+'</span></div>'
+    +'<div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:13px;font-size:12.5px;color:#5B554E"><span style="display:inline-flex;align-items:center;gap:7px"><span style="width:9px;height:9px;border-radius:3px;background:#C7000B"></span>阻断 <b style="color:#1B1A18">'+nBlocker+'</b> <span style="color:#A39B91">照做必失败</span></span><span style="display:inline-flex;align-items:center;gap:7px"><span style="width:9px;height:9px;border-radius:3px;background:#BE8B3C"></span>误导 <b style="color:#1B1A18">'+nMis+'</b> <span style="color:#A39B91">理解出偏差</span></span></div>'
+    +'<div style="font-size:11px;font-weight:700;color:#A39B91;letter-spacing:.08em;margin:22px 0 11px">缺陷类型分布 · 决定图示形态</div>'
+    +'<div style="display:flex;height:10px;border-radius:5px;overflow:hidden;background:#F1ECE5"><span style="background:#B0703F;width:'+pct(nUntrust,total)+'"></span><span style="background:#A39A8C;width:'+pct(nMissing,total)+'"></span><span style="background:#CBB377;width:'+pct(nReadable,total)+'"></span></div>'
+    +'<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:11px;font-size:12px;color:#5B554E"><span style="display:inline-flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:2px;background:#B0703F"></span>不可信 · 冲突图 <b style="color:#1B1A18">'+nUntrust+'</b></span><span style="display:inline-flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:2px;background:#A39A8C"></span>缺失 · 缺口图 <b style="color:#1B1A18">'+nMissing+'</b></span><span style="display:inline-flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:2px;background:#CBB377"></span>易读 · 并列图 <b style="color:#1B1A18">'+nReadable+'</b></span></div>'
+    +'</div><div style="display:flex;gap:10px;flex-wrap:wrap">'
+    +numBox(total,'问题总数')+numBox(nA,'代码可核 A')+numBox(nB,'教学判断 B')+numBox(nSus,'疑似 · 待复核')
+    +'</div></div></div>';
+
+  var blk=DATA.filter(function(d){return d.impact==='blocker';}).sort(function(a,b){return a.idx-b.idx;});
+  var bn=document.getElementById('banner');
+  if(blk.length){
+    var bitems=blk.map(function(b){return '<a href="#card-'+b.idx+'" style="font-size:11.5px;color:#A60A12;background:#fff;border:1px solid #EFCDCE;border-radius:7px;padding:4px 9px;text-decoration:none;font-family:ui-monospace,Menlo,monospace;white-space:nowrap" title="'+esc(b.prob)+'">'+esc(b.cat)+' · #'+b.idx+'</a>';}).join('');
+    bn.innerHTML='<div style="margin-top:18px;background:linear-gradient(100deg,#FBECEC,#FDF6F1);border:1px solid #EFCDCE;border-left:4px solid #C7000B;border-radius:12px;padding:16px 22px;box-shadow:0 1px 2px rgba(60,45,30,.05)"><div style="display:flex;align-items:baseline;gap:11px;flex-wrap:wrap"><span style="font-weight:800;color:#C7000B;font-size:13.5px">阻断级 · '+blk.length+' 条须优先修</span><span style="font-size:12px;color:#9A6A5A">照文档照做会直接编译 / 链接 / 运行失败 — 点徽章跳到对应条目</span></div><div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:11px">'+bitems+'</div></div>';
+  } else bn.innerHTML='';
+
+  var ov=document.getElementById('overview');
+  if(st.view==='type'){
+    var rows=CATS.map(function(c){
+      var code=c[0],arr=DATA.filter(function(d){return d.cat===code;});
+      var b=arr.filter(function(x){return x.impact==='blocker';}).length,m=arr.length-b;
+      var active=st.cat===code, seg=c[2]==='A'?'代码可核':'教学判断';
+      var chipBg=active?'#1B1A18':'#F2EEE8',chipCol=active?'#fff':'#5B554E';
+      return '<div class="ovrow" data-cat="'+code+'" style="display:flex;align-items:center;gap:13px;padding:10px 14px;border-radius:9px;cursor:pointer;'+(active?'background:#F7F4F0;':'')+'">'
+        +'<span style="font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:700;color:'+chipCol+';background:'+chipBg+';border-radius:6px;padding:3px 9px;flex:0 0 auto">'+code+'</span>'
+        +'<div style="flex:1 1 220px;min-width:0"><div style="font-size:13.5px;font-weight:650;color:#1B1A18;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c[1])+'</div><div style="font-size:11px;color:#A39B91">'+seg+'</div></div>'
+        +'<div style="flex:0 0 130px;height:8px;border-radius:5px;overflow:hidden;display:flex;background:#F1ECE5"><span style="background:#C7000B;width:'+pct(b,arr.length)+'"></span><span style="background:#BE8B3C;width:'+pct(m,arr.length)+'"></span></div>'
+        +'<div style="flex:0 0 132px;text-align:right;font-size:11.5px;color:#7C766D;font-family:ui-monospace,Menlo,monospace"><span style="color:#C7000B;font-weight:700">'+b+'</span> 阻断 · <span style="color:#8E6418;font-weight:700">'+m+'</span> 误导</div>'
+        +'<div style="flex:0 0 40px;text-align:right;font-size:17px;font-weight:800;color:#1B1A18">'+arr.length+'</div></div>';
+    }).join('');
+    ov.innerHTML='<div style="margin-top:22px"><div style="display:flex;align-items:baseline;gap:10px;margin-bottom:10px"><div style="font-size:15px;font-weight:700;color:#1B1A18">8 类问题速览</div><div style="font-size:12px;color:#A39B91">点任意一行 = 只看该类 · 各类形态相似，可批量处理</div></div><div style="background:#fff;border:1px solid #EAE5DF;border-radius:14px;padding:8px;box-shadow:0 1px 2px rgba(60,45,30,.04)">'+rows+'</div></div>';
+    Array.prototype.forEach.call(ov.querySelectorAll('.ovrow'),function(r){r.addEventListener('click',function(){var c=r.getAttribute('data-cat');st.cat=(st.cat===c?null:c);renderAll();});});
+  } else ov.innerHTML='';
+
+  var ft=document.getElementById('filterTop');ft.innerHTML='';
+  ft.appendChild(el('<span style="font-size:11px;color:#A39B91;letter-spacing:.04em">视图</span>'));
+  [['type','按类型'],['file','按文件']].forEach(function(v){ft.appendChild(chipBtn(v[1],null,st.view===v[0],false,function(){st.view=v[0];if(v[0]==='file')st.cat=null;renderAll();}));});
+  ft.appendChild(el('<span style="width:1px;height:18px;background:#E0DACF;margin:0 5px"></span>'));
+  ft.appendChild(el('<span style="font-size:11px;color:#A39B91;letter-spacing:.04em">严重度</span>'));
+  ft.appendChild(chipBtn('阻断',nBlocker,st.sev==='blocker',true,function(){st.sev=st.sev==='blocker'?null:'blocker';renderAll();}));
+  ft.appendChild(chipBtn('误导',nMis,st.sev==='misleading',false,function(){st.sev=st.sev==='misleading'?null:'misleading';renderAll();}));
+  ft.appendChild(el('<span style="font-size:11px;color:#A39B91;letter-spacing:.04em;margin-left:4px">确定度</span>'));
+  ft.appendChild(chipBtn('确认',total-nSus,st.conf==='confirmed',false,function(){st.conf=st.conf==='confirmed'?null:'confirmed';renderAll();}));
+  ft.appendChild(chipBtn('疑似',nSus,st.conf==='suspected',false,function(){st.conf=st.conf==='suspected'?null:'suspected';renderAll();}));
+  if(st.sev||st.conf||st.cat){
+    ft.appendChild(el('<span style="flex:1 1 20px"></span>'));
+    var rb=el('<button class="chip" style="font-size:12px;font-weight:600;color:#A60A12;background:transparent;border:1px solid #EFCDCE;border-radius:8px;padding:5px 12px">✕ 清除筛选</button>');
+    rb.addEventListener('click',function(){st.sev=null;st.conf=null;st.cat=null;renderAll();});ft.appendChild(rb);
+  }
+  var fc=document.getElementById('filterCat');fc.innerHTML='';
+  fc.appendChild(el('<span style="font-size:11px;color:#A39B91;letter-spacing:.04em">类型</span>'));
+  CATS.forEach(function(c){var n=DATA.filter(function(d){return d.cat===c[0];}).length;fc.appendChild(chipBtn(c[0],n,st.cat===c[0],false,function(){st.cat=st.cat===c[0]?null:c[0];renderAll();}));});
+
+  var visible=DATA.filter(pass);
+  document.getElementById('shown').innerHTML='显示 <b style="color:#1B1A18;font-weight:700">'+visible.length+'</b> / '+total+' 条问题';
+  var host=document.getElementById('sections');host.innerHTML='';
+  if(!visible.length){host.appendChild(el('<div style="margin-top:24px;text-align:center;font-size:13px;color:#A39B91;padding:40px 0">没有符合当前筛选的问题。</div>'));return;}
+  buildGroups(visible).forEach(function(g){
+    var chip = st.view==='type' ? g.key : '文档';
+    var title = st.view==='type' ? CATNAME[g.key] : g.key;
+    var sub = st.view==='type' ? (CATSEG[g.key]==='A'?'代码可核 · 对错分明':'教学判断 · 需复核') : '';
+    var d=el('<div style="margin-top:16px;border:1px solid #EAE5DF;border-radius:14px;overflow:hidden;background:#fff;box-shadow:0 1px 2px rgba(60,45,30,.04),0 14px 32px -16px rgba(60,45,30,.10);scroll-margin-top:150px"></div>');
+    d.innerHTML='<div style="display:flex;align-items:center;gap:13px;padding:15px 24px;background:#FCFAF7;border-bottom:1px solid #F1ECE5"><span style="font-family:ui-monospace,Menlo,monospace;font-size:12.5px;font-weight:700;color:#5B554E;background:#F2EEE8;border:1px solid #E6E0D8;border-radius:7px;padding:4px 10px;white-space:nowrap">'+esc(chip)+'</span><div style="flex:1 1 auto;min-width:0"><div style="font-size:15px;font-weight:700;color:#1B1A18;letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(title)+'</div><div style="font-size:11.5px;color:#A39B91">'+esc(sub)+'</div></div><div style="flex:0 0 110px;height:8px;border-radius:5px;overflow:hidden;display:flex;background:#F1ECE5"><span style="background:#C7000B;width:'+pct(g.blk,g.items.length)+'"></span><span style="background:#BE8B3C;width:'+pct(g.mis,g.items.length)+'"></span></div><span style="flex:0 0 auto;font-size:13px;font-weight:800;color:#1B1A18;white-space:nowrap">'+g.items.length+' 条</span></div>';
+    var body=el('<div></div>');
+    g.items.forEach(function(it){body.appendChild(renderCard(it));});
+    d.appendChild(body);host.appendChild(d);
+  });
+}
+
+document.getElementById('copyBtn').addEventListener('click',function(){
+  var arr=DATA.filter(pass).slice().sort(function(a,b){return (a.impact==='blocker'?0:1)-(b.impact==='blocker'?0:1)||a.idx-b.idx;});
+  var txt=arr.map(function(d){return '['+(d.impact==='blocker'?'阻断':'误导')+'] '+d.cat+' #'+d.idx+' '+d.doc+'\n  应改为：'+(d.fix||'');}).join('\n\n');
+  copyText(txt);
+});
+renderAll();
+</script>
+</body>
+</html>
