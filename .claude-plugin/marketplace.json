@@ -1091,6 +1091,17 @@
       ]
     },
     {
+      "name": "migration-ascend-torchair-accelerate-skills",
+      "description": "After migrating small-model inference to torch_npu, perform performance optimization primarily using torchair (while also considering CPU, interface replacement, and other factors), and generate a comprehensive report that includes accuracy and performance comparison results as well as reproduction methods.",
+      "source": "./skills/inference/migration-ascend-torchair-accelerate-skills",
+      "category": "inference",
+      "categories": [
+        "domain-skill-set",
+        "inference",
+        "base"
+      ]
+    },
+    {
       "name": "npu-torchair-infer",
       "description": "Migrate any HuggingFace model to Ascend NPU torchair graph mode (torch.compile) and benchmark it for accuracy and performance against NPU eager and CPU eager. Use when running, compiling, or benchmarking HF models (vision, text, image-text encoders such as SigLIP2, DINOv3, ViT, CLIP, Qwen-VL, SAM) on Ascend 910B/CANN with torch_npu and torchair; when a torch.compile graph-mode run on NPU fails (Dynamo TorchRuntimeError, unsupported op, interpolate/contiguous errors); or when comparing torchair vs npu_eager vs cpu with cosine similarity, max abs diff, and p50/p95/p99 latency.",
       "source": "./skills/inference/npu-torchair-infer",
