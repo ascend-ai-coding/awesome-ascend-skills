@@ -293,6 +293,7 @@ cp -r awesome-ascend-skills/skills/ops/npu-op-benchmark your-project/.agents/ski
 | [github-issue-rca](skills/agent-tools/github-issue-rca/SKILL.md) | GitHub Issue 根因分析与调查方向评估 |
 | [gitcode-merge-flow](skills/agent-tools/gitcode-merge-flow/SKILL.md) | GitCode 开源仓合入流程：commit、push、issue、PR、流水线、review 与 merge |
 | [hiascend-forum](skills/agent-tools/hiascend-forum/hiascend-forum-fetcher/SKILL.md) | 昇腾社区论坛帖子抓取与开发者反馈问题分析 |
+| [tech-docs-guard](skills/agent-tools/tech-docs-guard/SKILL.md) | CANN 算子仓「进阶教程 / 开发指南」文档质量体检：通读文档对照算子代码静态查证，出带证据与改进建议的体检报告（MD + HTML） |
 | [ai-for-science](skills/ai-for-science/ai4s-main/SKILL.md) | AI for Science 总入口：负责 Profiling 采集、模型迁移、路线选择与分流 |
 
 ## 外部 Skills (External Skills)

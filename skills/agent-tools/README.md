@@ -9,6 +9,7 @@
 - [`github-issue-rca/`](github-issue-rca/)：issue 根因分析与调查方向评估
 - [`gitcode-merge-flow/`](gitcode-merge-flow/)：GitCode 开源仓 commit、issue、PR、流水线、review 与合入流程
 - [`hiascend-forum/`](hiascend-forum/)：昇腾社区论坛帖子抓取与开发者反馈问题分析
+- [`tech-docs-guard/`](tech-docs-guard/)：CANN 算子仓「进阶教程 / 开发指南」文档质量体检——通读文档对照算子代码静态查证,出带证据的体检报告(MD + HTML)
 
 推荐场景：
 
@@ -17,3 +18,4 @@
 - issue RCA 分析
 - 排障经验沉淀
 - 社区反馈分析与开源仓合入流程自动化
+- 算子文档质量审稿 / 文档与代码一致性核查
