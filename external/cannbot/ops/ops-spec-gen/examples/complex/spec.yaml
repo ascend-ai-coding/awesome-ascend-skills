@@ -1,0 +1,152 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+
+# ============================================================
+# complex — L0 数学约束 spec
+# 教学点：layout_transform + 复数 dtype（两路 fp32/64 交错装成 complex64/128，
+#         本质是 layout 重组，无算术），不是 kernel fusion
+#         + structural invariant shape_equals_macro（对 broadcast 结果做检查）
+#         + 多 input 不同 dtype（real/imag 各为 fp32 / fp64）+ IfExp dtype_rule（fp→complex）
+# ============================================================
+schema_version: 1
+
+op:
+  name: complex
+  version: "1.0"
+  description: "Construct complex tensor from real and imag parts (with numpy broadcast)"
+  category: layout_transform
+  paradigms: [Elementwise, Broadcast, LayoutTransform]
+  lifecycle: stable
+  error_codes: [null_input, shape_mismatch]
+  platform_constraints:
+    supported_chips: [Ascend910B]
+    requires_hccl: false
+
+inputs:
+  - name: real
+    role: tensor
+    dtype_set: [float32, float64]
+    rank_range: [0, 8]
+    layout: ND
+    shape:
+      symbolic: ["...real"]
+  - name: imag
+    role: tensor
+    dtype_set: [float32, float64]
+    rank_range: [0, 8]
+    layout: ND
+    shape:
+      symbolic: ["...imag"]
+
+attributes: []
+
+outputs:
+  - name: out
+    shape_rule_kind: numpy_expr
+    shape_rule: |
+      out.shape = np.broadcast_shapes(real.shape, imag.shape)
+    dtype_rule_kind: numpy_expr
+    dtype_rule: |
+      # real/imag 必为同 dtype（见 supported_combinations）；fp32→c64, fp64→c128，fp16/bf16→c64
+      out.dtype = np.complex64 if real.dtype == np.float32 else (np.complex128 if real.dtype == np.float64 else np.complex64)
+    layout: ND
+    aliasing: none
+
+shape_constraints:
+  symbols: {}
+  global_constraints:
+    - "rank(broadcast(real, imag)) <= 8"
+  notes:
+    - "real 和 imag 必须是浮点（float32 或 float64），不能本身是复数"
+
+dtype_policy:
+  promotion: numpy_promote
+  supported_combinations:
+    - {inputs: {real: float32, imag: float32}, outputs: {out: complex64}}
+    - {inputs: {real: float64, imag: float64}, outputs: {out: complex128}}
+
+broadcast:
+  kind: numpy
+
+math_semantics:
+  formula_kind: numpy_expr
+  formula: |
+    # 先 broadcast 再构造 complex；同 dtype real+imag 时 out dtype 是 fp32→c64 / fp64→c128
+    r, i = np.broadcast_arrays(real, imag)
+    out = (r + 1j * i).astype(np.complex64 if r.dtype == np.float32 else np.complex128)
+
+  reference_oracle:
+    framework: torch
+    api: torch.complex
+    kwargs: {}
+    available_for_dtype: [float32, float64]
+    absent: false
+
+  invariants:
+    # structural 组：shape 必须等于 broadcast 结果
+    - name: shape_contract
+      kind: shape_equals_macro
+      macro: broadcast
+      tolerance_inherit: false
+
+numerical_stability:
+  required: false
+  techniques: []
+  affects_invariants: false
+
+numerical_tolerance:
+  source: "ops-precision-standard/float_compute_community.md"
+  per_dtype:
+    float32:    {rtol: 1.0e-6,  atol: 1.0e-6,  metric: max_relative}
+    float64:    {rtol: 1.0e-12, atol: 1.0e-12, metric: max_relative}
+    complex64:  {rtol: 1.0e-6,  atol: 1.0e-6,  metric: max_relative}
+    complex128: {rtol: 1.0e-12, atol: 1.0e-12, metric: max_relative}
+
+boundary_conditions:
+  - case: "shape 完全相同（无广播）"
+    synthesize: {real.shape: "[2, 3]", imag.shape: "[2, 3]"}
+    machine_check: {kind: matches_oracle}
+  - case: "广播：标量 real + tensor imag"
+    synthesize: {real.shape: "[]", imag.shape: "[2, 3]"}
+    machine_check: {kind: matches_oracle}
+  - case: "广播：[1, N] + [M, N]"
+    synthesize: {real.shape: "[1, 4]", imag.shape: "[3, 4]"}
+    machine_check: {kind: matches_oracle}
+  - case: "空 Tensor + 空 Tensor"
+    synthesize: {real.shape: "[0, 3]", imag.shape: "[0, 3]"}
+    machine_check: {kind: returns_empty}
+  - case: "广播不合法 → 报错"
+    synthesize: {real.shape: "[2, 3]", imag.shape: "[2, 4]"}
+    machine_check: {kind: raises_error, error_type: shape_mismatch}
+
+extreme_inputs:
+  - case: "real 含 NaN"
+    synthesize:
+      shapes: {real: "[8]", imag: "[8]"}
+      patterns:
+        - {pattern: inject_nan_one_element, target: real}
+    machine_check: {kind: produces_nan, scope: "整张量"}
+  - case: "imag 含 +inf"
+    synthesize:
+      shapes: {real: "[1]", imag: "[1]"}
+      patterns:
+        - {pattern: single_pos_inf, target: imag}
+    machine_check: {kind: matches_oracle}
+  - case: "全零（零复数）"
+    synthesize:
+      shapes: {real: "[16]", imag: "[16]"}
+      patterns:
+        - {pattern: all_zero, target: real}
+        - {pattern: all_zero, target: imag}
+    machine_check: {kind: matches_oracle}
+
+determinism:
+  required: true
+  accumulation_order: none
+  partition_constraint: ""
+  bitwise_reproducible: true

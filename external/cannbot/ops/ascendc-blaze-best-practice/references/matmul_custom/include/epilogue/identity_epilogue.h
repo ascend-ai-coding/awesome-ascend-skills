@@ -31,8 +31,6 @@ public:
     static constexpr uint16_t ZERO_FLAG = 0;
     static constexpr uint16_t AIC_SYNC_AIV_MODE_4 = CvSync::MODE;
 
-    static constexpr uint32_t UB_SIZE = 512 * 1024;
-
     struct Params {
         GM_ADDR cGmAddr{nullptr};
     };
@@ -69,7 +67,6 @@ public:
                           ? (halfM - AscendC::GetSubBlockIdx()) : halfM;
 
         if (blockShapeM <= 0) {
-            AscendC::CrossCoreSetFlag<AIC_SYNC_AIV_MODE_4, PIPE_MTE3>(flagId);
             return;
         }
 
@@ -107,8 +104,6 @@ public:
             castLocal_[bf16BufByteOffset / sizeof(CType)],
             outParams);
 
-        // Step 3: CV sync — 通知 AIC 本 tile UB 已释放
-        AscendC::CrossCoreSetFlag<AIC_SYNC_AIV_MODE_4, PIPE_MTE3>(flagId);
     }
 
     __host_aicore__ static Params InitParams(Params const& args) { return args; }

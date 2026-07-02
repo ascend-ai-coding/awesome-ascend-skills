@@ -51,6 +51,7 @@ public:
     using AType = typename BlockMmad::AType;
     using BType = typename BlockMmad::BType;
     using CType = typename BlockMmad::CType;
+    using L0CType = typename BlockMmad::L0CType;
     using LayoutA = typename BlockMmad::LayoutA;
     using LayoutB = typename BlockMmad::LayoutB;
 
@@ -61,8 +62,11 @@ public:
     using EpilogueParams = typename Epilogue::Params;
     using ProblemShapeType = AscendC::Shape<int64_t, int64_t, int64_t, int64_t>;
 
-    using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA>;
-    using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB>;
+    // [MODIFY] C0 must match dtype for NZ/ZN fractal layouts (int8/fp8: C0=32, bf16/fp16: C0=16)
+    static constexpr uint64_t A_C0 = 32 / sizeof(AType);
+    static constexpr uint64_t B_C0 = 32 / sizeof(BType);
+    using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA, AscendC::Std::Int<A_C0>>;
+    using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB, AscendC::Std::Int<B_C0>>;
 
     struct QBMMTiling {
         uint32_t baseM;
@@ -109,7 +113,6 @@ public:
 
         __gm__ AType* aGmPtr = reinterpret_cast<__gm__ AType*>(params.mmadParams.aGmAddr);
         __gm__ BType* bGmPtr = reinterpret_cast<__gm__ BType*>(params.mmadParams.bGmAddr);
-        __gm__ CType* cGmPtr = reinterpret_cast<__gm__ CType*>(params.mmadParams.cGmAddr);
 
         BlockCoord blockIdx;
         while (bs.GetTileIdx(blockIdx)) {
@@ -135,21 +138,21 @@ public:
                     AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(aGmPtr), layoutA);
                 auto gmB = AscendC::Te::MakeTensor(
                     AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(bGmPtr), layoutB);
-                auto layoutC = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(
-                    params.problemShape.m, params.problemShape.n);
-                // gmC 仅用于 BlockMmad 签名兼容——FixpOpti 中 BlockMmad 写 UB
-                // 而非 GM，实际 GM 写回由 Epilogue 完成
-                auto gmC = AscendC::Te::MakeTensor(
-                    AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(cGmPtr), layoutC);
+                auto curMPad = (curM + 1L) & ~1L;
+                constexpr int64_t UB_N_ALIGN_ELEM = 32L / static_cast<int64_t>(sizeof(L0CType));
+                auto curNUbAlign = ((curN + UB_N_ALIGN_ELEM - 1L) / UB_N_ALIGN_ELEM) * UB_N_ALIGN_ELEM;
+                auto layoutUB = AscendC::Te::MakeFrameLayout<
+                    AscendC::Te::NDExtLayoutPtn, AscendC::Std::Int<BlockMmad::BLOCK_CUBE_L0C>>(
+                        curMPad, curNUbAlign);
+                auto ubBlockC = AscendC::Te::MakeTensor(
+                    AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, L0CType>(0), layoutUB);
 
                 auto gmBlockA = gmA.Slice(AscendC::Te::MakeCoord(mPos, kPos),
                     AscendC::Te::MakeShape(curM, params.problemShape.k));
                 auto gmBlockB = gmB.Slice(AscendC::Te::MakeCoord(kPos, nPos),
                     AscendC::Te::MakeShape(params.problemShape.k, curN));
-                auto gmBlockC = gmC.Slice(AscendC::Te::MakeCoord(mPos, nPos),
-                    AscendC::Te::MakeShape(curM, curN));
 
-                blockMmadOp(gmBlockA, gmBlockB, gmBlockC, singleShape);
+                blockMmadOp(gmBlockA, gmBlockB, ubBlockC, singleShape);
 
                 enableCVSync = true;
                 count++;
@@ -166,6 +169,8 @@ public:
                 AscendC::CrossCoreWaitFlag<AIC_SYNC_AIV_MODE_4, PIPE_V>(
                     AIC_SYNC_AIV_FLAG + countId);
                 epilogueOp({curM, curN, 1, 1}, offsetC, (AIV_SYNC_AIC_FLAG + countId));
+                AscendC::CrossCoreSetFlag<AIC_SYNC_AIV_MODE_4, PIPE_MTE3>(
+                    AIV_SYNC_AIC_FLAG + countId);
             }
         }
 

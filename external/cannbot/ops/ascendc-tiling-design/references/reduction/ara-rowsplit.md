@@ -180,7 +180,7 @@ for (uint32_t chunkIdx = 0; chunkIdx < R_chunks; chunkIdx++) {
 }
 
 // 输出最终结果
-DataCopyPad(yGm[offset], globalResultLocal, {1, tileA0Len * sizeof(float), 0, 0});
+DataCopyPad(yGm[offset], globalResultLocal, {1, tileA0Len * sizeof(float), 0, 0, 0});
 ```
 
 ### 4.3 关键注意点

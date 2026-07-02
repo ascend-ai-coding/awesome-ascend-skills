@@ -1,0 +1,202 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+
+# ============================================================
+# matmul — L0 数学约束 spec
+# 教学点：contraction 自动注入（accumulator_dtype: float32 必填）+ shape DSL 宏（MATMUL_SHAPE）
+#         + 折叠维 + 显式维混合（"...batch_a", "M", "K"）+ structural 组 invariant（shape_equals_macro）
+#         + algebraic 组 invariant（equals_when_input_is_zero、associative_along_batch）
+# ============================================================
+schema_version: 1
+
+op:
+  name: matmul
+  version: "1.0"
+  description: "Batch matrix multiplication; contracts last dim of a with second-to-last of b"
+  category: contraction
+  paradigms: [Contraction, Broadcast]
+  lifecycle: stable
+  error_codes:
+    - null_input
+    - shape_mismatch
+  platform_constraints:
+    supported_chips: [Ascend910B]
+    requires_hccl: false
+
+inputs:
+  - name: a
+    role: tensor
+    dtype_set: [float16, float32, bfloat16]
+    rank_range: [2, 8]
+    layout: ND
+    shape:
+      symbolic: ["...batch_a", "M", "K"]   # 折叠维 + 显式维 混合
+  - name: b
+    role: tensor
+    dtype_set: [float16, float32, bfloat16]
+    rank_range: [2, 8]
+    layout: ND
+    shape:
+      symbolic: ["...batch_b", "K", "N"]
+
+attributes:
+  - name: transpose_a
+    type: bool
+    default: false
+    semantics: "是否把 a 的最后两维转置后再做矩阵乘"
+    machine_constraint: {kind: bool}
+  - name: transpose_b
+    type: bool
+    default: false
+    semantics: "同 transpose_a，作用于 b"
+    machine_constraint: {kind: bool}
+
+outputs:
+  - name: c
+    shape_rule_kind: numpy_expr
+    shape_rule: |
+      c.shape = (
+          np.broadcast_shapes(a.shape[:-2], b.shape[:-2])
+          + ((a.shape[-1] if transpose_a else a.shape[-2]),)
+          + ((b.shape[-2] if transpose_b else b.shape[-1]),)
+      )
+    dtype_rule_kind: numpy_expr
+    dtype_rule: |
+      c.dtype = np.promote_types(a.dtype, b.dtype)
+    layout: ND
+    aliasing: none
+
+# 显式维 M / K / N 必须登记（折叠维 batch_a / batch_b 不登记，由 rank_range 推出）
+shape_constraints:
+  symbols:
+    M: {kind: dim, range: [0, 9223372036854775807]}
+    K: {kind: dim, range: [0, 9223372036854775807]}
+    N: {kind: dim, range: [0, 9223372036854775807]}
+  global_constraints:
+    - "rank(a) >= 2"
+    - "rank(b) >= 2"
+  notes:
+    - "K of a 必须等于 K of b（应用 transpose flags 后）"
+    - "batch dims 按 numpy broadcast 规则匹配"
+
+# Contraction 范式触发：accumulator_dtype 必填且 ≥ fp32（Cube/TensorCore 标准做法）
+dtype_policy:
+  promotion: numpy_promote
+  supported_combinations:
+    - {inputs: {a: float16,  b: float16},  outputs: {c: float16}}
+    - {inputs: {a: float32,  b: float32},  outputs: {c: float32}}
+    - {inputs: {a: bfloat16, b: bfloat16}, outputs: {c: bfloat16}}
+    - {inputs: {a: float16,  b: float32},  outputs: {c: float32}}
+    - {inputs: {a: bfloat16, b: float32},  outputs: {c: float32}}
+  accumulator_dtype: float32
+
+# explicit 广播：batch dims 用 numpy，M/K/N 不广播
+broadcast:
+  kind: explicit
+  rules:
+    - {scope: trailing, count: 2,  policy: no_broadcast}
+    - {scope: leading,  count: -1, policy: numpy}
+
+math_semantics:
+  formula_kind: numpy_expr
+  formula: |
+    a_eff = a.swapaxes(-1, -2) if transpose_a else a
+    b_eff = b.swapaxes(-1, -2) if transpose_b else b
+    c = np.matmul(a_eff, b_eff)
+
+  reference_oracle:
+    framework: torch
+    api: torch.matmul
+    kwargs: {}
+    available_for_dtype: [float16, float32, bfloat16]
+    absent: false
+
+  invariants:
+    # algebraic 组：零元——任一侧全零 → 输出全零（contraction 类核心性质）
+    - name: zero_propagation
+      kind: equals_when_input_is_zero
+      value: 0.0
+    # algebraic 组：沿 batch 维结合律（浮点容差内）
+    - name: batch_associativity
+      kind: associative_along_batch
+      tolerance_inherit: true
+    # structural 组：输出 shape 必须等于 MATMUL_SHAPE 宏展开
+    - name: shape_contract
+      kind: shape_equals_macro
+      macro: MATMUL_SHAPE
+      tolerance_inherit: false              # structural 组必须 false
+
+numerical_stability:
+  required: true
+  techniques:
+    - name: fp32_accumulator
+      applies_to: "fp16/bf16 输入时累加用 fp32 (Cube/TensorCore 标准做法)"
+      rationale: "防止内积累计在 fp16 下溢出/下溢"
+      anti_pattern_id: AP-007
+  affects_invariants: false
+
+numerical_tolerance:
+  source: "ops-precision-standard/float_compute_community.md"
+  per_dtype:
+    float32:  {rtol: 1.0e-4, atol: 1.0e-4, metric: max_relative}
+    float16:  {rtol: 1.0e-2, atol: 1.0e-2, metric: max_relative}    # K 大时累计误差需放宽
+    bfloat16: {rtol: 2.0e-2, atol: 2.0e-2, metric: max_relative}
+
+boundary_conditions:
+  - case: "K == 0（空内积）"
+    synthesize: {a.shape: "[2, 3, 0]", b.shape: "[2, 0, 4]"}
+    machine_check: {kind: equals, value: 0.0}
+  - case: "M == 0（空输出）"
+    synthesize: {a.shape: "[2, 0, 4]", b.shape: "[2, 4, 5]"}
+    machine_check: {kind: returns_empty}
+  - case: "rank=2 标准矩阵乘"
+    synthesize: {a.shape: "[3, 4]", b.shape: "[4, 5]"}
+    machine_check: {kind: matches_oracle}
+  - case: "rank=3 batch matmul"
+    synthesize: {a.shape: "[8, 3, 4]", b.shape: "[8, 4, 5]"}
+    machine_check: {kind: matches_oracle}
+  - case: "batch 维广播"
+    synthesize: {a.shape: "[1, 3, 4]", b.shape: "[8, 4, 5]"}
+    machine_check: {kind: matches_oracle}
+  - case: "K 维不匹配 → 报错"
+    synthesize: {a.shape: "[3, 4]", b.shape: "[5, 6]"}
+    machine_check: {kind: raises_error, error_type: shape_mismatch}
+  - case: "rank < 2 → 报错"
+    synthesize: {a.shape: "[4]", b.shape: "[4, 5]"}
+    machine_check: {kind: raises_error, error_type: shape_mismatch}
+
+extreme_inputs:
+  - case: "含 NaN"
+    synthesize:
+      shapes: {a: "[4, 4]", b: "[4, 4]"}
+      patterns:
+        - {pattern: inject_nan_one_element, target: a}
+    machine_check: {kind: produces_nan, scope: "整张量"}
+
+  - case: "全零（验证 zero_propagation invariant）"
+    synthesize:
+      shapes: {a: "[16, 16]", b: "[16, 16]"}
+      patterns:
+        - {pattern: all_zero, target: a}
+        - {pattern: all_zero, target: b}
+    machine_check: {kind: matches_invariant, name: zero_propagation}
+
+  - case: "K 维很大 + fp16（验证 fp32 accumulator 是否生效）"
+    synthesize:
+      shapes: {a: "[1, 65536]", b: "[65536, 1]"}
+      patterns:
+        - {pattern: "all_same(0.001)", target: a}
+        - {pattern: "all_same(0.001)", target: b}
+      dtype: {a: float16, b: float16}
+    machine_check: {kind: matches_oracle}        # 不拓宽会有显著精度损失
+
+determinism:
+  required: true
+  accumulation_order: tree
+  partition_constraint: "K 切分后必须用固定顺序累加；批维与 M/N 切分天然确定"
+  bitwise_reproducible: false                    # Cube 实例间累加顺序差异，fp 不可严格 bitwise

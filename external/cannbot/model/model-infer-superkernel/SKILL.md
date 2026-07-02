@@ -1,12 +1,12 @@
 ---
 name: external-cannbot-model-model-infer-superkernel
-description: 基于 PyTorch 框架的昇腾 NPU 模型推理 SuperKernel 适配技能。当用户需要启用 SuperKernel 算子二进制融合技术优化昇腾
-  NPU 推理性能时使用此技能。触发场景包括：用户询问 SuperKernel、算子融合、二进制融合、启用 superkernel、superkernel_scope、减少任务调度开销、优化
-  decode 性能等。SuperKernel 仅支持 ge_graph 模式、Atlas A3 硬件，且仅在 decode 阶段生效。
+description: SuperKernel 适配技能。当用户需要启用 SuperKernel 算子二进制融合技术优化 NPU 推理性能时使用此技能。触发场景包括：用户询问
+  SuperKernel、算子融合、二进制融合、启用 superkernel、superkernel_scope、减少任务调度开销、优化 decode 性能等。SuperKernel
+  仅支持 ge_graph 模式、Atlas A3 硬件、PyTorch 框架，且仅在 decode 阶段生效。
 original-name: model-infer-superkernel
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-26'
-synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
+synced-date: '2026-07-02'
+synced-commit: 342679f37ec1b052a8b64d6c9fd59f67e0c89073
 license: UNKNOWN
 ---
 
@@ -116,11 +116,12 @@ license: UNKNOWN
 
 ```yaml
 # 确保以下配置
-exe_mode: "ge_graph"              # 必须是 ge_graph
 model_config:
-  enable_superkernel: True        # 启用 SuperKernel
-  enable_multi_streams: False     # 根据需求配置
+  exe_mode: "ge_graph"            # 必须是 ge_graph
   enable_cache_compile: False     # 根据需求配置
+  custom_params:
+    enable_superkernel: True      # 启用 SuperKernel
+    enable_multi_streams: False   # 根据需求配置
 ```
 
 #### 3.2 模型代码修改
@@ -237,7 +238,7 @@ class YourModel:
 - 修改内容：启用 `enable_superkernel: True`
 
 ### 模型代码修改
-- 文件：`cann-recipes-infer/models/modeling_*.py`
+- 文件：`models/modeling_*.py`
 - 修改内容：添加 SuperKernel scope 标记
 - Scope 范围：{scope_description}
 
@@ -346,8 +347,7 @@ bash infer.sh
 ### 外部文档
 - [官方 SuperKernel 开发文档](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/83RC1alpha002/opdevg/Ascendcopdevg/atlas_ascendc_10_00029.html)
 - [PyTorch 图模式使用指南](https://www.hiascend.com/document/detail/zh/Pytorch/710/modthirdparty/torchairuseguide/torchair_00003.html)
-- [DeepSeek-R1 decode 性能优化](../../docs/models/deepseek_r1/deepseek_r1_decode_optimization.md)
-- [SuperKernel 易用性指南](../../usability_docs/superkernel_usability_guide.md)
+- [DeepSeek-R1 decode 性能优化](../../../docs/models/deepseek-r1/deepseek_r1_decode_optimization.md)
 
 ---
 

@@ -1,8 +1,17 @@
 # Ascend C TOPK 问题清单
 
-> **适用场景**：算子开发代码检视高频问题
->
+<适用>
+语言: C++
+侧别: All, Host, Kernel
+领域: true
+默认启用: true
+适用场景: Ascend C 算子开发中实际高频出现的编码问题，来源于生产环境经验总结
+介绍: Ascend C TOPK 高频问题清单，14 条条款覆盖算子开发中最常触发的错误模式
+类别(All): 野指针(局部变量指针生命周期)、特殊值(nan/inf/+0/-0边界处理)、GM内存偏移溢出(必须int64表示，大shape场景下32位溢出)、整数vs浮点(可整数计算时禁止转浮点)、宏定义命名冲突
+类别(Host): 返回值校验(函数返回值必须检查)、Dtype/Shape获取(GetInputDesc+context)、属性获取(context获取禁止CompileInfo传递)、属性类型一致性(与ir原型一致)、外部输入校验(融合规则/InferShape/Tiling)、dlopen管理(thread_local禁用)
+类别(Kernel): atomic累加(src(ub)与dst(gm)双清零)、通信算子融合(核间同步)
 > **说明**：TOPK 问题是检视实践中发现的高频风险点，需重点关注。条款标注适用范围：`[适用: All]` / `[适用: Host]` / `[适用: Kernel]`
+</适用>
 
 ## 快速索引
 

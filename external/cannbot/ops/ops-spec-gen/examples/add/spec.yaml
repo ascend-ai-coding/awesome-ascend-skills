@@ -1,0 +1,162 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+
+# ============================================================
+# add — L0 数学约束 spec
+# 教学点：最简元素级算子 + numpy 广播 + 双输入 dtype promote + 代数性质 invariant
+# ============================================================
+schema_version: 1
+
+op:
+  name: add
+  version: "1.0"
+  description: "Element-wise addition with numpy broadcast"
+  category: elementwise
+  paradigms: [Elementwise, Broadcast]
+  lifecycle: stable
+  error_codes:
+    - null_input
+    - shape_mismatch
+  platform_constraints:
+    supported_chips: [Ascend910B]
+    requires_hccl: false
+
+inputs:
+  - name: x
+    description: "公式中的左操作数"
+    role: tensor
+    dtype_set: [float16, float32, bfloat16, int32]
+    rank_range: [0, 8]
+    layout: ND
+    shape:
+      symbolic: ["...a"]
+  - name: y
+    description: "公式中的右操作数；与 x 按 numpy 规则广播"
+    role: tensor
+    dtype_set: [float16, float32, bfloat16, int32]
+    rank_range: [0, 8]
+    layout: ND
+    shape:
+      symbolic: ["...b"]
+
+attributes: []
+
+outputs:
+  - name: z
+    description: "x 与 y 元素级相加；shape 为两侧 broadcast 结果"
+    shape_rule_kind: numpy_expr
+    shape_rule: |
+      z.shape = np.broadcast_shapes(x.shape, y.shape)
+    dtype_rule_kind: numpy_expr
+    dtype_rule: |
+      z.dtype = np.promote_types(x.dtype, y.dtype)
+    layout: ND
+    aliasing: none
+
+shape_constraints:
+  symbols: {}
+  global_constraints:
+    - "rank(broadcast(x, y)) <= 8"
+
+dtype_policy:
+  promotion: numpy_promote
+  supported_combinations:
+    - {inputs: {x: float16, y: float16}, outputs: {z: float16}}
+    - {inputs: {x: float32, y: float32}, outputs: {z: float32}}
+    - {inputs: {x: bfloat16, y: bfloat16}, outputs: {z: bfloat16}}
+    - {inputs: {x: int32, y: int32}, outputs: {z: int32}}
+    - {inputs: {x: float16, y: float32}, outputs: {z: float32}}
+    - {inputs: {x: bfloat16, y: float32}, outputs: {z: float32}}
+
+broadcast:
+  kind: numpy
+
+math_semantics:
+  formula_kind: numpy_expr
+  formula: |
+    z = x + y
+
+  reference_oracle:
+    framework: torch
+    api: torch.add
+    kwargs: {}
+    available_for_dtype: [float16, float32, bfloat16, int32]
+    absent: false
+
+  invariants:
+    # algebraic 组示例：交换律——不依赖 oracle，靠两次调用对拍即可
+    - name: commutativity
+      kind: equals_under_swap
+      swap: [x, y]
+    # algebraic 组示例：加法零元——一侧为 0 时输出 == 另一侧
+    - name: identity_zero
+      kind: equals_input_when_other_is_zero
+      identity_input: x
+      zero_input: y
+
+numerical_stability:
+  required: false
+  techniques: []
+  affects_invariants: false
+
+numerical_tolerance:
+  source: "ops-precision-standard/float_compute_community.md"
+  per_dtype:
+    float32:  {rtol: 1.0e-6, atol: 1.0e-6, metric: max_relative}
+    float16:  {rtol: 1.0e-3, atol: 1.0e-3, metric: max_relative}
+    bfloat16: {rtol: 4.0e-3, atol: 4.0e-3, metric: max_relative}
+    int32:    {rtol: 0,      atol: 0,      metric: bitwise_equal}
+
+boundary_conditions:
+  - case: "shape 完全相同（无广播）"
+    synthesize: {x.shape: "[2, 3]", y.shape: "[2, 3]"}
+    machine_check: {kind: matches_oracle}
+  - case: "广播：标量 + tensor"
+    synthesize: {x.shape: "[]", y.shape: "[2, 3]"}
+    machine_check: {kind: matches_oracle}
+  - case: "广播：[1, N] + [M, N]"
+    synthesize: {x.shape: "[1, 4]", y.shape: "[3, 4]"}
+    machine_check: {kind: matches_oracle}
+  - case: "空 Tensor + 空 Tensor"
+    synthesize: {x.shape: "[0, 3]", y.shape: "[0, 3]"}
+    machine_check: {kind: returns_empty}
+  - case: "广播不合法 → 报错"
+    synthesize: {x.shape: "[2, 3]", y.shape: "[2, 4]"}
+    machine_check: {kind: raises_error, error_type: shape_mismatch}
+
+extreme_inputs:
+  # 注意 patterns[] 数组写法（多 target 时一条 case 可挂多个 pattern）
+  - case: "x 含 NaN，输出该位置应为 NaN"
+    synthesize:
+      shapes: {x: "[8]", y: "[8]"}
+      patterns:
+        - {pattern: inject_nan_one_element, target: x}
+    machine_check: {kind: nan_propagates, along_axis: -1}
+
+  - case: "+inf + -inf → NaN"
+    synthesize:
+      shapes: {x: "[1]", y: "[1]"}
+      patterns:
+        - {pattern: single_pos_inf, target: x}
+        - {pattern: single_neg_inf, target: y}
+    machine_check: {kind: produces_nan, scope: "整张量"}
+
+  - case: "fp16 上溢边界"
+    synthesize:
+      shapes: {x: "[1]", y: "[1]"}
+      patterns:
+        - {pattern: "all_same(60000.0)", target: x}
+        - {pattern: "all_same(60000.0)", target: y}
+      dtype: {x: float16, y: float16}
+    machine_check: {kind: matches_oracle}     # 与框架对齐：返回 +inf
+
+determinism:
+  required: true
+  accumulation_order: none
+  partition_constraint: ""
+  bitwise_reproducible: true

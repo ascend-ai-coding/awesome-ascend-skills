@@ -146,11 +146,12 @@ class DecoderLayer(nn.Module):
 ```yaml
 # cann-recipes-infer/models/{model_name}/config.yaml
 
-exe_mode: "ge_graph"              # 必须是 ge_graph
 model_config:
-  enable_superkernel: True        # 启用 SuperKernel
-  enable_multi_streams: False     # 可选：多流并行
+  exe_mode: "ge_graph"            # 必须是 ge_graph
   enable_cache_compile: False     # 可选：缓存编译
+  custom_params:
+    enable_superkernel: True      # 启用 SuperKernel
+    enable_multi_streams: False   # 可选：多流并行
 ```
 
 ---
@@ -238,7 +239,7 @@ cat performance.json | jq '.improvement_percent'
 **解决方法**：
 1. 检查是否使用了自定义算子
 2. 如果使用了，添加 DCache 刷新
-3. 调用 `model-infer-precision-debug` skill 进行排查
+3. 调用 `kvcache-fa-precision-debug` skill 进行排查
 
 ---
 

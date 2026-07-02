@@ -9,8 +9,8 @@ argument-hint: "需要提供：1) 待优化的代码文件路径； 2) 可选：
   \ 会自动发现\n   与 .py 同目录的同名 .json）"
 original-name: triton-task-extractor
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-26'
-synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
+synced-date: '2026-07-02'
+synced-commit: 342679f37ec1b052a8b64d6c9fd59f67e0c89073
 license: UNKNOWN
 ---
 

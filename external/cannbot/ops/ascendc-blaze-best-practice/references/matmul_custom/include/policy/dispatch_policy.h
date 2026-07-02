@@ -21,7 +21,9 @@
 // [MODIFY] 新算子时，可自定义 dispatch policy 标签。该标签同时出现在：
 //   - BlockMmad 的 SFINAE 约束（matmul_block_mmad.h）
 //   - launcher 模板参数组装（matmul_custom.cpp）
-// 默认只提供 non-full-load 一条流水路径；需要 A-full-load 等变种时可再新增标签。
+// fullLoadMode 决定 A/B 在 L1/L0 的流水策略。L0C 终端输出目的地不属于
+// DispatchPolicy：BlockMmad 根据传入的 tensor_api 输出 Tensor location
+// 编译期选择 CopyL0C2GM 或 CopyL0C2UB。
 // ============================================================================
 
 /**

@@ -1,0 +1,325 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+
+# ============================================================
+# fused_quant_matmul — L0 数学约束 spec
+# 来源参考：https://gitcode.com/cann/ops-nn/tree/master/matmul/fused_quant_mat_mul
+#
+# 教学点：fused_composite + Contraction + Quantization + Elementwise 四范式叠加
+#         FusedComposite 必填的 composition.primitives 五原语链：
+#             gemm → mul(x2Scale) → mul(x1Scale) → add(bias) → elementwise_unary(gelu)
+#         reference_oracle 用 composition DAG 模式（5 节点链 + GeLU 用 kwargs 传 approximate）
+#
+# CANN 真实算子有 6 路分支（3 bias 模式 × 2 GeLU 类型）+ per-channel scale。
+# 本 spec 锁的是最简单一路：
+#   * INT8 / INT4 × INT8 / INT4（INT4 走 stage 8 stand-in：int8 容器 + 值域 [-8, 7]）
+#   * x1Scale / x2Scale / bias 走 attribute（per-tensor 标量；CANN 真实是 1D tensor，需要
+#     stage 5 支持 N 输入 explicit broadcast 之后才能升级）
+#   * fusedOpType 锁 gelu_tanh（gelu_erf 需要 scipy.special.erf；composition 也只能 pin 一路）
+#   * bias 走 FP 路径：qbmmout = x1@x2 * x2Scale * x1Scale + bias（CANN 公式 2）
+#
+# 完整算子需要：select 节点（v2，对 fusedOpType / bias_dtype 分派）+ stage 5 N 输入 +
+#               op.platform_constraints.supported_chips first-class 字段
+# ============================================================
+schema_version: 1
+
+op:
+  name: fused_quant_matmul
+  version: "1.0"
+  description: "Quantized matmul fused with GeLU activation; INT8 x INT8 → FP16 with FP bias"
+  category: fused_composite
+  paradigms: [Contraction, Quantization, Elementwise, FusedComposite]
+  lifecycle: stable
+  error_codes: [null_input, shape_mismatch, attribute_value_out_of_range]
+  platform_constraints:
+    supported_chips: [Ascend910B, Ascend950PR, Ascend950DT]   # CANN 支持矩阵
+    requires_hccl: false
+
+inputs:
+  - name: x1
+    role: tensor
+    dtype_set: [int8, int4]                 # CANN 实际支持 INT8 / INT4 / INT32；INT4 走 stand-in
+    rank_range: [2, 6]                      # 与 CANN 一致
+    layout: ND
+    shape:
+      symbolic: ["...batch", "M", "K"]
+  - name: x2
+    role: tensor
+    dtype_set: [int8, int4]
+    rank_range: [2, 6]
+    layout: ND
+    shape:
+      symbolic: ["...batch", "K", "N"]
+
+attributes:
+  # Quantization 范式约束（v1.x 放宽后）：本算子用 {x1Scale, x2Scale} 形式满足
+  # （对称量化 + 双输入分别量化；CANN FusedQuantMatmul 真实就是这种）。
+  # 不再需要塞 zero_point=0 占位 attribute。
+  - name: x1Scale
+    type: float32
+    default: 0.01
+    semantics: "x1（激活）的反量化乘子；CANN 中是 1D fp32 tensor，本 spec 简化为标量"
+    machine_constraint: {kind: float_in_range, lower_inclusive: 1.0e-8, upper_inclusive: 1.0e+4}
+  - name: x2Scale
+    type: float32
+    default: 0.01
+    semantics: "x2（权重）的反量化乘子；CANN 中是 1D fp32/bf16 tensor，本 spec 简化为标量"
+    machine_constraint: {kind: float_in_range, lower_inclusive: 1.0e-8, upper_inclusive: 1.0e+4}
+  - name: bias
+    type: float32
+    default: 0.0
+    semantics: "FP 加性偏置（公式 2 路径，加在 scaling 之后）"
+    machine_constraint: {kind: float_in_range, lower_inclusive: -1.0e+4, upper_inclusive: 1.0e+4}
+  - name: fusedOpType
+    type: enum
+    default: gelu_tanh
+    semantics: "融合的 GeLU 激活类型；本 spec pin 在 gelu_tanh"
+    machine_constraint: {kind: enum_in, values: [gelu_tanh, gelu_erf]}
+
+outputs:
+  - name: y
+    shape_rule_kind: numpy_expr
+    shape_rule: |
+      y.shape = (
+          np.broadcast_shapes(x1.shape[:-2], x2.shape[:-2])
+          + (x1.shape[-2],)
+          + (x2.shape[-1],)
+      )
+    dtype_rule_kind: numpy_expr
+    dtype_rule: |
+      y.dtype = np.float16  # CANN 输出 FLOAT16/BFLOAT16；本 spec pin fp16
+    layout: ND
+    aliasing: none
+
+# 显式维 M / K / N
+shape_constraints:
+  symbols:
+    M: {kind: dim, range: [1, 9223372036854775807]}      # 不支持空 tensor → 下界 1
+    K: {kind: dim, range: [1, 65535]}                    # 最后一维 ≤ 65535
+    N: {kind: dim, range: [1, 65535]}                    # 同上
+  global_constraints:
+    - "rank(x1) >= 2"
+    - "rank(x1) == rank(x2)"
+    - "rank(x1) <= 6"
+  notes:
+    - "K of x1 必须等于 K of x2"
+    - "不支持空 tensor（任一维为 0 视为非法）"
+    - "最后一维（K 与 N）不能超过 65535"
+    - "非连续 tensor 仅在最后两轴转置场景下支持"
+
+# Contraction 范式触发：accumulator_dtype 必填且 ≥ fp32（int8 / int4 累加溢出风险大）
+dtype_policy:
+  promotion: numpy_promote
+  supported_combinations:
+    - {inputs: {x1: int8, x2: int8}, outputs: {y: float16}}
+    - {inputs: {x1: int4, x2: int4}, outputs: {y: float16}}
+    - {inputs: {x1: int4, x2: int8}, outputs: {y: float16}}    # 异型量化（W4A8 模式常见）
+  accumulator_dtype: float32
+
+# explicit 广播：M/K/N 不广播，batch 维 numpy（沿用 matmul 范式）
+broadcast:
+  kind: explicit
+  rules:
+    - {scope: trailing, count: 2,  policy: no_broadcast}
+    - {scope: leading,  count: -1, policy: numpy}
+
+math_semantics:
+  formula_kind: numpy_expr
+  formula: |
+    # CANN 公式 2（FP bias 路径）：qbmm = x1@x2 * x2Scale * x1Scale + bias，再走 gelu_tanh
+    int_acc = np.matmul(x1.astype(np.int32), x2.astype(np.int32)).astype(np.float32)
+    qbmm = int_acc * x2Scale * x1Scale + bias
+    # gelu_tanh: 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))
+    const = np.sqrt(2.0 / np.pi)
+    y = (0.5 * qbmm * (1.0 + np.tanh(const * (qbmm + 0.044715 * qbmm**3)))).astype(np.float16)
+
+  # ---------- composition DAG oracle ----------
+  # 5 节点链对应 CANN gelu_tanh + FP bias 路径：
+  #   gemm → mul x2Scale → mul x1Scale → add bias → gelu(approximate=tanh)
+  reference_oracle:
+    framework: torch
+    composition:
+      # 节点 1：x1 @ x2（int8 @ int8 → torch 内部按 backend 路径）
+      - id: int_acc
+        api: torch.matmul
+        args: [x1, x2]
+      # 节点 2：* x2Scale
+      - id: scaled_x2
+        api: torch.mul
+        args: [int_acc, "${attr.x2Scale}"]
+      # 节点 3：* x1Scale → qbmm 前体（不带 bias）
+      - id: qbmm_pre
+        api: torch.mul
+        args: [scaled_x2, "${attr.x1Scale}"]
+      # 节点 4：+ bias（FP 路径，加在 scaling 之后）
+      - id: qbmm
+        api: torch.add
+        args: [qbmm_pre, "${attr.bias}"]
+      # 节点 5：GeLU(approximate='tanh')；composition 节点的 kwargs 字段直传给 callable
+      - id: y_node
+        api: torch.nn.functional.gelu
+        args: [qbmm]
+        kwargs: {approximate: tanh}
+    output: y_node
+    available_for_dtype: [int8, int4]      # 与 supported_combinations 输入 dtype 对齐
+    absent: false
+
+  invariants:
+    # value 组：输出落在 GeLU 值域 (-0.17, +∞) 内（理论 GeLU 下界约 -0.17）
+    - name: y_lower_bound
+      kind: elementwise_ge
+      value: -0.18
+    # structural 组：输出 shape 必须等于 MATMUL_SHAPE 宏展开
+    - name: shape_contract
+      kind: shape_equals_macro
+      macro: MATMUL_SHAPE
+      tolerance_inherit: false             # structural 组必须 false
+    # structural 组：no_leak — composition 中间不外漏
+    - name: no_leak
+      kind: no_leak_intermediates
+      tolerance_inherit: false
+
+  # FusedComposite 必填 composition；composition.primitives 只能引用 tensor（input/中间），
+  # 不能引用 attribute——所以把"× x2Scale × x1Scale + bias"这一组属性参数化的算子合并到一条
+  # elementwise_unary（CANN 内核也是融合在一起的；scale/bias 通过 fused 算子的标量参数传入）。
+  composition:
+    primitives:
+      - id: p1
+        op: gemm
+        inputs: [x1, x2]
+        outputs: [int_acc]
+      - id: p2
+        op: elementwise_unary               # int_acc → qbmm；融合 cast + 三步标量缩放/偏置
+        inputs: [int_acc]                   # 标量参数 x1Scale/x2Scale/bias 通过 attribute 传入
+        outputs: [qbmm]
+      - id: p3
+        op: elementwise_unary               # qbmm → y；gelu_tanh
+        inputs: [qbmm]
+        outputs: [y]
+    dataflow:
+      intermediates: [int_acc, qbmm]
+      no_leak: true
+      fusable_groups:
+        - [p1, p2, p3]                      # 整链可融合（FusedQuantMatmul 的存在意义）
+
+# Quantization + Contraction 共同要求数值稳定；GeLU 在大 |x| 不会爆 fp16（gelu(big)≈big）
+numerical_stability:
+  required: true
+  techniques:
+    - name: int_to_fp32_dequant
+      applies_to: "int8 累加结果先 cast 到 fp32 再做 scale 乘法"
+      rationale: "防止 int 域回绕；fp16 直接乘 scale 会丢精度"
+      anti_pattern_id: AP-007
+    - name: fp32_intermediate_for_gelu
+      applies_to: "qbmm 在 fp32 域计算；最后 gelu 输出再 cast 到 fp16"
+      rationale: "gelu 中 x^3 在大 |x| 时可能溢出 fp16，需 fp32 中转"
+      anti_pattern_id: AP-007
+  affects_invariants: false
+
+numerical_tolerance:
+  source: "ops-precision-standard/quant_compute_community.md"
+  per_dtype:
+    float16:  {rtol: 5.0e-2, atol: 5.0e-2, metric: max_relative}    # 量化 + GeLU 累计误差
+    bfloat16: {rtol: 7.0e-2, atol: 7.0e-2, metric: max_relative}    # 预留扩展
+    int4:     {rtol: 0,      atol: 0,      metric: bitwise_equal}   # 输入 dtype 容差（量化前）
+    int8:     {rtol: 0,      atol: 0,      metric: bitwise_equal}
+
+boundary_conditions:
+  # 不支持空 tensor —— 任一维为 0 都报错
+  - case: "K=0（空内积，CANN 明确不支持）"
+    synthesize: {x1.shape: "[2, 0]", x2.shape: "[0, 4]"}
+    machine_check: {kind: raises_error, error_type: shape_mismatch}
+  - case: "M=0（空输出，CANN 明确不支持）"
+    synthesize: {x1.shape: "[0, 4]", x2.shape: "[4, 5]"}
+    machine_check: {kind: raises_error, error_type: shape_mismatch}
+  - case: "N=0（空输出，CANN 明确不支持）"
+    synthesize: {x1.shape: "[2, 4]", x2.shape: "[4, 0]"}
+    machine_check: {kind: raises_error, error_type: shape_mismatch}
+
+  # 合法的最小/极端形状
+  - case: "rank=2 标准矩阵乘"
+    synthesize: {x1.shape: "[3, 4]", x2.shape: "[4, 5]"}
+    machine_check: {kind: matches_oracle}
+  - case: "rank=3 batch 量化矩阵乘"
+    synthesize: {x1.shape: "[8, 3, 4]", x2.shape: "[8, 4, 5]"}
+    machine_check: {kind: matches_oracle}
+  - case: "rank=6（CANN 上界）"
+    synthesize: {x1.shape: "[2, 2, 2, 2, 4, 8]", x2.shape: "[2, 2, 2, 2, 8, 4]"}
+    machine_check: {kind: matches_oracle}
+
+  # 错误路径
+  - case: "rank=7 → 报错（超 CANN 上界）"
+    synthesize: {x1.shape: "[2, 2, 2, 2, 2, 4, 8]", x2.shape: "[2, 2, 2, 2, 2, 8, 4]"}
+    machine_check: {kind: raises_error, error_type: shape_mismatch}
+  - case: "K 维不匹配 → 报错"
+    synthesize: {x1.shape: "[3, 4]", x2.shape: "[5, 6]"}
+    machine_check: {kind: raises_error, error_type: shape_mismatch}
+  - case: "K 超过 65535 → 报错（最后一维上界）"
+    synthesize: {x1.shape: "[2, 65536]", x2.shape: "[65536, 4]"}
+    machine_check: {kind: raises_error, error_type: shape_mismatch}
+  - case: "fusedOpType 非法 → 报错"
+    synthesize: {x1.shape: "[3, 4]", x2.shape: "[4, 5]", attr.fusedOpType: relu}
+    machine_check: {kind: raises_error, error_type: attribute_value_out_of_range}
+
+extreme_inputs:
+  - case: "x1 全零（验证量化 zero 行为）"
+    tags: [zero_input]                       # 命中 Quantization.zero_input 必含 case
+    # x1=0 → matmul=0 → scaling=0 → qbmm=bias（默认=0）→ gelu(0)=0
+    synthesize:
+      shapes: {x1: "[16, 16]", x2: "[16, 16]"}
+      patterns:
+        - {pattern: all_zero, target: x1}
+      attrs: {bias: 0.0}
+    machine_check: {kind: equals, value: 0.0}
+
+  - case: "x1, x2 都全 1（matmul 退化为 K，方便手算 GeLU）"
+    # x1=1, x2=1, K=16 → matmul=16 → * x2Scale * x1Scale = 16*0.01*0.01 = 0.0016
+    # qbmm = 0.0016 + 0 = 0.0016；gelu(0.0016) ≈ 0.0008（小 x 时 gelu(x) ≈ x/2）
+    synthesize:
+      shapes: {x1: "[1, 16]", x2: "[16, 1]"}
+      patterns:
+        - {pattern: "all_same(1)", target: x1}
+        - {pattern: "all_same(1)", target: x2}
+      attrs: {x1Scale: 0.01, x2Scale: 0.01, bias: 0.0}
+    machine_check: {kind: matches_oracle}
+
+  - case: "K 大 + int8 边界值（验证 fp32 累加器 + GeLU fp32 中转）"
+    # x1=127 (int8 max), x2=127, K=4096 → matmul=127*127*4096 ≈ 6.6e7（int32 安全）
+    # * scale * scale = 6.6e7 * 0.0001 = 6600；gelu(6600) ≈ 6600（大 |x| 时 gelu ≈ x）
+    # 若实现错把 gelu 在 fp16 域算，6600^3 直接溢出
+    synthesize:
+      shapes: {x1: "[1, 4096]", x2: "[4096, 1]"}
+      patterns:
+        - {pattern: "all_same(127)", target: x1}
+        - {pattern: "all_same(127)", target: x2}
+      attrs: {x1Scale: 0.001, x2Scale: 0.0001, bias: 0.0}
+    machine_check: {kind: matches_oracle}
+
+  - case: "x1 含 int8 极小值 -128（验证对称量化对负值处理）"
+    synthesize:
+      shapes: {x1: "[4, 4]", x2: "[4, 4]"}
+      patterns:
+        - {pattern: "all_same(-128)", target: x1}
+        - {pattern: "all_same(1)", target: x2}
+    machine_check: {kind: matches_oracle}
+
+  - case: "INT4 边界值 -8（int4 值域下界，验证 stand-in 容器）"
+    # int4 stand-in: int8 容器 clamp [-8, 7]；x1=-8, x2=7 测最大乘积 -56
+    synthesize:
+      shapes: {x1: "[4, 4]", x2: "[4, 4]"}
+      patterns:
+        - {pattern: "all_same(-8)", target: x1}
+        - {pattern: "all_same(7)", target: x2}
+      dtype: {x1: int4, x2: int4}
+    machine_check: {kind: matches_oracle}
+
+determinism:
+  required: true                             # CANN 文档：默认确定性实现
+  accumulation_order: tree
+  partition_constraint: "K 切分后必须用固定顺序累加；scale/bias 是标量不影响分块；GeLU 元素级无累加"
+  bitwise_reproducible: false                # fp32 累加顺序差异不可严格 bitwise

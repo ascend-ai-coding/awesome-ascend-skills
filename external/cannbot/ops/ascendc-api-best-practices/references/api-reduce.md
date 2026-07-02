@@ -129,6 +129,7 @@ AscendC::ReduceMax<T>(dst, src, tmp, rLength, false);
 
 // ✅ 方案2：用 DataCopyPad 填充到对齐
 uint32_t alignedCols = ((rLength * sizeof(T) + 31) / 32) * 32 / sizeof(T);
+AscendC::DataCopyExtParams copyParams{1, rLength * sizeof(T), 0, 0, 0};
 AscendC::DataCopyPadExtParams<T> padParams;
 padParams.isPad = true;
 padParams.rightPadding = alignedCols - rLength;
@@ -200,6 +201,28 @@ AscendC::ReduceMax<float, AscendC::Pattern::Reduce::AR, true>(dst, src, tmpLocal
 // ✅ 方案2：预留临时空间（详见 api-reduce-pattern.md）
 ```
 
+### 错误6：Reduce dst 起始地址未 8 字节对齐
+
+`ReduceMax<float>` / `ReduceSum<float>` 等 Reduce API 要求 **dst 起始地址 8 字节对齐**（对 fp32 即 2 个元素对齐）。在"小组归约"场景下（每行多组、每组结果仅占 4 字节）容易出现奇数 offset 位置违反对齐。
+
+```cpp
+// ❌ dst 用 stride 1 fp32：每组结果占 4 字节，
+// 写到 dstBuf[r * groupsPerRow + g] 在 g 为奇数时只满足 4B 对齐
+const uint32_t groupsPerRow = 4;
+AscendC::ReduceMax<float>(dstBuf[r * groupsPerRow + g], src, tmp, 32, false);  // g=1,3 → 4B 对齐
+```
+
+修复：dst buffer 用 stride 2 fp32（每组结果占 8 字节槽位）：
+
+```cpp
+// ✅ stride 2 fp32 → 每个 dst 结果占 8 字节，任何 g 都满足 8B 对齐
+AscendC::ReduceMax<float>(dstBuf[r * groupsPerRow * 2 + g * 2], src, tmp, 32, false);
+```
+
+下游读取时索引同步乘 2。
+
+**症状**：Reduce API 返回静默错误（结果残留旧值或写到错位置），不一定立刻 trap。
+
 ---
 
 ## 最佳实践
@@ -247,13 +270,13 @@ pipe->InitBuffer(reduceBuf, reduceBufSize);
 
 ## API 文档查阅优先级
 
-1. ⭐⭐⭐ **官方 API 文档**：`asc-devkit/docs/api/context/ReduceMax.md`
-2. ⭐⭐⭐ **官方示例代码**：`asc-devkit/examples/03_libraries/05_reduce/`
+1. ⭐⭐⭐ **官方 API 文档**：通过 `/ascendc-docs-search` skill 查阅 `ReduceMax` API 文档
+2. ⭐⭐⭐ **官方示例代码**：通过 `/ascendc-docs-search` skill 搜索 `$ASC_DEVKIT_DIR/examples/03_libraries/05_reduce/`
 3. Pattern 接口详解：[api-reduce-pattern.md](api-reduce-pattern.md)
 
 ---
 
 ## 参考示例
 
-- `asc-devkit/examples/03_libraries/05_reduce/reducemax/reducemax.asc` - Pattern 接口示例
-- `asc-devkit/docs/api/context/ReduceMax.md` - 官方 API 文档
+- `$ASC_DEVKIT_DIR/examples/03_libraries/05_reduce/reducemax/reducemax.asc` - Pattern 接口示例
+- ReduceMax API 文档（find 搜索）

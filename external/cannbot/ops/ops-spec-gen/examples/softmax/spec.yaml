@@ -1,0 +1,228 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+
+# ============================================================
+# softmax — L0 数学约束 spec
+# 教学点：reduction_composite 自动注入（dim attribute / accumulator_dtype / composition / 数值稳定技巧）
+#         + 三类 invariant 综合使用（value 组的 elementwise_ge/le、reduce_equals + structural 的 no_leak）
+#         + 数值稳定性 anti_pattern_id 联动（AP-004：缺 max-shift 必触发）
+# ============================================================
+schema_version: 1
+
+op:
+  name: softmax
+  version: "1.0"
+  description: "Softmax along reduce_axis with max-shift stabilization"
+  category: reduction_composite
+  paradigms: [Reduction, NumericalStable, FusedComposite]
+  lifecycle: stable
+  error_codes:
+    - null_input
+    - attribute_value_out_of_range
+  platform_constraints:
+    supported_chips: [Ascend910B]
+    requires_hccl: false
+
+inputs:
+  - name: x
+    role: tensor
+    dtype_set: [float16, float32, bfloat16]
+    rank_range: [0, 8]
+    layout: ND
+    shape:
+      symbolic: ["...d"]
+    contiguous: optional
+
+# Reduction 范式自动注入约束：必须有 axis/dim/axes 之一
+attributes:
+  - name: dim
+    type: int64
+    default: -1
+    semantics: "归约轴；负值按 Python 风格折算"
+    machine_constraint:
+      kind: int_in_range_relative_to_rank
+      target: x
+      lower_inclusive: "-rank(x)"
+      upper_exclusive: "rank(x)"
+
+outputs:
+  - name: y
+    shape_rule_kind: numpy_expr
+    shape_rule: |
+      y.shape = x.shape
+    dtype_rule_kind: numpy_expr
+    dtype_rule: |
+      y.dtype = x.dtype
+    layout: ND
+    aliasing: none
+
+shape_constraints:
+  symbols: {}                 # 折叠维 ...d 不需要登记
+  global_constraints:
+    - "rank(x) <= 8"
+
+# reduction_composite 触发：accumulator_dtype 必填，且必须 ≥ fp32
+dtype_policy:
+  promotion: same_as_first_input
+  supported_combinations:
+    - {inputs: {x: float16},  outputs: {y: float16}}
+    - {inputs: {x: float32},  outputs: {y: float32}}
+    - {inputs: {x: bfloat16}, outputs: {y: bfloat16}}
+  accumulator_dtype: float32
+
+broadcast:
+  kind: none
+
+math_semantics:
+  formula_kind: numpy_expr
+  formula: |
+    m = x.max(axis=dim, keepdims=True)
+    e = np.exp(x - m)
+    y = e / e.sum(axis=dim, keepdims=True)
+
+  reference_oracle:
+    framework: torch
+    api: torch.nn.functional.softmax
+    kwargs: {dim: "${attr.dim}"}            # 占位符按当前 case 的 dim 实际值替换
+    available_for_dtype: [float16, float32, bfloat16]
+    absent: false
+
+  invariants:
+    # value 组：值域下界
+    - name: nonneg
+      kind: elementwise_ge
+      value: 0.0
+    # value 组：值域上界
+    - name: bounded_above
+      kind: elementwise_le
+      value: 1.0
+    # value 组：归一化语义（核心 invariant，oracle 也未必能严格捕捉到）
+    - name: sum_to_one
+      kind: reduce_equals
+      reducer: sum
+      axis: "${attr.dim}"
+      value: 1.0
+      tolerance_inherit: true
+    # structural 组：composition 中间 tensor 不外漏
+    - name: no_leak
+      kind: no_leak_intermediates
+      tolerance_inherit: false
+
+  # FusedComposite 范式必填：把 formula 拆成白盒原语序列
+  composition:
+    primitives:
+      - id: max_reduce
+        op: reduce                            # 必须在 PRIMITIVE_WHITELIST 内
+        inputs: [x]
+        outputs: [m]
+      - id: subtract
+        op: elementwise_binary
+        inputs: [x, m]
+        outputs: [shifted]
+      - id: exp
+        op: elementwise_unary
+        inputs: [shifted]
+        outputs: [e]
+      - id: sum_reduce
+        op: reduce
+        inputs: [e]
+        outputs: [s]
+      - id: divide
+        op: elementwise_binary
+        inputs: [e, s]
+        outputs: [y]
+    dataflow:
+      intermediates: [m, shifted, e, s]       # 不可出现在 outputs，否则 stage 2 FAIL
+      no_leak: true
+      fusable_groups:
+        - [max_reduce, subtract, exp, sum_reduce, divide]
+
+# NumericalStable 范式必填：required==true 且 techniques 非空
+numerical_stability:
+  required: true
+  techniques:
+    - name: max_subtraction
+      applies_to: "exp 之前减去 reduce 轴最大值"
+      rationale: "避免 fp16 下 exp 溢出（fp16 上限约 6.5e4）"
+      anti_pattern_id: AP-004                  # 缺此技巧的实现触发 critical
+  affects_invariants: false
+
+numerical_tolerance:
+  source: "ops-precision-standard/float_compute_community.md"
+  per_dtype:
+    float32:  {rtol: 1.0e-4, atol: 1.0e-4, metric: max_relative}
+    float16:  {rtol: 1.0e-3, atol: 1.0e-3, metric: max_relative}
+    bfloat16: {rtol: 4.0e-3, atol: 4.0e-3, metric: max_relative}
+
+boundary_conditions:
+  - case: "reduce 轴长度为 1"
+    tags: [reduce_axis_size_1]
+    synthesize: {x.shape: "[1]", attr.dim: 0}
+    machine_check: {kind: equals, value: 1.0}
+  - case: "rank=0 标量输入"
+    tags: [rank_zero_scalar]
+    synthesize: {x.shape: "[]", attr.dim: 0}
+    machine_check: {kind: equals, value: 1.0}
+  - case: "空 Tensor"
+    tags: [empty_tensor]
+    synthesize: {x.shape: "[0, 4]", attr.dim: -1}
+    machine_check: {kind: returns_empty}
+  - case: "dim 越界（负向）"
+    synthesize: {x.shape: "[2, 3]", attr.dim: -3}
+    machine_check: {kind: raises_error, error_type: attribute_value_out_of_range}
+  - case: "dim 越界（正向）"
+    synthesize: {x.shape: "[2, 3]", attr.dim: 2}
+    machine_check: {kind: raises_error, error_type: attribute_value_out_of_range}
+
+extreme_inputs:
+  - case: "含单个 NaN（按行传播）"
+    synthesize:
+      shapes: {x: "[1, 8]"}
+      attrs: {dim: -1}
+      patterns:
+        - {pattern: inject_nan_one_element, target: x}
+    machine_check: {kind: produces_nan, scope: "整行"}
+
+  - case: "含单个 +inf → 该位置=1，其余=0"
+    synthesize:
+      shapes: {x: "[1, 8]"}
+      attrs: {dim: -1}
+      patterns:
+        - {pattern: single_pos_inf, target: x}
+    machine_check: {kind: matches_oracle}
+
+  - case: "全 -inf → exp 全 0 → 0/0 = NaN"
+    synthesize:
+      shapes: {x: "[1, 8]"}
+      attrs: {dim: -1}
+      patterns:
+        - {pattern: all_neg_inf, target: x}
+    machine_check: {kind: produces_nan, scope: "整行"}
+
+  - case: "全相同值 → 均匀分布 1/N"
+    synthesize:
+      shapes: {x: "[1, 8]"}
+      attrs: {dim: -1}
+      patterns:
+        - {pattern: "all_same(3.14)", target: x}
+    machine_check: {kind: matches_oracle}
+
+  - case: "fp16 上溢边界（验证 max_subtraction 是否生效）"
+    synthesize:
+      shapes: {x: "[1, 8]"}
+      attrs: {dim: -1}
+      patterns:
+        - {pattern: "all_same(60000.0)", target: x}
+      dtype: float16
+    machine_check: {kind: matches_invariant, name: sum_to_one}   # 即便 oracle 也可能 NaN，靠 invariant 兜底
+
+determinism:
+  required: true
+  accumulation_order: stable_in_axis            # reduce 范式禁止跨核切归约轴
+  partition_constraint: "禁止跨核 reduce 同一行；多核切分仅切非归约维"
+  bitwise_reproducible: true

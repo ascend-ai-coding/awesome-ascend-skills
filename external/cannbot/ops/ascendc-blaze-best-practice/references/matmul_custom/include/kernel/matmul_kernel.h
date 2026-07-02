@@ -83,8 +83,11 @@ public:
     // DNExtLayoutPtn for column-major). Wrap them in FrameLayoutFormat for GM-side
     // tensor construction. Picking the pattern at the launcher avoids an extra
     // conditional layer here and keeps the data-flow direction explicit.
-    using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA>;
-    using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB>;
+    // [MODIFY] C0 must match dtype for NZ/ZN fractal layouts (int8/fp8: C0=32, bf16/fp16: C0=16)
+    static constexpr uint64_t A_C0 = 32 / sizeof(AType);
+    static constexpr uint64_t B_C0 = 32 / sizeof(BType);
+    using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA, AscendC::Std::Int<A_C0>>;
+    using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB, AscendC::Std::Int<B_C0>>;
 
     struct MatmulTiling {
         uint32_t baseM;

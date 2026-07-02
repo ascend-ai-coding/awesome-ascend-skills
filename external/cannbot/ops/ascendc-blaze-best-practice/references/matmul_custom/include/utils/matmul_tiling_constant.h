@@ -21,7 +21,7 @@
 #endif
 
 // [MODIFY] Matmul tiling 常量。切换数据类型时，调整 DATA_SIZE_FP16 为实际输入的字节数：
-//   bf16/fp16 = 2，fp8 = 1，fp4x2 packed = 1 (2 个元素共享 1 字节)。
+//  fp32 = 4, bf16/fp16 = 2，fp8 = 1，fp4x2 packed = 1 (2 个元素共享 1 字节)。
 constexpr uint64_t BASIC_BLOCK_SIZE_16  = 16UL;
 constexpr uint64_t BASIC_BLOCK_SIZE_64  = 64UL;
 constexpr uint64_t BASIC_BLOCK_SIZE_128 = 128UL;
