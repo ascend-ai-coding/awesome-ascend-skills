@@ -6,8 +6,8 @@
 
 | 路径 | 先读文档 | 再读文档 | 适用场景 |
 | --- | --- | --- | --- |
-| Ascend IR / GE 图模式 | `cann-recipes-infer/docs/zh/ascend_ir/features/advanced/multi_stream.md` | `cann-recipes-infer/docs/zh/ascend_ir/features/advanced/limit_cores.md` | 图内多流表达、`npu_stream_switch`、`npu_wait_tensor`、GE 图模式控核 |
-| npugraph_ex / aclgraph | `cann-recipes-infer/docs/zh/npugraph_ex/advanced/multi_stream.md` | `cann-recipes-infer/docs/zh/npugraph_ex/advanced/limit_cores.md` | `torch.npu.Stream` / `Event` / `record_stream`、Stream 级控核 |
+| Ascend IR / GE 图模式 | [Ascend IR multi_stream](https://gitcode.com/Ascend/torchair/blob/master/docs/zh/ascend_ir/features/advanced/multi_stream.md) | [Ascend IR limit_cores](https://gitcode.com/Ascend/torchair/blob/master/docs/zh/ascend_ir/features/advanced/limit_cores.md) | 图内多流表达、`npu_stream_switch`、`npu_wait_tensor`、GE 图模式控核 |
+| npugraph_ex / aclgraph | [npugraph_ex multi_stream](https://gitcode.com/Ascend/torchair/blob/master/docs/zh/npugraph_ex/advanced/multi_stream.md) | [npugraph_ex limit_cores](https://gitcode.com/Ascend/torchair/blob/master/docs/zh/npugraph_ex/advanced/limit_cores.md) | `torch.npu.Stream` / `Event` / `record_stream`、Stream 级控核 |
 
 ## 路径要点
 
@@ -32,9 +32,9 @@
 
 | 当前场景 | 推荐 API 风格 | 首选 API | 先读文档 |
 | --- | --- | --- | --- |
-| eager / patch 改造 | 显式流对象 | `torch.npu.Stream()`、`record_event()`、`wait_event()`、`wait_stream()`、`record_stream()` | 先看仓库案例；如果要对齐显式 stream 语义，参考 `cann-recipes-infer/docs/zh/npugraph_ex/advanced/multi_stream.md` |
-| `ge_graph` / TorchAir 图内多流 | 图内 scope | `npu_stream_switch`、`npu_wait_tensor` | 先看 `cann-recipes-infer/docs/zh/ascend_ir/features/advanced/multi_stream.md`；需要控核时再看 `cann-recipes-infer/docs/zh/ascend_ir/features/advanced/limit_cores.md` |
-| `npugraph_ex` / aclgraph | 显式 stream + Event | `torch.npu.Stream()`、`torch.npu.stream()`、`torch.npu.Event()`、`record_stream()` | 先看 `cann-recipes-infer/docs/zh/npugraph_ex/advanced/multi_stream.md`；需要控核时再看 `cann-recipes-infer/docs/zh/npugraph_ex/advanced/limit_cores.md` |
+| eager / patch 改造 | 显式流对象 | `torch.npu.Stream()`、`record_event()`、`wait_event()`、`wait_stream()`、`record_stream()` | 先看仓库案例；如果要对齐显式 stream 语义，参考 [npugraph_ex multi_stream](https://gitcode.com/Ascend/torchair/blob/master/docs/zh/npugraph_ex/advanced/multi_stream.md) |
+| `ge_graph` / TorchAir 图内多流 | 图内 scope | `npu_stream_switch`、`npu_wait_tensor` | 先看 [Ascend IR multi_stream](https://gitcode.com/Ascend/torchair/blob/master/docs/zh/ascend_ir/features/advanced/multi_stream.md)；需要控核时再看 [Ascend IR limit_cores](https://gitcode.com/Ascend/torchair/blob/master/docs/zh/ascend_ir/features/advanced/limit_cores.md) |
+| `npugraph_ex` / aclgraph | 显式 stream + Event | `torch.npu.Stream()`、`torch.npu.stream()`、`torch.npu.Event()`、`record_stream()` | 先看 [npugraph_ex multi_stream](https://gitcode.com/Ascend/torchair/blob/master/docs/zh/npugraph_ex/advanced/multi_stream.md)；需要控核时再看 [npugraph_ex limit_cores](https://gitcode.com/Ascend/torchair/blob/master/docs/zh/npugraph_ex/advanced/limit_cores.md) |
 
 ## 再判问题类型
 
@@ -42,7 +42,7 @@
 | --- | --- | --- | --- | --- |
 | 需要把一段计算切到副流 | `torch.npu.Stream()` 或 `npu_stream_switch` | 已确认两段路径没有直接 `data` 依赖，只在后面汇合 | 先明确汇合点，再决定是补 `Event`、`wait_stream` 还是 `npu_wait_tensor` | 对应路径的 `multi_stream.md` |
 | 需要显式控制跨流时序 | Ascend IR 路径优先 `npu_wait_tensor`；显式 stream 路径优先 `record_event()` / `wait_event()`；已有 tagged event 风格时沿用 `npu_record_tagged_stream` / `npu_tagged_event_wait` | 两条流之间存在控制依赖，但后继不直接吃前驱输出 tensor | 不要为了“统一风格”强行把已有 tagged event 代码改写成另一套语义 | 对应路径的 `multi_stream.md` |
-| 需要延长 tensor 生命周期 | `record_stream()` | 短生命周期 tensor 会在别的流继续使用 | 主要看 aclgraph / eager / capture 阶段；权重等长生命周期对象一般不需要 | `cann-recipes-infer/docs/zh/npugraph_ex/advanced/multi_stream.md` |
+| 需要延长 tensor 生命周期 | `record_stream()` | 短生命周期 tensor 会在别的流继续使用 | 主要看 aclgraph / eager / capture 阶段；权重等长生命周期对象一般不需要 | [npugraph_ex multi_stream](https://gitcode.com/Ascend/torchair/blob/master/docs/zh/npugraph_ex/advanced/multi_stream.md) |
 | overlap 已成立但一条流明显拖尾 | `limit_core_num` | 已看到两条流资源争抢，或一条流长期占满 Core | Ascend IR 是算子级 / 全局级，npugraph_ex 是 Stream 级，不要混着理解 | 对应路径的 `limit_cores.md` |
 | 需要进一步查看或设置 stream 资源限制 | `torch_npu.get_stream_limit` / `torch_npu.set_stream_limit` | 已进入控核或 stream 资源调优阶段 | 这不是第一手多流 API，通常在资源调优阶段再用 | 本文件中的“上游文档入口” + 本 skill 案例 |
 | 需要扩大计算窗口，掩盖权重搬运 | `torch_npu.npu_prefetch` | overlap 正确，但仍有访存或带宽空洞可被前序轻算子掩盖 | 只在前序算子不明显抢带宽时使用；常和多流 + 控核联动 | 本 skill 案例 |

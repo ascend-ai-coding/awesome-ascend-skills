@@ -1,0 +1,92 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+
+# ============================================================
+# {{op_name}} — L0 数学约束 spec
+# 覆盖范式: {{paradigms_csv}}
+# 由 ops/ops-spec-gen/scripts/generate_spec.py 生成；请手动填充 {{...}} 占位符
+# ============================================================
+schema_version: 1
+
+op:
+{{op_block}}
+
+inputs:
+{{inputs_block}}
+
+attributes:
+{{attributes_block}}
+
+outputs:
+{{outputs_block}}
+
+shape_constraints:
+  symbols: {}
+  global_constraints:
+    - "rank({{first_input}}) <= 8"
+  notes: []
+
+dtype_policy:
+  promotion: {{promotion}}
+  supported_combinations:
+{{supported_combinations_block}}
+{{accumulator_block}}
+
+broadcast:
+  kind: {{broadcast_kind}}
+
+math_semantics:
+  formula_kind: numpy_expr
+  formula: |
+    # TODO: 用 numpy 可 eval 的表达式描述算子语义
+    {{first_output}} = {{first_input}}
+
+  reference_oracle:
+    framework: torch
+    api: torch.{{op_name}}        # TODO: 替换为正确的 API 全限定名
+    kwargs: {}
+    available_for_dtype: [float32]
+    absent: false
+
+  invariants:
+    # TODO: 至少 1 条 invariant；kind 必须在白名单（registries/invariant_kind_registry.yaml）
+    []
+{{composition_block}}
+
+numerical_stability:
+  required: {{numerical_stability_required}}
+  techniques: {{numerical_stability_techniques}}
+  affects_invariants: false
+
+numerical_tolerance:
+  source: "ops-precision-standard/float_compute_community.md"
+  per_dtype:
+{{per_dtype_tolerance_block}}
+
+boundary_conditions:
+  # TODO: 至少补充: shape 完全相同 / 空 Tensor / rank=0 / 参数越界 (raises_error)
+  - case: "rank=0 标量输入"
+    synthesize: { {{first_input}}.shape: "[]" }
+    machine_check: {kind: matches_oracle}
+{{extra_boundary_cases}}
+
+extreme_inputs:
+  # TODO: 至少补充: 含 NaN / 含 +inf / 全零 / fp16 上溢边界（若涉及 fp16）
+  - case: "含 NaN"
+    synthesize:
+      shapes: { {{first_input}}: "[8]" }
+      patterns:
+        - {pattern: inject_nan_one_element, target: {{first_input}}}
+    machine_check: {kind: produces_nan, scope: "整张量"}
+{{extra_extreme_cases}}
+
+determinism:
+  required: true
+  accumulation_order: {{accumulation_order}}
+  partition_constraint: ""
+  bitwise_reproducible: true

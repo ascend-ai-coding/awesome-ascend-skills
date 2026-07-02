@@ -1,0 +1,171 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+
+# ============================================================
+# dropout — L0 数学约束 spec
+# 教学点：random_sampling category（RandomSampling 范式）+ Stateful（training/eval 状态）
+#         seed 属性自动注入；rate 属性范围约束；invariant 演示输出可重现性
+# ============================================================
+schema_version: 1
+
+op:
+  name: dropout
+  version: "1.0"
+  description: "Inverted-dropout: training 时随机置零 + 1/(1-p) 缩放；eval 时恒等"
+  category: random_sampling
+  paradigms: [Elementwise, RandomSampling]
+  lifecycle: stable
+  error_codes: [null_input, attribute_value_out_of_range]
+  platform_constraints:
+    supported_chips: [Ascend910B]
+    requires_hccl: false
+
+inputs:
+  - name: x
+    role: tensor
+    dtype_set: [float16, bfloat16, float32]
+    rank_range: [0, 8]
+    layout: ND
+    shape:
+      symbolic: ["...d"]
+
+attributes:
+  - name: rate
+    type: float32
+    default: 0.5
+    semantics: "丢弃概率 p ∈ [0, 1)；按 1/(1-p) 缩放保留元素的期望"
+    machine_constraint: {kind: float_in_range, lower_inclusive: 0.0, upper_exclusive: 1.0}
+  - name: seed
+    type: int64
+    default: 0
+    semantics: "RandomSampling 范式必含；固定 seed → 输出确定性"
+    machine_constraint: {kind: int_in_range, lower_inclusive: 0, upper_inclusive: 9223372036854775807}
+  - name: training
+    type: bool
+    default: true
+    semantics: "true 时执行随机丢弃；false 时恒等映射（推理路径）"
+    machine_constraint: {kind: bool}
+
+outputs:
+  - name: y
+    shape_rule_kind: numpy_expr
+    shape_rule: |
+      y.shape = x.shape
+    dtype_rule_kind: numpy_expr
+    dtype_rule: |
+      y.dtype = x.dtype
+    layout: ND
+    aliasing: none
+
+shape_constraints:
+  symbols: {}
+  global_constraints: []
+  notes:
+    - "shape 与输入完全相同；rate / training / seed 是标量不影响 shape"
+
+dtype_policy:
+  promotion: same_as_first_input
+  supported_combinations:
+    - {inputs: {x: float16},  outputs: {y: float16}}
+    - {inputs: {x: bfloat16}, outputs: {y: bfloat16}}
+    - {inputs: {x: float32},  outputs: {y: float32}}
+
+broadcast:
+  kind: none
+
+math_semantics:
+  formula_kind: numpy_expr
+  formula: |
+    rng = np.random.default_rng(seed)
+    keep = (rng.random(x.shape) >= rate).astype(x.dtype)
+    scale_factor = 1.0 / (1.0 - rate) if rate < 1.0 else 0.0
+    training_out = (x * keep * scale_factor).astype(x.dtype)
+    y = training_out if training else x
+
+  # composition oracle：dropout 没有干净的单 callable（torch.nn.functional.dropout
+  # 在 eval 模式下需 training=False，不像我们想要的 oracle 那样无副作用）。
+  # 用 absent + 签字，下游测试以 spec.formula 作 ground truth + invariant 兜底。
+  reference_oracle:
+    framework: torch
+    api: torch.nn.functional.dropout      # 占位（absent=true 时 stage 9 早 SKIP）
+    kwargs: {}
+    available_for_dtype: [float16, bfloat16, float32]
+    absent: true
+
+  invariants:
+    # value 组：rate=0 或 training=false 时 y == x（恒等）—— 但 invariant DSL 还无法
+    # 表达条件分支，留给 boundary case 验证。
+    # structural 组：shape 严格等于输入 shape（没有 macro，用 same_as 当 invariant）
+    - name: shape_contract
+      kind: shape_equals_macro
+      macro: same_as
+      tolerance_inherit: false
+
+numerical_stability:
+  required: false
+  techniques: []
+  affects_invariants: false
+
+numerical_tolerance:
+  source: "ops-precision-standard/float_compute_community.md"
+  per_dtype:
+    float16:  {rtol: 1.0e-3, atol: 1.0e-3, metric: max_relative}
+    bfloat16: {rtol: 4.0e-3, atol: 4.0e-3, metric: max_relative}
+    float32:  {rtol: 1.0e-6, atol: 1.0e-6, metric: max_relative}
+
+boundary_conditions:
+  - case: "rate=0（不丢弃 → 恒等）"
+    synthesize: {x.shape: "[8]", attr.rate: 0.0}
+    machine_check: {kind: equals_input}
+  - case: "training=false（推理路径 → 恒等）"
+    synthesize: {x.shape: "[8]", attr.training: false}
+    machine_check: {kind: equals_input}
+  - case: "rank=0 标量"
+    synthesize: {x.shape: "[]", attr.rate: 0.5, attr.training: true, attr.seed: 42}
+    machine_check: {kind: matches_invariant, name: shape_contract}
+  - case: "空 Tensor（含 0 维）"
+    synthesize: {x.shape: "[0, 4]"}
+    machine_check: {kind: returns_empty}
+  - case: "rate 越界 (>=1) → 报错"
+    synthesize: {x.shape: "[4]", attr.rate: 1.0}
+    machine_check: {kind: raises_error, error_type: attribute_value_out_of_range}
+  - case: "rate 越界 (<0) → 报错"
+    synthesize: {x.shape: "[4]", attr.rate: -0.1}
+    machine_check: {kind: raises_error, error_type: attribute_value_out_of_range}
+
+extreme_inputs:
+  - case: "固定 seed 下输出确定性（同输入 + 同 seed → 同输出）"
+    tags: [deterministic_with_seed]      # 命中 RandomSampling.deterministic_with_seed
+    synthesize:
+      shapes: {x: "[16]"}
+      patterns:
+        - {pattern: "all_same(1.0)", target: x}
+      attrs: {rate: 0.5, seed: 42, training: true}
+    machine_check: {kind: matches_invariant, name: shape_contract}
+
+  - case: "rate=0.999 极端丢弃（几乎全零）"
+    synthesize:
+      shapes: {x: "[1024]"}
+      patterns:
+        - {pattern: "all_same(1.0)", target: x}
+      attrs: {rate: 0.999, seed: 42, training: true}
+    machine_check: {kind: matches_invariant, name: shape_contract}
+
+  - case: "含 NaN（NaN 应原样传播或被丢弃）"
+    synthesize:
+      shapes: {x: "[8]"}
+      patterns:
+        - {pattern: inject_nan_one_element, target: x}
+      attrs: {rate: 0.0, seed: 42, training: true}    # rate=0 简化为恒等，避开 NaN×0 歧义
+    machine_check: {kind: equals_input}
+
+determinism:
+  required: true
+  accumulation_order: none                  # elementwise 无累加
+  partition_constraint: "seed 切分必须确定（按 thread_id 派生子 seed）"
+  bitwise_reproducible: true                # 同 seed 同设备同 dtype 应 bitwise 一致

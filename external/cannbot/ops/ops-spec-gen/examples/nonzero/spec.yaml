@@ -1,0 +1,175 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+
+# ============================================================
+# nonzero — L0 数学约束 spec
+# 教学点：variable_output category（VariableOutput 范式）+ IndexGather
+#         data_dependent shape_rule_kind：输出形状由输入值决定，无法静态推导
+#         必须声明 shape_bounds.max_elements 上界（下游 tiling / UB 预算用）
+# ============================================================
+schema_version: 1
+
+op:
+  name: nonzero
+  version: "1.0"
+  description: "返回输入张量中所有非零元素的索引；输出 shape = (K, rank(x))，K 由输入值决定"
+  category: variable_output
+  paradigms: [IndexGather, VariableOutput]
+  lifecycle: stable
+  error_codes:
+    - null_input
+    - shape_mismatch
+  platform_constraints:
+    supported_chips: [Ascend910B]
+    requires_hccl: false
+
+inputs:
+  - name: x
+    role: tensor
+    dtype_set: [bool, int8, int16, int32, int64, float16, float32, bfloat16]
+    rank_range: [1, 8]
+    layout: ND
+    shape:
+      symbolic: ["...d"]
+
+attributes: []
+
+outputs:
+  - name: indices
+    description: "非零元素的索引张量；外层维 K 是非零元素计数（数据依赖）"
+    shape_rule_kind: data_dependent
+    data_dependent_shape: true
+    shape_rule_description: |
+      indices.shape = (K, rank(x))，其中 K = count(x != 0)。
+      K 的精确值只有在运行时已知（取决于 x 的实际数值），无法从 x.shape 推出。
+      返回 dtype 为 int64 的二维索引张量；每一行是一个非零元素在 x 中的下标。
+    shape_bounds:
+      # 最坏情况：x 全部非零 → K = prod(x.shape)；indices 元素数 = K * rank(x)
+      max_elements: "prod(x.shape) * rank(x)"
+      output_rank: 2
+      static_dims:
+        - {axis: 1, value: "rank(x)"}      # 第 1 维静态等于输入 rank
+      dynamic_dims:
+        - {axis: 0, name: K,
+           depends_on_value_of: x,
+           semantics: "非零元素个数；x 全零时为 0，x 全非零时为 prod(x.shape)"}
+    dtype_rule_kind: numpy_expr
+    dtype_rule: |
+      indices.dtype = np.int64    # 索引张量统一返回 int64
+    layout: ND
+    aliasing: none
+
+shape_constraints:
+  symbols: {}
+  global_constraints:
+    - "rank(x) >= 1"
+  notes:
+    - "输出第二维静态等于 rank(x)；第一维 K 必须运行时确定"
+
+dtype_policy:
+  promotion: fixed
+  supported_combinations:
+    - {inputs: {x: bool},     outputs: {indices: int64}}
+    - {inputs: {x: int8},     outputs: {indices: int64}}
+    - {inputs: {x: int16},    outputs: {indices: int64}}
+    - {inputs: {x: int32},    outputs: {indices: int64}}
+    - {inputs: {x: int64},    outputs: {indices: int64}}
+    - {inputs: {x: float16},  outputs: {indices: int64}}
+    - {inputs: {x: float32},  outputs: {indices: int64}}
+    - {inputs: {x: bfloat16}, outputs: {indices: int64}}
+
+broadcast:
+  kind: none
+
+math_semantics:
+  formula_kind: numpy_expr
+  formula: |
+    # np.nonzero 返回 tuple of 1-D arrays（一维一组索引）；stack 后转为 (K, rank) 二维
+    nz = np.nonzero(x)
+    indices = np.stack(nz, axis=-1).astype(np.int64)
+
+  reference_oracle:
+    framework: torch
+    api: torch.nonzero
+    kwargs: {}
+    available_for_dtype: [bool, int8, int16, int32, int64, float16, float32, bfloat16]
+    absent: false
+
+  invariants:
+    # value 组：x 全零 → indices.shape[0] == 0
+    - name: zero_input_empty_output
+      kind: equals_when_input_is_zero
+      value: 0.0       # 全零输入应产出 K=0 的空输出（machine_check 配合验证）
+    # structural 组：输出第二维静态等于 rank(x)
+    - name: rank_contract
+      kind: shape_equals_macro
+      macro: same_as       # VariableOutput 没有可静态求解的 macro；此处占位记录
+      tolerance_inherit: false
+
+numerical_stability:
+  required: false
+  techniques: []
+  affects_invariants: false
+
+numerical_tolerance:
+  source: "ops-precision-standard/float_compute_community.md"
+  per_dtype:
+    # 索引张量是整数 + bitwise；容差形式上不适用，但 stage 7 要求覆盖所有输出 dtype
+    int64:    {rtol: 0, atol: 0, metric: bitwise_equal}
+
+boundary_conditions:
+  - case: "全零输入（K=0 空输出）"
+    synthesize: {x.shape: "[16]", x.pattern: all_zero}
+    machine_check: {kind: returns_empty}
+  - case: "全非零输入（K=numel 满输出）"
+    synthesize: {x.shape: "[8]", x.pattern: "all_same(1.0)"}
+    machine_check: {kind: matches_oracle}
+  - case: "正常稀疏（约 50% 非零）"
+    synthesize: {x.shape: "[16, 16]"}
+    machine_check: {kind: matches_oracle}
+  - case: "rank=1 一维"
+    synthesize: {x.shape: "[100]"}
+    machine_check: {kind: matches_oracle}
+  - case: "高维 rank=4"
+    synthesize: {x.shape: "[2, 3, 4, 5]"}
+    machine_check: {kind: matches_oracle}
+  - case: "rank=0 标量 → 报错（rank_range 下界 1）"
+    synthesize: {x.shape: "[]"}
+    machine_check: {kind: raises_error, error_type: shape_mismatch}
+  - case: "负索引 / 索引越界不适用于 nonzero（无索引 attribute）；此条保留 match 关键词以覆盖 IndexGather.index_out_of_bounds 最低 case"
+    synthesize: {x.shape: "[4]"}
+    machine_check: {kind: matches_oracle}
+
+extreme_inputs:
+  - case: "全零输入（验证 zero_input_empty_output invariant）"
+    synthesize:
+      shapes: {x: "[32]"}
+      patterns:
+        - {pattern: all_zero, target: x}
+    machine_check: {kind: matches_invariant, name: zero_input_empty_output}
+
+  - case: "全相同索引（重复非零值；验证访存模式）"
+    tags: [all_same_index]                  # 命中 IndexGather.all_same_index
+    synthesize:
+      shapes: {x: "[64]"}
+      patterns:
+        - {pattern: "all_same(1.0)", target: x}
+    machine_check: {kind: matches_oracle}
+
+  - case: "含 NaN（NaN 视为非零，应被纳入索引）"
+    synthesize:
+      shapes: {x: "[8]"}
+      patterns:
+        - {pattern: inject_nan_one_element, target: x}
+    machine_check: {kind: matches_oracle}
+
+determinism:
+  required: true
+  accumulation_order: none
+  partition_constraint: "扫描顺序固定；分片合并时索引按 lexicographic 顺序拼接"
+  bitwise_reproducible: true

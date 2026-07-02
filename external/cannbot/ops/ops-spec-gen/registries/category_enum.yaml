@@ -1,0 +1,36 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+
+# 算子 spec.yaml — op.category 受控集合（25 类）
+schema_version: 1
+categories:
+  - elementwise            # 输出元素仅依赖同位置输入；e.g. add, mul, relu, silu, gelu, sin, cos
+  - reduction              # 沿维度做结合性聚合（sum / mean / max）；e.g. reduce_sum, reduce_mean, reduce_max
+  - reduction_composite    # reduction + 数值稳定 / 归一化复合；e.g. softmax, layer_norm, rms_norm
+  - contraction            # 收缩维度乘加；e.g. matmul, bmm, linear, addmm
+  - layout_transform       # 不改数据，改组织方式；e.g. reshape, transpose, permute, cat, split
+  - index_gather           # 按整数索引读取；e.g. gather, index_select, embedding
+  - scatter_update         # 按索引覆盖写（无写冲突）；e.g. scatter（不含 reduce 形式）
+  - mask_predicate         # 元素级 mask / predicate 控制计算或访存；e.g. masked_fill, where
+  - sort_select            # 排序 / TopK / 选择 / 路由筛选；e.g. topk, sort, argsort
+  - fused_composite        # 多基础范式融合的高价值算子；e.g. flash_attention, attention
+  - random_sampling        # 含随机数生成 / 采样；e.g. dropout, multinomial
+  - sliding_window         # 滑动窗口聚合（Conv / Pool / Stencil）；e.g. conv2d, max_pool, avg_pool
+  - collective             # 跨设备通信原语；e.g. all_reduce, all_gather, reduce_scatter, broadcast(分布式)
+  - control_flow           # 图级控制流；e.g. cond, while_loop
+  - recurrence             # 含 inter-iteration 顺序依赖；e.g. cumsum, cumprod, lstm, gru, rnn
+  - interpolation          # 浮点坐标驱动的插值 / 重采样；e.g. interpolate(bilinear), grid_sample, roi_align
+  - quantization           # 量化 / 反量化转换（INT8 / INT4 / FP8）；e.g. quantize_per_tensor, dequantize, fake_quant
+  - stateful               # 含跨调用持久状态读写；e.g. batch_norm(running stats), adam_step, sgd_momentum_step
+  - arg_reduce             # 沿维度归约返回索引而非值；e.g. argmax, argmin
+  - sparse                 # 基于稀疏数据结构（CSR / COO / BSR）；e.g. sparse.mm, sparse.softmax, sparse_addmm
+  - padding                # 张量边缘填充（zero / reflect / replicate）；e.g. pad, ZeroPad, ReflectionPad
+  - variable_output        # 输出 shape 由输入数据值决定；e.g. unique, nonzero, masked_select, dynamic_partition
+  - spectral               # 频域变换（FFT / DCT / 蝶形）；e.g. fft, ifft, dct, stft
+  - histogram              # 直方图统计（必有写冲突）；e.g. histogram, histc, bincount
+  - atomic_update          # 按索引累加（含写冲突，需原子操作）；e.g. scatter_add, scatter_reduce, index_add

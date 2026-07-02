@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 
 # 确保同目录下的 _log_utils 可被导入（脚本可能从其他工作目录调用）
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _log_utils import setup_logger as _setup_logger_shared  # noqa: E402
+from _log_utils import setup_logger as _setup_logger_shared  # noqa: E402	 
 from _common_utils import describe_input as _describe_input_shared  # noqa: E402
 
 logger = logging.getLogger("triton_op_verifier.benchmark")

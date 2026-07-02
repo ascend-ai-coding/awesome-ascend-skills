@@ -92,13 +92,12 @@ class DecoderLayer(nn.Module):
 ## 配置文件
 
 ```yaml
-exe_mode: "ge_graph"
 model_config:
-  enable_superkernel: True
-  # MoE 相关配置
-  num_experts: 64
-  num_experts_per_tok: 8
-  moe_chunk_max_len: 1024  # 可选：MoE chunk 优化
+  exe_mode: "ge_graph"
+  custom_params:
+    enable_superkernel: True
+    moe_chunk_max_len: 1024       # 可选：MoE chunk 优化
+# 注：num_experts / num_experts_per_tok 等模型结构超参由模型 configuration 文件定义，不在 YAML 配置
 ```
 
 ---

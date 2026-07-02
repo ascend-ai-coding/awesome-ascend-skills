@@ -1,24 +1,21 @@
 # API 文档索引
 
-基于 `asc-devkit/docs/api/` 的完整 API 文档索引。
+基于 `$ASC_DEVKIT_DIR/docs/api/` 的完整 API 文档索引。
 
 ---
 
 ## 文档位置
 
 ```
-asc-devkit/docs/api/
-├── context/           # 基础数据结构（LocalTensor、GlobalTensor 等）
-├── basic_api/         # 基础 API（表2-13）
-├── adv_api/           # 高阶 API（表14-15）
-├── utils/             # 公共辅助函数
-├── aicpu_api/         # AI CPU API
-└── c_api/             # C API
+$ASC_DEVKIT_DIR/docs/api/  — Ascend C API 文档根目录
 ```
+
+> 子目录结构随 CANN 版本演进有变化（如 `context/` 扁平结构 → `SIMD-API/SIMT-API` 层级结构）。
+> **不要假设具体的子目录名**，统一用 `find "$ASC_DEVKIT_DIR/docs/api/" -name "{APIName}*.md"` 搜索。
 
 ---
 
-## 一、基础数据结构（context/）
+## 一、基础数据结构
 
 | API | 说明 |
 |-----|------|
@@ -30,7 +27,7 @@ asc-devkit/docs/api/
 
 ---
 
-## 二、基础 API（basic_api/）
+## 二、基础 API
 
 ### 表2：标量计算 API
 | API | 说明 |
@@ -104,7 +101,7 @@ asc-devkit/docs/api/
 
 ---
 
-## 三、高阶 API（adv_api/）
+## 三、高阶 API
 
 ### 表14：数学计算 API
 | 类别 | API |
@@ -122,19 +119,19 @@ asc-devkit/docs/api/
 
 ---
 
-## 四、Utils API（utils/）
+## 四、Utils API
 
 公共辅助函数，提供通用工具支持。
 
 ---
 
-## 五、AI CPU API（aicpu_api/）
+## 五、AI CPU API
 
 AI CPU 处理器相关 API。
 
 ---
 
-## 六、C API（c_api/）
+## 六、C API
 
 | 类别 | 说明 |
 |-----|------|
@@ -147,12 +144,11 @@ AI CPU 处理器相关 API。
 
 ## 使用建议
 
-1. **API 文档查找优先级**：
+1. **API 文档查找**：
+   ```bash
+   find "$ASC_DEVKIT_DIR/docs/api/" -name "${APIName}*.md"
    ```
-   asc-devkit/docs/api/context/  →  基础数据结构
-   asc-devkit/docs/api/basic_api/ →  基础 API
-   asc-devkit/docs/api/adv_api/   →  高阶 API
-   ```
+   （不依赖具体子目录结构）
 
 2. **查阅 API 文档时注意**：
    - **Restriction 章节**：查看使用限制和对齐要求

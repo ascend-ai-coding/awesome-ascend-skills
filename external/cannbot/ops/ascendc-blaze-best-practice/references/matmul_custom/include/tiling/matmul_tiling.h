@@ -78,6 +78,25 @@ protected:
     }
 
 private:
+    static constexpr uint64_t FRACTAL_C0 = BLOCK_BYTE_SIZE / DATA_SIZE_FP16;
+
+    uint64_t MAlignment() const
+    {
+        return args_.isANz && args_.isATrans ? FRACTAL_C0 : BASIC_BLOCK_SIZE_16;
+    }
+
+    uint64_t NAlignment() const
+    {
+        return args_.isBNz && !args_.isBTrans ? FRACTAL_C0 : BASIC_BLOCK_SIZE_16;
+    }
+
+    uint64_t KAlignment() const
+    {
+        bool kIsAInnerAxis = args_.isANz && !args_.isATrans;
+        bool kIsBInnerAxis = args_.isBNz && args_.isBTrans;
+        return (kIsAInnerAxis || kIsBInnerAxis) ? FRACTAL_C0 : BASIC_BLOCK_SIZE_16;
+    }
+
     void ResetBase()
     {
         runInfo_.usedCoreNum = platformInfo_.aicNum;
@@ -102,25 +121,26 @@ private:
         uint64_t mCore = CeilDiv(args_.m, runInfo_.baseM);
         uint64_t nCore = CeilDiv(args_.n, runInfo_.baseN);
         if (mCore * nCore >= platformInfo_.aicNum) {
-            runInfo_.baseM = std::min(Align(args_.m, BASIC_BLOCK_SIZE_16), runInfo_.baseM);
-            runInfo_.baseN = std::min(Align(args_.n, BASIC_BLOCK_SIZE_16), runInfo_.baseN);
+            runInfo_.baseM = std::min(Align(args_.m, MAlignment()), runInfo_.baseM);
+            runInfo_.baseN = std::min(Align(args_.n, NAlignment()), runInfo_.baseN);
             return;
         }
         CalcBasicBlock();
         mCore = CeilDiv(args_.m, runInfo_.baseM);
         nCore = CeilDiv(args_.n, runInfo_.baseN);
         runInfo_.usedCoreNum = mCore * nCore;
-        uint64_t kValueAlign = Align(args_.k, BASIC_BLOCK_SIZE_16);
+        uint64_t kAlign = KAlignment();
+        uint64_t kValueAlign = Align(args_.k, kAlign);
         uint64_t kValueMax = FloorAlign(
             platformInfo_.l0aSize / DB_SIZE / DATA_SIZE_FP16 / std::max(runInfo_.baseM, runInfo_.baseN),
-            BASIC_BLOCK_SIZE_16);
+            kAlign);
         runInfo_.baseK = std::min(kValueAlign, kValueMax);
     }
 
     void FormulateLoadBalanceBlock()
     {
-        runInfo_.baseM = std::min(Align(args_.m, BASIC_BLOCK_SIZE_16), runInfo_.baseM);
-        runInfo_.baseN = std::min(Align(args_.n, BASIC_BLOCK_SIZE_16), runInfo_.baseN);
+        runInfo_.baseM = std::min(Align(args_.m, MAlignment()), runInfo_.baseM);
+        runInfo_.baseN = std::min(Align(args_.n, NAlignment()), runInfo_.baseN);
 
         runInfo_.defaultBalance =
             CalcMultiCoreBalance(args_.m, args_.n, platformInfo_.aicNum, runInfo_.baseM, runInfo_.baseN);
@@ -154,18 +174,19 @@ private:
         if (singleBlockNum < 1.0) {
             CalcBasicBlock();
         }
-        runInfo_.baseM = Align(runInfo_.baseM, BASIC_BLOCK_SIZE_16);
-        runInfo_.baseN = Align(runInfo_.baseN, BASIC_BLOCK_SIZE_16);
+        runInfo_.baseM = Align(runInfo_.baseM, MAlignment());
+        runInfo_.baseN = Align(runInfo_.baseN, NAlignment());
         runInfo_.dbL0c =
             runInfo_.baseM * runInfo_.baseN * DATA_SIZE_FP32 * DB_SIZE <= platformInfo_.l0cSize ? DB_SIZE : 1UL;
 
         mCore = CeilDiv(args_.m, runInfo_.baseM);
         nCore = CeilDiv(args_.n, runInfo_.baseN);
         runInfo_.usedCoreNum = std::min(mCore * nCore, static_cast<uint64_t>(platformInfo_.aicNum));
-        uint64_t kValueAlign = Align(args_.k, BASIC_BLOCK_SIZE_16);
+        uint64_t kAlign = KAlignment();
+        uint64_t kValueAlign = Align(args_.k, kAlign);
         uint64_t kValueMax = FloorAlign(
             platformInfo_.l0aSize / DB_SIZE / DATA_SIZE_FP16 / std::max(runInfo_.baseM, runInfo_.baseN),
-            BASIC_BLOCK_SIZE_16);
+            kAlign);
         runInfo_.baseK = std::min(kValueAlign, kValueMax);
     }
 

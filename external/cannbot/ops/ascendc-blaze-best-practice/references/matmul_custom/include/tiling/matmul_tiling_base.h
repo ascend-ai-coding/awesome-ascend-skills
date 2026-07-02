@@ -50,6 +50,8 @@ struct MatmulArgs {
     bool hasBias{false};
     bool isATrans{false};
     bool isBTrans{false};
+    bool isANz{false};
+    bool isBNz{false};
 };
 
 struct MatmulTailInfo {
@@ -89,10 +91,11 @@ public:
     MatmulTilingBase() = default;
     virtual ~MatmulTilingBase() = default;
 
-    virtual void GetTilingData(uint64_t m, uint64_t n, uint64_t k, MatmulTilingData& tilingData)
+    virtual void GetTilingData(uint64_t m, uint64_t n, uint64_t k, MatmulTilingData& tilingData,
+        bool isATrans = false, bool isBTrans = false, bool isANz = false, bool isBNz = false)
     {
         InitCompileInfo();
-        InitShapeArgs(m, n, k);
+        InitShapeArgs(m, n, k, false, isATrans, isBTrans, isANz, isBNz);
         DoOpTiling(tilingData);
         PrintTilingData(tilingData);
     };
@@ -121,12 +124,17 @@ private:
         ascendcPlatform->GetCoreMemSize(platform_ascendc::CoreMemType::BT, platformInfo_.btSize);
     }
 
-    void InitShapeArgs(uint64_t m, uint64_t n, uint64_t k, bool hasBias = false)
+    void InitShapeArgs(uint64_t m, uint64_t n, uint64_t k, bool hasBias = false,
+        bool isATrans = false, bool isBTrans = false, bool isANz = false, bool isBNz = false)
     {
         args_.m = m;
         args_.n = n;
         args_.k = k;
         args_.hasBias = hasBias;
+        args_.isATrans = isATrans;
+        args_.isBTrans = isBTrans;
+        args_.isANz = isANz;
+        args_.isBNz = isBNz;
     }
 
     void PrintTilingData(const MatmulTilingData& tilingData) const

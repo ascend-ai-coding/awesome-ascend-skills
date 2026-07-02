@@ -217,7 +217,7 @@ DAV_3510 新增三条通路，使 Cube 与 Vector 可直接交换数据，避免
 
 ### 指令序列与 BufferID 同步
 
-DAV_3510 上各执行单元拥有独立指令队列：Cube / FixPipe / MTE1 / MTE2 / MTE3 / SIMD VF / SIMT VF。
+DAV_3510 上各执行单元拥有独立指令队列：Scalar / Cube / FixPipe / MTE1 / MTE2 / MTE3 / SIMD VF or SIMT VF。
 
 **BufferID 同步机制**：消除原 set/wait 强制配对需求，简化多流水算子的同步代码。
 

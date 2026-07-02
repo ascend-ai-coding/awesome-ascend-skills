@@ -38,7 +38,7 @@
 | 位置 | 改动 |
 |---|---|
 | Launcher | `AType/BType/CType`、`sizeA/B/C` |
-| BlockMmad | `BLOCK_CUBE`（bf16/fp16=16, int8/fp8=32, fp4=64）；`L0CType`（int8→int32，其他→fp32） |
+| BlockMmad | `BLOCK_CUBE`（fp32 = 8，bf16/fp16=16, int8/fp8=32, fp4=64）；`L0CType`（int8→int32，其他→fp32） |
 | tiling | `DATA_SIZE_FP16` 改对应字节数 |
 | gen_data.py | 输入 dtype + golden cast |
 | verify_result.py | 读取 dtype + 容差 |
@@ -49,7 +49,7 @@ dtype 速查：
 |---|---|---|---|---|
 | bf16 | `bfloat16_t` | 2 | 16 | float |
 | fp16 | `half` | 2 | 16 | float |
-| fp32 | `float` | 4 | 16 | float |
+| fp32 | `float` | 4 | 8 | float |
 | fp8_e4m3 | `fp8_e4m3fn_t` | 1 | **32** | float |
 | int8 | `int8_t` | 1 | 32 | **int32** |
 | fp4 | `fp4x2_e2m1_t` | 0.5 | 64 | float |
@@ -70,13 +70,34 @@ dtype 速查：
 **同步保证**：`WaitFlag<MTE2_MTE1>` 等 A/B/bias 三个 GM→L1 全部完成；`WaitFlag<MTE1_M>` 等 L1→L0 全部完成。无需额外 event slot。
 
 **关键约束**：
-- Bias dtype = fp32，shape `(1, N)`，ND 行主序
-- L1 staging 区在 L1 末尾：`biasL1Offset_ = TOTAL_L1_SIZE - Align(baseN*sizeof(BiasType)+32, 32)`（32B margin 防止越界写；**不能硬编码偏移值**）
+- Bias dtype = fp32，shape `(1, N)`，ND 行主序(NDExtLayoutPtn)
+- L1 staging 区在 L1 末尾：`biasL1Offset_ = TOTAL_L1_SIZE - Align(baseN*sizeof(BiasType) + 32, BUFFER_NUM * 32)`（32B margin 防止越界写；BUFFER_NUM=2或4时, 32乘BUFFER_NUM保证让每个BUFFER的起始地址32B对齐; **不能硬编码偏移值**, **注意引入biasStaging后其余地址是否32B对齐**）
 - BT 双缓冲：`l0cDB==2` 时 BT 也切两半，`biasBtOffset = (l0cPingPong_ & 1) * 256 * sizeof(BiasType)`（dav-3510 BT=4KB ÷ 2 = 256 fp32/半）
 
 完整参考实现见 `matmul_block_mmad.h`。
 
-### 2.3 新增 MX/量化 Trait
+### 2.3 开启HF32模式
+
+**HF32模式简介**
+- HF32是一种浮点数数据格式，具有1个符号位，8个指数位以及11个尾数位。HF32和fp32以及bf16的指数位数相同，但是尾数精度却接近fp16。
+- npu的Mmad计算可通过SetHF32Mode接口开启HF32模式，开启该模式后L0A/L0B中的FP32数据将在参与Mmad计算之前被舍入为HF32。开启HF32模式会损失一部分精度，但可降低数据所占空间大小，实现性能的提升。
+
+**接口说明**
+- HF32模式通过接口AscendC::SetHF32Mode设置，签名为`__aicore__ inline void SetHF32Mode(HF32Mode mode)`. 输入1表示开启HF32模式，输入0表示关闭HF32模式。
+- HF32的舍入规则可通过AscendC::SetHF32TransMode配置，签名为`__aicore__ inline void SetHF32TransMode(bool hf32TransMode)`, 输入为true表示FP32以向0靠近的方式舍入为HF32；输入为false表示FP32以最近接近偶数的方式舍入为HF32。舍入规则通常在kernel入口处和SetHF32Mode一同配置。
+
+**实现说明**
+- 在kernel入口处, scheduler初始化之后，开启HF32模式并配置舍入规则：
+```
+AscendC::SetHF32Mode(1);
+AscendC::SetHF32TransMode(1)
+```
+在kernel结束时，blockMmad计算完成后，关闭HF32模式：`AscendC::SetHF32Mode(0)`.
+- 需要将是否开启HF32模式配置为可选开启时，在tilingData和kernel的params中新增`isHF32`字段，用于控制是否开启HF32模式。
+
+注：当用户要求生成输入为HF32类型的mamtul算子时，也视作输入FP32但开启HF32模式。用户没有提及HF32时，默认关闭。
+
+### 2.4 新增 MX/量化 Trait
 
 三步并存多条计算路径：
 
@@ -84,7 +105,13 @@ dtype 速查：
 2. `matmul_block_mmad.h` 复制一份 SFINAE 特化，`enable_if_t` base 类换成新 tag
 3. launcher 切换 `using DispatchPolicy = ...`
 
-### 2.4 调大 L1 stage 数（2 → 4）
+
+> 该方法只用于 MMAD trait / A-B 数据路径确实不同的计算变体。direct vs fusion 的
+> L0C 终端输出差异由传入 `BlockMmad` 的输出 Tensor location 覆盖：direct kernel
+> 传 GM Tensor，fused kernel 传 UB Tensor。不要为 fusion 复制
+> `matmul_block_mmad*.h`、增加 `BlockMmad` 模板参数或扩展 `DispatchPolicy`。
+
+### 2.5 调大 L1 stage 数（2 → 4）
 
 1. `dispatch_policy.h` 加 `STAGES_` 模板参数
 2. BlockMmad 把 `L1_BUFFER_NUM` 改为 `DispatchPolicy::stages`

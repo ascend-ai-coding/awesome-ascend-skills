@@ -4,8 +4,8 @@ description: Ascend C 算子 Tiling 设计指南。提供算子分类体系和 T
   Tiling 策略（多核切分/UB切分）、规划 Buffer 分配、查阅某类算子的 Tiling 方法论时。
 original-name: ascendc-tiling-design
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-26'
-synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
+synced-date: '2026-07-02'
+synced-commit: 342679f37ec1b052a8b64d6c9fd59f67e0c89073
 license: UNKNOWN
 ---
 
@@ -16,13 +16,15 @@ license: UNKNOWN
 | 类别 | 特征 | 典型算子 | 设计指南 |
 |------|------|---------|---------|
 | **Reduction 归约类** | 沿轴归约（含索引跟踪变体） | ReduceSum, Softmax, LayerNorm, ArgMax | ✅ [场景路由](references/reduction/patterns.md)（⚠️ 必须先读） / [算法](references/reduction/algorithms.md) |
+| **Sort 排序类** | 排序、TopK、外部归并 | Sort, ArgSort, TopK | ✅ [场景路由](references/sort/patterns.md)（⚠️ 必须先读） / [多核两级归并方案](references/sort/alg-two-level-mrgsort.md) |
 | **Elementwise 逐元素类** | 输入输出Shape相同，逐元素独立计算 | Sin, Cos, Abs, Exp | ✅ [场景路由](references/elewise/patterns.md)（⚠️ 必须先读） |
 | Broadcast 广播类 | 输入Shape不同，需广播对齐 | Add, Mul, Sub | ✅ [场景路由](references/broadcast/patterns.md)（⚠️ 必须先读） |
 | Conversion 数据转换类 | 改变布局/形状，合并/拆分张量 | Transpose, Concat, Split | ⚠️ [场景路由](references/conversion/patterns.md)（当前仅 Transpose 部分支持） |
 | Random 随机类 | 生成随机数，需种子管理 | RandomUniform, Dropout | 📋 规划中 |
-| MatMul 矩阵乘类 | 矩阵乘法，高计算密度，用Cube单元 | MatMul, BatchMatMul | ✅ [场景路由](references/matmul/patterns.md)（mxfp8 + eltwise 融合；其它 matmul 形态规划中） |
+| MatMul 矩阵乘类 | 矩阵乘法，高计算密度，用Cube单元 | MatMul, BatchMatMul, MatMulBias, GroupedMatmul | ✅ [场景路由](references/matmul/patterns.md)（⚠️ 必须先读平台路由） |
 | Convolution 卷积类 | 空间卷积，滑动窗口计算 | Conv2D, DepthwiseConv | 📋 规划中 |
-| NN 神经网络类 | 神经网络专用，多种操作组合 | FlashAttention, GroupNorm | 📋 规划中 |
+| FlashAttention 类 | 注意力计算 | FlashAttention, GQA, MHA, MLA | ✅ [分析](references/flashattention/overview.md)(⚠️ 必须先读) / [设计](references/flashattention/design.md) / [子族契约](references/flashattention/subfamilies.md) |
+| NN 神经网络类(其它)| 神经网络专用，多种操作组合 | GroupNorm 等非 attention | 📋 规划中 |
 
 ## 通用设计要素（所有类别必须）
 

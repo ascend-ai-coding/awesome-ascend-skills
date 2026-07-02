@@ -60,55 +60,40 @@ cp -r references/matmul_custom <your_project> && cd <your_project>
 | # | 文件 | 操作 |
 |---|------|------|
 | A1 | 启动器 `.cpp` | `NO_FULL_LOAD_MODE` → `A_FULL_LOAD_MODE`；`MatmulTilingSwat` → `MatmulTilingAFullLoad` |
-| E1 | 启动器 `.cpp` | `IdentityEpilogue<CType>` → 自定义 Epilogue 类 |
+| A2 | 启动器 `.cpp` | NZ/ZN 分形预重排输入（A-NZ / B-NZ），GM→L1 走块拷贝省掉格式转换带宽。改造步骤详见 [`matmul_pattern.md`](matmul_pattern.md) §5.4 |
+| E1 | 启动器 `.cpp` | `IdentityEpilogue<CType>` → 自定义 Epilogue 类。**推荐 RegBase 路径**：<br>- **RegBase（推荐）**：`epilogue_fusion_regbase.h` 模板，用 `__VEC_SCOPE__` + `Reg::Cast/Mul/Exp` 等 RegTensor API，详见 [`matmul_fixpopti_regbase_epilogue.md`](matmul_fixpopti_regbase_epilogue.md)<br>- **MemBase（仅限简单场景）**：`epilogue_fusion_membase.h` 参考样例，仅当 vector 操作为单个 AscendC API 调用（如 `AscendC::Mul/Add/Div`）时使用 |
 
-### 3.5 BlockMmad Fixpipe 改造（必做）
+### 3.5 BlockMmad 输出 Tensor location（已内置）
 
-纯AIC 的 `CopyL0C2GM` 将 L0C 写到 GM，AIV 无法访问。FixpOpti 必须改为 `CopyL0C2UB` 将 L0C 写到 UB，AIV 的 Epilogue 才能读取。
+纯AIC direct 路径需要 `CopyL0C2GM` 将 L0C 写回 GM；FixpOpti/Fusion 路径需要
+`CopyL0C2UB` 将 L0C 写到 UB，AIV 的 Epilogue 才能读取。这个差异已经内置在共享
+`BlockMmad` 中，通过传入输出 Tensor 的 location 编译期分流：
 
-**文件**：`include/block/matmul_block_mmad.h`（NO_FULL_LOAD_MODE）
+| 路径 | 输出 Tensor | BlockMmad 终端输出 |
+|------|-----------------|--------------------|
+| 纯AIC direct | GM Tensor | `CopyL0C2GM` |
+| FixpOpti/Fusion | UB Tensor | `CopyL0C2UB` + SPLIT_M Trait |
 
-**原代码**（纯AIC L0C→GM）：
+因此生成 FixpOpti 算子时使用 `MatmulKernelFused`，由 fused kernel 构造 UB Tensor
+传给 `BlockMmad`。不要复制或回改 `include/block/matmul_block_mmad*.h`，也不要给
+`BlockMmad` 增加模板参数或给 `DispatchPolicy` 增加输出模式。
+
+**NO_FULL_LOAD FixpOpti 默认写法**：
+
 ```cpp
-        // L0C -> GM，由 fixpipe 完成 L0C(fp32/int32) -> CType 的量化/cast。
-        auto CopyL0C2GM = AscendC::Te::MakeCopy(AscendC::Te::CopyL0C2GM{});
-        AscendC::Te::Copy(CopyL0C2GM, gmC, tensorL0C, AscendC::Te::FixpipeParams{FINAL_ACCUMULATION});
+using BlockScheduler = MatmulSwatScheduler<NO_FULL_LOAD_MODE>;
+using DispatchPolicy = MatmulMultiBlockPolicy<NO_FULL_LOAD_MODE>;
 ```
 
-**替换为**（FixpOpti L0C→UB + SPLIT_M Trait）：
+**A_FULL_LOAD FixpOpti 写法**：
+
 ```cpp
-        // FixpOpti: L0C→UB via Te::Copy(CopyL0C2UB{}) + 自定义 SPLIT_M Trait。
-        (void)gmC;
-        auto curMPad = (curM + 1L) & ~1L;
-        constexpr int64_t UB_N_ALIGN_ELEM = 32L / static_cast<int64_t>(sizeof(L0CType));
-        auto curNUbAlign = ((curN + UB_N_ALIGN_ELEM - 1L) / UB_N_ALIGN_ELEM) * UB_N_ALIGN_ELEM;
-
-        auto layoutUB = AscendC::Te::MakeFrameLayout<
-            AscendC::Te::NDExtLayoutPtn, AscendC::Std::Int<BLOCK_CUBE_L0C>>(curMPad, curNUbAlign);
-        auto ubTensor = AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, float>(0), layoutUB);
-
-        auto copyOp = AscendC::Te::MakeCopy(AscendC::Te::CopyL0C2UB{}, CopyL0C2UBSplitMTrait{});
-        AscendC::Te::Copy(copyOp, ubTensor, tensorL0C,
-            AscendC::Te::FixpipeParams{FINAL_ACCUMULATION});
-```
-
-**并在文件头部 `namespace Block {` 之后插入 Trait 声明**：
-```cpp
-struct CopyL0C2UBSplitMTrait {
-    using TraitType = AscendC::Te::CopyL0C2UBTrait;
-    static constexpr const TraitType value{
-        AscendC::Te::RoundMode::DEFAULT,
-        false,
-        false,
-        AscendC::Te::DualDstMode::DUAL_DST_SPLIT_M
-    };
-};
+using BlockScheduler = MatmulSwatScheduler<A_FULL_LOAD_MODE>;
+using DispatchPolicy = MatmulMultiBlockPolicy<A_FULL_LOAD_MODE>;
+// host main 同步使用 MatmulTilingAFullLoad
 ```
 
 `DUAL_DST_SPLIT_M` 是非 fp32 输出走 SPLIT_M 的关键：fp32 输出走 DUAL_DST 单指令广播，非 fp32 必须拆为 2 条 fixpipe 指令分别路由到 AIV0/AIV1（陷阱 P5）。
-
-**同样改造 `include/block/matmul_block_mmad_a_full_load.h`**（A_FULL_LOAD_MODE 特化），Trait 声明复用 `matmul_block_mmad.h` 中的定义（A_FULL_LOAD 文件被前者 include）。
 
 ### 3.6 新增文件（复制即用，无需修改）
 
@@ -119,6 +104,8 @@ struct CopyL0C2UBSplitMTrait {
 | `matmul_fixpopti.cpp` | FixpOpti 启动器（`__mix__(1, 2)`，AIC+AIV + CV 同步） |
 | `include/kernel/matmul_kernel_fused.h` | AIC+AIV 统一循环驱动 |
 | `include/epilogue/identity_epilogue.h` | float→bf16 Cast + DataCopyPad + SetFlag |
+| `include/epilogue/epilogue_fusion_regbase.h` | RegBase 后融合框架（推荐） |
+| `include/epilogue/epilogue_fusion_membase.h` | MemBase 后融合参考样例（简单 vector 场景） |
 | `include/epilogue/cv_sync_constants.h` | CV Flag 常量 |
 
 ## 4. 常见陷阱
@@ -143,7 +130,7 @@ struct CopyL0C2UBSplitMTrait {
 | Kernel 属性 | `__cube__` | `__mix__(1, 2)` |
 | Kernel 模板 | `MatmulKernel` | `MatmulKernelFused` |
 | AIV 行为 | `return` | Epilogue 循环 |
-| BlockMmad | `CopyL0C2GM` | `CopyL0C2UB` + SPLIT_M Trait |
+| BlockMmad | kernel 传 GM Tensor，写 GM | kernel 传 UB Tensor，写 UB |
 | CV 同步 | 无 | CrossCoreSetFlag/WaitFlag |
-| 新增文件 | — | fused kernel、epilogue × 2 |
-| 共享文件 | common/ tiling/ scheduler/ utils/ | 完全复用 |
+| 新增文件 | — | fused kernel、epilogue × 4（identity + cv_sync + regbase + membase） |
+| 共享文件 | common/ tiling/ scheduler/ utils/ block/ | 完全复用 |

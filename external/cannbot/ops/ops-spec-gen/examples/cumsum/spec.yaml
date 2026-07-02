@@ -1,0 +1,175 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+
+# ============================================================
+# cumsum — L0 数学约束 spec
+# 教学点：recurrence category（Recurrence 范式：inter-iteration 顺序依赖）
+#         determinism.accumulation_order = sequential（不可并行化最内层）
+#         formula 极简（y = np.cumsum(x, axis=dim)）；oracle 直接可用
+# ============================================================
+schema_version: 1
+
+op:
+  name: cumsum
+  version: "1.0"
+  description: "Cumulative sum along an axis; y[i] = sum(x[0..i])"
+  category: recurrence
+  paradigms: [Recurrence]
+  lifecycle: stable
+  error_codes: [null_input, attribute_value_out_of_range]
+  platform_constraints:
+    supported_chips: [Ascend910B]
+    requires_hccl: false
+
+inputs:
+  - name: x
+    role: tensor
+    dtype_set: [float16, bfloat16, float32, float64, int32, int64]
+    rank_range: [1, 8]
+    layout: ND
+    shape:
+      symbolic: ["...d"]
+
+attributes:
+  - name: dim
+    type: int64
+    default: 0
+    semantics: "累加轴；负值按 Python 风格折算"
+    machine_constraint:
+      kind: int_in_range_relative_to_rank
+      target: x
+      lower_inclusive: "-rank(x)"
+      upper_exclusive: "rank(x)"
+
+outputs:
+  - name: y
+    shape_rule_kind: numpy_expr
+    shape_rule: |
+      y.shape = x.shape
+    dtype_rule_kind: numpy_expr
+    dtype_rule: |
+      y.dtype = x.dtype
+    layout: ND
+    aliasing: none
+
+shape_constraints:
+  symbols: {}
+  global_constraints:
+    - "rank(x) >= 1"
+  notes:
+    - "输出 shape 与输入完全相同"
+    - "Recurrence 范式：y[i] 依赖 y[i-1]（沿 dim 有顺序依赖）"
+
+dtype_policy:
+  promotion: same_as_first_input
+  supported_combinations:
+    - {inputs: {x: float16},  outputs: {y: float16}}
+    - {inputs: {x: bfloat16}, outputs: {y: bfloat16}}
+    - {inputs: {x: float32},  outputs: {y: float32}}
+    - {inputs: {x: float64},  outputs: {y: float64}}
+    - {inputs: {x: int32},    outputs: {y: int32}}
+    - {inputs: {x: int64},    outputs: {y: int64}}
+
+broadcast:
+  kind: none
+
+math_semantics:
+  formula_kind: numpy_expr
+  formula: |
+    y = np.cumsum(x, axis=dim)
+
+  reference_oracle:
+    framework: torch
+    api: torch.cumsum
+    kwargs: {dim: "${attr.dim}"}
+    available_for_dtype: [float16, bfloat16, float32, float64, int32, int64]
+    absent: false
+
+  invariants:
+    # value 组：最后一个元素 == reduce_sum 全轴
+    - name: last_elem_eq_sum
+      kind: reduce_equals
+      reducer: sum
+      axis: dim
+      value: "y[..., -1]"              # 概念性描述（stage 2 不 eval 这个字面量）
+      tolerance_inherit: true
+    # algebraic 组：累加律——cum(x+y) = cum(x) + cum(y)（浮点精度内）
+    # （暂不声明；只做单条 reduce_equals 即够覆盖）
+
+numerical_stability:
+  required: true
+  techniques:
+    - name: kahan_compensated_sum
+      applies_to: "fp16/bf16 长轴累加时建议 Kahan 补偿求和"
+      rationale: "防止长轴累积误差超 tolerance（逐元素误差叠 N 次）"
+      anti_pattern_id: AP-007
+  affects_invariants: false
+
+numerical_tolerance:
+  source: "ops-precision-standard/float_compute_community.md"
+  per_dtype:
+    float16:  {rtol: 2.0e-2, atol: 2.0e-2, metric: max_relative}    # 累加误差放宽
+    bfloat16: {rtol: 3.0e-2, atol: 3.0e-2, metric: max_relative}
+    float32:  {rtol: 1.0e-4, atol: 1.0e-4, metric: max_relative}
+    float64:  {rtol: 1.0e-12, atol: 1.0e-12, metric: max_relative}
+    int32:    {rtol: 0,      atol: 0,      metric: bitwise_equal}
+    int64:    {rtol: 0,      atol: 0,      metric: bitwise_equal}
+
+boundary_conditions:
+  - case: "dim=0 单元素轴（累加退化为恒等）"
+    synthesize: {x.shape: "[1, 4]", attr.dim: 0}
+    machine_check: {kind: equals_input}
+  - case: "rank=1 最简 cumsum"
+    synthesize: {x.shape: "[8]", attr.dim: 0}
+    machine_check: {kind: matches_oracle}
+  - case: "负 dim"
+    synthesize: {x.shape: "[3, 4]", attr.dim: -1}
+    machine_check: {kind: matches_oracle}
+  - case: "dim 越界 → 报错"
+    synthesize: {x.shape: "[3, 4]", attr.dim: 2}
+    machine_check: {kind: raises_error, error_type: attribute_value_out_of_range}
+  - case: "dim 越界负 → 报错"
+    synthesize: {x.shape: "[3, 4]", attr.dim: -3}
+    machine_check: {kind: raises_error, error_type: attribute_value_out_of_range}
+
+extreme_inputs:
+  - case: "全零 → 输出全零"
+    synthesize:
+      shapes: {x: "[16]"}
+      patterns:
+        - {pattern: all_zero, target: x}
+    machine_check: {kind: equals, value: 0.0}
+
+  - case: "含 NaN（NaN 后面所有位置都变 NaN）"
+    synthesize:
+      shapes: {x: "[8]"}
+      patterns:
+        - {pattern: inject_nan_one_element, target: x}
+    machine_check: {kind: produces_nan, scope: "从 NaN 位置起的尾部"}
+
+  - case: "长轴累加 + fp16（验证补偿求和）"
+    synthesize:
+      shapes: {x: "[65536]"}
+      patterns:
+        - {pattern: "all_same(0.001)", target: x}
+      attrs: {dim: 0}
+      dtype: float16
+    machine_check: {kind: matches_oracle}
+
+  - case: "全相同值 → 线性递增"
+    synthesize:
+      shapes: {x: "[16]"}
+      patterns:
+        - {pattern: "all_same(1.0)", target: x}
+    machine_check: {kind: matches_oracle}
+
+determinism:
+  required: true
+  accumulation_order: sequential              # Recurrence 范式核心约束
+  partition_constraint: "沿 dim 不可切分（inter-element 依赖）；batch / 其他维度可自由切"
+  bitwise_reproducible: true                  # 顺序固定 + 同 dtype → 应 bitwise 一致

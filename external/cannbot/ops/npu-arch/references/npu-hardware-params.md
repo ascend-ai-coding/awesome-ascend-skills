@@ -19,6 +19,8 @@
 | Atlas 200I/500 A2 推理 | ASCEND310B | DAV_3002 | 3002 | Ascend310B1~B4 |
 | Atlas A5 训练 | ASCEND950 | DAV_3510 | 3510 | Ascend950DT (Decode) |
 | Atlas A5 推理 | ASCEND950 | DAV_3510 | 3510 | Ascend950PR (Prefill) |
+| Mate80、Pura90等系列 | Kirin9030 | DAV_3113 | 3113 | Kirin9030 |
+| MatePad Edge、MateBookPro等系列 | KirinX90 | DAV_3003 | 3003 | KirinX90 |
 
 > **一对多关系**：一个 NpuArch 可对应多个 SocVersion / 芯片型号。例如 `DAV_2201` 对应 Ascend910B1~B4、Ascend910B2C、Ascend910_93。
 >
@@ -26,9 +28,9 @@
 
 ---
 
-## 1. 跨架构一致参数
+## 1. 服务器跨架构一致参数
 
-以下参数在所有已验证的 Ascend NPU 架构上保持一致：
+以下参数在所有已验证的**服务器** Ascend NPU 架构上保持一致（Kirin 端侧平台除外）：
 
 | 参数 | INI 字段 | 值 | 说明 |
 |------|---------|:---:|------|
@@ -36,7 +38,7 @@
 | L0B | `[AICoreSpec] l0_b_size` | 64 KB (65536) | Cube 右矩阵操作数 |
 | Cube MAC 阵列 | `cube_m_size / cube_k_size / cube_n_size` | 16×16×16 | 一个周期完成 4096 次 MAC |
 
-> **注意**：即便以上参数通常一致，代码中仍应通过 `GetCoreMemSize` 获取，避免硬编码。
+> **注意**：即便以上参数通常一致，代码中仍应通过 `GetCoreMemSize` 获取，避免硬编码。Kirin 端侧平台（DAV_3003/DAV_3113）Cube MAC 阵列不同，DAV_3113 L0A/L0B 更小，详见 §2.6/§2.7。
 
 ---
 
@@ -113,6 +115,65 @@
 | 核心类型 | `core_type_list` | `CubeCore,VectorCore` |
 | 核间关系 | — | CubeCore : VectorCore = 1 : 2 |
 
+### 2.6 DAV_3003 — KirinX90 端侧系列
+
+> **重要说明**：KirinX90 端侧平台使用，架构代号 `dav-l300`。
+
+| 参数 | INI 字段 | 值 | 与服务器版差异 |
+|------|---------|:---:|------|
+| NpuArch | `NpuArch` | 3003 | 新架构，不在旧版映射表中 |
+| AIC_version | `AIC_version` | AIC-L-300 | 端侧专用版本标识 |
+| 核数 | `ai_core_cnt` | 1 | **单核**（服务器版多核） |
+| VectorCore | `vector_core_cnt` | 1 | 单 VectorCore |
+| L1 | `l1_size` | 1 MB (1048576) | 与 DAV_1001/2002/3002 相同 |
+| L0A | `l0_a_size` | 64 KB (65536) | **与服务器版相同**（DAV_3113 为 32 KB） |
+| L0B | `l0_b_size` | 64 KB (65536) | **与服务器版相同**（DAV_3113 为 32 KB） |
+| L0C | `l0_c_size` | 128 KB (131072) | 与 DAV_2201/3002 相同 |
+| UB | `ub_size` | 128 KB (131072) | **比服务器版小**（DAV_2201=192KB, DAV_3510=248KB） |
+| L2 | `l2_size` | 0 | **无 L2 Cache** |
+| BT | `bt_size` | 1 KB (1024) | 与 DAV_2201/3002/3113 相同 |
+| Cube MAC 阵列 | `cube_m/n/k_size` | 16×8×16 | **N 维减半，服务器版为 16×16×16** |
+| 稀疏 | `sparsity` | 1（支持 4:2） | 与 DAV_2201/3002/3113 相同 |
+| 核心类型 | `core_type_list` | `AICore,VectorCore` | Cube 功能集成在 AICore 内 |
+| vec_calc_size | `vec_calc_size` | 128 | 向量计算单元大小 |
+
+> **开发注意事项**：
+> - UB 容量仅 128 KB，Tiling 设计时需特别注意 UB 切分大小
+> - 无 L2 Cache，数据搬运策略需考虑 GM 直通
+> - Cube 阵列 N=8（而非 16），矩阵乘法输出维度不同
+> - 单核设计，无多核切分需求
+> - L0A/L0B 与服务器版相同（64KB），但 UB/L0C 较小，需注意 Cube 输出到 UB 的搬运策略
+
+
+
+### 2.7 DAV_3113 — Kirin9030 端侧系列
+
+> **重要说明**：Kirin 端侧平台使用 `mobile-station` 版 CANN，开发依赖 simulator 而非实际硬件。架构代号 `dav-l311`，`__NPU_ARCH__=3113`。
+
+| 参数 | INI 字段 | 值 | 与服务器版差异 |
+|------|---------|:---:|------|
+| NpuArch | `NpuArch` | 3113 | 新架构，不在旧版映射表中 |
+| AIC_version | `AIC_version` | AIC-L-311 | 端侧专用版本标识 |
+| 核数 | `ai_core_cnt` | 1 | **单核**（服务器版多核） |
+| VectorCore | `vector_core_cnt` | 1 | 单 VectorCore |
+| L1 | `l1_size` | 512 KB (524288) | 与 DAV_2201/3510 相同 |
+| L0A | `l0_a_size` | 32 KB (32768) | **服务器版的一半** |
+| L0B | `l0_b_size` | 32 KB (32768) | **服务器版的一半** |
+| L0C | `l0_c_size` | 64 KB (65536) | **服务器版的一半** |
+| UB | `ub_size` | 128 KB (131072) | **比 DAV_2201(192KB) 和 DAV_3510(248KB) 都小** |
+| L2 | `l2_size` | 0 | **无 L2 Cache** |
+| BT | `bt_size` | 1 KB (1024) | 与 DAV_2201/3002 相同 |
+| Cube MAC 阵列 | `cube_m/n/k_size` | 16×8×16 | **服务器版 16×16×16 的变体，N 维减半** |
+| 稀疏 | `sparsity` | 1（支持 4:2） | 与 DAV_2201/3002 相同 |
+| 核心类型 | `core_type_list` | `AICore,VectorCore` | Cube 功能集成在 AICore 内 |
+| vec_calc_size | `vec_calc_size` | 128 | 向量计算单元大小 |
+
+> **开发注意事项**：
+> - UB 容量仅 128 KB，Tiling 设计时需特别注意 UB 切分大小
+> - 无 L2 Cache，数据搬运策略需考虑 GM 直通
+> - Cube 阵列 N=8（而非 16），矩阵乘法输出维度不同
+> - 单核设计，无多核切分需求
+
 > **关于 UB 容量**：表内值为 INI `ub_size` 字段，即 `GetCoreMemSize(CoreMemType::UB, ...)` 返回的用户可用容量。**运行时始终以该接口返回值分块**，禁止硬编码。
 >
 > **FB（Fix Buffer）**：FixPipe 量化 scale 存储区。INI 字段 `fb0_size` / `fb1_size` / `fb2_size` / `fb3_size`；`GetCoreMemSize(FB)` 返回 `fb0_size`。
@@ -141,17 +202,18 @@
 
 ## 3. 架构关键差异速查
 
-| 特征 | DAV_1001 | DAV_2002 | DAV_2201 | DAV_3002 | DAV_3510 |
-|------|:--:|:--:|:--:|:--:|:--:|
-| 核心类型 | AICore | AICore+VectorCore | CubeCore+VectorCore | AICore+VectorCore+CubeCore | CubeCore+VectorCore |
-| Cube:Vec 比例 | N/A (无Vec) | 非 1:2 | 1:2 | N/A (单核) | 1:2 |
-| L1 | 1 MB | 1 MB | 512 KB | 1 MB | 512 KB |
-| L0C | 256 KB | 256 KB | 128 KB | 128 KB | 256 KB |
-| UB | 256 KB | 256 KB | 192 KB | 248 KB | 248 KB |
-| BT | — | — | 1 KB | 1 KB | 4 KB |
-| 稀疏 4:2 | — | — | 支持 | 支持 | 不支持 |
-| Cube 16³ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| L0A/B 64KB | ✓ | ✓ | ✓ | ✓ | ✓ |
+| 特征 | DAV_1001 | DAV_2002 | DAV_2201 | DAV_3002 | DAV_3510 | DAV_3003 (Kirin) | DAV_3113 (Kirin) |
+|------|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| 核心类型 | AICore | AICore+VectorCore | CubeCore+VectorCore | AICore+VectorCore+CubeCore | CubeCore+VectorCore | AICore+VectorCore | AICore+VectorCore |
+| Cube:Vec 比例 | N/A (无Vec) | 非 1:2 | 1:2 | N/A (单核) | 1:2 | N/A (单核) | N/A (单核) |
+| L1 | 1 MB | 1 MB | 512 KB | 1 MB | 512 KB | 1 MB | 512 KB |
+| L0A | 64 KB | 64 KB | 64 KB | 64 KB | 64 KB | 64 KB | **32 KB** |
+| L0B | 64 KB | 64 KB | 64 KB | 64 KB | 64 KB | 64 KB | **32 KB** |
+| L0C | 256 KB | 256 KB | 128 KB | 128 KB | 256 KB | 128 KB | 64 KB |
+| UB | 256 KB | 256 KB | 192 KB | 248 KB | 248 KB | 128 KB | 128 KB |
+| BT | — | — | 1 KB | 1 KB | 4 KB | 1 KB | 1 KB |
+| 稀疏 4:2 | — | — | 支持 | 支持 | 不支持 | 支持 | 支持 |
+| Cube 阵列 | 16³ | 16³ | 16³ | 16³ | 16³ | **16×8×16** | **16×8×16** |
 
 ---
 

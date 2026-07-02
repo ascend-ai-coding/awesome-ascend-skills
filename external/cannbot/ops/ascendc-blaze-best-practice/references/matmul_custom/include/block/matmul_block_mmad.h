@@ -10,7 +10,7 @@
 
 /*!
  * \file matmul_block_mmad.h
- * \brief Block-level MMAD copy/compute pipeline (GM->L1->L0A/L0B->L0C->GM).
+ * \brief Block-level MMAD copy/compute pipeline (GM->L1->L0A/L0B->L0C->GM/UB).
  */
 
 #ifndef MATMUL_BLOCK_MMAD_H
@@ -31,13 +31,18 @@
 //   - NO_FULL_LOAD_MODE（本文件，下方）：A、B 都按 K 切片每轮 GM→L1，双缓冲 ping-pong
 //   - A_FULL_LOAD_MODE （`matmul_block_mmad_a_full_load.h`）：A 一次性载入 L1
 //     并跨 N-tile 复用，B 仍按 K 切片流式搬入；本文件末尾 #include 进来
+// L0C 终端输出由传入的 tensor_api 输出 Tensor location 决定：
+//   - GM Tensor: CopyL0C2GM，纯 matmul direct 写回
+//   - UB Tensor: CopyL0C2UB，融合场景交给 epilogue 消费
+// 该差异不属于 DispatchPolicy，也不扩展 BlockMmad 模板参数。
 //
 // 通用模板（NO_FULL_LOAD_MODE）职责：
 //   - L1 ping-pong 双缓冲（half-L1 = A|B 一组）
 //   - GM -> L1 搬运 A/B（NZ / ZN 格式）
 //   - L1 -> L0A/L0B 加载，按 baseK 切分
 //   - 调用 tensor_api 的 `Mmad()`，在 L0C 上累加（fp32 或 int32，由 `L0CType` 决定）
-//   - 最后一次累加后 fixpipe 写回 GM（L0C -> CType，CType 决定 quantPre）
+//   - 最后一次累加后按 TensorC location 分流：
+//     GM: CopyL0C2GM 写回；UB: CopyL0C2UBSplitM 写入 epilogue 输入缓冲
 //
 // [MODIFY] 新算子常见改点：
 //   1. 如果要加入 Bias / Activation / Cast，需要在 fixpipe 调用处扩展 FixpipeParams
@@ -47,10 +52,22 @@
 //      MmadTrait 特化（见 tensor_api/tile_mmad_*.h 示例）。
 //   4. 切到 A 全载（A_FULL_LOAD_MODE）：DispatchPolicy 模板参数换为 `MatmulMultiBlockPolicy<A_FULL_LOAD_MODE>`
 //      即可在编译期分派到下方 #include 的 `matmul_block_mmad_a_full_load.h` 中的特化。
+//   5. 切到融合输出：launcher/kernel 传入 UB Tensor；direct 传入 GM Tensor。
+//      不新增 BlockMmad 模板参数，也不复制另一份 block 文件。
 // ============================================================================
 
 namespace Block {
 using namespace AscendC;
+
+struct CopyL0C2UBSplitMTrait {
+    using TraitType = AscendC::Te::CopyL0C2UBTrait;
+    static constexpr const TraitType value{
+        AscendC::Te::RoundMode::DEFAULT,
+        false,
+        false,
+        AscendC::Te::DualDstMode::DUAL_DST_SPLIT_M
+    };
+};
 
 template <
     class DispatchPolicy_, class AType_, class LayoutA_, class BType_,
@@ -79,7 +96,7 @@ public:
     static constexpr uint64_t L1_BUFFER_MASK = L1_BUFFER_NUM - 1UL;
     static constexpr uint64_t L1_BUFFER_GROUP_NUM = L1_BUFFER_NUM >> 1;
     static constexpr uint64_t HALF_L0_SIZE = L0A_SIZE / DOUBLE_BUFFER_COUNT;
-    // [CONFIG] L0C 累加 dtype。bf16/fp16/fp8 输入用 fp32 累加；int8 输入用 int32 累加。
+    // [CONFIG] L0C 累加 dtype。fp32/bf16/fp16/fp8 输入用 fp32 累加；int8 输入用 int32 累加。
     // 硬件 MMAD/Fixpipe 静态检查会拒绝 int8 -> float 组合。
     using L0CType = AscendC::Std::conditional_t<
         AscendC::Std::is_same_v<AType, int8_t>, int32_t, float>;
@@ -88,7 +105,7 @@ public:
     // 为正确值的 1/4），单 tile 不出问题、多 tile per core 时第二片 tile 直接覆写
     // 第一片的 L0C 数据。
     static constexpr uint64_t HALF_L0C_SIZE = L0C_SIZE / DOUBLE_BUFFER_COUNT;
-    // [CONFIG] C0 cube granularity: bf16/fp16 = 16; int8/fp8 = 32; fp4 = 64。
+    // [CONFIG] C0 cube granularity: fp32 = 8; bf16/fp16 = 16; int8/fp8 = 32; fp4 = 64。
     static constexpr uint64_t BLOCK_CUBE = 16UL;
     // [CONFIG] dav-3510 上 L0C cube 边长**恒为 16**，与 L0CType 字节宽度无关——
     // 不要写成 `32 / sizeof(L0CType)`（会算出 fp32/int32 时 = 8），fixpipe 会按 8
@@ -108,11 +125,10 @@ public:
     uint64_t l0cPingPong_{0UL};
     bool enableL0cPingPong_{false};
 
-    // A 按 NZ，B 按 ZN 存进 L1（Cube 的固定输入格式）。
-    using MakeLayoutAL1 = AscendC::Te::FrameLayoutFormat<
-        AscendC::Te::NZLayoutPtn, AscendC::Std::Int<BLOCK_CUBE>>;
-    using MakeLayoutBL1 = AscendC::Te::FrameLayoutFormat<
-        AscendC::Te::ZNLayoutPtn, AscendC::Std::Int<BLOCK_CUBE>>;
+    // L1 layout 由 L1LayoutHelper 根据 GM pattern 自动选择：
+    // NZ/ZN 输入 → L1 与 GM 同 pattern（块拷贝）；ND/DN 输入 → 按 trans 选 NZ/ZN（格式转换）。
+    using MakeLayoutAL1 = typename L1LayoutHelper<LayoutA, AType, transA>::type;
+    using MakeLayoutBL1 = typename L1LayoutHelper<LayoutB, BType, transB>::type;
 
     struct Params {
         GM_ADDR aGmAddr{nullptr};
@@ -267,9 +283,19 @@ public:
             abL1LoopCnt_++;
         }
 
-        // L0C -> GM，由 fixpipe 完成 L0C(fp32/int32) -> CType 的量化/cast。
-        auto CopyL0C2GM = AscendC::Te::MakeCopy(AscendC::Te::CopyL0C2GM{});
-        AscendC::Te::Copy(CopyL0C2GM, gmC, tensorL0C, AscendC::Te::FixpipeParams{FINAL_ACCUMULATION});
+        using OutLocation = AscendC::Te::GetMemLocation<TensorC>;
+        if constexpr (AscendC::Std::is_same_v<OutLocation, AscendC::Te::Location::UB>) {
+            // Fusion: L0C -> UB via CopyL0C2UB + SPLIT_M Trait. The epilogue
+            // owns the later UB read and GM writeback.
+            auto copyOp = AscendC::Te::MakeCopy(AscendC::Te::CopyL0C2UB{}, CopyL0C2UBSplitMTrait{});
+            copyOp.Call(gmC, tensorL0C, AscendC::Te::FixpipeParams{FINAL_ACCUMULATION});
+        } else if constexpr (AscendC::Std::is_same_v<OutLocation, AscendC::Te::Location::GM>) {
+            // Direct matmul: L0C -> GM via Fixpipe.
+            auto copyL0C2GM = AscendC::Te::MakeCopy(AscendC::Te::CopyL0C2GM{});
+            copyL0C2GM.Call(gmC, tensorL0C, AscendC::Te::FixpipeParams{FINAL_ACCUMULATION});
+        } else {
+            static_assert(AscendC::Std::always_false_v<TensorC>, "BlockMmad output Tensor must be GM or UB");
+        }
         if (enableL0cPingPong_) {
             l0cPingPong_++;
         }

@@ -32,6 +32,8 @@ static constexpr int64_t L0B_SIZE = 64 * 1024;
 static constexpr int64_t L0C_SIZE = 256 * 1024;
 static constexpr int64_t L1_SIZE = 512 * 1024;
 static constexpr int32_t BT_SIZE = 4096;
+// dav-3510 单 AIV 可见 UB = 248 KB
+static constexpr int64_t UB_SIZE = 248 * 1024;
 
 // Execution modes shared by SWAT schedulers, dispatch tags, and sample
 // launchers. `NO_FULL_LOAD_MODE` streams both A and B, while

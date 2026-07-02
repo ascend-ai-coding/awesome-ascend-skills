@@ -1,0 +1,100 @@
+{
+  "questions": [
+    {
+      "header": "op_name",
+      "question": "请确认算子名称：",
+      "options": [
+        {
+          "label": "{{opname}}",
+          "description": "使用推断的算子名称"
+        }
+      ]
+    },
+    {
+      "header": "repo_type",
+      "question": "请确认仓库类型：",
+      "options": [
+        {
+          "label": "ops-transformer",
+          "description": "https://gitcode.com/cann/ops-transformer"
+        },
+        {
+          "label": "ops-math",
+          "description": "https://gitcode.com/cann/ops-math"
+        },
+        {
+          "label": "ops-nn",
+          "description": "https://gitcode.com/cann/ops-nn"
+        },
+        {
+          "label": "ops-cv",
+          "description": "https://gitcode.com/cann/ops-cv"
+        },
+        {
+          "label": "custom",
+          "description": "自定义工程"
+        }
+      ],
+      "default": "{{推测结果}}"
+    },
+    {
+      "header": "soc_type",
+      "question": "请确认目标芯片架构（可多选）：",
+      "multiselect": true,
+      "options": [
+        {
+          "label": "ascend310p",
+          "description": "arch20"
+        },
+        {
+          "label": "ascend910b",
+          "description": "arch32"
+        },
+        {
+          "label": "ascend910_93",
+          "description": "arch32"
+        },
+        {
+          "label": "ascend950",
+          "description": "arch35"
+        }
+      ],
+      "default": ["{{推测结果，all代表全选}}"]
+    },
+    {
+      "header": "test_model",
+      "question": "请确认测试模块（可多选）：",
+      "multiselect": true,
+      "options": [
+        {
+          "label": "ophost",
+          "description": "tiling、infer_shape、infer_datatype"
+        },
+        {
+          "label": "opapi",
+          "description": "aclnn"
+        },
+        {
+          "label": "opkernel",
+          "description": "kernel"
+        }
+      ],
+      "default": ["{{推测结果，all代表全选}}"]
+    },
+    {
+      "header": "interactive_mode",
+      "question": "请选择使用模式：",
+      "options": [
+        {
+          "label": "auto",
+          "description": "自动模式，后续不向用户问询（默认）"
+        },
+        {
+          "label": "interactive",
+          "description": "交互模式，允许后续向用户问询"
+        }
+      ],
+      "default": "auto"
+    }
+  ]
+}

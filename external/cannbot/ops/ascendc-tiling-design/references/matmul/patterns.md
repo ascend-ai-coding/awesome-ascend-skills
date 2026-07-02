@@ -1,20 +1,49 @@
 # MatMul 类算子 Tiling 场景路由
 
-> 本文档用于 **场景判定**和**Tiling 策略选择**。确定场景后，按链接进入对应详细文档。
+> 本文档用于 **平台判定**、**场景判定**和 **Tiling 策略选择**。确定平台与场景后，按链接进入对应详细文档。
 >
-> 当前覆盖范围：**mxfp8 quantized matmul + eltwise 融合**（Div / Mul / Add / Relu / Cast / 组合算子）。
-> 其它 matmul 形态（fp16/bf16 matmul、BatchMatmul 等）仍在规划中。
+> **路径区分（必读）**：
+> - **A2/A3（Ascend910B / Ascend910_93，NpuArch `DAV_2201`）**：Ascend C **Matmul 高阶 API**（`MatmulImpl` + `MatmulApiTiling`）→ 本文档路由至 `ascendc-api-*-tiling.md`
+> - **Ascend 950（NpuArch `DAV_3510`）**：**Blaze / tensor_api** 路径 → 使用 `ascendc-blaze-best-practice` skill
+>
+> 当前覆盖范围
+> (**仅限 A2/A3 + Ascend C 高阶 API**)：
+> - **fp16/bf16/fp32 通用 MatMul/BatchMatMul**
+> - **GroupedMatmul (GMM) 分组矩阵乘**
+> (**仅限 Ascend 950**):
+> - **mxfp8 quantized matmul + eltwise 融合**（Div / Mul / Add / Relu / Cast / 组合算子）
+> 其它 matmul 形态仍在规划中。
+
+---
+
+## 平台路由（Step 0，必须先判定）
+
+| 目标平台 | SocVersion 示例 | NpuArch | MatMul / GMM 开发路径 | 对应 Skill / 文档 |
+|---------|----------------|---------|----------------------|------------------|
+| **Atlas A2 / Ascend910B 系列** | `Ascend910B`、`Ascend910B1`… | `DAV_2201` | Ascend C **高阶 API**（`MatmulImpl` / `MatmulApiTiling`） | 本文档 → [Matmul Tiling](ascendc-api-matmul-tiling.md) / [GMM Tiling](ascendc-api-gmm-tiling.md)；API 见 `ascendc-api-best-practices` → `api-matmul.md` / `api-gmm.md` |
+| **Atlas A3 / Ascend910_93 系列** | `Ascend910_93` | `DAV_2201` | 同上 | 同上 |
+| **Ascend 950PR / 950DT** | `Ascend950` | `DAV_3510` | **Blaze / tensor_api**（非 MatmulImpl 高阶 API） | `ascendc-blaze-best-practice` skill |
+| **未确认平台** | — | — | 先用 `npu-arch` skill 确认 `GetCurNpuArch()` / `GetSocVersion()` | — |
+
+> ⚠️ **GMM 分组矩阵乘**：当前高阶 API Tiling 指南基于 A2/A3（`DAV_2201`）验证；950 侧 GMM 实现路线与策略不同，**禁止**直接套用 `ascendc-api-gmm-tiling.md`。
 
 ---
 
 ## 场景判定流程
 
 ```
-给定：算子需求（含 mxfp8 量化 + eltwise 后处理？）
+给定：算子需求
 
-Step 0 — 算子分类：
-  ├─ mxfp8 matmul + eltwise 融合 → 本文件 §Tiling 设计要素
-  └─ 其它 matmul 形态 → 规划中（暂无正式指南，建议参考 Ascend C 官方示例）
+Step 0 — 平台分类：
+  ├─ Ascend 950PR / 950DT (Ascend950, DAV_3510)
+  |    Step 1 - 算子分类：
+  |     ├─ mxfp8 matmul + eltwise 融合 → 本文件 §Tiling 设计要素（融合场景）
+  |     └─ 其它 matmul 形态 → 规划中（建议参考 Ascend C 官方示例）
+  └─ Atlas A2 (Ascend910B、Ascend910B1...,DAV_2201) / Atlas A3 (Ascend910_93,DAV_2201)
+       Step 1 - 算子分类：
+        ├─ fp16/bf16/fp32 通用 MatMul/BatchMatMul → [Ascend C Matmul 高阶 API Tiling](ascendc-api-matmul-tiling.md)
+        ├─ 分组矩阵乘（GroupedMatmul）→ [Ascend C GMM 高阶 API Tiling](ascendc-api-gmm-tiling.md)
+        └─ 其它 matmul 形态 → 规划中（建议参考 Ascend C 官方示例）
 ```
 
 > MatMul 融合的工程落地、角色路径等 Engineering 级细节
@@ -183,6 +212,10 @@ stageSize_  = min(剩余 UB / stageNum / sizeof(DataType) / baseNAlign × baseNA
 
 | 资源 | 位置 | 用途 |
 |------|------|------|
-| MatMul 融合设计模板 | `references/matmul/matmul-fusion-design-template.md` | DESIGN.md 编写骨架（API 映射、工程结构、确认清单、[SAMPLE] 重评） |
-| MatMul 融合参考工程 | `/ascendc-direct-invoke-template` → `references/matmul_fusion_kernel/` | 代码级模板（Kernel / Epilogue / BlockMmad / run.sh）— Developer 使用 |
+| Ascend C Matmul 高阶 API Tiling | `references/matmul/ascendc-api-matmul-tiling.md` | **A2/A3（DAV_2201）** fp16/bf16/fp32 MatMul/BatchMatMul；`MatmulApiTiling` 路径 |
+| Ascend C GMM 高阶 API Tiling | `references/matmul/ascendc-api-gmm-tiling.md` | **A2/A3（DAV_2201）** GroupedMatmul；分组、对角线调度、UB 分块 |
+| MatMul 融合设计模板 | `references/matmul/matmul-fusion-design-template.md` | mxfp8 + eltwise 融合 DESIGN.md 编写骨架（API 映射、工程结构、确认清单、[SAMPLE] 重评） |
+| MatMul 融合参考工程 | `/ascendc-direct-invoke-template` → `references/matmul_fusion_kernel/` | 代码级模板（Kernel / Epilogue / BlockMmad）|
 | NPU 架构配置 | `npu-arch` skill | UB_SIZE 等芯片相关常量 |
+| Ascend C Matmul 高阶 API 最佳实践 | `/ascendc-api-best-practices` skill → `references/api-matmul.md` | **A2/A3（DAV_2201）** MatmulImpl / MatmulConfig / 写回控制 |
+| Ascend C GMM 高阶 API 最佳实践 | `/ascendc-api-best-practices` skill → `references/api-gmm.md` | **A2/A3（DAV_2201）** GMM 专用：GMMArray 分组索引、量化 Epilogue 管线、AIC/AIV 分职 |
