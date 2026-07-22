@@ -13,7 +13,8 @@
 - [`ais-bench/`](ais-bench/)：精度与性能评测
 - [`diffusers-ascend/`](diffusers-ascend/)：Diffusers 环境、权重与推理
 - [`wan-ascend-adaptation/`](wan-ascend-adaptation/)：Wan 系列模型昇腾适配
-- [`migration-ascend-torchnpu-skills`](migration-ascend-torchnpu-skills/)：小模型基于torch_npu迁移至昇腾平台跑通，包含：环境搭建、迁移、报告生成
+- [`migration-ascend-torchnpu-skills`](migration-ascend-torchnpu-skills/)：小模型推理基于torch_npu迁移至昇腾平台跑通，包含：环境搭建、迁移、报告生成
+- [`migration-ascend-torchair-accelerate-skills`](migration-ascend-torchair-accelerate-skills/)：小模型推理基于torch_npu迁移后，进行以torchair为主（会同时考虑CPU、接口替换等）的性能优化，并生成完整报告：精度、性能比对结果以及复现方法
 - [`npu-torchair-infer/`](npu-torchair-infer/)：HuggingFace 模型迁移到昇腾 NPU torchair 图模式并做精度/性能对比
 
 推荐场景：
