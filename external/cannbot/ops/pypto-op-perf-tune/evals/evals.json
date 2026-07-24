@@ -1,0 +1,73 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "算子性能分析与调优全流程",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我有一个已实现并验证通过的 Add 算子，但它的性能不满足要求。当前执行时间约为 27000 us，我需要提升 5 倍的性能。请帮我进行性能分析和调优。算子文件在 custom/add/ 目录下。",
+      "expected_output": "回复应说明性能调优的完整流程：加载编排器驱动调优、环境检查与精度校验、性能数据采集、性能分析、逐步调优、生成调优报告。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "tune-orchestrator",
+          "description": "回复中提到了 tune-orchestrator"
+        },
+        {
+          "type": "contains",
+          "pattern": "精度校验",
+          "description": "回复中提到了 精度校验"
+        },
+        {
+          "type": "contains",
+          "pattern": "调优报告",
+          "description": "回复中提到了 调优报告"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "使用边界与前置门控条件",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "什么情况下不能开始性能调优？精度没有通过验证是否能进入调优步骤？pypto-op-perf-tune 和 pypto-op-develop 在职责上如何区分？",
+      "expected_output": "回复应说明 pypto-op-perf-tune 的使用边界和前置门控条件：\n- 绝对禁止在没有精度验证通过记录的情况下进入任何调优步骤\n- 精度是调优的前提，精度问题应使用 pypto-precision-debug 或 pypto-precision-compare 解决\n- 环境检查（S1_SETUP S1a）必须全部通过才能进入精度校验\n- 跳过环境检查直接进入精度校验是被禁止的\n- 首次精度失败不进行修复，可以换卡尝试多次失败后让用户确认\n- 调优修改导致精度失败：简单分析后不能解决则回退修改\n- 与 pypto-op-develop 的区分：develop 负责算子的编码实现和基本验证，perf-tune 负责已实现算子的性能优化\n- 本 skill 全程需要 NPU 环境\n- 必须通过编排器驱动流程，禁止手动跳过编排器直接调优",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "精度必须通过",
+          "description": "回复中提到了 精度必须通过"
+        },
+        {
+          "type": "contains",
+          "pattern": "环境检查",
+          "description": "回复中提到了 环境检查"
+        },
+        {
+          "type": "contains",
+          "pattern": "编排器",
+          "description": "回复中提到了 编排器"
+        },
+        {
+          "type": "contains",
+          "pattern": "NPU 环境",
+          "description": "回复中提到了 NPU 环境"
+        }
+      ]
+    }
+  ],
+  "skill_name": "pypto-op-perf-tune"
+}

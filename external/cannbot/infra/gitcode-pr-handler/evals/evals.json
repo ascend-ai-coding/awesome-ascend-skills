@@ -1,0 +1,126 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "PR 标题与描述重生成流程",
+      "config": {
+        "max_tokens": 180000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 210000,
+          "glm-5": 195000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "有一个 PR（https://gitcode.com/cann/ops-math/merge_requests/1564），需要重新生成 PR 标题和描述。gitcode-pr-handler 的完整工作流程是什么？",
+      "expected_output": "回复应说明完整流程：Step 0 环境预检（token/git/curl/tmp）→ Step 1-6 解析 PR 链接、获取 PR 详情、克隆代码、展示变更列表、查找 PR 模板、生成新标题与新描述 → Step 7 最终提交确认。应说明中间步骤不打断用户（AskUserQuestion 仅用在环境预检和最终提交两次），以及 PATCH 后必须 GET 回查验证。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "PR 模板",
+          "description": "回复中提到了 PR 模板"
+        },
+        {
+          "type": "contains",
+          "pattern": "PATCH",
+          "description": "回复中提到了 PATCH"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "PR 标题格式（约定式提交）",
+      "config": {
+        "max_tokens": 150000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 180000,
+          "glm-5": 165000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "gitcode-pr-handler 生成 PR 标题时使用什么格式？有哪些类型前缀？如果一次 PR 包含多种变更怎么处理？",
+      "expected_output": "回复应说明使用约定式提交格式：类型前缀包括 feat/fix/docs/refactor/test/perf 等。一次 PR 含多类变更时取占比最大的类型，混合改动可加 scope（如 feat(login): ...）。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "feat",
+          "description": "回复中提到了 feat"
+        },
+        {
+          "type": "contains",
+          "pattern": "fix",
+          "description": "回复中提到了 fix"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "PR 模板选择与填充原则",
+      "config": {
+        "max_tokens": 150000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 180000,
+          "glm-5": 165000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "gitcode-pr-handler 如何选择 PR 模板？模板填充时有哪些关键原则？",
+      "expected_output": "回复应说明模板优先级：.gitcode/PULL_REQUEST_TEMPLATE.zh-CN.md → .gitcode/PULL_REQUEST_TEMPLATE.md → .github/PULL_REQUEST_TEMPLATE.md。应说明内容必须来源于代码变更进行分析，不能凭经验编造。应说明沿用模板的原章节标题、仅替换占位、不增加/删减章节的原则。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "PULL_REQUEST_TEMPLATE",
+          "description": "回复中提到了 PULL_REQUEST_TEMPLATE"
+        },
+        {
+          "type": "contains",
+          "pattern": "模板",
+          "description": "回复中提到了 模板"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "内容生成与自动决策",
+      "config": {
+        "max_tokens": 150000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 180000,
+          "glm-5": 165000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "gitcode-pr-handler 在内容生成时，哪些决策是自动做的不需要问用户？哪些地方需要打断用户确认？",
+      "expected_output": "回复应说明交互节奏仅两次卡点：Step 0 环境预检和 Step 7 最终提交确认。中间过程（模板选择、标题草稿、描述草稿）均为自动决策，在文本中说明\"做了什么、为什么\"。最终提交时统一展示旧内容和新内容的对比，用一次 AskUserQuestion 确认。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "自动",
+          "description": "回复中提到了 自动"
+        },
+        {
+          "type": "contains",
+          "pattern": "确认",
+          "description": "回复中提到了 确认"
+        }
+      ]
+    }
+  ],
+  "skill_name": "gitcode-pr-handler"
+}

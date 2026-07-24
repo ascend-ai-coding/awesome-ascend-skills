@@ -1,0 +1,45 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "精度标准选择的决策流程",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "disabled": true,
+        "eval_mode": "text"
+      },
+      "prompt": "在 Ascend C 算子开发中，如何选择合适的精度标准？请说明决策树的判断流程。不需要执行任何工具调用。",
+      "expected_output": "回复应说明如何根据算子类型和数据类型选择合适的精度标准。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "FP16 浮点运算的精度验收标准",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "Ascend C FP16 浮点计算的精度验收标准是什么？atol 和 rtol 的参考值是多少？可以加载技能，不需要执行其他外部工具调用。",
+      "expected_output": "回复应说明 Ascend C FP16 浮点计算的精度验收标准，包括 atol 和 rtol 的参考值范围，以及验收判断公式。",
+      "files": [],
+      "expectations": []
+    }
+  ],
+  "skill_name": "ops-precision-standard"
+}

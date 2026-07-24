@@ -1,0 +1,31 @@
+strategy_id: P12
+description: 广播与掩码操作适用性检查 — 算子必须有 mask 输入或标量广播需求，且当前用手动循环/if-else 实现
+
+checks:
+  - id: has_mask_or_broadcast_need
+    type: grep_count
+    pattern: "mask|Mask|broadcast|Broadcast|scalar.*tile|GetValue.*Scalar"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子无 mask 输入也无标量广播需求 → P12 无应用场景。检查是否为纯 elementwise，换 P1 双缓冲或 P67 Counter 模式"
+
+  - id: uses_manual_loop_for_mask
+    type: grep_count
+    pattern: "for\s*\([^)]*\)\s*\{[^}]*if[^}]*mask|if.*maskLocal|mask.*GetValue"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无手动 mask 循环或 if-else → 可能已用高阶 API。检查是否已有 SelectWithBytesMask / Duplicate，考虑 P67 向量计算效率优化"
+
+  - id: has_vector_api_available
+    type: grep_count
+    pattern: "SelectWithBytesMask|Duplicate|Select\s*\(|CompareScalar"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已使用 SelectWithBytesMask / Duplicate → P12 已应用。检查是否所有 mask 路径都优化了，或考虑 P26 stride 搬运配套"
+
+  - id: not_pure_matmul_high_level
+    type: grep_count
+    pattern: "MatmulImpl|Matmul<"
+    files: [kernel]
+    expected: "<= 2"
+    fail_msg: "纯 MatmulImpl 高阶 API 算子 → mask/broadcast 由 CANN 内部处理，P12 无介入点。优先考虑 P46/P78/P86"

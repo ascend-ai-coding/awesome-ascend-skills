@@ -1,0 +1,25 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "AISS-TilingSolver 工具使用流程",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "如何使用 AISS-TilingSolver 工具为 Ascend C 算子求解最优 tiling 参数？请说明完整的使用步骤。可以加载技能，不需要执行其他外部工具调用。",
+      "expected_output": "回复应说明 AISS-TilingSolver 的完整使用流程：下载 CLI 工具（tiling_solver 和 platform_info 两个二进制文件）；运行 platform_info 采集硬件平台参数；构造输入 JSON 文件（填入算子类型、形状、数据类型及采集到的硬件参数）；运行 tiling_solver input.json 求解；解读输出 JSON 中的最优 tiling 参数（如 base_m、base_n、base_k 等）。",
+      "files": [],
+      "expectations": []
+    }
+  ],
+  "skill_name": "aiss-tiling-solver"
+}

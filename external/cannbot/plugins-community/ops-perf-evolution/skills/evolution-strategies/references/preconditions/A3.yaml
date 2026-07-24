@@ -1,0 +1,31 @@
+strategy_id: A3
+description: Rounding Mode 适用性检查 — 算子包含精度转换 Cast 操作，且当前未按场景使用正确的 RoundMode
+
+checks:
+  - id: has_cast_operation
+    type: grep_count
+    pattern: "Cast\s*\(|RoundMode|CAST_NONE|CAST_RINT|CAST_FLOOR|CAST_CEIL|CAST_TRUNC|CAST_ROUND"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无 Cast 或 RoundMode → A3 不适用。检查是否为纯 elementwise 算子"
+
+  - id: has_precision_conversion
+    type: grep_count
+    pattern: "bf16|bfloat16|half|fp16|float32|fp32"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无 BF16/FP16/FP32 精度转换 → A3 收益低。检查是否已是纯 FP32 算子"
+
+  - id: no_rounding_optimization_yet
+    type: grep_count
+    pattern: "CAST_RINT|CAST_FLOOR|CAST_CEIL|CAST_TRUNC|CAST_ROUND"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已使用精细化 RoundMode → A3 已应用。检查是否所有 Cast 点都已优化"
+
+  - id: not_pure_validation
+    type: grep_count
+    pattern: "OP_CHECK|shape.*check|dim.*check|validation"
+    files: [kernel, header]
+    expected: "<= 3"
+    fail_msg: "纯 Host 侧 shape 校验 → A3 解决的是 Kernel 内精度转换，非 Host 校验"

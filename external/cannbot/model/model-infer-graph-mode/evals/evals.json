@@ -1,0 +1,140 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "两种图模式后端机制",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "昇腾 NPU 上有 npugraph_ex 和 GE 两种图模式后端。请说明两者在适配方式上的区别，不用判断哪种更好。",
+      "expected_output": "回复应分别说明 npugraph_ex 和 GE 两种图模式后端的适配差异，机制区别讲清即可，不要求给选型结论",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "npugraph_ex",
+          "description": "回复中提到了 npugraph_ex"
+        },
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-graph-mode",
+          "description": "技能 model-infer-graph-mode 被激活"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "图模式仅 Decode 约束",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "LLM 模型适配图模式时，为什么只对 Decode 阶段启用，Prefill 阶段保持 eager？只回答原因即可。",
+      "expected_output": "回复应说明 Decode 阶段 shape 固定可图编译加速，Prefill 阶段序列动态、图模式收益低甚至不可用，故 Prefill 保持 eager",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-graph-mode",
+          "description": "技能 model-infer-graph-mode 被激活"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "动态 shape 与 mark_static",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "Decode 阶段 actual_seq_lengths 每步变化时，dynamic 和 mark_static 该怎么配置？",
+      "expected_output": "回复应说明配置 dynamic=True、用 mark_static 标记除 actual_seq_lengths 外的静态输入，actual_seq_lengths 保持动态",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "mark_static",
+          "description": "回复中提到了 mark_static"
+        },
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-graph-mode",
+          "description": "技能 model-infer-graph-mode 被激活"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "信息不足时主动确认",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "帮我把模型适配成图模式。",
+      "expected_output": "回复应先确认必要信息再动手，而不是缺信息直接改造",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-graph-mode",
+          "description": "技能 model-infer-graph-mode 被激活"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "正向看护-多 skill 环境下正确触发",
+      "config": {
+        "max_tokens": 150000,
+        "distractor_skills": [
+          "model-infer-fusion",
+          "model-infer-kvcache",
+          "model-infer-prefetch"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "我的模型 Decode 单步太慢，想用 torch.compile 编译整图减少调度开销，往哪个方向改？只说方向不用写代码。",
+      "expected_output": "回复应正确激活 model-infer-graph-mode，给出图模式适配方向，即使存在融合算子、KVCache、预取等相似 skill 也应选图模式专项",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-graph-mode",
+          "description": "技能 model-infer-graph-mode 被激活"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "图中断定位与修复",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "模型 compile 后图编译反复 graph break 性能上不去，怎么定位是哪里中断、一般往哪些方向修？只讲思路。",
+      "expected_output": "回复应说明定位图中断点（dynamic shape、数据依赖控制流、不支持算子等）的方法，并给出消除中断或缩小动态范围的修复方向",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "graph break",
+          "description": "回复中提到了 graph break"
+        },
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-graph-mode",
+          "description": "技能 model-infer-graph-mode 被激活"
+        }
+      ]
+    }
+  ],
+  "skill_name": "model-infer-graph-mode"
+}

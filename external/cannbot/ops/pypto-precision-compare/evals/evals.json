@@ -1,0 +1,93 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "精度对比方法与流程",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我有一个 Add 算子的精度问题，最终输出结果和 golden 不一致。请帮我使用 pypto-precision-compare skill 定位精度差异来源。算子的输出和 torch.add 的结果有偏差，但我不知道问题出在哪里。",
+      "expected_output": "回复应调用 pypto-precision-compare skill，按决策树流程执行精度定位。应覆盖以下要点：\n- 检查用户是否指定了 mode 参数，未指定则走标准决策树流程\n- 步骤 1：在算子实现中配置 verify_options（enable_pass_verify=True, pass_verify_save_tensor=True），开启 tensor_graph 校验\n- 使用 pypto.set_verify_golden_data 设置 golden 数据\n- 步骤 2：运行测试后查看校验结果（interpreter.log）\n- 步骤 3：根据校验结果选择调试路线：\n  - Tensor Graph FAIL → 使用精度工具对比法（precision-verify），添加 pypto.pass_verify_save() 调用\n  - Tensor Graph PASS → 进行 Pass 校验（precision-pass），配置 PreCheck/PostCheck\n  - Pass 校验通过但仍有问题 → 上板二分定位（precision-binary-search），添加检查点 tensor 参数\n- 提供三种方法对比：精度工具对比法（Op级别）、Pass精度校验法（Pass级别）、二分对比法（Op级别）\n- 完成后移除 verify_options 配置和 golden 数据设置代码",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "tensor_graph",
+          "description": "回复中提到了 tensor_graph"
+        },
+        {
+          "type": "contains",
+          "pattern": "pass_verify_save",
+          "description": "回复中提到了 pass_verify_save"
+        },
+        {
+          "type": "contains",
+          "pattern": "set_verify_golden_data",
+          "description": "回复中提到了 set_verify_golden_data"
+        },
+        {
+          "type": "contains",
+          "pattern": "precision-verify",
+          "description": "回复中提到了 precision-verify"
+        },
+        {
+          "type": "contains",
+          "pattern": "precision-binary-search",
+          "description": "回复中提到了 precision-binary-search"
+        },
+        {
+          "type": "contains",
+          "pattern": "interpreter.log",
+          "description": "回复中提到了 interpreter.log"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "三种精度对比方法的适用场景与使用边界",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "pypto-precision-compare 的三种精度对比方法分别在什么场景下使用？它们的定位粒度和使用难度有何不同？什么情况下应该用 pypto-precision-debug 而不是 pypto-precision-compare？",
+      "expected_output": "回复应说明三种精度对比方法的适用场景和使用边界：\n- 精度工具对比法（precision-verify）：Tensor Graph 校验失败时使用，使用 pypto.pass_verify_save() 保存中间结果，定位 Op 级别，使用难度简单，不需要修改 kernel 函数签名\n- Pass 精度校验法（precision-pass）：Tensor Graph 校验通过时使用，使用 PreCheck/PostCheck 配置，定位 Pass 级别，使用难度中等\n- 二分对比法（precision-binary-search）：前两种方法都通过但仍有问题时使用，添加检查点 tensor 作为输入参数在内存中直接对比，定位 Op 级别，使用难度较复杂，需要修改 kernel 函数签名\n- 与 pypto-precision-debug 的区分：\n  - precision-compare：负责精度差异的定位和对比，通过 tensor_graph / pass_verify / 二分等方法找到具体出问题的位置\n  - precision-debug：负责用户代码层面的语法逻辑检查和规避方法尝试，提供快速修复方案\n  - 通常在 precision-debug 的规避方法无效后，才使用 precision-compare 进行精确定位",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "精度工具对比法",
+          "description": "回复中提到了 精度工具对比法"
+        },
+        {
+          "type": "contains",
+          "pattern": "Pass 精度校验",
+          "description": "回复中提到了 Pass 精度校验"
+        },
+        {
+          "type": "contains",
+          "pattern": "二分对比",
+          "description": "回复中提到了 二分对比"
+        },
+        {
+          "type": "contains",
+          "pattern": "tensor_graph",
+          "description": "回复中提到了 tensor_graph"
+        },
+        {
+          "type": "contains",
+          "pattern": "定位粒度",
+          "description": "回复中提到了 定位粒度"
+        }
+      ]
+    }
+  ],
+  "skill_name": "pypto-precision-compare"
+}

@@ -102,5 +102,4 @@ summary = check_integer_compute_batch(outputs_list)
 
 ## 6. 参考文档
 
-- 详细精度标准：见 `golden/COMMERCIAL_OPS_PRECISION_DOCS.md`
 - 测试用例生成：见 `test_case_generation.md`

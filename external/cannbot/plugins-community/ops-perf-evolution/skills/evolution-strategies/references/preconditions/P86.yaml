@@ -1,0 +1,30 @@
+strategy_id: P86
+description: Matmul 内部数据通路效率调优适用性检查 — 算子使用 Matmul 高阶 API，当前未调优模板/base block/同步策略
+checks:
+  - id: has_matmul_api
+    type: grep_count
+    pattern: "Matmul|matmul|CFG_NORM|CFG_MDL|MatmulConfig"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无 Matmul API → P86 不适用"
+
+  - id: has_default_config
+    type: grep_count
+    pattern: "CFG_NORM|默认|default|Norm.*模板"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子已调优 → P86 收益低"
+
+  - id: no_tuning_yet
+    type: grep_count
+    pattern: "CFG_MDL|N_BUFFER_33|Preload|preload|UnitFlag|base.*block"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已调优 → P86 已应用"
+
+  - id: not_pure_validation
+    type: grep_count
+    pattern: "OP_CHECK|shape.*check|dim.*check|validation"
+    files: [kernel, header]
+    expected: "<= 3"
+    fail_msg: "纯 Host 侧 shape 校验 → P86 解决的是 Matmul 通路调优"

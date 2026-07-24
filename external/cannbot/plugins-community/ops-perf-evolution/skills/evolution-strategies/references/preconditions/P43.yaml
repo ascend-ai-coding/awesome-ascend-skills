@@ -1,0 +1,17 @@
+strategy_id: P43
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "grad|Grad|dK|dV|反向|backward"
+    min_count: 1
+    fail_msg: "未检测到反向梯度计算 → 无 PingPong 延迟写回需求，不适用 P43。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "ScatterAdd|scatter.*add|AtomicAdd"
+    min_count: 1
+    fail_msg: "未检测到 ScatterAdd/AtomicAdd 操作 → 无延迟写回优化空间，不适用 P43。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "PingPong|pingpong|PPP|%.*4"
+    min_count: 0
+    fail_msg: "已存在 PingPong 多路缓冲逻辑 → 可能冗余，优先验证现有策略效果。"

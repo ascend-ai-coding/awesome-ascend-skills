@@ -490,6 +490,22 @@ task_i, task_j = tl.swizzle2d(block_i, block_j, NUM_BLOCKS_I, NUM_BLOCKS_J, GROU
 - **用途**: 2D块重排,提升缓存局部性
 - **适用场景**: 矩阵乘法等多维块计算,改善数据复用
 - **注意**: 仅支持行优先(i方向)分组,列优先需手动实现
+
+### 2.8 libdevice接口
+
+Triton-Ascend libdevice 提供了一系列已优化的基础数学函数库。**需要此类函数时，优先检查 libdevice 是否已有实现。一旦命中下面的接口，一定要使用libdevice接口**
+
+libdevice 已覆盖的函数包括：
+
+- **数学运算**：`round`、`trunc`、`nearbyint`、`pow`、`reciprocal`
+- **三角函数**：`tan`、`atan`、`atan2`、`acos`、`asin`
+- **双曲函数**：`sinh`、`cosh`、`tanh`、`asinh`、`acosh`、`atanh`
+- **指数对数**：`expm1`、`log1p`、`log10`
+- **激活函数**：`relu`
+- **特殊函数**：`erfinv`、`gamma`、`lgamma`、`cyl_bessel_i0`
+- **浮点判断与操作**：`isnan`、`isinf`、`signbit`、`nextafter`、`ldexp`、`ilogb`、`copysign`、`hypot`
+
+如果命中上述接口，请务必加载各函数的详细路径示例、支持类型与使用说明见：`latency-optimizer/references/libdevice-usage.md`，并使用对应接口
 ---
 
 ## 3. Grid 配置策略
@@ -581,14 +597,15 @@ def large_vector_kernel(
         tl.store(output_ptr + offsets, result, mask=mask)
 
 # 启动方式
+import torch_npu
+import triton.runtime.driver as driver
+
 class ModelNew(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        # 在__init__中获取核心数
-        try:
-            self.VEC_CORE_NUM = torch_npu.npu.npu_config.get_device_limit(0).get("vector_core_num", 40)
-        except:
-            self.VEC_CORE_NUM = 40
+        # 在__init__中获取核心数（新 API，无需设备 init）
+        properties = driver.active.utils.get_device_properties(torch_npu.npu.current_device())
+        self.VEC_CORE_NUM = properties["num_vectorcore"]
 
     def forward(self, input_tensor):
         n_elements = input_tensor.numel()
@@ -618,23 +635,21 @@ class ModelNew(torch.nn.Module):
 
 | 算子类型 | 核心类型 | 获取方式 |
 |----------|----------|----------|
-| Element-wise、Reduce | **VEC_CORE_NUM**（向量核心） | `torch_npu.npu.npu_config.get_device_limit(0).get("vector_core_num", 40)` |
-| MatMul | **CUBE_CORE_NUM**（矩阵核心） | `torch_npu.npu.npu_config.get_device_limit(0).get("cube_core_num", 20)` |
+| Element-wise、Reduce | **VEC_CORE_NUM**（向量核心） | `driver.active.utils.get_device_properties(device)["num_vectorcore"]` |
+| MatMul | **CUBE_CORE_NUM**（矩阵核心） | `driver.active.utils.get_device_properties(device)["num_aicore"]` |
 
 **关键规则**：必须在 `__init__` 中获取核心数，**不能在 `forward` 中获取**，否则每次前向都会查询，影响性能。
 
 ```python
 import torch_npu
+import triton.runtime.driver as driver
 
 class ModelNew(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        try:
-            self.VEC_CORE_NUM = torch_npu.npu.npu_config.get_device_limit(0).get("vector_core_num", 40)
-            self.CUBE_CORE_NUM = torch_npu.npu.npu_config.get_device_limit(0).get("cube_core_num", 20)
-        except Exception:
-            self.VEC_CORE_NUM = 40
-            self.CUBE_CORE_NUM = 20
+        properties = driver.active.utils.get_device_properties(torch_npu.npu.current_device())
+        self.VEC_CORE_NUM = properties["num_vectorcore"]
+        self.CUBE_CORE_NUM = properties["num_aicore"]
 
     def forward(self, x):
         grid = (self.VEC_CORE_NUM,)
@@ -643,28 +658,31 @@ class ModelNew(torch.nn.Module):
 
 #### 重要注意事项
 
-**禁止在 forward 中调用 `get_device_limit`**
+**禁止在 forward 中重复查询设备属性**
 
 ```python
-# 错误：错误：每次 forward 都调用，触发设备同步
+import torch_npu
+import triton.runtime.driver as driver
+
+# 错误：错误：每次 forward 都重复查询设备属性，引入无谓 host 开销
 class ModelNew(torch.nn.Module):
     def forward(self, input_tensor):
-        core_num = torch_npu.npu.npu_config.get_device_limit(0).get("vector_core_num", 48)
+        core_num = driver.active.utils.get_device_properties(torch_npu.npu.current_device())["num_vectorcore"]
         grid = (core_num,)
         ...
 
-# 正确：正确：在 __init__ 中调用，只执行一次
+# 正确：正确：在 __init__ 中查询一次并缓存，forward 直接复用
 class ModelNew(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.VEC_CORE_NUM = torch_npu.npu.npu_config.get_device_limit(0).get("vector_core_num", 48)
+        self.VEC_CORE_NUM = driver.active.utils.get_device_properties(torch_npu.npu.current_device())["num_vectorcore"]
     
     def forward(self, input_tensor):
         grid = (self.VEC_CORE_NUM,)
         ...
 ```
 
-**原因**：`torch_npu` 的 import 和 `get_device_limit` 调用会触发设备同步，在 forward 中频繁调用会严重影响性能。
+**原因**：每次 forward 都重复查询设备属性是无谓的 host 开销；应在 `__init__` 查一次缓存为 `self.VEC_CORE_NUM` / `self.CUBE_CORE_NUM`，forward 直接复用。新 API 不再触发旧 API 那种 device init 同步，但 per-forward 重复调用仍是浪费，且会引入对 `driver` 的运行期依赖。
 
 ---
 

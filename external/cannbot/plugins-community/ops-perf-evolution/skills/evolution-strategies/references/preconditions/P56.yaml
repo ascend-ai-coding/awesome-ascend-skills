@@ -1,0 +1,17 @@
+strategy_id: P56
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "DataCopy|CopyOut|Fixpipe|UB2GM"
+    min_count: 1
+    fail_msg: "未检测到 DataCopy UB2GM 写回操作 → 无合并优化空间，不适用 P56。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "for.*DataCopy|循环.*DataCopy|loop.*DataCopy"
+    min_count: 1
+    fail_msg: "未检测到循环内 DataCopy 模式 → 无批量合并场景，不适用 P56。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "batch.*output|合并.*写回|统一.*DataCopy"
+    min_count: 0
+    fail_msg: "已存在输出合并逻辑 → 可能冗余，优先验证现有策略效果。"

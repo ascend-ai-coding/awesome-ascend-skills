@@ -1,0 +1,134 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "KVCache 三种模式机制概述",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "昇腾 NPU 推理里 KVCache 有连续缓存、分页注意力（Paged Attention）、MLA 压缩三种模式。请分别说明每种模式怎么存 KV、机制上的区别，不用判断哪种最好。",
+      "expected_output": "回复应分别讲清三种模式的存储机制：连续缓存按序列连续存储；分页注意力用物理块存储、靠 block_table 映射；MLA 缓存压缩维度。三者机制区别说明即可，不要求给出选型结论",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-kvcache",
+          "description": "技能 model-infer-kvcache 被激活"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Paged Attention 的 block_table 与 slot_mapping 构造",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "分页注意力里 block_table 和 slot_mapping 分别怎么构造？slot_mapping 为什么每个 decode 步都要重算？",
+      "expected_output": "回复应说明 block_table 是逻辑块到物理块的映射、推理全程不变；slot_mapping 决定新 token 写入的物理位置，随 kv_len 变化每步重算",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "kv_len",
+          "description": "回复中提到了 kv_len"
+        },
+        {
+          "type": "contains",
+          "pattern": "block_table",
+          "description": "回复中提到了 block_table"
+        },
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-kvcache",
+          "description": "技能 model-infer-kvcache 被激活"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "MLA 压缩缓存省显存原理",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "MLA 压缩缓存为什么比完整 KV 省显存？absorb 路径会怎么影响 FA 算子的入参？",
+      "expected_output": "回复应说明 MLA 只缓存压缩维度，远小于完整 KV；absorb 把 V 投影吸收进 O 投影，key 和 value 传同一份压缩缓存",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "absorb",
+          "description": "回复中提到了 absorb"
+        },
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-kvcache",
+          "description": "技能 model-infer-kvcache 被激活"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "信息不足时主动确认",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "帮我给模型接入 KVCache。",
+      "expected_output": "回复应先确认必要信息再动手，而不是缺信息直接给改造代码",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-kvcache",
+          "description": "技能 model-infer-kvcache 被激活"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "正向看护-多 skill 环境下正确触发",
+      "config": {
+        "max_tokens": 150000,
+        "distractor_skills": [
+          "model-infer-fusion",
+          "model-infer-parallel-analysis",
+          "model-infer-graph-mode"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "我的模型 KV 缓存占显存太大，想做分页管理降低占用，该往哪个方向改？只说方向不用写代码。",
+      "expected_output": "回复应正确激活 model-infer-kvcache，给出分页注意力等缓存优化方向，即使存在融合算子、并行、图模式等相似 skill 也应选 KVCache 专项",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-kvcache",
+          "description": "技能 model-infer-kvcache 被激活"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "使用边界",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "我想优化训练阶段的显存占用，KVCache 这个 skill 能帮我吗？",
+      "expected_output": "回复应说明本 skill 仅覆盖推理阶段的 KVCache 优化，不适用于训练显存优化，应建议用户改用训练侧方案",
+      "files": [],
+      "expectations": []
+    }
+  ],
+  "skill_name": "model-infer-kvcache"
+}

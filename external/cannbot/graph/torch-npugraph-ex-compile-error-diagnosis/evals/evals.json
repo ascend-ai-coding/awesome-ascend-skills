@@ -1,0 +1,92 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "图打断（Graph Break）排查",
+      "config": {
+        "max_tokens": 150000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 180000,
+          "glm-5": 165000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "torch.compile 时报 Graph Break 错误，这是什么意思？如何定位是哪里打断了图？",
+      "expected_output": "回复应说明 Graph Break 的含义：torch.compile 遇到无法编译的 Python 特性时被迫退出编译模式。应说明如何使用 TORCH_COMPILE_DEBUG=1 和 debug_save 来定位打断位置，以及常见原因（控制流、动态数据结构、不支持的操作等）。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "Graph Break",
+          "description": "回复中提到了 Graph Break"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Meta 推导失败诊断",
+      "config": {
+        "max_tokens": 240000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 288000,
+          "glm-5": 264000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "编译时报了 \"Meta derivation failed\" 错误，这是什么原因？应该如何排查？",
+      "expected_output": "回复应说明 Meta 推导失败的原因：自定义算子缺少 register_fake 实现，或 register_fake 中 shape/dtype 推导逻辑与真实计算不一致。应说明如何检查算子的 Meta 实现以及如何修复。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "Meta",
+          "description": "回复中提到了 Meta"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "正向看护-多 graph skill 环境下正确触发",
+      "config": {
+        "max_tokens": 180000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 210000,
+          "glm-5": 195000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "distractor_skills": [
+          "torch-npugraph-ex-runtime-error-diagnosis",
+          "torch-npugraph-ex-dfx-triage",
+          "torch-npugraph-ex-knowledge",
+          "torch-npugraph-ex-performance-diagnosis"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我在用 torch.compile 编译模型时遇到了 TorchDynamo 阶段的错误，报了 BackendCompilerFailed。请直接激活编译期错误诊断 skill 帮我排查，不需要经过 dfx-triage 路由。",
+      "expected_output": "回复应激活 torch-npugraph-ex-compile-error-diagnosis skill，说明编译期错误的排查方向。即使在多个 npugraph_ex 诊断 skill 共存的环境下，也应正确激活 compile-error-diagnosis。在信息不足时，可先了解用户的编译环境、模型框架及完整报错堆栈等信息再给出具体诊断方案。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "BackendCompilerFailed",
+          "description": "回复中提到了 BackendCompilerFailed"
+        },
+        {
+          "type": "skill_activated",
+          "pattern": "torch-npugraph-ex-compile-error-diagnosis",
+          "description": "技能 torch-npugraph-ex-compile-error-diagnosis 被激活"
+        }
+      ]
+    }
+  ],
+  "skill_name": "torch-npugraph-ex-compile-error-diagnosis"
+}

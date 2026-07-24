@@ -1,0 +1,31 @@
+strategy_id: A1
+description: FP32 中间计算适用性检查 — 算子必须是 FP16/BF16 输入且包含精度敏感计算（累加/除法/开方），才有 FP32 提升价值
+
+checks:
+  - id: is_low_precision_input
+    type: grep_count
+    pattern: "half|bfloat16_t|DT_FLOAT16|DT_BF16|float16"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子输入不是 FP16/BF16（无 half/bfloat16_t 痕迹）→ A1 无意义。若已是 FP32，检查是否为 compute_bound 换 P46/P84"
+
+  - id: has_precision_sensitive_compute
+    type: grep_count
+    pattern: "Add|Mul|Div|Sqrt|Exp|Log|ReduceSum|ReduceMax"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无精度敏感计算（纯数据搬运或 bitwise 操作）→ FP32 提升无收益。换 P1 双缓冲或 P10 向量化拷贝"
+
+  - id: not_already_fp32_compute
+    type: grep_count
+    pattern: "LocalTensor\s*<\s*float\s*>|calcType.*float|sumFp32|accumFp32"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已有 FP32 中间计算痕迹 → A1 已应用或部分应用。检查是否所有精度敏感路径都提升了，或考虑 A3 舍入模式优化"
+
+  - id: has_ub_space_for_fp32_buffer
+    type: grep_count
+    pattern: "InitBuffer"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无 InitBuffer（无 UB tensor 分配）→ 无法容纳 FP32 临时 buffer。先执行 P8 UB 分区或 D1 多 dtype 支持"

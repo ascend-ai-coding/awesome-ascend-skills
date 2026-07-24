@@ -2,10 +2,12 @@
 name: external-cannbot-ops-ascendc-docs-search
 description: Ascend C 开发资源检索技能。通过本地 API 文档索引、示例代码映射和在线文档兜底搜索定位开发资料，优先查本地、缺失时再查在线。当需要查询
   API 用法、示例代码、兼容性信息、官方资料入口或定位文档来源时使用。
+permission:
+  external_directory: allow
 original-name: ascendc-docs-search
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-26'
-synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
+synced-date: '2026-07-24'
+synced-commit: bff73845607ac78808e2af3e0014d7eb72094ef3
 license: UNKNOWN
 ---
 
@@ -21,22 +23,25 @@ license: UNKNOWN
 
 | 资源类型 | 路径 | 说明 |
 |---------|------|------|
-| API 文档 | `asc-devkit/docs/api/context/` | 1022 个 API 文档 |
-| 高性能模板 | `asc-devkit/examples/00_introduction/01_add/basic_api_memory_allocator_add/` | 双缓冲+流水线标准实现 |
-| 各类示例 | `asc-devkit/examples/00_introduction/` | 加法、减法、多输入等 |
-| 完整文档 | `asc-devkit/docs/` | 完整开发文档 |
-| Tiling 实现 | `asc-devkit/impl/adv_api/tiling/` | Tiling 参数配置参考 |
-| 矢量计算 | `asc-devkit/examples/00_introduction/11_vectoradd/` | 矢量 API 使用 |
-| 调试示例 | `asc-devkit/examples/01_utilities/00_printf/printf.asc` | printf 调试方法 |
+| API 文档 | 通过 `find "$ASC_DEVKIT_DIR/docs/zh/api/" -name "*.md"` 智能搜索 | API 文档（不依赖具体子目录） |
+| 高性能模板 | `$ASC_DEVKIT_DIR/examples/00_introduction/01_add/basic_api_memory_allocator_add/` | 双缓冲+流水线标准实现 |
+| 各类示例 | `$ASC_DEVKIT_DIR/examples/00_introduction/` | 加法、减法、多输入等 |
+| 完整文档 | `$ASC_DEVKIT_DIR/docs/` | 完整开发文档 |
+| Tiling 实现 | `$ASC_DEVKIT_DIR/impl/adv_api/tiling/` | Tiling 参数配置参考 |
+| 矢量计算 | `$ASC_DEVKIT_DIR/examples/00_introduction/11_vectoradd/` | 矢量 API 使用 |
+| 调试示例 | `$ASC_DEVKIT_DIR/examples/01_utilities/00_printf/printf.asc` | printf 调试方法 |
+| HCCL 通信 API 头文件 | `$ASC_DEVKIT_DIR/include/adv_api/hccl/` | HCCL 集合通信头文件（hccl.h、hccl_tiling.h 等），API 文档在 `docs/zh/api/SIMD-API/高阶API/HCCL通信类/` |
 
 ## 资料查找优先级
 
 ```
-1. asc-devkit/docs/api/context/ (本地 API 文档 - 1022 个)
+0. 先查 [api-index.md](references/api-index.md) 定位 API 所属大类和子目录路径
+         ↓
+1. $ASC_DEVKIT_DIR/docs/zh/api/ 下的所有 .md 文档（按定位的子目录 find 搜索）
          ↓ 找不到
-2. asc-devkit/examples/ (示例代码 - 587 个)
+2. $ASC_DEVKIT_DIR/examples/ (示例代码 - 587 个)
          ↓ 找不到
-3. asc-devkit/impl/ (实现代码)
+3. $ASC_DEVKIT_DIR/impl/ (实现代码)
          ↓ 找不到
 4. 在线搜索（华为昇腾社区）
    使用 scripts/ 中的 Python 脚本
@@ -56,7 +61,7 @@ license: UNKNOWN
 1. **列出所有变体**：
    ```bash
    # 搜索某个 API 的所有变体（将 APIName 替换为实际 API 名称）
-   ls asc-devkit/docs/api/context/ | grep -iE "^APIName"
+   find "$ASC_DEVKIT_DIR/docs/zh/api/" -name "${APIName}*.md"
 
    # 示例：
    # APIName.md        ← 基础版本
@@ -77,10 +82,10 @@ license: UNKNOWN
 
 ```bash
 # 查找某个 API 的所有变体（强制，将 APIName 替换为实际名称）
-ls asc-devkit/docs/api/context/ | grep -iE "^APIName"
+find "$ASC_DEVKIT_DIR/docs/zh/api/" -name "${APIName}*.md"
 
 # 在所有变体中搜索特定关键词
-grep -l "关键词" asc-devkit/docs/api/context/APIName*.md
+grep -rl "关键词" "$ASC_DEVKIT_DIR/docs/zh/api/" --include="*.md"
 ```
 
 ## 环境兼容性
@@ -105,7 +110,7 @@ grep -l "关键词" asc-devkit/docs/api/context/APIName*.md
 ```
 
 **示例提示词**：
-- "搜索 asc-devkit 中 Exp API 的使用示例"
+- "搜索 $ASC_DEVKIT_DIR 中 Exp API 的使用示例"
 - "查找双缓冲的实现参考"
 - "搜索类似的三角函数算子实现"
 
@@ -113,18 +118,18 @@ grep -l "关键词" asc-devkit/docs/api/context/APIName*.md
 
 | 示例名称 | 路径 | 用途 |
 |---------|------|------|
-| 高性能模板 | `asc-devkit/examples/00_introduction/01_add/basic_api_memory_allocator_add/` | 双缓冲+流水线 |
-| 多输入加法 | `asc-devkit/examples/00_introduction/04_addn/addn.asc` | 多输入处理 |
-| 减法算子 | `asc-devkit/examples/00_introduction/07_sub/sub_custom.asc` | 减法实现 |
-| 调试打印 | `asc-devkit/examples/01_utilities/00_printf/printf.asc` | printf 调试 |
-| 断言使用 | `asc-devkit/examples/01_utilities/01_assert/assert.asc` | 断言示例 |
-| 库函数 | `asc-devkit/examples/03_libraries/00_addcdivcustom/addcdiv_custom.asc` | 库函数使用 |
-| 矢量计算 | `asc-devkit/examples/00_introduction/11_vectoradd/vector_add_custom.asc` | 矢量 API |
+| 高性能模板 | `$ASC_DEVKIT_DIR/examples/00_introduction/01_add/basic_api_memory_allocator_add/` | 双缓冲+流水线 |
+| 多输入加法 | `$ASC_DEVKIT_DIR/examples/00_introduction/04_addn/addn.asc` | 多输入处理 |
+| 减法算子 | `$ASC_DEVKIT_DIR/examples/00_introduction/07_sub/sub_custom.asc` | 减法实现 |
+| 调试打印 | `$ASC_DEVKIT_DIR/examples/01_utilities/00_printf/printf.asc` | printf 调试 |
+| 断言使用 | `$ASC_DEVKIT_DIR/examples/01_utilities/01_assert/assert.asc` | 断言示例 |
+| 库函数 | `$ASC_DEVKIT_DIR/examples/03_libraries/00_math/addcdiv/addcdiv_custom.asc` | 库函数使用 |
+| 矢量计算 | `$ASC_DEVKIT_DIR/examples/00_introduction/11_vectoradd/vector_add_custom.asc` | 矢量 API |
 
 ## 在线搜索
 
 **适用情况**：
-- 本地 context 目录检索不到相关 API
+- 本地 $ASC_DEVKIT_DIR 文档未覆盖相关 API
 - 需要更详细的官方说明或最新版本信息
 - 本地文档版本过旧或不完整
 

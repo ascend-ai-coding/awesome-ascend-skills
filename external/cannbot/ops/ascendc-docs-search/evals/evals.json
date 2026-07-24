@@ -1,0 +1,108 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "API 变体搜索（关键能力）",
+      "config": {
+        "max_tokens": 100000,
+        "eval_mode": "text"
+      },
+      "prompt": "我在用 ReduceMax API，发现文档里好像有好几个不同版本的 ReduceMax，怎么确认应该用哪个？",
+      "expected_output": "回复应说明 Ascend C 存在 240+ 个带数字后缀的 API 变体（如 `ReduceMax.md`、`ReduceMax-35.md`、`ReduceMax-92.md`），不同变体的函数签名、参数和功能可能完全不同。应说明必须先用 `find \"$ASC_DEVKIT_DIR/docs/zh/api/\" -name \"ReduceMax*.md\"` 列出所有变体，然后逐一查阅每个变体的函数签名和参数说明确认功能差异，最后选择符合需求的版本。应强调禁止只读单个文件就下结论。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "搜索示例代码",
+      "config": {
+        "max_tokens": 100000,
+        "eval_mode": "text"
+      },
+      "prompt": "我想找一个双缓冲（double buffer）+ 流水线的 Ascend C 实现参考，应该去哪里找？",
+      "expected_output": "回复应推荐查看 `$ASC_DEVKIT_DIR/examples/00_introduction/01_add/basic_api_memory_allocator_add/` 目录，这是官方的高性能模板示例，包含双缓冲+流水线的标准实现。应说明该示例位于示例代码目录的 `00_introduction` 分类下，是入门高性能算子开发的推荐参考。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "本地资源不足时使用在线搜索兜底",
+      "config": {
+        "max_tokens": 100000,
+        "eval_mode": "text"
+      },
+      "prompt": "我在本地文档里找不到关于 Ascend C 临时内存申请（TempTensor）的详细说明，有没有更详细的官方文档？",
+      "expected_output": "回复应说明当本地 `$ASC_DEVKIT_DIR` 文档未覆盖相关内容时，可以使用在线搜索兜底。应推荐使用 `ascend_search_client.py` 脚本搜索华为昇腾社区文档，示例命令如 `python skills/ascendc-docs-search/scripts/ascend_search_client.py \"Ascend C 临时内存申请\" --max_results 5`，并说明可使用 `ascend_content_fetcher.py` 获取详细内容。应提及推荐使用中文关键词搜索，版本过滤建议使用 8.5.0。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 4,
+      "title": "正向看护-多 skill 环境下正确触发目标 skill",
+      "config": {
+        "max_tokens": 120000,
+        "distractor_skills": [
+          "ascendc-docs-gen",
+          "ascendc-api-best-practices",
+          "ascendc-tiling-design",
+          "ascendc-env-check"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我想查一下 Ascend C 中 Exp 和 Log API 的参数说明和使用示例，应该用什么工具搜索？",
+      "expected_output": "回复应正确激活 ascendc-docs-search skill，说明通过 `$ASC_DEVKIT_DIR/docs/zh/api/` 搜索 Exp 和 Log 的 API 文档，使用 `find` 命令查找所有变体，并在 `$ASC_DEVKIT_DIR/examples/` 中搜索使用示例。即使在 ascendc-docs-gen、ascendc-api-best-practices 等相似 skill 共存的环境下，也应正确选择 ascendc-docs-search。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 5,
+      "title": "边界场景-模糊查询时主动追问",
+      "config": {
+        "max_tokens": 80000,
+        "eval_mode": "text"
+      },
+      "prompt": "帮我找个 API",
+      "expected_output": "回复应识别到用户查询过于模糊，主动追问具体需要查找哪个 API、想了解什么信息（函数签名、参数说明、使用示例、兼容性等）。不应在缺少具体 API 名称或搜索目标的情况下直接执行搜索或输出大量无关文档列表。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 6,
+      "title": "HCCL 通信 API 文档定位",
+      "config": {
+        "max_tokens": 100000,
+        "eval_mode": "text"
+      },
+      "prompt": "我想在算子里调用 hccl.alltoallv，HCCL 通信类的 API 文档在哪个目录下？",
+      "expected_output": "回复应说明 HCCL 通信 API 文档位于 `$ASC_DEVKIT_DIR/docs/zh/api/SIMD-API/高阶API/HCCL通信类/`，分三个子目录：HCCL-Kernel侧接口、HCCL-Tiling侧接口、HCCL-Context。应建议先读 HCCL使用说明.md 和 HCCL-Tiling使用说明.md 获取完整调用流程和代码示例，再按需查阅单个 API 文档。应提供 find 命令示例。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 7,
+      "title": "HCCL Kernel 侧调用流程",
+      "config": {
+        "max_tokens": 100000,
+        "eval_mode": "text"
+      },
+      "prompt": "HCCL Kernel 侧的完整调用流程是什么？InitV2、SetCcTilingV2、AlltoAllV、Wait、Finalize 怎么配合使用？",
+      "expected_output": "回复应说明 HCCL Kernel 侧的 6 步调用流程：1. 创建 Hccl 对象并调用 InitV2 初始化；2. 调用 SetCcTilingV2 设置通信算法 Tiling 地址；3. 调用 AlltoAllV 等 Prepare 接口异步下发通信任务获取 handleId；4. 调用 Commit 通知服务端执行；5. 调用 Wait 等待通信完成；6. 调用 Finalize 通知服务端退出。应说明可以通过 GetHcclContext 获取通信上下文。应建议查阅 HCCL使用说明.md 获取完整代码示例。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 8,
+      "title": "HCCL 本地找不到时在线搜索兜底",
+      "config": {
+        "max_tokens": 100000,
+        "eval_mode": "text"
+      },
+      "prompt": "本地 $ASC_DEVKIT_DIR 下没有找到 HCCL AllToAllV 的文档，怎么办？",
+      "expected_output": "回复应说明当本地文档未覆盖 HCCL 相关内容时，可使用在线搜索兜底。应推荐使用 ascend_search_client.py 脚本搜索华为昇腾社区文档，示例命令如 `python skills/ascendc-docs-search/scripts/ascend_search_client.py \"HCCL AllToAllV\" --max_results 5`，并说明可使用 ascend_content_fetcher.py 获取详细内容。应提及推荐使用中文关键词搜索。",
+      "files": [],
+      "expectations": []
+    }
+  ],
+  "skill_name": "ascendc-docs-search"
+}

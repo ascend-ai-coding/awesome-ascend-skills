@@ -1,0 +1,324 @@
+/**
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
+
+/* !
+ * \file softmax_v2_ara_online.h
+ * \brief SoftmaxV2 ARA 布局的 Online Softmax 模板。
+ *
+ * 数据布局 [A1, R, A0]，softmax 沿 R 轴。相比 ARA Recompute（输入读 3 次：max/sum/output），
+ * Online Softmax 将 max 与 sum 融合为单遍在线更新（维护 running max / running sum），
+ * 输入只需读 2 次（1 遍在线 max+sum，1 遍输出），减少一次 R 全量搬入。
+ *
+ * 在线更新公式（沿 R 分 chunk，按 A0 列独立维护 running 状态）:
+ *   m_new = max(m_old, chunk_max)
+ *   corr  = exp(m_old - m_new)
+ *   l_new = l_old * corr + Σ_row exp(x - m_new)
+ * 最终 softmax(x) = exp(x - m_final) / l_final
+ */
+
+#ifndef SOFTMAX_V2_ARA_ONLINE_H
+#define SOFTMAX_V2_ARA_ONLINE_H
+
+#include "kernel_tiling/kernel_tiling.h"
+
+#include "kernel_operator.h"
+#include "softmax_v2_base.h"
+
+namespace SoftmaxV2Ops
+{
+using namespace AscendC;
+using namespace AscendC::MicroAPI;
+
+using AscendC::MicroAPI::LoadDist;
+using AscendC::MicroAPI::MaskMergeMode;
+using AscendC::MicroAPI::MaskReg;
+using AscendC::MicroAPI::RegTensor;
+using AscendC::MicroAPI::StoreDist;
+
+template <typename T1, typename T2>
+class SoftmaxV2ARAOnline : public SoftmaxV2OpsBase
+{
+    static constexpr int32_t BUFFER_NUM = 2;
+
+    static constexpr uint16_t VECTOR_LENGTH = GetVRegSize();
+    static constexpr uint32_t VL_FP32 = VECTOR_LENGTH / sizeof(float);
+    static constexpr int64_t BLOCK_SIZE = GetUbBlockSize();
+
+public:
+    __aicore__ inline SoftmaxV2ARAOnline(){};
+
+    __aicore__ inline SoftmaxV2ARAOnline(const SoftmaxV2ARAOnlineTilingData* tilingDataIn)
+    {
+        tilingData_ = tilingDataIn;
+    }
+
+    __aicore__ inline void Init(GM_ADDR x, GM_ADDR y, TPipe* pipeIn)
+    {
+        pipe_ = pipeIn;
+
+        xGm_.SetGlobalBuffer((__gm__ T1*)x);
+        yGm_.SetGlobalBuffer((__gm__ T2*)y);
+
+        int64_t xShapeLen = tilingData_->tileA0Len * tilingData_->rChunkFactor;
+        pipe_->InitBuffer(xQueue_, BUFFER_NUM, xShapeLen * sizeof(T1));
+        pipe_->InitBuffer(yQueue_, BUFFER_NUM, xShapeLen * sizeof(float));
+
+        pipe_->InitBuffer(xMaxBuf_, tilingData_->tileA0Len * sizeof(float));
+        pipe_->InitBuffer(xSumBuf_, tilingData_->tileA0Len * sizeof(float));
+    }
+
+    __aicore__ inline void Process()
+    {
+        int64_t blockIdx = GetBlockIdx();
+        int64_t beginIdx = blockIdx * tilingData_->tilesPerCore;
+        int64_t endIdx = beginIdx + tilingData_->tilesPerCore;
+        endIdx = endIdx > tilingData_->totalTiles ? tilingData_->totalTiles : endIdx;
+
+        // pattern is [A1, R, A0]
+        for (int64_t curIdx = beginIdx; curIdx < endIdx; curIdx++) {
+            int64_t curA0Idx = curIdx % tilingData_->tileA0Outer;
+            int64_t curA1Idx = curIdx / tilingData_->tileA0Outer;
+
+            uint32_t curTileA0Len =
+                curA0Idx == (tilingData_->tileA0Outer - 1) ? tilingData_->tileA0Tail : tilingData_->tileA0Len;
+
+            int64_t xOffset =
+                // a1 offset
+                curA1Idx * tilingData_->totalRLen * tilingData_->totalA0Len +
+                // a0 offset
+                curA0Idx * tilingData_->tileA0Len;
+
+            uint16_t loopA0Num = ops::CeilDiv(curTileA0Len, VL_FP32);
+
+            // 单遍在线更新 running max / running sum
+            CalcOnlineMaxSum(curTileA0Len, xOffset, loopA0Num);
+
+            // 输出遍：exp(x - max) / sum
+            for (int64_t idx = 0; idx < tilingData_->rChunkTotalLoop; idx++) {
+                int64_t curTileRLen =
+                    idx == (tilingData_->rChunkTotalLoop - 1) ? tilingData_->rChunkTail : tilingData_->rChunkFactor;
+
+                int64_t offset = xOffset + idx * tilingData_->rChunkFactor * tilingData_->totalA0Len;
+                CopyInX(offset, curTileRLen, curTileA0Len);
+                CalcOutput(curTileRLen, curTileA0Len, loopA0Num);
+                CopyOutY(offset, curTileRLen, curTileA0Len);
+            }
+        }
+    }
+
+private:
+    // 单遍在线 max+sum：按 R chunk 逐块搬入，按 A0 列独立维护 running max / running sum。
+    __aicore__ inline void CalcOnlineMaxSum(uint32_t curTileA0Len, int64_t xOffsetStart, uint16_t loopA0Num)
+    {
+        LocalTensor<float> xMaxTensor = xMaxBuf_.Get<float>();
+        LocalTensor<float> xSumTensor = xSumBuf_.Get<float>();
+        __local_mem__ float* xMaxLocal = (__local_mem__ float*)xMaxTensor.GetPhyAddr();
+        __local_mem__ float* xSumLocal = (__local_mem__ float*)xSumTensor.GetPhyAddr();
+
+        // 初始化 running max = -inf, running sum = 0
+        __VEC_SCOPE__
+        {
+            RegTensor<float> maxReg;
+            RegTensor<float> sumReg;
+            MaskReg pregMask;
+            uint32_t sreg = curTileA0Len;
+            for (uint16_t k = 0; k < loopA0Num; k++) {
+                pregMask = UpdateMask<float>(sreg);
+                Duplicate(maxReg, static_cast<float>(-INFINITY), pregMask);
+                Duplicate(sumReg, static_cast<float>(0.0f), pregMask);
+                DataCopy(((__local_mem__ float*)xMaxLocal) + k * VL_FP32, maxReg, pregMask);
+                DataCopy(((__local_mem__ float*)xSumLocal) + k * VL_FP32, sumReg, pregMask);
+            }
+        }
+
+        uint32_t tileA0Len = tilingData_->tileA0Len;
+
+        for (int64_t idx = 0; idx < tilingData_->rChunkTotalLoop; idx++) {
+            int64_t curTileRLen =
+                idx == (tilingData_->rChunkTotalLoop - 1) ? tilingData_->rChunkTail : tilingData_->rChunkFactor;
+            uint16_t curTileRLenVl = static_cast<uint16_t>(curTileRLen);
+            int64_t xOffset = xOffsetStart + idx * tilingData_->rChunkFactor * tilingData_->totalA0Len;
+
+            CopyInX(xOffset, curTileRLen, curTileA0Len);
+            LocalTensor<T1> x = xQueue_.DeQue<T1>();
+            __local_mem__ T1* xLocal = (__local_mem__ T1*)x.GetPhyAddr();
+
+            __VEC_SCOPE__
+            {
+                RegTensor<float> xReg;
+                RegTensor<float> mOldReg;
+                RegTensor<float> lOldReg;
+                RegTensor<float> mNewReg;
+                RegTensor<float> mLocalReg;
+                RegTensor<float> corrReg;
+                RegTensor<float> tmpReg;
+                RegTensor<float> chunkSumReg;
+
+                MaskReg pregMask;
+                uint32_t sreg = curTileA0Len;
+
+                for (uint16_t k = 0; k < loopA0Num; k++) {
+                    pregMask = UpdateMask<float>(sreg);
+                    // load running state for this A0 column block
+                    DataCopy<float, LoadDist::DIST_NORM>(mOldReg, (__local_mem__ float*)xMaxLocal + k * VL_FP32);
+                    DataCopy<float, LoadDist::DIST_NORM>(lOldReg, (__local_mem__ float*)xSumLocal + k * VL_FP32);
+
+                    // chunk local max
+                    Duplicate(mLocalReg, static_cast<float>(-INFINITY), pregMask);
+                    for (uint16_t i = 0; i < curTileRLenVl; i++) {
+                        uint32_t offset = i * tileA0Len + k * VL_FP32;
+                        LoadTensorForDtypeT1(xLocal, xReg, pregMask, offset);
+                        Max(mLocalReg, mLocalReg, xReg, pregMask);
+                    }
+
+                    // m_new = max(m_old, chunk_max)
+                    Max(mNewReg, mOldReg, mLocalReg, pregMask);
+                    // corr = exp(m_old - m_new)
+                    Sub(corrReg, mOldReg, mNewReg, pregMask);
+                    Exp(corrReg, corrReg, pregMask);
+
+                    // chunk_sum = Σ_row exp(x - m_new)
+                    Duplicate(chunkSumReg, static_cast<float>(0.0f), pregMask);
+                    for (uint16_t i = 0; i < curTileRLenVl; i++) {
+                        uint32_t offset = i * tileA0Len + k * VL_FP32;
+                        LoadTensorForDtypeT1(xLocal, xReg, pregMask, offset);
+                        Sub(tmpReg, xReg, mNewReg, pregMask);
+                        Exp(tmpReg, tmpReg, pregMask);
+                        Add(chunkSumReg, chunkSumReg, tmpReg, pregMask);
+                    }
+
+                    // l_new = l_old * corr + chunk_sum
+                    Mul(lOldReg, lOldReg, corrReg, pregMask);
+                    Add(lOldReg, lOldReg, chunkSumReg, pregMask);
+
+                    // store back running state
+                    DataCopy(((__local_mem__ float*)xMaxLocal) + k * VL_FP32, mNewReg, pregMask);
+                    DataCopy(((__local_mem__ float*)xSumLocal) + k * VL_FP32, lOldReg, pregMask);
+                }
+            }
+
+            xQueue_.FreeTensor<T1>(x);
+        }
+    }
+
+    __aicore__ inline void CopyInX(int64_t xGmOffset, int64_t curTileRLen, uint32_t curTileA0Len)
+    {
+        LocalTensor<T1> xLocal = xQueue_.AllocTensor<T1>();
+        DataCopyPadExtParams<T1> dataCopyPadExtParams;
+        dataCopyPadExtParams.isPad = false;
+        dataCopyPadExtParams.leftPadding = 0;
+        dataCopyPadExtParams.rightPadding = 0;
+        dataCopyPadExtParams.paddingValue = 0;
+        DataCopyExtParams copyInParams;
+        copyInParams.blockCount = curTileRLen;
+        copyInParams.blockLen = curTileA0Len * sizeof(T1);
+        copyInParams.srcStride = (tilingData_->totalA0Len - curTileA0Len) * sizeof(T1);
+        copyInParams.dstStride = (tilingData_->tileA0Len - curTileA0Len) * sizeof(T1) / BLOCK_SIZE;
+        DataCopyPad<T1, PaddingMode::Normal>(xLocal, xGm_[xGmOffset], copyInParams, dataCopyPadExtParams);
+
+        xQueue_.EnQue(xLocal);
+    }
+
+    __aicore__ inline void CalcOutput(int64_t curTileRLen, uint32_t curTileA0Len, uint16_t loopA0Num)
+    {
+        LocalTensor<T1> x = xQueue_.DeQue<T1>();
+        __local_mem__ T1* xLocal = (__local_mem__ T1*)x.GetPhyAddr();
+
+        LocalTensor<T2> y = yQueue_.template AllocTensor<T2>();
+        __local_mem__ T2* yLocal = (__local_mem__ T2*)y.GetPhyAddr();
+
+        LocalTensor<float> xMaxTensor = xMaxBuf_.Get<float>();
+        __local_mem__ float* xMaxLocal = (__local_mem__ float*)xMaxTensor.GetPhyAddr();
+
+        LocalTensor<float> xSumTensor = xSumBuf_.Get<float>();
+        __local_mem__ float* xSumLocal = (__local_mem__ float*)xSumTensor.GetPhyAddr();
+
+        uint32_t tileA0Len = tilingData_->tileA0Len;
+        uint16_t curTileRLenVl = static_cast<uint16_t>(curTileRLen);
+        __VEC_SCOPE__
+        {
+            RegTensor<float> xReg;
+            RegTensor<float> yReg;
+            RegTensor<float> sumReg;
+            RegTensor<float> maxReg;
+
+            MaskReg pregMask;
+            uint32_t sreg = curTileA0Len;
+
+            for (uint16_t k = 0; k < loopA0Num; k++) {
+                pregMask = UpdateMask<float>(sreg);
+                DataCopy<float, LoadDist::DIST_NORM>(sumReg, (__local_mem__ float*)xSumLocal + k * VL_FP32);
+                DataCopy<float, LoadDist::DIST_NORM>(maxReg, (__local_mem__ float*)xMaxLocal + k * VL_FP32);
+                for (uint16_t i = 0; i < curTileRLenVl; i++) {
+                    uint32_t xOffset = i * tileA0Len + k * VL_FP32;
+                    LoadTensorForDtypeT1(xLocal, xReg, pregMask, xOffset);
+
+                    Sub(xReg, xReg, maxReg, pregMask);
+                    Exp(xReg, xReg, pregMask);
+                    Div(yReg, xReg, sumReg, pregMask);
+
+                    // copy out
+                    if constexpr (IsSameType<T2, float>::value) {
+                        DataCopy(((__local_mem__ float*)yLocal) + xOffset, yReg, pregMask);
+                    } else {  // fp16、bf16
+                        RegTensor<T2> xFp16;
+                        Cast<T2, float, castTraitFp32ToFp16>(xFp16, yReg, pregMask);
+                        DataCopy<T2, StoreDist::DIST_PACK_B32>(((__local_mem__ T2*)yLocal) + xOffset, xFp16, pregMask);
+                    }
+                }
+            }
+        }
+
+        yQueue_.EnQue(y);
+
+        xQueue_.FreeTensor<T1>(x);
+    }
+
+    __aicore__ inline void LoadTensorForDtypeT1(__local_mem__ T1* src, RegTensor<float>& dst, MaskReg& preg,
+                                                uint32_t offset)
+    {
+        if constexpr (IsSameType<T1, float>::value) {
+            DataCopy<float, LoadDist::DIST_NORM>(dst, (__local_mem__ float*)src + offset);
+        } else {  // fp16、bf16
+            RegTensor<T1> xFp16;
+            DataCopy<T1, LoadDist::DIST_UNPACK_B16>(xFp16, ((__local_mem__ T1*)src + offset));
+            Cast<float, T1, castTraitFp16ToFp32>(dst, xFp16, preg);
+        }
+    }
+
+    __aicore__ inline void CopyOutY(int64_t yGmOffset, int64_t curTileRLen, uint32_t curTileA0Len)
+    {
+        LocalTensor<T2> y = yQueue_.DeQue<T2>();
+        DataCopyExtParams copyInParams;
+        copyInParams.blockCount = curTileRLen;
+        copyInParams.blockLen = curTileA0Len * sizeof(T2);
+        copyInParams.srcStride = (tilingData_->tileA0Len - curTileA0Len) * sizeof(T2) / BLOCK_SIZE;
+        copyInParams.dstStride = (tilingData_->totalA0Len - curTileA0Len) * sizeof(T2);
+        DataCopyPad<T2, PaddingMode::Normal>(yGm_[yGmOffset], y, copyInParams);
+        yQueue_.FreeTensor(y);
+    }
+
+private:
+    const SoftmaxV2ARAOnlineTilingData* tilingData_;
+
+    TPipe* pipe_;
+
+    TQue<QuePosition::VECIN, 1> xQueue_;
+    TQue<QuePosition::VECOUT, 1> yQueue_;
+
+    TBuf<TPosition::VECCALC> xMaxBuf_;
+    TBuf<TPosition::VECCALC> xSumBuf_;
+
+    GlobalTensor<T2> yGm_;
+    GlobalTensor<T1> xGm_;
+};
+}  // namespace SoftmaxV2Ops
+
+#endif  // SOFTMAX_V2_ARA_ONLINE_H

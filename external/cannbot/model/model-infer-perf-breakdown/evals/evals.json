@@ -1,0 +1,49 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "kernel 性能数据的拆解流程",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "我有一份 NPU profiling 的 kernel_details.csv，想按模型结构拆出每层 attn/ffn/moe 的耗时分布、找出抖动的 layer，整体怎么做？只讲方法。",
+      "expected_output": "回复应说明按用户描述的模型结构把 kernel 序列切成 component 实例、再按 cluster 规则把算子分桶，统计每类计算的 wall/bubble 中位数与抖动、定位异常 layer，最终产出单页 HTML 报告；产物只落 run_dir，不修改用户原始文件。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "component",
+          "description": "回复中提到了 component"
+        },
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-perf-breakdown",
+          "description": "技能 model-infer-perf-breakdown 被激活"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "历史产物的分档复用",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "同一个模型我前后跑了两版 prof，第二次拆解还要从头再来一遍吗？只讲思路。",
+      "expected_output": "回复应说明支持按改动幅度分小改/中改/大改三档复用历史产物：kernel 集合基本不变走小改直接复用，中改增量补、大改才重走全流程，避免每次从零拆解。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-perf-breakdown",
+          "description": "技能 model-infer-perf-breakdown 被激活"
+        }
+      ]
+    }
+  ],
+  "skill_name": "model-infer-perf-breakdown"
+}

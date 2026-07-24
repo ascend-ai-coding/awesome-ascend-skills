@@ -1,0 +1,17 @@
+strategy_id: P41
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "gamma|Gamma|scale|Scale|offset|Offset|RmsNorm|LayerNorm"
+    min_count: 1
+    fail_msg: "未检测到 gamma/scale/offset/RmsNorm 相关数据 → 无常驻复用对象，不适用 P41。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "DataCopy|CopyIn|CopyOut|Cast"
+    min_count: 1
+    fail_msg: "未检测到数据搬运/Cast 操作 → 无优化空间，不适用 P41。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "ReinterpretCast|常驻|resident|reuse"
+    min_count: 0
+    fail_msg: "已存在常驻复用逻辑 → 可能冗余，优先验证现有策略效果。"

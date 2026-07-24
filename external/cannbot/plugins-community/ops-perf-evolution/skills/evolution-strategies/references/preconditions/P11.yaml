@@ -1,0 +1,31 @@
+strategy_id: P11
+description: 尾块与边界处理适用性检查 — 算子必须涉及数据切分且有总数据量不能被 tileSize 整除的风险
+
+checks:
+  - id: has_data_splitting
+    type: grep_count
+    pattern: "tileSize|tile_size|blockSize|elemsPerCore|dataCount|for\s*\(.*;.*;.*\)"
+    files: [kernel, tiling]
+    expected: ">= 1"
+    fail_msg: "算子无数据切分循环 → 无尾块问题。检查是否为 elementwise 全量计算，换 P1 双缓冲或 P67 Counter 模式"
+
+  - id: has_non_aligned_total
+    type: grep_count
+    pattern: "%\s*tileSize|remainder|tail|totalElems\s*\/%\s*|shape\[.*\]\s*%"
+    files: [kernel, tiling, header]
+    expected: "== 0"
+    fail_msg: "算子已有尾块/取模处理痕迹 → P11 已应用或部分应用。检查尾块处理是否完整（是否同时处理了尾核和尾块）"
+
+  - id: total_data_count_variable
+    type: grep_count
+    pattern: "totalElems|totalCount|dataCount|nElement|GetShapeSize|GetBlockNum"
+    files: [tiling, kernel]
+    expected: ">= 1"
+    fail_msg: "算子无总数据量定义 → 无法计算尾块大小。确认算子是否有 host 侧 shape 信息"
+
+  - id: not_pure_matmul_high_level
+    type: grep_count
+    pattern: "MatmulImpl|Matmul<"
+    files: [kernel]
+    expected: "<= 2"
+    fail_msg: "纯 MatmulImpl 高阶 API 算子 → CANN 内置已处理分块和尾块，P11 无介入点。优先考虑 P46/P78/P86"

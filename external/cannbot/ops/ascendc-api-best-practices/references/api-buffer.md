@@ -108,7 +108,7 @@ AscendC::TQue<AscendC::TPosition::VECIN, 1> inQueueX;
 pipe->InitBuffer(inQueueX, 2, bufferSize);  // num=2 开启 Double Buffer
 
 AscendC::LocalTensor<half> x = inQueueX.AllocTensor<half>();
-AscendC::DataCopyPad(x, xGm, {1, size * sizeof(half), 0, 0}, {false, 0, 0, 0});
+AscendC::DataCopyPad(x, xGm, {1, (uint32_t)(size * sizeof(half)), 0, 0, 0}, {false, 0, 0, static_cast<half>(0)});
 inQueueX.EnQue(x);
 // ...
 AscendC::LocalTensor<half> xLocal = inQueueX.DeQue<half>();
@@ -195,7 +195,7 @@ for (int i = 0; i < totalTiles; i++) {
 // 3. CopyIn
 void CopyIn(int i) {
     LocalTensor<T> x = inQueueX.AllocTensor<T>();
-    DataCopyPad(x, xGm[i * tileSize], {1, (uint32_t)(tileSize * sizeof(T)), 0, 0}, {false, 0, 0, 0});
+    DataCopyPad(x, xGm[i * tileSize], {1, (uint32_t)(tileSize * sizeof(T)), 0, 0, 0}, {false, 0, 0, static_cast<T>(0)});
     inQueueX.EnQue(x);
 }
 
@@ -211,7 +211,7 @@ void Compute(int i) {
 // 5. CopyOut
 void CopyOut(int i) {
     LocalTensor<T> y = outQueueY.DeQue<T>();
-    DataCopyPad(yGm[i * tileSize], y, {1, (uint32_t)(tileSize * sizeof(T)), 0, 0});
+    DataCopyPad(yGm[i * tileSize], y, {1, (uint32_t)(tileSize * sizeof(T)), 0, 0, 0});
     outQueueY.FreeTensor(y);
 }
 ```
@@ -291,3 +291,53 @@ tileRows = std::max(1u, std::min(tileRows, MAX_BLOCK_COUNT));
 1. **tileRows 限制**：DataCopyPad 的 `blockCount` 最大 4095
 2. **尾核处理**：`startLocalRow >= totalRowsToProcess` 时提前退出
 3. **stride 计算**：UB 侧 stride 单位是 32 字节块，GM 侧是字节
+
+---
+
+## 多 stage 共享 L1 / L0 Buffer 的常量一致性
+
+### 适用场景
+
+mix kernel（`__mix__(N, M)`）或多 stage 算子中，同一对 L1 / L0 Buffer 经常被多个 Compute stage 函数共享访问做轮转（例如 GEMM 算子中两个连续 Mmad 计算共享同一对 L1 输入 buffer）。
+
+### 必须一致的常量
+
+各 stage 函数内使用以下常量，**必须与 InitBuffer 的实际分配字节数一致**：
+
+- 单 slot 元素数（`slotElems`）
+- 单 slot 字节数（`slotBytes`）
+- per-slot stride / 槽偏移基数
+
+### 典型踩坑
+
+```cpp
+// InitBuffer 时分配：
+buf.InitBuffer(matAL1_, 64 * 1024 * PRELOAD_NUM);   // 每 slot 64KB
+
+// ComputeStage1 中（正确）：
+const uint32_t slotElems = 64 * 1024 / sizeof(DATA_T);   // 与 InitBuffer 一致
+auto a = matAL1_.Get<DATA_T>()[loopSlot * slotElems];
+
+// ComputeStage2 中（错误！）：
+const uint32_t slotElems = 128 * 1024 / sizeof(DATA_T);  // ❌ 误写 128KB
+auto b = matAL1_.Get<DATA_T>()[loopSlot * slotElems];    // task=0 偏移=0 蒙混，task=1+ 读越界脏数据
+```
+
+### 症状
+
+- 任务 task=0 输出正常（偏移=0，即使常量错也不越界，读到的还是合法分配区）
+- 任务 task=1+ 输出 NaN / inf（偏移到 buffer 末尾外的脏数据）
+- "偶数 task PASS / 奇数 task FAIL" 或 "首个 task PASS / 后续 task 全爆炸" 型周期性错误
+
+### 工程约束
+
+把所有 per-slot 常量提到单一头文件或单一 constexpr 定义，所有 stage 引用同一定义：
+
+```cpp
+// constants.h
+constexpr uint32_t L1_BUF_A_SLOT_BYTES = 64 * 1024;
+constexpr uint32_t L1_BUF_B_SLOT_BYTES = 64 * 1024;
+constexpr uint32_t L1_BUF_A_SLOT_ELEMS = L1_BUF_A_SLOT_BYTES / sizeof(DATA_T);
+```
+
+避免在每个 stage 函数内各自声明 `const uint32_t slotElems = ...;`。

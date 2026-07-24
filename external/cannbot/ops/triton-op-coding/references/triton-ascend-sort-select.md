@@ -133,6 +133,112 @@ def select_kernel(
 
 无抑制逻辑，阶段5为空。将哨兵值设为 `-float('inf')`。
 
+---
+
+## TopK 实现规范
+
+### 推荐架构：tile-wise partial sort + merge
+
+```python
+TILE = min(4096, next_pow2(N))
+COMBINED = next_pow2(2 * K)
+
+for c in range(0, N, TILE):
+    offsets = c + tl.arange(0, TILE)
+    mask = offsets < N
+    tile = tl.load(input_ptr + offsets, mask=mask, other=pad_val)
+    sorted_tile = tl.sort(tile, descending=largest)
+    chunk_topk = tl.gather(sorted_tile, tl.arange(0, K), axis=0)
+
+    if c == 0:
+        best = chunk_topk
+    else:
+        merged = tl.full((COMBINED,), pad_val, dtype=...)
+        merged = tl.insert_slice(merged, best, 0)
+        merged = tl.insert_slice(merged, chunk_topk, K)
+        sorted_merged = tl.sort(merged, descending=largest)
+        best = tl.gather(sorted_merged, tl.arange(0, K), axis=0)
+```
+
+### 禁止模式
+
+- `for rank in range(k): for i in range(slice_size):` 的选择排序
+- `tl.sum(tl.where(tl.arange(0, BLOCK_SIZE) == rank, sorted_vals, 0.0))` 标量提取
+- 原地修改输入（如用哨兵值覆盖输入张量）
+- 动态大缓冲 `num_chunks * k` + 选择排序兜底
+- 固定 `BLOCK_ROWS=1/2/4` 等常数，未按 UB 预算动态计算
+- 多 tile 合并用 in-register gather + `idx % K` + `tl.where` 拼接
+
+## TopK 高性能代码骨架
+
+以下模板为**伪代码骨架**，用于说明 8 条 TopK/Argsort 约束的实现形态，而非可直接运行的代码。约束 1~4 来自基本规范，约束 5~8 为性能关键，必须在 designer/coding 阶段直接满足。
+
+| 编号 | 约束 | 在骨架中的位置 |
+|------|------|----------------|
+| 1 | 用 `tl.sort`/`ext.sort` 做 tile-wise 排序 | kernel 内 `sort(tile)` |
+| 2 | top-k 提取用 `tl.gather` | kernel 内 `gather(sorted_tile, topk_idx)` |
+| 3 | 合并缓冲区固定为 `next_pow2(2 * K)` | Host 侧 `COMBINED` + kernel 内 temp workspace 宽度 |
+| 4 | 目标维 permute 到末维；tile 不足填充 `±inf` | kernel 入口前完成 permute；`load(..., other=pad_val)` |
+| 5 | UB 预算动态 `ROWS_PER_BLOCK`，禁止固定常数 | Host 侧 `ROWS_PER_BLOCK` 计算 |
+| 6 | 多 tile 合并必须使用 temp buffer | kernel 内 store/load workspace 后 `sort(merged)` |
+| 7 | kernel 启动传入 `multibuffer=False, unit_flag=False` | Host 侧 `launch(...)` |
+| 8 | 循环遍历实际 `n_cols`，禁止遍历 `next_pow2(n_cols)` | kernel 内 `for c in arange(0, n_cols, TILE)` |
+
+```python
+# 约束 5：Host 侧按 UB 预算动态计算 ROWS_PER_BLOCK
+TILE        = min(4096, next_pow2(n_cols))
+COMBINED    = next_pow2(2 * K)
+ROWS_PER_BLOCK = max(1, min(ceil(n_rows / num_cores),
+                            UB_BUDGET // (TILE * element_size * BUFFER_COEFF)))
+grid        = (min(ceil(n_rows / ROWS_PER_BLOCK), num_cores),)
+
+# 约束 3/6：分配 temp workspace：[n_rows, COMBINED]，用于连续 2K merge
+temp = alloc_workspace([n_rows, COMBINED], dtype=x.dtype)
+
+@triton.jit
+def topk_kernel(x_ptr, out_ptr, temp_ptr, n_rows, n_cols,
+                TILE, K, COMBINED, ROWS_PER_BLOCK, pad_val, largest):
+    pid       = program_id(0)
+    row_offs  = pid * ROWS_PER_BLOCK + arange(0, ROWS_PER_BLOCK)
+    row_mask  = row_offs < n_rows
+
+    col_offs  = arange(0, TILE)
+    topk_idx  = arange(0, K)
+    best      = full([ROWS_PER_BLOCK, K], pad_val)
+
+    # 约束 8：遍历实际 n_cols，禁止遍历 next_pow2(n_cols)
+    for c in arange(0, n_cols, TILE):
+        load_mask = row_mask & (c + col_offs < n_cols)
+
+        # 约束 1/4：tile-wise sort，不足处用 pad_val 填充
+        tile        = load(x_ptr + row_offs[:,None] * n_cols + (c + col_offs)[None,:],
+                           mask=load_mask, other=pad_val)
+        sorted_tile = sort(tile, dim=1, descending=largest)
+
+        # 约束 2：用 gather 提取 top-k
+        chunk_topk  = gather(sorted_tile, topk_idx, axis=1)
+
+        # 约束 6：temp buffer merge，禁止 in-register gather + modulo + where
+        store(temp_ptr + row_offs[:,None] * COMBINED + arange(0, COMBINED)[None,:],
+              full([ROWS_PER_BLOCK, COMBINED], pad_val), mask=row_mask)
+        store(temp_ptr + row_offs[:,None] * COMBINED + arange(0, K)[None,:],
+              best, mask=row_mask)
+        store(temp_ptr + row_offs[:,None] * COMBINED + (K + arange(0, K))[None,:],
+              chunk_topk, mask=row_mask)
+
+        merged = load(temp_ptr + row_offs[:,None] * COMBINED + arange(0, COMBINED)[None,:],
+                      mask=row_mask, other=pad_val)
+        sorted_merged = sort(merged, dim=1, descending=largest)
+        best = gather(sorted_merged, topk_idx, axis=1)
+
+    store(out_ptr + row_offs[:,None] * K + arange(0, K)[None,:],
+          best, mask=row_mask)
+
+# 约束 7：启动时传入 compiler hint
+launch(topk_kernel, grid, ...,
+       multibuffer=False, unit_flag=False)
+```
+
 ## 常见错误
 
 ```python

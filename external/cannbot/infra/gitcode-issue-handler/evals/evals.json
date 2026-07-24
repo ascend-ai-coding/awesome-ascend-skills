@@ -1,0 +1,167 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "PR 路径 vs Comment 路径判定",
+      "config": {
+        "max_tokens": 180000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 210000,
+          "glm-5": 195000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "gitcode-issue-handler 如何判断一个 Issue 应该走 PR 路径还是 Comment 路径？判定依据是什么？",
+      "expected_output": "回复应说明 Step 1.5 模式判定的机制：主要靠 Issue 内容是否需要改代码来判断。PR 路径用于 bug 修复/功能增强/文档补全等需要代码变更的诉求；Comment 路径用于答疑/设计澄清/用法说明等不需改代码的诉求。判定结果需以文本打印到对话主流并经用户确认。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "PR",
+          "description": "回复中提到了 PR"
+        },
+        {
+          "type": "contains",
+          "pattern": "Comment",
+          "description": "回复中提到了 Comment"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Bug 修复 Issue 的完整处理流程",
+      "config": {
+        "max_tokens": 225000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 270000,
+          "glm-5": 240000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "有一个 bug 修复类的 Issue（https://gitcode.com/cann/ops-math/issues/123），fork 仓库是 hello_simida/ops-math。请介绍 gitcode-issue-handler 处理这个 Issue 的完整流程，包括 PR 路径的每个步骤。",
+      "expected_output": "回复应说明 PR 路径的完整流程：Step 0 环境预检 → Step 1 解析链接拉取 Issue → Step 1.5 模式判定（PR）→ Step 1.6 fork 处理 → Step 2 克隆配置 → Step 3 代码定位 → Step 4 最小改动跑测试 → Step 5 Commit → Step 6 创建 PR → Step 7 日志报告。应说明每一步的关键操作和确认机制（所有写操作前必须 AskUserQuestion）。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "commit",
+          "description": "回复中提到了 commit"
+        },
+        {
+          "type": "contains",
+          "pattern": "PR",
+          "description": "回复中提到了 PR"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Comment 路径处理流程",
+      "config": {
+        "max_tokens": 180000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 210000,
+          "glm-5": 195000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "有一个关于 API 用法疑问的 Issue（https://gitcode.com/cann/ops-math/issues/456），用户只是想知道某个 API 怎么用，不需要改代码。gitcode-issue-handler 应该怎么处理？",
+      "expected_output": "回复应说明走 Comment 路径的完整流程：Step 0 环境预检 → Step 1 解析拉取 Issue → Step 1.5 模式判定（Comment）→ Step C-2 克隆上游主仓只读分析 → Step C-3 代码联合分析 → Step C-4 起草答复 → Step C-5 用户确认后提交评论 → Step C-6 日志报告。应强调 Comment 路径不 fork、不切分支、不 commit、不在评论里塞代码 patch。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "Comment",
+          "description": "回复中提到了 Comment"
+        },
+        {
+          "type": "not_contains",
+          "pattern": "git push",
+          "description": "回复中不应包含 git push"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "环境预检流程",
+      "config": {
+        "max_tokens": 150000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 180000,
+          "glm-5": 165000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "gitcode-issue-handler 在执行前需要做哪些环境检查？git author 检查在什么时候做？为什么不在 commit 前才查？",
+      "expected_output": "回复应说明环境预检的检查项：token、git/curl/python3、/tmp 可写、git 提交用户信息（仅 PR 路径必检）。应说明 git author 在模式判定为 PR 后立即补查而非留到 commit 前的原因：避免完成 clone+改代码+跑测试后才发现 author 缺失浪费上下文。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "token",
+          "description": "回复中提到了 token"
+        },
+        {
+          "type": "contains",
+          "pattern": "git",
+          "description": "回复中提到了 git"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "正向看护-多 Skill 环境下正确触发",
+      "config": {
+        "max_tokens": 225000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 270000,
+          "glm-5": 240000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "distractor_skills": [
+          "gitcode-issue-gen",
+          "gitcode-pr-handler",
+          "cannbot-skill-reviewer",
+          "gitcode-toolkit"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我收到了一个 Issue 链接（https://gitcode.com/cann/ops-transformer/issues/789），是用户报告的一个编译错误。请帮我用 gitcode-issue-handler 端到端处理这个 Issue。",
+      "expected_output": "回复应激活 gitcode-issue-handler skill，说明将如何处理该 Issue。即使在多个 GitCode 协作 skill 共存的环境下，也应正确激活 gitcode-issue-handler。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "Issue",
+          "description": "回复中提到了 Issue"
+        },
+        {
+          "type": "contains",
+          "pattern": "gitcode-issue-handler",
+          "description": "回复中提到了 gitcode-issue-handler"
+        },
+        {
+          "type": "skill_activated",
+          "pattern": "gitcode-issue-handler",
+          "description": "技能 gitcode-issue-handler 被激活"
+        }
+      ]
+    }
+  ],
+  "skill_name": "gitcode-issue-handler"
+}

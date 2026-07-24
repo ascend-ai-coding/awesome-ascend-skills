@@ -1,0 +1,78 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "从 PyTorch 代码中提取算子任务文件",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我有一段 PyTorch 代码 /workspace/models/my_op.py，其中包含一个 matmul_with_bias 函数需要优化，shape 信息已知。请使用 triton-task-extractor 将其提取为标准化算子任务文件。",
+      "expected_output": "回复应分析源代码，将待优化算子逻辑包装到 Model.forward() 中，初始化状态放入 Model.__init__()，所有依赖的自定义函数内联到文件中。输出应包含 class Model(nn.Module)、def get_inputs() 和 def get_init_inputs() 三个部分。生成后必须使用本 skill 自带的 scripts/validate_task.py 进行静态检查和运行时检查，验证通过后还需使用 question 工具请求用户确认。应说明输出为单一自包含 Python 文件，只允许 torch/torch.nn/标准库的 import。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "class Model",
+          "description": "回复中提到了 class Model"
+        },
+        {
+          "type": "contains",
+          "pattern": "get_inputs",
+          "description": "回复中提到了 get_inputs"
+        },
+        {
+          "type": "contains",
+          "pattern": "get_init_inputs",
+          "description": "回复中提到了 get_init_inputs"
+        },
+        {
+          "type": "contains",
+          "pattern": "validate_task.py",
+          "description": "回复中提到了 validate_task.py"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "单 case 与多 case 模式的选择",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "triton-task-extractor 的两种模式（单 case 和多 case）有什么区别？什么情况下用哪种模式？源文件有多个 shape 需要测试时应该如何处理？",
+      "expected_output": "回复应说明单 case 模式适用于单一自包含 .py 文件，get_inputs 返回单组输入；多 case 模式适用于 .py + 同名 .json 配对，get_input_groups 返回多组输入。判定规则为：如果源 .py 已定义 get_input_groups() 函数，或同目录存在同名 .json 文件，则走多 case 模式，否则走单 case 模式。多 case 模式的核心原则是原样透传、不改写源码，禁止将多 case 源降级为单 case 输出来通过验证。源文件有多 shape 需要测试时应使用多 case 模式。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "单 case",
+          "description": "回复中提到了 单 case"
+        },
+        {
+          "type": "contains",
+          "pattern": "多 case",
+          "description": "回复中提到了 多 case"
+        },
+        {
+          "type": "contains",
+          "pattern": "get_input_groups",
+          "description": "回复中提到了 get_input_groups"
+        },
+        {
+          "type": "contains",
+          "pattern": ".json",
+          "description": "回复中提到了 .json"
+        }
+      ]
+    }
+  ],
+  "skill_name": "triton-task-extractor"
+}

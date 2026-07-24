@@ -1,0 +1,119 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "模型框架适配流程与产出",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "把一个 HF 模型适配到昇腾 NPU 推理框架，整体按什么流程做？最终产出哪些标准文件？只讲流程不用写代码。",
+      "expected_output": "回复应给出代码准备→权重管理→跑通验证→基线采集的流程，产出符合仓库规范的 Runner、infer.py、infer.sh、YAML 配置等标准目录文件",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-migrator",
+          "description": "技能 model-infer-migrator 被激活"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "基线采集产物",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "适配跑通后采集性能基线，需要落地什么基线产物供后续优化对比？只讲方向。",
+      "expected_output": "回复应说明采集标准化性能基线并落地 baseline_metadata.json，记录 Prefill/Decode 耗时等指标供后续优化对比",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-migrator",
+          "description": "技能 model-infer-migrator 被激活"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "不同迁移场景的处理差异",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "新模型从 HF 适配、已有模型跑不通修复、仅采集基线，这三种情况入手点有什么不同？只讲思路。",
+      "expected_output": "回复应区分三类场景：从 HF/本地代码做完整框架适配、修复已有适配跑不通问题、对已可运行模型直接采集基线，按起点不同选择对应流程",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-migrator",
+          "description": "技能 model-infer-migrator 被激活"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "信息不足时主动确认",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "帮我适配一个模型到昇腾 NPU。",
+      "expected_output": "回复应先确认必要信息再动手，而不是缺信息直接开始适配",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-migrator",
+          "description": "技能 model-infer-migrator 被激活"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "正向看护-多 skill 环境下正确触发",
+      "config": {
+        "max_tokens": 150000,
+        "distractor_skills": [
+          "model-infer-parallel-analysis",
+          "model-infer-kvcache",
+          "model-infer-fusion"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "一个新模型还没在 NPU 上跑通，我想先把它适配进框架并跑出基线，往哪个方向做？只说方向不用写代码。",
+      "expected_output": "回复应正确激活 model-infer-migrator，给出框架适配 + 基线采集方向，即使存在并行、KVCache、融合等相似 skill 也应选迁移基线专项",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-migrator",
+          "description": "技能 model-infer-migrator 被激活"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "适用边界",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "模型已经跑通也有基线了，我想提升 Decode 性能，这个迁移 skill 该做吗？",
+      "expected_output": "回复应说明本 skill 负责适配跑通和基线建立，性能提升应交给融合算子、KVCache、图模式等优化专项，不在本 skill 范围",
+      "files": [],
+      "expectations": []
+    }
+  ],
+  "skill_name": "model-infer-migrator"
+}

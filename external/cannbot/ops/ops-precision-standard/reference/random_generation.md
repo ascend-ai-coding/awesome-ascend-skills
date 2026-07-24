@@ -195,5 +195,4 @@ summary = check_random_distribution_batch(
 
 ## 7. 参考文档
 
-- 详细精度标准：见 `golden/COMMERCIAL_OPS_PRECISION_DOCS.md`
 - KS检验理论：scipy.stats.kstest文档

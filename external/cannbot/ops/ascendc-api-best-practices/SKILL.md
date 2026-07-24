@@ -4,8 +4,8 @@ description: Ascend C API 使用最佳实践。提供算术、归约、数据搬
   API 用法（如"DataCopy 怎么用"）、遇到 API 参数错误或限制报错（如 repeatTimes、对齐问题）、需要查看 API 最佳实践或避坑指南时。
 original-name: ascendc-api-best-practices
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-26'
-synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
+synced-date: '2026-07-24'
+synced-commit: bff73845607ac78808e2af3e0014d7eb72094ef3
 license: UNKNOWN
 ---
 
@@ -19,8 +19,12 @@ license: UNKNOWN
 |---------|---------|---------|---------|
 | **算术运算** | Add, Sub, Mul, Div, Adds, Muls | [api-arithmetic.md](references/api-arithmetic.md) | Softmax, LayerNorm, 广播优化 |
 | **归约操作** | ReduceMax, ReduceSum | [api-reduce.md](references/api-reduce.md), [api-reduce-pattern.md](references/api-reduce-pattern.md) | Softmax, LayerNorm, ReduceMean |
+| **归并排序** | Sort, Concat, MrgSort, Extract | [api-mrgsort.md](references/api-mrgsort.md) | Sort, ArgSort, TopK |
 | **数据搬运** | DataCopy, DataCopyPad | [api-datacopy.md](references/api-datacopy.md) | 非对齐处理、多维搬运 |
+| **LoadData / Cube 加载** | LoadData2D, LoadData2DV2, LoadData2DMx | [api-loaddata.md](references/api-loaddata.md) | L1 → L0 加载、Cube GEMM、MX 块量化格式 |
 | **Transpose / 重排** | TransDataTo5HD, Gather | [api-transpose.md](references/api-transpose.md) | 小通道 transpose、permute |
+| **Matmul 高阶 API（Cube）** | MatmulImpl, MatmulConfig, IterateAll | [api-matmul.md](references/api-matmul.md) | MatMul, BatchMatMul, MatMulBias；**限 A2/A3（DAV_2201）平台** |
+| **GMM 高阶 API** | GMMBaseParams, GMMArray, per-token dequant 管线 | [api-gmm.md](references/api-gmm.md) | GroupedMatmul, A8W8/A4W4 量化反量化；**限 A2/A3（DAV_2201）平台** |
 | **Buffer 管理** | TBuf, TQue | [api-buffer.md](references/api-buffer.md) | Double Buffer、内存规划 |
 | **精度转换** | Cast | [api-precision.md](references/api-precision.md) | FP16/FP32 混合精度 |
 | **流水线同步** | EnQue, DeQue, SetFlag | [api-pipeline.md](references/api-pipeline.md) | 多级流水线、事件同步 |
@@ -37,6 +41,8 @@ license: UNKNOWN
 |---------|---------|---------|
 | **Softmax/LayerNorm** | [api-reduce.md](references/api-reduce.md), [api-reduce-pattern.md](references/api-reduce-pattern.md), [api-arithmetic.md](references/api-arithmetic.md) | 标量操作、广播优化、Buffer 复用 |
 | **逐行处理（AR 模板）** | [api-arithmetic.md](references/api-arithmetic.md) | Adds/Muls、节省 UB |
+| **MatMul/BatchMatMul（Ascend C 高阶 API，A2/A3）** | [api-matmul.md](references/api-matmul.md) | MatmulConfig 选择、enUnitFlag、IterateAll、TilingHeader stack 加载 |
+| **GroupedMatmul / GMM（Ascend C 高阶 API，A2/A3）** | [api-gmm.md](references/api-gmm.md) | GMMArray 分组索引、AIC/AIV 分职、per-token dequant 管线 |
 | **Transpose / 重排** | [api-transpose.md](references/api-transpose.md) | 2维度 转置性能 |
 | **多行广播（ARA 模板）** | [api-arithmetic.md](references/api-arithmetic.md) | BinaryRepeatParams.src1RepStride=0、分批处理 |
 | **半精度加减法（FP16/BF16 Add/Sub）** | [api-arithmetic.md](references/api-arithmetic.md), [api-precision.md](references/api-precision.md) | 默认升精度（除非 spec 明确同量级）、in-place 复用 |

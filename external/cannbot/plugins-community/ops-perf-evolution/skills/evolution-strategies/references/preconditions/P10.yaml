@@ -1,0 +1,24 @@
+strategy_id: P10
+description: 向量化数据拷贝的适用性检查 — 必须有 undersize_transfer / CompareScalar / 标量循环 其一作为改造对象
+
+checks:
+  - id: has_scalar_or_undersize_target
+    type: grep_count
+    pattern: "DataCopyPad|CompareScalar|SetValue|GetValue|\\bfor\\s*\\([^)]*\\)\\s*\\{"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子无 DataCopyPad 短搬运、无 CompareScalar、无 SetValue 标量拼接、无循环结构 → P10 三种改造形态都不适用。考虑 P5 同步优化或 P1 双缓冲"
+
+  - id: has_existing_data_movement
+    type: grep_count
+    pattern: "\\bDataCopy\\b"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子完全不涉及 UB↔GM 数据搬运 → P10 合并短搬运 / 向量化拷贝无意义。可能是纯计算算子，换 P67 Counter / P46 Matmul 优化"
+
+  - id: not_dominated_by_large_dma
+    type: grep_count
+    pattern: "blockLen\\s*=\\s*[A-Z_a-z]+\\s*\\*\\s*sizeof|DataCopy\\s*\\([^,]+,[^,]+,\\s*[A-Z_a-z0-9]+\\s*\\)"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "（软提示，非强阻断）算子的 DataCopy 看起来已是大块参数化搬运。P10 收益可能有限，建议先 profiling 确认瓶颈是否仍在 undersize_transfer / scalar_compute"

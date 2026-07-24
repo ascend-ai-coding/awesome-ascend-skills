@@ -1,0 +1,44 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "NPU Simulator (cannsim) 的核心能力",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "NPU Simulator（cannsim）提供了哪些核心能力？cannsim record 和 cannsim report 分别有什么作用？不需要执行任何工具调用。",
+      "expected_output": "回复应说明 NPU Simulator 的两类核心能力：精度仿真（bit 级精度模拟）和性能仿真（指令流水线图分析）。cannsim record 用于采集仿真过程中的数据，cannsim report 用于生成仿真分析报告。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "NPU Simulator 的使用场景",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "什么情况下应该使用 NPU Simulator 而非真实硬件？请说明典型使用场景。不需要执行任何工具调用。",
+      "expected_output": "回复应说明使用 NPU Simulator 替代真实硬件的场景：无硬件环境下的功能验证、精度问题定位、性能瓶颈分析等。Simulator 可以模拟硬件行为并支持仿真分析。",
+      "files": [],
+      "expectations": []
+    }
+  ],
+  "skill_name": "ops-simulator"
+}

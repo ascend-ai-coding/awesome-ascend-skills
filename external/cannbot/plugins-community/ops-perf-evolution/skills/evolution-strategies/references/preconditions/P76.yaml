@@ -1,0 +1,17 @@
+strategy_id: P76
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "sparse|Sparse|topk|TopK|attention|Attention"
+    min_count: 1
+    fail_msg: "未检测到 sparse/topK attention 相关逻辑 → 无 V_TEMPLATE 需求，不适用 P76。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "PageAttention|PA|block.*table|blockTable"
+    min_count: 1
+    fail_msg: "未检测到 PageAttention/block table → 无离散 KV 预合并场景，不适用 P76。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "MergeKv|V_TEMPLATE|C_TEMPLATE|预合并"
+    min_count: 0
+    fail_msg: "已存在 KV 预合并逻辑 → 可能冗余，优先验证现有策略效果。"

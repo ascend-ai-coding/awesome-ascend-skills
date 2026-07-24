@@ -1,0 +1,122 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "DFX 问题分诊入口流程",
+      "config": {
+        "max_tokens": 180000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 210000,
+          "glm-5": 195000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我的模型在用 npugraph_ex 编译时出了问题，不知道是编译错误还是运行时错误。torch-npugraph-ex-dfx-triage 能帮我做什么？",
+      "expected_output": "回复应说明 dfx-triage 是 npugraph_ex DFX 问题的统一入口，通过 5 步分层日志采集工作流收集信息，然后路由到对应的子 skill（compile-error/runtime-error/accuracy/performance）。它本身不做最终诊断结论，而是负责分诊和路由。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "路由",
+          "description": "回复中提到了 路由"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "5 步分层采集工作流",
+      "config": {
+        "max_tokens": 180000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 210000,
+          "glm-5": 195000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "torch-npugraph-ex-dfx-triage 的 5 步分层采集工作流是什么？每一步的作用是什么？",
+      "expected_output": "回复应说明 5 步工作流：pure eager → backend=\"eager\" → backend=\"aot_eager\" → backend=\"npugraph_ex\" with force_eager=True → 完整 backend=\"npugraph_ex\"。每一步逐步增加编译层，在首次出错的步骤定位问题，然后路由到对应的子 skill。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "eager",
+          "description": "回复中提到了 eager"
+        },
+        {
+          "type": "contains",
+          "pattern": "aot_eager",
+          "description": "回复中提到了 aot_eager"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "问题路由机制",
+      "config": {
+        "max_tokens": 150000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 180000,
+          "glm-5": 165000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "torch-npugraph-ex-dfx-triage 采集完信息后，如何判断应该路由到哪个子 skill？",
+      "expected_output": "回复应说明基于哪一步首次失败来路由：编译期失败路由到 compile-error-diagnosis、运行时失败路由到 runtime-error-diagnosis、精度问题路由到对应的精度子 skill、性能问题路由到 performance-diagnosis。应说明 dfx-triage 收集完整信息后不自己下结论。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "compile-error",
+          "description": "回复中提到了 compile-error"
+        },
+        {
+          "type": "contains",
+          "pattern": "runtime-error",
+          "description": "回复中提到了 runtime-error"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "正向看护-多 graph skill 环境下正确触发",
+      "config": {
+        "max_tokens": 180000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 210000,
+          "glm-5": 195000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "distractor_skills": [
+          "torch-npugraph-ex-compile-error-diagnosis",
+          "torch-npugraph-ex-runtime-error-diagnosis",
+          "torch-npugraph-ex-knowledge",
+          "torch-npugraph-ex-performance-diagnosis"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我的模型在用 torch.compile + npugraph_ex 时报错了，我不确定是什么类型的问题。帮我排查一下。",
+      "expected_output": "回复应激活 torch-npugraph-ex-dfx-triage skill，说明将通过 5 步分层采集来定位问题并路由到正确的子 skill。即使在多个 npugraph_ex 诊断 skill 共存的环境下，也应正确激活 dfx-triage 作为统一入口。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "torch-npugraph-ex-dfx-triage",
+          "description": "技能 torch-npugraph-ex-dfx-triage 被激活"
+        }
+      ]
+    }
+  ],
+  "skill_name": "torch-npugraph-ex-dfx-triage"
+}

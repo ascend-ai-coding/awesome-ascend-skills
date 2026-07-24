@@ -1,0 +1,144 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+
+# 算子 spec.yaml — category ↔ paradigm 一致性 + paradigm 内部约束
+schema_version: 1
+
+# 每个 category 必含的 paradigm（stage 2 强校验）
+category_requires_paradigms:
+  Reduction:            [Reduction]
+  ReductionComposite:  [Reduction, FusedComposite]
+  Contraction:          [Contraction]
+  LayoutTransform:     [LayoutTransform]
+  IndexGather:         [IndexGather]
+  ScatterUpdate:       [ScatterUpdate]
+  AtomicUpdate:        [AtomicUpdate]
+  Broadcast:            [Broadcast]
+  ArgReduce:           [ArgReduce]
+  SortSelect:          [SortSelect]
+  MaskPredicate:       [MaskPredicate]
+  Padding:              [Padding]
+  Interpolation:        [Interpolation]
+  Histogram:            [Histogram]
+  SlidingWindow:       [SlidingWindow]
+  ControlFlow:         [ControlFlow]
+  Recurrence:           [Recurrence]
+  RandomSampling:      [RandomSampling]
+  Stateful:             [Stateful]
+  Sparse:               [Sparse]
+  Quantization:         [Quantization]
+  Spectral:             [Spectral]
+  VariableOutput:      [VariableOutput]
+  Collective:           [CollectiveCommunication]
+  FusedComposite:      [FusedComposite]   # 额外要求 ≥ 2 条基础 paradigm（Elementwise 被吸收，不计入；脚本特判）
+
+# 互斥对（同时出现 ⇒ stage 2 FAIL）
+mutually_exclusive_paradigms:
+  - [ScatterUpdate, AtomicUpdate]
+
+# 条件范式路由（paradigm_routing）—— 按属性值动态激活不同 paradigm 子集
+#
+# 适用场景：同一算子在不同属性值下呈现不同计算范式（如 mse_loss_v2 的 reduction 属性：
+#   "none" → Elementwise，"sum"/"mean" → Reduction）。
+#
+# spec.yaml 格式：
+#   op:
+#     paradigms: [Reduction, Elementwise]
+#     paradigm_routing:
+#       attribute: reduction          # 引用 attributes[].name，须为 enum/string 类型
+#       cases:
+#         - value: "none"
+#           active_paradigms: [Elementwise]
+#         - values: ["sum", "mean"]
+#           active_paradigms: [Reduction]
+#
+# stage 2 校验规则（_check_paradigm_routing in validate_spec.py）：
+#   1. attribute 必须在 attributes[] 中存在且为 enum/string 类型
+#   2. 每个 case 须有 value 或 values（不可同时有）
+#   3. 每个 case 的 active_paradigms 必须是 op.paradigms 的子集
+#   4. enum 类型属性的所有 values 必须被 cases 完全覆盖
+#
+# 下游影响：
+#   - slice_design_inputs.py: 按分区注入不同的 patterns.md
+#   - validate_completeness.py: 不剥离 Elementwise，按分区 active_paradigms 校验
+#   - DESIGN.md §3.2: 模板划分表增加「范式分区」列
+
+# paradigm 内部约束（stage 2 校验）—— 真值在 scripts/validate_spec.py 内的硬编码逻辑
+#
+# 历史遗留：本文件曾经计划用声明式 yaml 描述这些约束让 stage 2 自动加载，但
+# 那种通用 mini-DSL 表达力不够（require_role_or_inplace / output_dtype_rule_pattern
+# 都是特化逻辑），最终改为硬编码。这里只列**清单**作维护参考，**改本段不会**
+# **影响校验行为**——要改逻辑请改 scripts/validate_spec.py 的 stage_2 函数。
+#
+# 当前 stage 2 实际校验的 paradigm 内部约束：
+#   - NumericalStable          ⇒ numerical_stability.required == true
+#   - FusedComposite           ⇒ math_semantics.composition 必填、primitives ≥ 2、
+#                                  op 在 PRIMITIVE_WHITELIST、中间不泄漏、dataflow 闭合
+#   - Reduction (无 Recurrence) ⇒ inputs 含 axis/dim/axes 之一 / attributes 含 axis/dim/axes /
+#                                  reduction.axis_source: fixed / reduction.axis_source: implicit_all
+#   - ArgReduce                ⇒ outputs[].dtype_rule 返回固定 int32/int64
+#                                  (新格式：dtype_rule 是 numpy_expr，如 `y.dtype = np.int64`)
+#   - Stateful                 ⇒ inputs.role=state 或 outputs.aliasing=inplace_with(...)
+#   - Quantization             ⇒ 以下任一（attribute 或 tensor input 均可）：
+#                                  {scale, zero_point} / {scale} / {x1Scale, x2Scale}
+#                                  / {dequant_scale} / {deqScale}
+#   - VariableOutput           ⇒ outputs[].data_dependent_shape: true
+#                                  + outputs[].shape_rule_kind: data_dependent
+#                                  + outputs[].shape_bounds.max_elements 非空
+#                                  （校验点：validate_spec.py + stages.py stage 3）
+#   - RandomSampling           ⇒ attributes 含 seed
+#   - CollectiveCommunication  ⇒ op.platform_constraints.requires_hccl: true
+
+# 范式自动注入提示（生成器使用，非校验器 - WARN 而非 FAIL）
+paradigm_inject_hints:
+  Reduction:
+    notes:
+      - "fp16/bf16 输入时 dtype_policy.accumulator_dtype 应 ≥ fp32"
+      - "boundary_conditions 必含'reduce 轴长度为 1' / 'rank=0 标量' / '空 Tensor'"
+  Contraction:
+    notes:
+      - "dtype_policy.accumulator_dtype 必填且 ≥ fp32"
+      - "建议在 invariants 加 equals_when_input_is_zero 或 identity_right"
+  NumericalStable:
+    notes:
+      - "numerical_stability.techniques 至少 1 条；anti_pattern_id 关联 Developer Agent"
+      - "extreme_inputs 必含 fp16 上溢边界 case"
+  FusedComposite:
+    notes:
+      - "math_semantics.composition.primitives 至少 2 条，op 在 PRIMITIVE_WHITELIST 内"
+      - "dataflow.no_leak: true 时中间 tensor 不得出现在 outputs"
+  SlidingWindow:
+    notes:
+      - "attributes 必含 kernel_size / stride / dilation / padding"
+      - "outputs.shape_rule 用 numpy_expr 写卷积/池化输出公式（如 (H + 2*pad - dilation*(kernel-1) - 1) // stride + 1）"
+      - "boundary 必含 'stride > kernel'"
+  Padding:
+    notes:
+      - "attributes 必含 pad_value 与 pad_mode (constant|reflect|replicate)"
+  Quantization:
+    notes:
+      - "numerical_tolerance.per_dtype 必含相应 int8/uint8/int4 容差"
+  Spectral:
+    notes:
+      - "numerical_tolerance.per_dtype 必须含 complex64 / complex128"
+      - "boundary 必含'长度=2 幂次' 与'非 2 幂次'"
+  LayoutTransform:
+    notes:
+      - "numerical_tolerance.metric 推荐 bitwise_equal"
+  AtomicUpdate:
+    notes:
+      - "determinism.accumulation_order 必填（写冲突顺序敏感）"
+  Histogram:
+    notes:
+      - "determinism.required: true + 原子加策略"
+  Recurrence:
+    notes:
+      - "determinism.accumulation_order 必为 sequential"
+  DynamicShape:
+    notes:
+      - "shape_set 至少 3 个（由 ascendc-st-design skill 管理）"
