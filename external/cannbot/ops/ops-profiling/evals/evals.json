@@ -1,0 +1,44 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "Ascend C 算子性能数据采集工具",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "在 Ascend C 算子开发中，如何采集 NPU 性能数据？有哪些工具可以使用？不需要执行任何工具调用。",
+      "expected_output": "回复应介绍用于采集 NPU 性能数据的主要工具及其用途，说明如何选择合适的工具进行性能数据采集。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "ops-profiling 的适用场景",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "ops-profiling 技能适用于哪些场景？请列举说明。不需要执行任何工具调用。",
+      "expected_output": "回复应列出 ops-profiling 的适用场景：上板性能测试、算子性能测试、硬件性能验证、NPU 性能采集、性能优化等，涵盖从性能数据采集到分析的全流程。",
+      "files": [],
+      "expectations": []
+    }
+  ],
+  "skill_name": "ops-profiling"
+}

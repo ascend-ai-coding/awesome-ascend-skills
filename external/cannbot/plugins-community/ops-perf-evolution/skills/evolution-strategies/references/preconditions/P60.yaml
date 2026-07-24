@@ -1,0 +1,30 @@
+strategy_id: P60
+description: KV NZ 格式优化适用性检查 — 算子涉及 KV 矩阵且当前为 ND 格式，未改为 NZ 格式消除转换开销
+checks:
+  - id: has_kv_data
+    type: grep_count
+    pattern: "KV|kv|key.*value|KeyValue|LoadDataToL1|LoadB|L0B"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无 KV 数据 → P60 不适用"
+
+  - id: has_nd_format
+    type: grep_count
+    pattern: "ND|nd2nz|ndToNz|format.*convert|DataCopy.*nd|LoadData.*nd"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子已是 NZ 格式或无格式转换 → P60 收益低。检查是否已有 NZ 布局"
+
+  - id: no_nz_format_yet
+    type: grep_count
+    pattern: "NZ|nzFormat|Channel.*first|channel.*first|NZ.*layout"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已是 NZ 格式 → P60 已应用"
+
+  - id: not_pure_validation
+    type: grep_count
+    pattern: "OP_CHECK|shape.*check|dim.*check|validation"
+    files: [kernel, header]
+    expected: "<= 3"
+    fail_msg: "纯 Host 侧 shape 校验 → P60 解决的是数据格式布局"

@@ -1,0 +1,51 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+
+# Anti-pattern registry —— Developer Agent 反模式编号
+#
+# 作用：
+#   spec.yaml 在 numerical_stability.techniques[].anti_pattern_id 引用本表中的
+#   AP-NNN 编号；Developer Agent 拿到 spec 后按编号触发对应的代码反模式审计。
+#   schema 用 pattern ^AP-\d{3}$ 卡住格式，本注册表锁定**有效编号集合**——避免
+#   有人写 AP-999（未分配）或 AP-001（已废弃）的 typo。
+#
+# 编号约定：
+#   AP-001..AP-099 通用数值稳定（fp16 上溢 / 累加误差 / 反量化）
+#   AP-100..AP-199 访存反模式（GM 多余往返 / 不连续 stride / cache miss）
+#   AP-200..AP-299 控制流反模式（branch divergence / 同步过多）
+#   AP-300..AP-399 量化反模式（zp 处理错 / scale 截断 / 跨 tile scale 不一致）
+#
+# 维护：新增 AP-NNN 必须先登记到本文件，并在 Developer Agent 仓库中实现对应审计。
+#       spec 引用未登记 ID ⇒ stage 2 emit `paradigm_constraint.unknown_anti_pattern`。
+
+schema_version: 1
+
+anti_patterns:
+  # ---- 数值稳定（AP-001..099）----
+  - id: AP-004
+    summary: "softmax 缺 max-shift 数值稳定"
+    triggers: "Reduction + NumericalStable 范式且 fp16/bf16 输入"
+    detection: "搜索 exp(x) 模式但前序无 max(x, axis=...) 减法"
+    severity: error
+    used_by_examples: [softmax]
+
+  - id: AP-007
+    summary: "fp16/bf16/int 累加未拓宽到 fp32"
+    triggers: "Contraction 范式且 accumulator_dtype < fp32"
+    detection: "Cube/Vector 累加变量声明 dtype 与 accumulator_dtype 不一致；或 reduce 链路缺 cast"
+    severity: error
+    used_by_examples: [matmul, fused_quant_matmul]
+
+  # ---- 访存（AP-100..199）----
+  - id: AP-006
+    summary: "FusedComposite 中间 tensor 经 GM 多余往返"
+    triggers: "FusedComposite 范式且 dataflow.no_leak: true"
+    detection: "中间 tensor 出现在 outputs 或被多次 GM read/write，未被 fuse"
+    severity: warning
+    used_by_examples: []
+    referenced_by: [primitive_whitelist.yaml]

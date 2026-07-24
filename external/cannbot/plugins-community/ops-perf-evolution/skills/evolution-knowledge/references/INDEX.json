@@ -1,0 +1,207 @@
+{
+  "skill": "evolution-knowledge",
+  "version": "1.0",
+  "architectures": [
+    "a3"
+  ],
+  "categories": {
+    "a3": [
+      "hardware",
+      "algorithm_insights",
+      "ascendc_api",
+      "optimization_patterns",
+      "proven_solutions",
+      "profiling_reference"
+    ]
+  },
+  "stats": {
+    "a3": 23,
+    "total": 23
+  },
+  "entries": [
+    {
+      "source_key": "evolution-knowledge#a3/INDEX",
+      "kind": "a3",
+      "category": null,
+      "is_index": true,
+      "is_guide": false,
+      "doc_path": "a3/INDEX.md"
+    },
+    {
+      "source_key": "evolution-knowledge#a3/algorithm_insights/INDEX",
+      "kind": "a3",
+      "category": "algorithm_insights",
+      "is_index": true,
+      "is_guide": false,
+      "doc_path": "a3/algorithm_insights/INDEX.md"
+    },
+    {
+      "source_key": "evolution-knowledge#a3/algorithm_insights/attention_family",
+      "kind": "a3",
+      "category": "algorithm_insights",
+      "is_index": false,
+      "is_guide": false,
+      "doc_path": "a3/algorithm_insights/attention_family.md"
+    },
+    {
+      "source_key": "evolution-knowledge#a3/algorithm_insights/elementwise_fusion",
+      "kind": "a3",
+      "category": "algorithm_insights",
+      "is_index": false,
+      "is_guide": false,
+      "doc_path": "a3/algorithm_insights/elementwise_fusion.md"
+    },
+    {
+      "source_key": "evolution-knowledge#a3/algorithm_insights/guide",
+      "kind": "a3",
+      "category": "algorithm_insights",
+      "is_index": false,
+      "is_guide": true,
+      "doc_path": "a3/algorithm_insights/guide.md"
+    },
+    {
+      "source_key": "evolution-knowledge#a3/algorithm_insights/reduction_ops",
+      "kind": "a3",
+      "category": "algorithm_insights",
+      "is_index": false,
+      "is_guide": false,
+      "doc_path": "a3/algorithm_insights/reduction_ops.md"
+    },
+    {
+      "source_key": "evolution-knowledge#a3/ascendc_api/INDEX",
+      "kind": "a3",
+      "category": "ascendc_api",
+      "is_index": true,
+      "is_guide": false,
+      "doc_path": "a3/ascendc_api/INDEX.md"
+    },
+    {
+      "source_key": "evolution-knowledge#a3/ascendc_api/common_pitfalls",
+      "kind": "a3",
+      "category": "ascendc_api",
+      "is_index": false,
+      "is_guide": false,
+      "doc_path": "a3/ascendc_api/common_pitfalls.md"
+    },
+    {
+      "source_key": "evolution-knowledge#a3/ascendc_api/guide",
+      "kind": "a3",
+      "category": "ascendc_api",
+      "is_index": false,
+      "is_guide": true,
+      "doc_path": "a3/ascendc_api/guide.md"
+    },
+    {
+      "source_key": "evolution-knowledge#a3/hardware/ascend910b_arch",
+      "kind": "a3",
+      "category": "hardware",
+      "is_index": false,
+      "is_guide": false,
+      "doc_path": "a3/hardware/ascend910b_arch.md"
+    },
+    {
+      "source_key": "evolution-knowledge#a3/hardware/guide",
+      "kind": "a3",
+      "category": "hardware",
+      "is_index": false,
+      "is_guide": true,
+      "doc_path": "a3/hardware/guide.md"
+    },
+    {
+      "source_key": "evolution-knowledge#a3/optimization_patterns/INDEX",
+      "kind": "a3",
+      "category": "optimization_patterns",
+      "is_index": true,
+      "is_guide": false,
+      "doc_path": "a3/optimization_patterns/INDEX.md"
+    },
+    {
+      "source_key": "evolution-knowledge#a3/optimization_patterns/causal_block_skip",
+      "kind": "a3",
+      "category": "optimization_patterns",
+      "is_index": false,
+      "is_guide": false,
+      "doc_path": "a3/optimization_patterns/causal_block_skip.md"
+    },
+    {
+      "source_key": "evolution-knowledge#a3/optimization_patterns/double_buffering",
+      "kind": "a3",
+      "category": "optimization_patterns",
+      "is_index": false,
+      "is_guide": false,
+      "doc_path": "a3/optimization_patterns/double_buffering.md"
+    },
+    {
+      "source_key": "evolution-knowledge#a3/optimization_patterns/guide",
+      "kind": "a3",
+      "category": "optimization_patterns",
+      "is_index": false,
+      "is_guide": true,
+      "doc_path": "a3/optimization_patterns/guide.md"
+    },
+    {
+      "source_key": "evolution-knowledge#a3/optimization_patterns/memory_coalescing",
+      "kind": "a3",
+      "category": "optimization_patterns",
+      "is_index": false,
+      "is_guide": false,
+      "doc_path": "a3/optimization_patterns/memory_coalescing.md"
+    },
+    {
+      "source_key": "evolution-knowledge#a3/optimization_patterns/pipeline_overlap",
+      "kind": "a3",
+      "category": "optimization_patterns",
+      "is_index": false,
+      "is_guide": false,
+      "doc_path": "a3/optimization_patterns/pipeline_overlap.md"
+    },
+    {
+      "source_key": "evolution-knowledge#a3/optimization_patterns/shape_specialization",
+      "kind": "a3",
+      "category": "optimization_patterns",
+      "is_index": false,
+      "is_guide": false,
+      "doc_path": "a3/optimization_patterns/shape_specialization.md"
+    },
+    {
+      "source_key": "evolution-knowledge#a3/optimization_patterns/tiling_strategies",
+      "kind": "a3",
+      "category": "optimization_patterns",
+      "is_index": false,
+      "is_guide": false,
+      "doc_path": "a3/optimization_patterns/tiling_strategies.md"
+    },
+    {
+      "source_key": "evolution-knowledge#a3/profiling_reference/INDEX",
+      "kind": "a3",
+      "category": "profiling_reference",
+      "is_index": true,
+      "is_guide": false,
+      "doc_path": "a3/profiling_reference/INDEX.md"
+    },
+    {
+      "source_key": "evolution-knowledge#a3/profiling_reference/csv_fields_reference",
+      "kind": "a3",
+      "category": "profiling_reference",
+      "is_index": false,
+      "is_guide": false,
+      "doc_path": "a3/profiling_reference/csv_fields_reference.md"
+    },
+    {
+      "source_key": "evolution-knowledge#a3/profiling_reference/optimization_quickref",
+      "kind": "a3",
+      "category": "profiling_reference",
+      "is_index": false,
+      "is_guide": false,
+      "doc_path": "a3/profiling_reference/optimization_quickref.md"
+    },
+    {
+      "source_key": "evolution-knowledge#a3/proven_solutions/INDEX",
+      "kind": "a3",
+      "category": "proven_solutions",
+      "is_index": true,
+      "is_guide": false,
+      "doc_path": "a3/proven_solutions/INDEX.md"
+    }
+  ]
+}

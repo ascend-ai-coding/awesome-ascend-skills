@@ -1,0 +1,63 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "性能优化四步流程",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请介绍 ascendc-perf-optimize 技能中 Ascend C 算子的性能优化工作流程是什么？需要经过哪些步骤？每一步分别关注什么？不需要执行任何工具调用。",
+      "expected_output": "回复应描述性能优化的主要流程：Tiling 建模、流水分析、优化策略制定和 Tiling 回修四个步骤。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "性能优化所需输入",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "进行 Ascend C 算子性能优化需要提供哪些输入信息？需要准备哪些数据和材料？不需要执行任何工具调用。",
+      "expected_output": "回复应说明性能优化所需的输入，包括算子代码、Tiling 参数与建模数据、流水仿真图、Profiling 数据、硬件配置信息等。这些输入是进行性能瓶颈分析和优化方案设计的基础。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 4,
+      "title": "算子崩溃排查咨询（负向看护）",
+      "config": {
+        "max_tokens": 200000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 240000,
+          "glm-5": 220000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我的 Ascend C 算子在 NPU 上运行时出现了 Segmentation Fault，程序直接崩溃了，请问该怎么排查？",
+      "expected_output": "回复应聚焦于 NPU 算子崩溃的通用排查思路，包括收集崩溃现场信息、分析 Segmentation Fault 的常见原因（越界访问、空指针等）和定位方法，不涉及性能优化相关内容。",
+      "files": [],
+      "expectations": []
+    }
+  ],
+  "skill_name": "ascendc-perf-optimize"
+}

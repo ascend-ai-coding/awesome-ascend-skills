@@ -1,0 +1,78 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "Triton Ascend 算子算法草图设计",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请为 Ascend NPU 上的一个 matmul 算子设计算法草图。算子名称是 matmul_example，任务文件路径为 /workspace/tasks/matmul.py，架构为 A2。请使用 UnifiedSketch DSL 格式输出算法草图，用于指导后续的代码生成。",
+      "expected_output": "回复应以 sketch op_name { ... } 格式输出 UnifiedSketch DSL 描述的算法草图，包含算子类型判断（elementwise/reduce/matmul/attention/复合）、并行化策略、数据切分方式、Tile 大小选择等高层设计。应参考 npu-arch 硬件规格文档，考虑 Ascend NPU 的硬件特性（core 级别并行、内存层次、UB 容量和对齐要求）。草图中应包含 @llm_hint 注解标注优化点和权衡决策。回复应说明该草图仅用于指导后续的 triton-op-coding 代码生成，不包含可执行代码。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "sketch",
+          "description": "回复中提到了 sketch"
+        },
+        {
+          "type": "contains",
+          "pattern": "UnifiedSketch",
+          "description": "回复中提到了 UnifiedSketch"
+        },
+        {
+          "type": "contains",
+          "pattern": "npu-arch",
+          "description": "回复中提到了 npu-arch"
+        },
+        {
+          "type": "contains",
+          "pattern": "@llm_hint",
+          "description": "回复中提到了 @llm_hint"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "设计边界与触发条件",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "triton-op-designer 和 triton-op-coding 的分工是什么？什么情况下应该先用 designer 再使用 coding？什么情况下可以直接使用 coding 而不需要 designer？",
+      "expected_output": "回复应说明 triton-op-designer 仅生成算法草图（UnifiedSketch DSL），不生成可执行代码；而 triton-op-coding 负责将草图或任务描述转换为可执行的 Triton Ascend 代码。当用户需要从任务描述出发设计算法的并行策略和优化方向时，应使用 triton-op-designer 先设计草图，再将草图传给 triton-op-coding 进行实现。如果已经明确知道实现方案，可以直接使用 triton-op-coding 而不需要 designer。设计过程中应加载 references/sketch-design.md 了解 UnifiedSketch DSL 语法规范，并根据算子类型选择最相关的 2 个手写优化案例作为参考。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "triton-op-coding",
+          "description": "回复中提到了 triton-op-coding"
+        },
+        {
+          "type": "contains",
+          "pattern": "UnifiedSketch",
+          "description": "回复中提到了 UnifiedSketch"
+        },
+        {
+          "type": "contains",
+          "pattern": "sketch-design.md",
+          "description": "回复中提到了 sketch-design.md"
+        },
+        {
+          "type": "contains",
+          "pattern": "手写优化案例",
+          "description": "回复中提到了 手写优化案例"
+        }
+      ]
+    }
+  ],
+  "skill_name": "triton-op-designer"
+}

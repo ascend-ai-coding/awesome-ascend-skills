@@ -1,0 +1,37 @@
+{
+  "op_name": "{op}",
+  "source": "pypto-op-develop",
+  "description": "PyPTO {op} 算子测试用例",
+  "test_cases": [
+    {
+      "id": "level0",
+      "description": "小数据量基础功能验证",
+      "seed": 0,
+      "input": {
+        "shape": [1, 16],
+        "dtype": "float32"
+      },
+      "output": {
+        "shape": [1, 16],
+        "dtype": "float32"
+      },
+      "rtol": 1e-3,
+      "atol": 1e-3
+    },
+    {
+      "id": "level1",
+      "description": "典型场景验证",
+      "seed": 42,
+      "input": {
+        "shape": [4, 1024],
+        "dtype": "float32"
+      },
+      "output": {
+        "shape": [4, 1024],
+        "dtype": "float32"
+      },
+      "rtol": 1e-3,
+      "atol": 1e-3
+    }
+  ]
+}

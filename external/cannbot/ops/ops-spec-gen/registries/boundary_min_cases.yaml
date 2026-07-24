@@ -1,0 +1,215 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+
+# Boundary minimum cases —— 各 paradigm 必须在 spec.yaml 中覆盖的最低 case 集
+#
+# 作用：
+#   光让算子开发者随便写几条 boundary_conditions / extreme_inputs 不够 —— 不同范式
+#   有自己的"必测退化点"。比如 Reduction 必须测"轴长=1 / rank=0 / 空 Tensor"，
+#   NumericalStable 必须测"fp16 上溢边界"。本文件是这张需求清单。stage 6 据此检查
+#   spec.yaml 是否覆盖到了 paradigms 对应的全部最低 case。
+#
+# 使用方法：
+#   每条 requirement 形如：
+#     - id: reduce_axis_size_1                # 内部唯一 id（用于 finding 引用）
+#       summary: "reduce 轴长度为 1（退化为常数输出）"
+#       section: boundary_conditions          # 在 spec.yaml 的哪个段查找
+#       match_any:                            # 任一关键词出现在 case 描述中即算覆盖
+#         - "reduce 轴长"
+#         - "归约轴.*1"
+#   或：
+#     - id: shape_set_min_three
+#       special_check: dynamic_shape_set_size_min_3   # 结构性检查（见 stage_6 实现）
+#
+# 匹配是子串包含（不是正则）—— 简单、宽容、跨语言友好。
+# 算子作者只要 case 描述里写了任一关键词就过；命中不了说明 case 真的没写。
+#
+# 维护：新增 paradigm 或调整 paradigm 必含 case 时，改本文件即可，stage 6 自动应用。
+
+schema_version: 1
+
+paradigm_requirements:
+
+  Reduction:
+    - id: reduce_axis_size_1
+      summary: "reduce 轴长度为 1（退化为常数输出）"
+      section: boundary_conditions
+      match_any: ["reduce 轴长", "归约轴长度", "轴长度为 1", "axis size 1", "reduce axis"]
+    - id: rank_zero_scalar
+      summary: "rank=0 标量输入"
+      section: boundary_conditions
+      match_any: ["rank=0", "rank 0", "标量输入", "scalar input", "0-dim"]
+    - id: empty_tensor
+      summary: "空 Tensor（含 0 维）"
+      section: boundary_conditions
+      match_any: ["空 Tensor", "空 tensor", "empty tensor", "empty Tensor"]
+
+  NumericalStable:
+    - id: fp16_overflow_boundary
+      summary: "fp16 上溢边界 extreme case（验证数值稳定性技巧是否生效）"
+      section: extreme_inputs
+      match_any: ["fp16 上溢", "fp16 overflow", "上溢边界", "overflow", "60000", "65504"]
+
+  SlidingWindow:
+    - id: stride_gt_kernel
+      summary: "stride > kernel（极端 stride，可能跳过元素）"
+      section: boundary_conditions
+      match_any: ["stride > kernel", "stride 大于 kernel", "stride>kernel"]
+
+  Padding:
+    - id: zero_padding_degenerate
+      summary: "零 padding 退化（padding=0，应等同无 padding）"
+      section: boundary_conditions
+      match_any: ["零 padding", "zero padding", "padding=0", "padding 为 0", "no padding"]
+    - id: huge_padding
+      summary: "超大 padding（padding 远大于输入）"
+      section: boundary_conditions
+      match_any: ["超大 padding", "huge padding", "large padding", "padding 超过"]
+
+  IndexGather:
+    - id: index_out_of_bounds
+      summary: "索引越界（负向 / 超长 / 负数索引）"
+      section: boundary_conditions
+      match_any: ["索引越界", "index out of bounds", "out-of-bound", "out of range", "负索引", "越界"]
+    - id: all_same_index
+      summary: "全相同索引（极端访存模式，触发写冲突或缓存命中）"
+      section: extreme_inputs
+      match_any: ["全相同索引", "same index", "duplicate indices", "重复索引"]
+
+  ScatterUpdate:
+    - id: index_out_of_bounds
+      summary: "索引越界"
+      section: boundary_conditions
+      match_any: ["索引越界", "index out of bounds", "out-of-bound", "越界"]
+
+  AtomicUpdate:
+    - id: index_out_of_bounds
+      summary: "索引越界"
+      section: boundary_conditions
+      match_any: ["索引越界", "index out of bounds", "out-of-bound", "越界"]
+    - id: index_collision
+      summary: "索引冲突（多写到同一目标位置）"
+      section: extreme_inputs
+      match_any: ["索引冲突", "index collision", "collision", "写冲突", "重复索引"]
+
+  MaskPredicate:
+    - id: all_true_mask
+      summary: "全 True mask（应等同恒等映射）"
+      section: extreme_inputs
+      match_any: ["全 True", "all true", "all-true", "全 true"]
+    - id: all_false_mask
+      summary: "全 False mask（应返回填充值或空）"
+      section: extreme_inputs
+      match_any: ["全 False", "all false", "all-false", "全 false"]
+
+  SortSelect:
+    - id: k_zero
+      summary: "k=0（取 0 个元素）"
+      section: boundary_conditions
+      match_any: ["k=0", "k = 0", "k 等于 0"]
+    - id: k_eq_n
+      summary: "k=N（取全部元素）"
+      section: boundary_conditions
+      match_any: ["k=N", "k = N", "k 等于 N", "全部元素", "k = n"]
+
+  ArgReduce:
+    - id: tie_breaking
+      summary: "等值 tie（多个最大/最小值，约定返回最小索引）"
+      section: extreme_inputs
+      match_any: ["等值", "tie", "tie break", "tie-break", "全相同值"]
+
+  Histogram:
+    - id: same_bin_collision
+      summary: "所有值落同一 bin（验证原子加正确性）"
+      section: boundary_conditions
+      match_any: ["落同一 bin", "same bin", "all in one bin", "同一 bin"]
+
+  Spectral:
+    - id: power_of_two_length
+      summary: "长度=2 幂次（fft 优化路径）"
+      section: boundary_conditions
+      match_any: ["2 幂次", "power of two", "power-of-two", "2^"]
+    - id: non_power_of_two
+      summary: "非 2 幂次长度（fft 通用路径）"
+      section: boundary_conditions
+      match_any: ["非 2 幂次", "non power of two", "non-power-of-two", "non-2"]
+
+  DynamicShape: []  # shape_set 要求已移至 ascendc-st-design skill 管理
+
+  RandomSampling:
+    - id: deterministic_with_seed
+      summary: "固定 seed 下结果确定性"
+      section: extreme_inputs
+      match_any: ["固定 seed", "fixed seed", "deterministic", "确定性"]
+
+  Quantization:
+    - id: zero_input
+      summary: "全零输入（验证 zero_point 行为）"
+      section: extreme_inputs
+      match_any: ["全零", "all zero", "zero input"]
+
+  Stateful:
+    - id: state_persists_across_calls
+      summary: "跨调用状态保持（多次调用前后状态一致性）"
+      section: boundary_conditions
+      match_any: ["状态保持", "state persist", "跨调用", "across calls",
+                   "state", "状态", "running", "持久"]   # 放宽匹配——大多数 stateful 算子
+                                                          # 描述里会提到 state/running/状态字样
+
+  VariableOutput:
+    - id: empty_output
+      summary: "零非零元素输入 → K=0 空输出（shape_bounds.min 退化）"
+      section: boundary_conditions
+      match_any: ["全零", "all zero", "K=0", "empty", "空输出", "zero input"]
+    - id: full_output
+      summary: "全非零输入 → K 达到 max_elements 上界（验证分配足够）"
+      section: boundary_conditions
+      match_any: ["全非零", "all nonzero", "满输出", "K=numel", "K=N", "full output"]
+    - id: normal_sparse
+      summary: "正常稀疏情形（介于两个极端之间）"
+      section: boundary_conditions
+      match_any: ["正常稀疏", "normal sparse", "50%", "sparse", "稀疏"]
+
+  Sparse:
+    - id: zero_nnz
+      summary: "零非零元素（退化为空稀疏结构）"
+      section: boundary_conditions
+      match_any: ["零非零", "zero nnz", "empty sparse", "无非零"]
+    - id: fully_dense
+      summary: "全密集（nnz = numel，退化为 dense 操作）"
+      section: boundary_conditions
+      match_any: ["全密集", "fully dense", "dense", "nnz = numel", "满密"]
+
+  Contraction:
+    - id: k_zero_empty_inner_product
+      summary: "K 维 = 0（空内积；输出应为 0 或空）"
+      section: boundary_conditions
+      match_any: ["K == 0", "K=0", "空内积", "empty contraction", "K 为 0", "K 维 0"]
+    - id: k_mismatch_raises
+      summary: "K 维不匹配 → 报错"
+      section: boundary_conditions
+      match_any: ["K 维不匹配", "K mismatch", "K 不一致", "K 不匹配", "contraction mismatch"]
+
+  Elementwise:
+    - id: shape_equal_no_broadcast
+      summary: "输入 shape 完全一致（无广播）"
+      section: boundary_conditions
+      match_any: ["shape 完全一致", "shape equal", "no broadcast", "无需广播",
+                   "rank=2 标准", "rank=3", "rank=4", "标量", "scalar"]
+    # Elementwise 标量 / 空 tensor 已被 Reduction 共覆盖；这里只要"不广播路径"可达即可
+
+  Broadcast:
+    - id: broadcast_with_size_one
+      summary: "需广播（含 size-1 维）"
+      section: boundary_conditions
+      match_any: ["广播", "broadcast", "size 1", "size-1", "维度广播"]
+    - id: non_broadcastable_raises
+      summary: "不可广播（两侧维度冲突）→ 报错"
+      section: boundary_conditions
+      match_any: ["不可广播", "non-broadcastable", "不能广播", "broadcast 冲突",
+                   "广播不合法", "广播不兼容", "K 维不匹配"]    # K 不匹配本质是 trailing 不可广播

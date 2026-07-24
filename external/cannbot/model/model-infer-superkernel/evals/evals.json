@@ -1,0 +1,135 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "SuperKernel 适用约束",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "SuperKernel 在昇腾 NPU 上启用有哪些前提约束？硬件、执行模式、推理阶段分别有什么要求？",
+      "expected_output": "回复应说明 SuperKernel 仅支持 Atlas A3 硬件、仅 ge_graph 执行模式、仅在 decode 阶段生效",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "ge_graph",
+          "description": "回复中提到了 ge_graph"
+        },
+        {
+          "type": "contains",
+          "pattern": "A3",
+          "description": "回复中提到了 A3"
+        },
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-superkernel",
+          "description": "技能 model-infer-superkernel 被激活"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "superkernel_scope 标记方式",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "启用 SuperKernel 时 superkernel_scope 该加在哪里、怎么用？",
+      "expected_output": "回复应说明导入上下文管理器，在 decode 方法中用 superkernel_scope 标记融合范围",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-superkernel",
+          "description": "技能 model-infer-superkernel 被激活"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "二进制融合收益机制",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "SuperKernel 通过算子二进制融合减少调度开销，为什么只在 decode 阶段有收益？说明原因和机制。",
+      "expected_output": "回复应说明 decode 单步算子多、调度开销占比高，二进制融合减少任务下发开销；Prefill 计算量大、调度占比低收益有限",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-superkernel",
+          "description": "技能 model-infer-superkernel 被激活"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "信息不足时主动确认",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "帮我给模型启用 SuperKernel。",
+      "expected_output": "回复应先确认启用前提条件再动手，而不是缺信息直接改造",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-superkernel",
+          "description": "技能 model-infer-superkernel 被激活"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "正向看护-多 skill 环境下正确触发",
+      "config": {
+        "max_tokens": 150000,
+        "distractor_skills": [
+          "model-infer-graph-mode",
+          "model-infer-fusion",
+          "model-infer-prefetch"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "A3 上 decode 调度开销太大，想用算子二进制融合减少任务下发，往哪个方向改？只说方向不用写代码。",
+      "expected_output": "回复应正确激活 model-infer-superkernel，给出 SuperKernel 二进制融合方向，即使存在图模式、融合算子、预取等相似 skill 也应选 SuperKernel 专项",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-superkernel",
+          "description": "技能 model-infer-superkernel 被激活"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "使用边界",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "我在 Atlas A2 上用 eager 模式跑推理，想启用 SuperKernel，可以吗？",
+      "expected_output": "回复应说明 SuperKernel 仅支持 A3 + ge_graph + decode，A2 和 eager 模式不满足条件，应建议用户先满足硬件和执行模式前提",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-superkernel",
+          "description": "技能 model-infer-superkernel 被激活"
+        }
+      ]
+    }
+  ],
+  "skill_name": "model-infer-superkernel"
+}

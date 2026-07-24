@@ -1,0 +1,135 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "精度异常整体定界流程",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "换了个 NPU 自定义算子后训练 loss 和基线对不上，但有可对照的基线环境，整体按什么流程定位？只讲方法不用写代码。",
+      "expected_output": "回复应给出 先开确定性计算复现 → 代码审查高风险改动 → 确认异常特征 → msprobe dump/compare 定界 的流程，并强调先固定随机性排除非确定性因素",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-train-accuracy-debug",
+          "description": "技能 model-train-accuracy-debug 被激活"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "确定性优先",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "我切了分支后 loss 偏了，想直接用 msprobe dump 对比，应该先做什么？只讲思路。",
+      "expected_output": "回复应指出在任何 dump/compare 前必须先开启确定性计算（固定 seed + deterministic）并在基线与异常环境复现一次，若开启后问题消失则判为随机性问题不再深挖",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "msprobe",
+          "description": "回复中提到了 msprobe"
+        },
+        {
+          "type": "skill_activated",
+          "pattern": "model-train-accuracy-debug",
+          "description": "技能 model-train-accuracy-debug 被激活"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "NaN 定位方向",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "训练中途出现 NaN，应该往哪个方向查？只讲方向不用写代码。",
+      "expected_output": "回复应先判定 NaN 是否出现在前向 logits，前向已 NaN 走 msprobe overflow_check，前向正常而反向出 NaN 再用 detect_anomaly 定位首个异常算子",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "detect_anomaly",
+          "description": "回复中提到了 detect_anomaly"
+        },
+        {
+          "type": "skill_activated",
+          "pattern": "model-train-accuracy-debug",
+          "description": "技能 model-train-accuracy-debug 被激活"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "信息不足时主动确认",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "我的模型训练精度不对，帮我调。",
+      "expected_output": "回复应先确认基线环境、异常环境、变更列表、确定性设置等必要信息再动手，而不是缺基线对照就直接给修复",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-train-accuracy-debug",
+          "description": "技能 model-train-accuracy-debug 被激活"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "正向看护-多 skill 环境下正确触发",
+      "config": {
+        "max_tokens": 150000,
+        "distractor_skills": [
+          "model-train-oom-analysis",
+          "model-infer-precision-debug",
+          "model-train-log-visualization"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "切换并行策略后训练 loss 曲线偏离基线，有基线可对照，往哪个方向排查？只说方向不用写代码。",
+      "expected_output": "回复应正确激活 model-train-accuracy-debug，给出有标杆的训练精度定界方向，即使存在 OOM 分析、推理精度调试等相似 skill 也应选训练精度诊断专项",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-train-accuracy-debug",
+          "description": "技能 model-train-accuracy-debug 被激活"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "使用边界",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "我没有任何基线，就是觉得训练效果差，帮我用精度调试 skill 定位。",
+      "expected_output": "回复应说明本 skill 依赖可对照的基线（标杆数据/环境），无基线的精度问题不在适用范围，建议先建立基线或改用其他手段",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-train-accuracy-debug",
+          "description": "技能 model-train-accuracy-debug 被激活"
+        }
+      ]
+    }
+  ],
+  "skill_name": "model-train-accuracy-debug"
+}

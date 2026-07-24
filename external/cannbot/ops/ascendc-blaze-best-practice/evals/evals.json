@@ -1,0 +1,25 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "Matmul Blaze 三模板选型",
+      "config": {
+        "max_tokens": 200000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 200000,
+          "glm-5": 200000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "在 Ascend C Matmul 单算子开发中，Blaze 路径提供了三种模板选项：纯AIC、StreamK、FixpOpti。请介绍这三种模板各自的特点和适用场景。在实际项目中选择时应该考虑哪些因素？可以加载技能，不需要执行其他外部工具调用。",
+      "expected_output": "回复应对比纯AIC、StreamK 和 FixpOpti 三种 Blaze 模板的适用场景和特点，帮助开发者根据算子特征选择合适的模板。",
+      "files": [],
+      "expectations": []
+    }
+  ],
+  "skill_name": "ascendc-blaze-best-practice"
+}

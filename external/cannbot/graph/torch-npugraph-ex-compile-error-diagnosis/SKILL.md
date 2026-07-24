@@ -7,8 +7,8 @@ description: PyTorch 昇腾 NPU npugraph_ex 编译期报错诊断。覆盖 torch
   失败时加载。关键词：入图失败、断图、graph break、BackendCompilerFailed、Meta、FakeTensor、aot_eager、capture。
 original-name: torch-npugraph-ex-compile-error-diagnosis
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-26'
-synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
+synced-date: '2026-07-24'
+synced-commit: bff73845607ac78808e2af3e0014d7eb72094ef3
 license: UNKNOWN
 ---
 

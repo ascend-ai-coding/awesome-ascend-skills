@@ -1,0 +1,88 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "Triton 算子时延优化流程",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我有一个在 Ascend NPU 上运行的 Triton 算子，时延不满足性能要求，请帮我按优化流程逐步优化。代码文件路径是 /workspace/softmax_kernel.py，输出路径是 /workspace/softmax_optimized.py。请按照 triton-latency-optimizer 的优化点顺序逐项检查并应用优化。",
+      "expected_output": "回复应按照入参静态化、Tiling 优化、分核优化、离散访存优化、Scalar 转 Vector、避免向量 API 标量降级、Pass 合并、维度合并、Libdevice 函数使用、循环不变量外提、Load 指令重排序、Autotune 自动调优、消除冗余边界运算的顺序逐一检查，每次只尝试一个优化点。最终要产出优化后的代码并输出到指定路径，同时提供优化策略说明、功能一致性说明和精度一致性说明。在所有指令级优化完成后，还应执行 Block Size Scaling 作为最终优化步骤。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "入参静态化",
+          "description": "回复中提到了 入参静态化"
+        },
+        {
+          "type": "contains",
+          "pattern": "tl.constexpr",
+          "description": "回复中提到了 tl.constexpr"
+        },
+        {
+          "type": "contains",
+          "pattern": "Tiling 优化",
+          "description": "回复中提到了 Tiling 优化"
+        },
+        {
+          "type": "contains",
+          "pattern": "分核优化",
+          "description": "回复中提到了 分核优化"
+        },
+        {
+          "type": "contains",
+          "pattern": "references/checklist.md",
+          "description": "回复中提到了 references/checklist.md"
+        },
+        {
+          "type": "contains",
+          "pattern": "Block Size Scaling",
+          "description": "回复中提到了 Block Size Scaling"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "优化边界与触发条件",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我设计了一个新的 Triton 算子，还没有实现代码，能用 triton-latency-optimizer 来优化吗？这个 skill 和 triton-op-coding 有什么区别？",
+      "expected_output": "回复应说明 triton-latency-optimizer 的触发条件是用户已有在 Ascend NPU 上运行的 Triton 算子代码需要进行性能优化、降低时延、提升吞吐。它只对已有的 Triton 代码进行优化，不负责从零生成算子代码。triton-op-coding 负责从任务描述生成 Triton Ascend 内核代码，两者分工不同。同时应强调只能使用本 skill 规定的 13 种优化方式，禁止使用超出本 skill 之外的优化方式，且优化过程中必须确保功能一致性和精度一致性。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "已有",
+          "description": "回复中提到了 已有"
+        },
+        {
+          "type": "contains",
+          "pattern": "Triton 代码",
+          "description": "回复中提到了 Triton 代码"
+        },
+        {
+          "type": "contains",
+          "pattern": "triton-op-coding",
+          "description": "回复中提到了 triton-op-coding"
+        },
+        {
+          "type": "contains",
+          "pattern": "优化方式",
+          "description": "回复中提到了 优化方式"
+        }
+      ]
+    }
+  ],
+  "skill_name": "triton-latency-optimizer"
+}

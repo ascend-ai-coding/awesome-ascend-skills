@@ -1,0 +1,48 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 2,
+      "title": "MatMul 族在 DAV_3510 上的优化",
+      "config": {
+        "max_tokens": 200000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 240000,
+          "glm-5": 220000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "ascendc-performance-best-practices 中 MatMul 算子族有哪些优化知识？在 DAV_3510 架构上适用的优化指南是什么？可以加载技能，不需要执行其他外部工具调用。",
+      "expected_output": "回复应引用 MatMul 族的优化策略内容，说明 DAV_3510 架构上 MatMul 算子的优化策略和最佳实践。应列出 MatMul 族包含的变体和可用的优化策略类型。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "Vector 算子性能优化咨询（正向看护）",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 180000,
+          "glm-5": 170000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "distractor_skills": [
+          "ascendc-perf-optimize",
+          "ascendc-tiling-design"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我想了解 ascendc-performance-best-practices 中 Vector 算子族在 DAV_3510 上的优化策略和最佳实践，请加载技能帮我查看具体内容。",
+      "expected_output": "回复应介绍 Vector 算子族在 DAV_3510 上的优化思路和主要方向。",
+      "files": [],
+      "expectations": []
+    }
+  ],
+  "skill_name": "ascendc-performance-best-practices"
+}

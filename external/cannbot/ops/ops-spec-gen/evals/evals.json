@@ -1,0 +1,44 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "ops-spec-gen 技能的主要功能与两种模式",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "ops-spec-gen 技能的主要功能是什么？它有哪两种运行模式？可以加载技能，不需要执行其他外部工具调用。",
+      "expected_output": "回复应说明 ops-spec-gen 的两个主要模式：生成模式用于创建 spec.yaml 脚手架文件，校验模式用于执行 9 阶段 L0 验证以确保算子规格定义的正确性和完整性。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "spec.yaml 的 9 阶段 L0 验证",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "ops-spec-gen 的 9 阶段 L0 验证具体包含哪些检查项？可以加载技能，不需要执行其他外部工具调用。",
+      "expected_output": "回复应说明 spec.yaml 的 9 阶段 L0 验证具体包含哪些检查项以及每阶段的作用。",
+      "files": [],
+      "expectations": []
+    }
+  ],
+  "skill_name": "ops-spec-gen"
+}

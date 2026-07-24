@@ -1,0 +1,135 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+
+# ============================================================
+# reduce_sum_all — L0 数学约束 spec
+# 教学点：Reduction 范式 + axis_source: implicit_all（无 axis 参数，默认 reduce 所有轴）
+#         无 dim / keep_dims attribute；输出为标量
+#         reduction.axis_source: implicit_all 声明隐式全轴归约
+# ============================================================
+schema_version: 1
+
+op:
+  name: reduce_sum_all
+  version: "1.0"
+  description: "Sum reduction over all axes; output is a scalar"
+  category: Reduction
+  paradigms: [Reduction]
+  lifecycle: stable
+  error_codes:
+    - null_input
+  platform_constraints:
+    supported_chips: [Ascend910B]
+    requires_hccl: false
+
+inputs:
+  - name: x
+    role: tensor
+    dtype_set: [float16, float32, bfloat16]
+    rank_range: [1, 8]
+    layout: ND
+    shape:
+      symbolic: ["...x"]
+
+attributes: []
+
+outputs:
+  - name: y
+    shape_rule_kind: numpy_expr
+    shape_rule: |
+      y.shape = ()
+    dtype_rule_kind: numpy_expr
+    dtype_rule: |
+      y.dtype = x.dtype
+    layout: ND
+    aliasing: none
+
+reduction:
+  axis_source: implicit_all
+
+shape_constraints:
+  symbols: {}
+  global_constraints:
+    - "rank(x) <= 8"
+
+dtype_policy:
+  promotion: same_as_first_input
+  supported_combinations:
+    - {inputs: {x: float16},  outputs: {y: float16}}
+    - {inputs: {x: float32},  outputs: {y: float32}}
+    - {inputs: {x: bfloat16}, outputs: {y: bfloat16}}
+
+broadcast:
+  kind: none
+
+math_semantics:
+  formula_kind: numpy_expr
+  formula: |
+    y = np.sum(x)
+
+  reference_oracle:
+    framework: torch
+    api: torch.sum
+    kwargs: {}
+    available_for_dtype: [float16, float32, bfloat16]
+    absent: false
+
+  invariants:
+    - name: zero_input_zero_output
+      kind: equals_when_input_is_zero
+      value: 0.0
+
+numerical_stability:
+  required: false
+  techniques: []
+  affects_invariants: false
+
+numerical_tolerance:
+  source: "ops-precision-standard/float_compute.md"
+  per_dtype:
+    float32:  {rtol: 1.0e-5, atol: 1.0e-5, metric: max_relative}
+    float16:  {rtol: 1.0e-3, atol: 1.0e-3, metric: max_relative}
+    bfloat16: {rtol: 4.0e-3, atol: 4.0e-3, metric: max_relative}
+
+boundary_conditions:
+  - case: "reduce 轴长度为 1"
+    tags: [reduce_axis_size_1]
+    synthesize: {x.shape: "[1]"}
+    machine_check: {kind: matches_oracle}
+  - case: "rank=0 标量输入"
+    tags: [rank_zero_scalar]
+    synthesize: {x.shape: "[]"}
+    machine_check: {kind: matches_oracle}
+  - case: "空 Tensor"
+    tags: [empty_tensor]
+    synthesize: {x.shape: "[0, 4]"}
+    machine_check: {kind: returns_empty}
+  - case: "高维全轴归约"
+    synthesize: {x.shape: "[2, 3, 4]"}
+    machine_check: {kind: matches_oracle}
+
+extreme_inputs:
+  - case: "含 NaN"
+    synthesize:
+      shapes: {x: "[8]"}
+      patterns:
+        - {pattern: inject_nan_one_element, target: x}
+    machine_check: {kind: produces_nan, scope: "整张量"}
+
+  - case: "全零输入"
+    synthesize:
+      shapes: {x: "[8]"}
+      patterns:
+        - {pattern: all_zero, target: x}
+    machine_check: {kind: equals, value: 0.0}
+
+determinism:
+  required: true
+  accumulation_order: stable_in_axis
+  partition_constraint: "全轴归约；多核需先局部 reduce 再全局 merge"
+  bitwise_reproducible: true

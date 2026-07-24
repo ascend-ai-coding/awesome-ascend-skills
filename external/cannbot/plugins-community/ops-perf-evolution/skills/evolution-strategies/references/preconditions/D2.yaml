@@ -1,0 +1,31 @@
+strategy_id: D2
+description: 模板化内核类型分发适用性检查 — 算子当前仅支持单数据类型，且 Host 侧有 dtype 参数，尚未模板化
+
+checks:
+  - id: single_dtype_currently
+    type: grep_count
+    pattern: "LocalTensor\s*<\s*float\s*>|LocalTensor\s*<\s*half\s*>|GlobalTensor\s*<\s*float\s*>|GlobalTensor\s*<\s*half\s*>"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无明确硬编码数据类型 → 检查是否为纯逻辑算子或已有泛型实现"
+
+  - id: has_dtype_param
+    type: grep_count
+    pattern: "DT_FLOAT|DT_BF16|DT_HALF|DataType|dtype|xDtype|outDtype"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "Host 侧无数据类型参数或校验 → 无法做类型分发。先添加 dtype 参数"
+
+  - id: not_templated_yet
+    type: grep_count
+    pattern: "template\s*<.*typename"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已使用模板 → D2 已应用。检查是否所有 dtype 路径都覆盖了"
+
+  - id: not_pure_matmulimpl
+    type: grep_count
+    pattern: "MatmulImpl|Matmul<"
+    files: [kernel]
+    expected: "<= 2"
+    fail_msg: "纯 MatmulImpl 高阶 API → 类型分发由 CANN 内部处理，D2 无介入点。考虑 P46/P78"

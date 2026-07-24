@@ -1,0 +1,78 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "TileLang Ascend API 核心用法",
+      "config": {
+        "max_tokens": 80000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "在 TileLang-Ascend 中，如何分配片上存储并在不同层级之间搬运数据？请介绍主要的 API 及其用途。",
+      "expected_output": "回复应介绍 TileLang 的内存分配 API（T.alloc_shared、T.alloc_fragment、T.alloc_var 等 Developer 模式 API，以及 T.alloc_ub、T.alloc_L1、T.alloc_L0A/L0B/L0C 等 Expert 模式 API）和数据搬运 API（T.copy），说明 GM/L1/UB/L0 之间的搬运路径与各 API 的适用场景。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "T.alloc_shared",
+          "description": "回复中提到了 T.alloc_shared"
+        },
+        {
+          "type": "contains",
+          "pattern": "T.alloc_fragment",
+          "description": "回复中提到了 T.alloc_fragment"
+        },
+        {
+          "type": "contains",
+          "pattern": "T.copy",
+          "description": "回复中提到了 T.copy"
+        },
+        {
+          "type": "contains",
+          "pattern": "T.alloc_ub",
+          "description": "回复中提到了 T.alloc_ub"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "API 使用边界与模式区分",
+      "config": {
+        "max_tokens": 80000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我想写一个 TileLang kernel，什么时候用 T.alloc_shared/T.alloc_fragment，什么时候用 T.alloc_L1/T.alloc_ub，这两种模式有什么区别？",
+      "expected_output": "回复应说明 Developer 模式（T.alloc_shared、T.alloc_fragment）由编译器自动管理存储层级，适合大多数算子开发；Expert 模式（T.alloc_L1、T.alloc_ub、T.alloc_L0A/L0B/L0C）需要显式指定存储层级，适合极致性能优化。还应说明同步策略的区别：Developer 模式自动同步，Expert 模式需手动 T.barrier_all、T.set_flag/T.wait_flag。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "Developer",
+          "description": "回复中提到了 Developer"
+        },
+        {
+          "type": "contains",
+          "pattern": "Expert",
+          "description": "回复中提到了 Expert"
+        },
+        {
+          "type": "contains",
+          "pattern": "T.alloc_L1",
+          "description": "回复中提到了 T.alloc_L1"
+        },
+        {
+          "type": "contains",
+          "pattern": "T.barrier_all",
+          "description": "回复中提到了 T.barrier_all"
+        }
+      ]
+    }
+  ],
+  "skill_name": "tilelang-api-best-practices"
+}

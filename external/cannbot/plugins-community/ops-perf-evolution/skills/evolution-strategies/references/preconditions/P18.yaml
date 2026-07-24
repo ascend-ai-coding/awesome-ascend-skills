@@ -1,0 +1,31 @@
+strategy_id: P18
+description: L1 七缓冲常驻分区适用性检查 — 算子必须有 Cube Matmul 流水和 Attention 模式，且当前每次 N 迭代重新加载 Q/P
+
+checks:
+  - id: has_cube_matmul
+    type: grep_count
+    pattern: "Mmad|L0A|L0B|L0C|Cube|Matmul|A1Buf|B1Buf|C1Buf"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无 Cube Matmul 流水 → P18 不适用。检查是否为纯 Vector 算子"
+
+  - id: has_attention_pattern
+    type: grep_count
+    pattern: "Attention|attention|Query|Key|Value|QK|softmax"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子无 Attention 模式 → P18 的 L1 分区策略无应用场景"
+
+  - id: reloads_qp_every_iter
+    type: grep_count
+    pattern: "CopyQ|copyQuery|QGm|queryGm|CopyIn.*Q|for.*nStart|for.*nL1"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无 N 迭代内重新加载 Q 的模式 → 可能已常驻。检查 P38 Softmax 状态或 P14 FA tiling"
+
+  - id: has_l1_buffer
+    type: grep_count
+    pattern: "InitBuffer.*L1|L1Buf|L1Tensor|buf.*L1"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无 L1 buffer 管理 → 无法实施 L1 分区。先实现 L1 基础管理"

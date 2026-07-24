@@ -4,8 +4,8 @@ description: 使用 AISS-TilingSolver 工具自动求解 Ascend C 算子（MatMu
   JSON 输入、运行求解、结果解读与故障排查。触发：当用户使用 TilingSolver 工具求解时。
 original-name: aiss-tiling-solver
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-26'
-synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
+synced-date: '2026-07-24'
+synced-commit: bff73845607ac78808e2af3e0014d7eb72094ef3
 license: UNKNOWN
 ---
 

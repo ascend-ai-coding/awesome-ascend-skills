@@ -1,0 +1,31 @@
+strategy_id: A4
+description: 事件同步保证精度适用性检查 — 算子必须有精度敏感的多步序列（如 Cast-Compute-Cast），且当前缺少细粒度同步
+
+checks:
+  - id: has_precision_sequence
+    type: grep_count
+    pattern: "Cast|CAST_NONE|CAST_RINT|RoundMode|float32|bf16|half"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无精度转换序列 → A4 不适用。检查是否为纯同精度算子"
+
+  - id: has_multi_step_compute
+    type: grep_count
+    pattern: "Cast.*Compute|Cast.*Add|Cast.*Mul|bf16.*float|float.*bf16"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无 Cast-Compute 多步序列 → 同步需求低。考虑 P30 PipeBarrier"
+
+  - id: no_fine_sync_yet
+    type: grep_count
+    pattern: "PipeBarrier.*PIPE_V|SetFlag|WaitFlag"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已有细粒度同步 → A4 已应用"
+
+  - id: precision_sensitive
+    type: grep_count
+    pattern: "bf16|bfloat16|half|fp16|quant|dequant"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子非精度敏感场景 → 同步开销不值得。考虑性能优先策略"

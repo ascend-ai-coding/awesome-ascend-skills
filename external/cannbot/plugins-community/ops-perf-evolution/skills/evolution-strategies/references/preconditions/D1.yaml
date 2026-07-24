@@ -1,0 +1,31 @@
+strategy_id: D1
+description: 混合精度架构适用性检查 — 算子必须有数据搬运或计算逻辑、且当前 dtype 支持单一（仅 FP32），才有多 dtype 扩展价值
+
+checks:
+  - id: has_compute_or_data_movement
+    type: grep_count
+    pattern: "Add|Mul|Sub|Div|DataCopy|CopyIn|CopyOut"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无计算指令也无数据搬运 → D1 仅改 dtype 无意义。换 P5 同步或 P1 双缓冲"
+
+  - id: currently_single_dtype
+    type: grep_count
+    pattern: "DT_FLOAT16|DT_BF16|half|bfloat16_t"
+    files: [kernel, header]
+    expected: "== 0"
+    fail_msg: "算子已支持 FP16/BF16 → D1 已应用或部分应用。检查是否缺少精度链管理（FP16→FP32 Cast），或考虑 D2 模板 kernel / D3 TilingKey 分发"
+
+  - id: has_dtype_param_in_host
+    type: grep_count
+    pattern: "DataType|DT_FLOAT"
+    files: [tiling, header]
+    expected: ">= 1"
+    fail_msg: "Host 侧无 DataType 定义 → 无法注册多 dtype 输入。确认算子是否有 host 侧实现"
+
+  - id: not_pure_quantization_op
+    type: grep_count
+    pattern: "Quant|Dequant|AscendDequant|AscendQuant"
+    files: [kernel]
+    expected: "<= 1"
+    fail_msg: "纯量化算子（如 FakeQuant/Dequant）→ dtype 转换是核心语义，不是优化。换 D4 FP8/INT4 量化策略或 P48 多量化模式分发"

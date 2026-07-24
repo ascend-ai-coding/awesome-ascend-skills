@@ -1,12 +1,12 @@
 ---
 name: external-cannbot-model-model-infer-prefetch
-description: 基于 PyTorch 框架的昇腾 NPU 模型推理权重预取优化技能。为模型添加 torch_npu.npu_prefetch 特性以优化推理性能。触发场景：profiling
-  显示 MatMul/QBMM/GMM 算子存在 memory-bound 热点、需要为模型添加权重预取、将 prefetch 模式迁移到新模型。
+description: 为模型添加 torch_npu.npu_prefetch 权重预取优化特性。触发：profiling 显示 MatMul/QBMM/GMM
+  算子存在 memory-bound 热点、需要为模型添加权重预取、将 prefetch 模式迁移到新模型时使用。
 user-invocable: true
 original-name: model-infer-prefetch
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-26'
-synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
+synced-date: '2026-07-24'
+synced-commit: bff73845607ac78808e2af3e0014d7eb72094ef3
 license: UNKNOWN
 ---
 
@@ -253,7 +253,7 @@ gmm2_prefetch_size = hidden_size * intermediate_size * dtype_bit // moe_tp_size 
 | Line 1261 | kv_a_proj_with_mqa | dense MLP output | 7 MB | 保守值 |
 | Line 1286 | next layer attention | down_proj | 计算值 | 动态计算 |
 
-> 参考文件:`models/longcat-flash/models/modeling_longcat_flash.py`, `models/longcat-flash/models/ffn.py`
+> 参考文件:`cann-recipes-infer/models/longcat-flash/models/modeling_longcat_flash.py`, `cann-recipes-infer/models/longcat-flash/models/ffn.py`
 
 ---
 
@@ -304,15 +304,13 @@ gmm2_prefetch_size = hidden_size * intermediate_size * dtype_bit // moe_tp_size 
 
 | 目标算子 | 依赖窗口 | 代码位置 | 说明 |
 |---------|---------|---------|------|
-| router.classifier | o_proj 输出 | modeling_longcat_flash.py:1244 | o_proj 完成后预取 router 权重 |
-| gate_up_proj | o_proj 输出 | modeling_longcat_flash.py:210 | o_proj 完成后预取 MLP 权重 |
-| down_proj | gate_up_proj 输入 x | modeling_longcat_flash.py:239 | 在 gate_up_proj 执行时预取 down_proj 权重 |
-| q_a_proj(下一层) | down_proj 输出 | modeling_longcat_flash.py:1259 | down_proj 完成后预取下一层 attention 权重 |
-| q_b_proj(下一层) | down_proj 输出 | modeling_longcat_flash.py:1261 | 同上 |
-| kv_a_proj(下一层) | down_proj 输出 | modeling_longcat_flash.py:1263 | 同上 |
-| experts.w2_weight | router_logits 输出 | ffn.py:76 | router 完成后预取 GMM2 权重 |
-| router.classifier(下一层) | gmm2_out 输出 | ffn.py:137 | GMM2 完成后预取下一层 router 权重 |
-| experts.w13_weight(下一层) | gmm2_out 输出 | ffn.py:139 | GMM2 完成后预取下一层 GMM1 权重 |
+| router.classifier | o_proj 输出 | `modeling_longcat_flash.py` 的 attention forward | o_proj 完成后预取 router 权重 |
+| gate_up_proj | o_proj 输出 | `modeling_longcat_flash.py` 的 dense MLP forward | o_proj 完成后预取 MLP 权重 |
+| down_proj | gate_up_proj 输入 x | `modeling_longcat_flash.py` 的 dense MLP forward | 在 gate_up_proj 执行时预取 down_proj 权重 |
+| q_a_proj / q_b_proj / kv_a_proj（下一层） | down_proj 输出 | `modeling_longcat_flash.py` 的 layer forward 末尾 | down_proj 完成后预取下一层 attention 权重 |
+| experts.w2_weight | router_logits 输出 | `cann-recipes-infer/models/longcat-flash/models/ffn.py` 的 MoE forward | router 完成后预取 GMM2 权重 |
+| router.classifier（下一层） | gmm2_out 输出 | `cann-recipes-infer/models/longcat-flash/models/ffn.py` 的 MoE forward 末尾 | GMM2 完成后预取下一层 router 权重 |
+| experts.w13_weight（下一层） | gmm2_out 输出 | `cann-recipes-infer/models/longcat-flash/models/ffn.py` 的 MoE forward 末尾 | GMM2 完成后预取下一层 GMM1 权重 |
 
 **关键观察**:
 1. **大型 MatMul 的输出可作为依赖窗口**:o_proj, down_proj, gmm2_out 都是大型 MatMul,但其输出用于预取下一个算子
@@ -329,7 +327,7 @@ gmm2_prefetch_size = hidden_size * intermediate_size * dtype_bit // moe_tp_size 
 
 ### 1. 开关传递路径
 
-检查开关传递链路:命令行/配置文件 → ModelRunner → 模型类 `__init__` → `forward`/`decode`/`prefill`
+检查开关传递链路:YAML → InferenceConfig → 模型类 `__init__`（通过 `infer_config.model_config.custom_params` 或专用字段）→ `forward`/`decode`/`prefill`
 
 **配置文件示例**(`config.yaml`):
 ```yaml
@@ -349,7 +347,7 @@ class YourModel:
 
 ### 2. Prefetch 调用模式
 
-**推荐:使用 wrapper 函数**(`executor/utils/common_utils.py`):
+**推荐:使用 wrapper 函数**(`cann-recipes-infer/executor/utils/common_utils.py`):
 ```python
 def npu_prefetch(switch_flag, weight, depend, size, offset=0):
     if switch_flag:
@@ -513,10 +511,10 @@ mlp_output = self.mlp(attn_output)
 
 | 主题 | 文件路径 |
 |-----|---------|
-| npu_prefetch wrapper 函数 | `executor/utils/common_utils.py` |
-| LongCat-Flash prefetch 实现 | `models/longcat-flash/models/modeling_longcat_flash.py` |
-| FFN prefetch 大小计算 | `models/longcat-flash/models/ffn.py` |
-| 配置验证逻辑 | `models/longcat-flash/models/model_setting.py` |
-| 配置示例 | `models/longcat-flash/config/README.md` |
+| npu_prefetch wrapper 函数 | `cann-recipes-infer/executor/utils/common_utils.py`（搜索 `npu_prefetch`） |
+| LongCat-Flash prefetch 实现 | `cann-recipes-infer/models/longcat-flash/models/modeling_longcat_flash.py`（搜索 `npu_prefetch` 调用点） |
+| FFN prefetch 大小计算 | `cann-recipes-infer/models/longcat-flash/models/ffn.py`（搜索 `prefetch_size` 计算） |
+| 配置验证逻辑 | `cann-recipes-infer/executor/core/config/inference_config.py`（`InferenceConfig._validate`）+ 模型自身 `__init__` 中的额外语义校验 |
+| 配置示例 | `cann-recipes-infer/models/longcat-flash/config/README.md` |
 | Roofline 分析 | 调用 `npu-roofline-analysis` skill |
 | 图模式适配 | 调用 `model-infer-graph-mode` skill |

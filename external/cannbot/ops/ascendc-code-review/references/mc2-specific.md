@@ -1,5 +1,14 @@
 # MC2 领域代码检视规则
 
+<适用>
+语言: C++
+侧别: Host, Kernel
+领域: true
+触发: hccl_, AllGather, AllReduce, ReduceScatter, AlltoAll, SyncAll, SetFlag, WaitFlag, PipeBarrier, SyncFunc, expert, expertIds, dispatch, combine, moeExpertNum, quant, BasicQuantMode, PERTENSOR, PERCHANNEL, AlltoAllV, sendCounts, InitV2, Finalize, SetCcTiling, CCU, AICPU
+默认启用: true
+排除场景: 纯通信中转(有hccl_但无expert/dispatch/combine路由逻辑且无Matmul/GroupedMatmul/quant), 纯计算无集合通信(有计算无hccl_)
+</适用>
+
 > **MC² = Matrix Computation & Communication**（通算融合算子框架）
 >
 > 将 HCCL 集合通信与计算融合为单一算子，减少 kernel launch 开销，实现通信与计算流水线并行。
@@ -116,7 +125,7 @@
 
 | 场景 | 说明 |
 |------|------|
-| 纯通信算子（无计算融合） | 仅使用集合通信进行数据传输，没有融合计算（如分布式训练中的梯度 AllReduce，无 Cube/量化融合） |
+| 纯通信中转算子（无路由逻辑） | 仅使用集合通信进行数据传输，无 expert/dispatch/combine 路由逻辑，无量化参数，无 Cube 计算融合（如分布式训练中的梯度 AllReduce） |
 | 纯计算算子 | 仅使用 Matmul 等计算 API，无集合通信调用 |
 | 测试/示例代码 | 文件路径包含 test/example/sample 且功能为单元测试 |
 
@@ -125,7 +134,7 @@
 | 误报场景 | 特征 | 处理方式 |
 |----------|------|----------|
 | 仅调用通信库做梯度同步（无计算融合） | 代码含 AllReduce 但无 Cube 计算或量化计算，无 MC² tiling 结构 | 不判定为 MC²，不启用本规则集 |
-| 纯 MoE 路由算子（无融合计算） | 有 expert/dispatch/combine 和 AllToAll，但无 GroupedMatmul/Matmul 融合 | 不判定为 MC² |
+| 纯通信中转算子（无路由逻辑） | 仅有 hccl_/AllToAll 数据搬运，无 expert/dispatch/combine 路由逻辑，无量化参数，无 Matmul 融合 | 不判定为 MC² |
 | 单元测试调用 MC2 接口 | 文件路径含 test，且仅为单个 API 测试 | 不启用全量规则 |
 
 ### 场景子分类（判定为 MC2 后，选取规则子集）
@@ -138,6 +147,7 @@
 | EP专家分发 | AllToAllv + GroupedMatmul（通信→计算） | MC2-01~04, MC2-05~08, MC2-13, MC2-19 |
 | EP反向分发 | GroupedMatmul + AllToAllv（计算→通信） | MC2-01~04, MC2-05~08, MC2-13, MC2-19 |
 | 大EP分发组合 | AllToAllv + expert + GroupedMatmul（多轮） | MC2-05~08, MC2-09~12, MC2-19 |
+| MoE 路由分发/组合 | AllToAllv/AllToAll + expert 路由（无 GroupedMatmul 融合，如 moe_distribute_dispatch） | MC2-01~04, MC2-05~08, MC2-13, MC2-19 |
 | 复合通算融合 | 多阶段通信+计算（如 AllToAll→AllGather→Matmul） | MC2-01~04, MC2-18~19 |
 | 量化+集合通信 | 量化计算 + AllReduce/ReduceScatter | MC2-09~12, MC2-18~19 |
 

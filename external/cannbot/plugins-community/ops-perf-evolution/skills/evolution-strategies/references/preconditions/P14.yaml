@@ -1,0 +1,31 @@
+strategy_id: P14
+description: CV 流水预发射的适用性检查 — 必须有 Cube+Vector 双核融合、串行 SyncAll、可预留 workspace 双缓冲
+
+checks:
+  - id: has_cube_vector_fusion
+    type: grep_count
+    pattern: "ASCEND_IS_AIC|ASCEND_IS_AIV"
+    files: [kernel]
+    expected: ">= 2"
+    fail_msg: "算子无 Cube+Vector 双核分支（缺 AIC/AIV 判断），非 CV 融合算子 → P14 无从下手。换 P1 双缓冲或 P20 三缓冲（同核内流水）"
+
+  - id: has_matmul_api
+    type: grep_count
+    pattern: "mm\\.SetTensor|mm\\.SetTiling|MatmulImpl|GetTensorC|Mmad|Matmul<"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无 Matmul API（不是 Cube 主导算子）→ CV 流水预发射收益有限。换 P4 多核负载均衡或 P8 UB 分区"
+
+  - id: has_coarse_syncall
+    type: grep_count
+    pattern: "SyncAll\\(\\)"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无 SyncAll（可能已用细粒度跨核 flag）→ P14 主要价值是替换 SyncAll，当前收益低。检查是否已有 CrossCoreSetFlag/WaitFlag"
+
+  - id: no_existing_preload_cache
+    type: grep_count
+    pattern: "PRELOAD_TASK_CACHE_SIZE\\s*=\\s*[2-9]|extraInfo\\[.*%.*3\\]"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已有 PRELOAD_TASK_CACHE_SIZE ≥2 或 3-slot 环形缓存 → P14 已应用。检查是否可以优化 cache size 或换 P18 L1 7-buffer"

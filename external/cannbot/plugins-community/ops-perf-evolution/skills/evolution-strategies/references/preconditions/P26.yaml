@@ -1,0 +1,17 @@
+strategy_id: P26
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "DataCopy|CopyIn|CopyOut|Fixpipe"
+    min_count: 1
+    fail_msg: "未检测到 DataCopy 操作 → 无 stride 优化空间，不适用 P26。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "stride|Stride|srcStride|dstStride"
+    min_count: 1
+    fail_msg: "未检测到 stride 参数使用 → 无 stride 搬运优化空间，不适用 P26。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "Transpose|transpose|转置|Permute"
+    min_count: 1
+    fail_msg: "未检测到 Transpose 需求 → 无 stride 转置融合空间，不适用 P26。"

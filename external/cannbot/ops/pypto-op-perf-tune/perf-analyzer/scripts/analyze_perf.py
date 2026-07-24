@@ -19,7 +19,7 @@ import os
 import re
 import sys
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 
 @dataclass
@@ -277,7 +277,7 @@ def generate_optimization_suggestions(metrics: Dict, bottlenecks: List[Dict]) ->
     if metrics['avg_core_utilization'] < 50:
         suggestions['high_priority'].append({
              'type': '使用L2亲和调度',
-             'code': '@pypto.jit(runtime_options={"device_sched_mode": 1})',
+             'code': '@pypto.frontend.jit(runtime_options={"device_sched_mode": 1})',
              'description': '启用L2亲和调度，减少核心间通信开销'
         })
         suggestions['high_priority'].append({
@@ -472,7 +472,85 @@ def generate_report(metrics: Dict, bottlenecks: List[Dict], suggestions: Dict, o
 可在 https://ui.perfetto.dev/ 上传泳道图文件进行可视化分析。
 """
 
+    # Section 7: 调优方向建议
+    report += "## 7. 调优方向建议\n\n"
+
+    if metrics['avg_core_utilization'] < 50 or metrics['avg_bubble_rate'] > 20:
+        report += "### 7.1 开箱性能调优（推荐优先）\n\n"
+        report += "**是否需要**: 是\n\n"
+        report += "**原因**: 核心利用率偏低或气泡率过高，需先优化基础代码写法\n\n"
+        report += "**调优重点**:\n"
+        report += "- Loop 写法优化\n- TileShape 设置优化\n- 数据操作优化\n\n"
+        report += "**详细指南**: 加载 `tune-frontend` 子技能\n\n"
+
+    if metrics['avg_bubble_rate'] > 10 or metrics['load_balance'] < 80:
+        report += "### 7.2 深度性能调优\n\n"
+        report += "**是否需要**: 是\n\n"
+        reason_parts = []
+        if metrics['avg_bubble_rate'] > 10:
+            reason_parts.append(f"气泡率 {metrics['avg_bubble_rate']:.2f}% 偏高，需优化调度策略")
+        if metrics['load_balance'] < 80:
+            reason_parts.append(f"负载均衡度 {metrics['load_balance']:.2f}% 偏低，需优化任务分配")
+        report += f"**原因**: {'; '.join(reason_parts)}\n\n"
+        report += "**调优重点**:\n"
+        report += "- Stitch 调优\n- TileShape 深度调优\n- 合图调优\n- 调度策略调优\n\n"
+        report += "**详细指南**: 加载 `tune-swimlane` 子技能\n\n"
+
+    report += "### 7.3 核内性能调优\n\n"
+    if metrics['avg_core_utilization'] >= 70 and metrics['avg_bubble_rate'] < 10:
+        report += "**是否需要**: 可能需要\n\n"
+        report += "**原因**: 调度和利用率已接近合理水平，进一步优化需分析核内指令\n\n"
+    else:
+        report += "**是否需要**: 待开箱和深度调优完成后评估\n\n"
+        report += "**原因**: 需先解决高优先级瓶颈\n\n"
+    report += "**调优重点**:\n"
+    report += "- 特殊 Shape 处理\n- 冗余计算优化\n- 尾轴优化\n- Operation 实现检查\n\n"
+    report += "**详细指南**: 加载 `tune-incore` 子技能\n\n"
+
+    # Section 8: 调优记录（空模板，供后续填写）
+    report += """## 8. 调优记录
+
+| 轮次 | 优化内容 | 修改前执行时间(us) | 修改后执行时间(us) | 提升比例 | 精度结果 |
+|------|---------|-------------------|-------------------|---------|---------|
+| （调优过程中填写） | | | | | |
+
+"""
+
+    # Section 9: 总结
+    report += f"""## 9. 总结
+
+### 9.1 当前状态
+
+- **性能评级**: {overall_rating} ({overall_desc})
+- **主要瓶颈**: {', '.join(b['type'] for b in bottlenecks) if bottlenecks else '无明显瓶颈'}
+- **调优方向**: {', '.join(s['type'] for s in suggestions['high_priority'][:3]) if suggestions['high_priority'] else '无特定建议'}
+
+### 9.2 下一步行动
+
+1. 按调优方向建议（第 7 节）顺序执行调优
+2. 每次优化后验证精度并记录到调优记录（第 8 节）
+3. 达到性能目标后生成最终报告
+"""
+
     return report
+
+
+def find_bubble_analysis_log(output_dir: str) -> Optional[str]:
+    """查找 bubble_analysis.log 文件，支持自动递归搜索"""
+    direct_path = os.path.join(output_dir, 'bubble_analysis.log')
+    if os.path.exists(direct_path):
+        return direct_path
+
+    candidates = []
+    for root, _, files in os.walk(output_dir):
+        if 'bubble_analysis.log' in files:
+            candidates.append(os.path.join(root, 'bubble_analysis.log'))
+
+    if candidates:
+        candidates.sort()
+        return candidates[0]
+
+    return None
 
 
 def main():
@@ -482,15 +560,41 @@ def main():
     if len(sys.argv) < 2:
         logging.info("Usage: python analyze_perf.py <output_dir>")
         logging.info("Example: python analyze_perf.py models/glm_v4_5/output/output_20260304_171658_543682_529508")
+        logging.info("")
+        logging.info("Note: output_dir should be the directory containing bubble_analysis.log")
+        logging.info("      If not found, the script will search subdirectories automatically.")
         sys.exit(1)
 
     output_dir = sys.argv[1]
-    bubble_log_path = os.path.join(output_dir, 'bubble_analysis.log')
 
-    if not os.path.exists(bubble_log_path):
-        logging.info(f"Error: bubble_analysis.log not found in {output_dir}")
+    if not os.path.exists(output_dir):
+        logging.info(f"Error: directory not found: {output_dir}")
+        logging.info("")
+        logging.info("Hint: output directory is relative to where you ran the operator command.")
+        logging.info("  If you ran 'python3 custom/op/op.py --run-mode npu' from project root:")
+        logging.info(f"    try: {os.path.abspath('output')}")
+        logging.info("  If you ran from the operator directory:")
+        logging.info(f"    try: <operator_dir>/output/<timestamp_dir>")
+        logging.info("")
+        logging.info("Quick find: run 'find . -name bubble_analysis.log' from project root")
         sys.exit(1)
 
+    bubble_log_path = find_bubble_analysis_log(output_dir)
+
+    if bubble_log_path is None:
+        logging.info(f"Error: bubble_analysis.log not found in {output_dir}")
+        logging.info("")
+        logging.info("Possible reasons:")
+        logging.info("  1. The operator has not been run with debug_options={'runtime_debug_mode': 1}")
+        logging.info("  2. The output directory is in a different location than expected")
+        logging.info("")
+        logging.info("Hint: output directory is relative to where you ran the operator command.")
+        logging.info("  If you ran from the operator directory (e.g. custom/op/):")
+        logging.info(f"    try: {output_dir}/output/  (if output_dir is the operator dir)")
+        logging.info("  Quick find: run 'find . -name bubble_analysis.log' from project root")
+        sys.exit(1)
+
+    real_output_dir = os.path.dirname(bubble_log_path)
     logging.info(f"正在分析性能数据: {bubble_log_path}")
 
     # 解析性能数据
@@ -507,10 +611,10 @@ def main():
     suggestions = generate_optimization_suggestions(metrics, bottlenecks)
 
     # 生成报告
-    report = generate_report(metrics, bottlenecks, suggestions, output_dir)
+    report = generate_report(metrics, bottlenecks, suggestions, real_output_dir)
 
     # 保存报告
-    report_path = os.path.join(output_dir, 'performance_analysis_report.md')
+    report_path = os.path.join(real_output_dir, 'performance_analysis_report.md')
     with open(report_path, 'w') as f:
         f.write(report)
 

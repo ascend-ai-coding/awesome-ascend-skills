@@ -1,0 +1,30 @@
+strategy_id: P72
+description: Matmul 多核切 K 适用性检查 — 算子 M/N 较小无法切多核，当前未沿 K 轴切分并行
+checks:
+  - id: has_small_mn
+    type: grep_count
+    pattern: "M|N|m|n|small.*M|small.*N|singleCore"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子 M/N 足够大 → P72 不适用"
+
+  - id: has_matmul_reduce
+    type: grep_count
+    pattern: "Matmul|matmul|K|k|split.*K|splitK"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无 Matmul → P72 收益低"
+
+  - id: no_splitk_yet
+    type: grep_count
+    pattern: "EnableMultiCoreSplitK|SplitK|split.*k|AtomicAdd.*matmul"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已切 K → P72 已应用"
+
+  - id: not_pure_validation
+    type: grep_count
+    pattern: "OP_CHECK|shape.*check|dim.*check|validation"
+    files: [kernel, header]
+    expected: "<= 3"
+    fail_msg: "纯 Host 侧 shape 校验 → P72 解决的是 K 轴并行"

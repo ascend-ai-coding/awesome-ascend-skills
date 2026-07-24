@@ -1,0 +1,17 @@
+strategy_id: P89
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "SoftMax|softmax|soft_max|HighLevelAPI"
+    min_count: 1
+    fail_msg: "未检测到 SoftMax 等高阶 API 调用 → 不适用 P89。检查其他 UB 管理策略如 P8、P85。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "InitBuffer|TBuf|LocalTensor"
+    min_count: 3
+    fail_msg: "UB Buffer 分配过少 → 无共享复用场景，不适用 P89。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "VECCALC|VECIN|VECOUT"
+    min_count: 1
+    fail_msg: "未检测到 VECCALC 空间使用 → 无高阶 API 临时 Buffer 场景，不适用 P89。"

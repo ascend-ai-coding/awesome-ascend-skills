@@ -7,7 +7,7 @@ set -e
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 echo "================================"
 echo "Ascend C 环境检查"
@@ -17,26 +17,119 @@ echo ""
 ERRORS=0
 WARNINGS=0
 
+CANN_TOOLKIT_PATH=""
+_CANN_TOOLKIT_DERIVED=false
+
+_derive_from_opp_path() {
+    local opp="${ASCEND_OPP_PATH:-}"
+    if [ -n "$opp" ] && [ "${opp##*/opp}" = "$opp" ] && [ "$opp" != "/" ]; then
+        local toolkit="${opp%/opp}"
+        if [ -d "$toolkit/compiler" ]; then
+            echo "$toolkit"
+            return
+        fi
+    fi
+    echo ""
+}
+
+_resolve_toolkit_path() {
+    local base="$1"
+    if [ -d "$base/compiler" ]; then
+        echo "$base"
+        return
+    fi
+    local toolkit_dir="$base/ascend-toolkit"
+    if [ -d "$toolkit_dir" ]; then
+        for d in $(ls -d "$toolkit_dir"/* 2>/dev/null | sort -r); do
+            if [ -d "$d/compiler" ]; then
+                echo "$d"
+                return
+            fi
+        done
+        if [ -L "$toolkit_dir/latest" ]; then
+            local real
+            real=$(readlink -f "$toolkit_dir/latest")
+            if [ -d "$real/compiler" ]; then
+                echo "$real"
+                return
+            fi
+        fi
+    fi
+    for d in $(ls -d "$base"/cann-* 2>/dev/null | sort -r); do
+        if [ -d "$d/compiler" ]; then
+            echo "$d"
+            return
+        fi
+    done
+    echo ""
+}
+
+_resolve_toolkit_from_env() {
+    local derived=$(_derive_from_opp_path)
+    if [ -n "$derived" ]; then
+        CANN_TOOLKIT_PATH="$derived"
+        _CANN_TOOLKIT_DERIVED=true
+        return
+    fi
+    for var in ASCEND_TOOLKIT_HOME ASCEND_HOME; do
+        local val="${!var:-}"
+        if [ -n "$val" ] && [ -d "$val" ]; then
+            local resolved=$(_resolve_toolkit_path "$val")
+            if [ -n "$resolved" ]; then
+                CANN_TOOLKIT_PATH="$resolved"
+                return
+            fi
+        fi
+    done
+    if [ -n "$ASCEND_HOME_PATH" ] && [ -d "$ASCEND_HOME_PATH" ]; then
+        local resolved=$(_resolve_toolkit_path "$ASCEND_HOME_PATH")
+        if [ -n "$resolved" ]; then
+            CANN_TOOLKIT_PATH="$resolved"
+            return
+        fi
+    fi
+}
+
+_find_set_env_sh() {
+    local path="$1"
+    for se in \
+        "$path/set_env.sh" \
+        "$(dirname "$path")/set_env.sh" \
+        "$ASCEND_HOME_PATH/ascend-toolkit/set_env.sh" \
+        "$ASCEND_HOME_PATH/set_env.sh" \
+        "$HOME/Ascend/ascend-toolkit/set_env.sh"; do
+        if [ -f "$se" ]; then
+            echo "$se"
+            return
+        fi
+    done
+    echo ""
+}
+
+_resolve_toolkit_from_env
+
 # 1. 检查 CANN Toolkit 环境
-echo -e "${YELLOW}[1/7] 检查 CANN Toolkit 环境...${NC}"
-if [ -z "$ASCEND_HOME_PATH" ]; then
-    echo -e "${RED}✗ ASCEND_HOME_PATH 未设置${NC}"
+echo -e "${YELLOW}[1/8] 检查 CANN Toolkit 环境...${NC}"
+if [ -z "$CANN_TOOLKIT_PATH" ]; then
+    echo -e "${RED}✗ 无法定位 CANN Toolkit 目录${NC}"
     echo "  官方配置方法："
-    echo "    # root 用户默认路径"
-    echo "    source /usr/local/Ascend/cann/set_env.sh"
-    echo "    # 非root用户默认路径"
-    echo "    source \$HOME/Ascend/cann/set_env.sh"
-    echo "    # 指定路径安装"
-    echo "    source \${install_path}/cann/set_env.sh"
+    echo "    source /usr/local/Ascend/ascend-toolkit/set_env.sh"
     ERRORS=$((ERRORS + 1))
 else
-    echo -e "${GREEN}✓ ASCEND_HOME_PATH = $ASCEND_HOME_PATH${NC}"
-    
-    # 验证 set_env.sh 是否存在
-    if [ -f "$ASCEND_HOME_PATH/set_env.sh" ]; then
-        echo -e "${GREEN}  ✓ CANN Toolkit set_env.sh 存在${NC}"
+    if [ "$_CANN_TOOLKIT_DERIVED" = true ]; then
+        echo -e "${GREEN}✓ Toolkit 路径（从 ASCEND_OPP_PATH 推导）= $CANN_TOOLKIT_PATH${NC}"
     else
-        echo -e "${YELLOW}  ⚠ set_env.sh 不存在，环境可能未正确配置${NC}"
+        echo -e "${GREEN}✓ ASCEND_HOME_PATH = $ASCEND_HOME_PATH${NC}"
+        if [ "$ASCEND_HOME_PATH" != "$CANN_TOOLKIT_PATH" ]; then
+            echo -e "${GREEN}  → 实际 toolkit: $CANN_TOOLKIT_PATH${NC}"
+        fi
+    fi
+
+    SET_ENV_SH=$(_find_set_env_sh "$CANN_TOOLKIT_PATH")
+    if [ -n "$SET_ENV_SH" ]; then
+        echo -e "${GREEN}  ✓ set_env.sh 存在: $SET_ENV_SH${NC}"
+    else
+        echo -e "${YELLOW}  ⚠ set_env.sh 未找到，环境可能未 source${NC}"
         WARNINGS=$((WARNINGS + 1))
     fi
 fi
@@ -46,25 +139,16 @@ echo ""
 _get_cann_version() {
     declare -g CANN_VERSION=""
     declare -g CANN_RUNTIME_REQ=""
-    if [ -n "$ASCEND_HOME_PATH" ]; then
-        if [ -f "$ASCEND_HOME_PATH/compiler/version.info" ]; then
-            CANN_VERSION=$(grep '^Version=' "$ASCEND_HOME_PATH/compiler/version.info" | cut -d'=' -f2)
-            CANN_RUNTIME_REQ=$(grep '^required_package_runtime_version=' "$ASCEND_HOME_PATH/compiler/version.info" | cut -d'=' -f2 | tr -d '"')
-        fi
-        if [ -z "$CANN_VERSION" ]; then
-            CANN_VERSION=$(basename "$ASCEND_HOME_PATH" | sed 's/cann-//' | sed 's/-beta\./\./')
-        fi
+    if [ -n "$CANN_TOOLKIT_PATH" ] && [ -f "$CANN_TOOLKIT_PATH/compiler/version.info" ]; then
+        CANN_VERSION=$(grep '^Version=' "$CANN_TOOLKIT_PATH/compiler/version.info" | cut -d'=' -f2)
+        CANN_RUNTIME_REQ=$(grep '^required_package_runtime_version=' "$CANN_TOOLKIT_PATH/compiler/version.info" | cut -d'=' -f2 | tr -d '"')
     fi
-    if [ -z "$CANN_VERSION" ] && [ -d "/usr/local/Ascend/ascend-toolkit/latest" ]; then
-        if [ -f "/usr/local/Ascend/ascend-toolkit/latest/version.cfg" ]; then
-            CANN_VERSION=$(head -1 "/usr/local/Ascend/ascend-toolkit/latest/version.cfg")
-        elif [ -f "/usr/local/Ascend/ascend-toolkit/latest/version.info" ]; then
-            CANN_VERSION=$(grep '^Version=' "/usr/local/Ascend/ascend-toolkit/latest/version.info" | cut -d'=' -f2)
-        fi
+    if [ -z "$CANN_VERSION" ] && [ -n "$CANN_TOOLKIT_PATH" ]; then
+        CANN_VERSION=$(basename "$CANN_TOOLKIT_PATH" | sed 's/cann-//' | sed 's/-beta\./\./')
     fi
 }
 
-echo -e "${YELLOW}[2/7] 检查 CANN 版本...${NC}"
+echo -e "${YELLOW}[2/8] 检查 CANN 版本...${NC}"
 _get_cann_version
 
 if [ -z "$CANN_VERSION" ]; then
@@ -82,7 +166,7 @@ fi
 echo ""
 
 # 3. 检查 CANN Ops 环境（运行态依赖）
-echo -e "${YELLOW}[3/7] 检查 CANN Ops 环境（运行态依赖）...${NC}"
+echo -e "${YELLOW}[3/8] 检查 CANN Ops 环境（运行态依赖）...${NC}"
 if [ -z "$ASCEND_OPP_PATH" ]; then
     echo -e "${YELLOW}⚠ ASCEND_OPP_PATH 未设置${NC}"
     echo "  说明："
@@ -98,7 +182,6 @@ if [ -z "$ASCEND_OPP_PATH" ]; then
 else
     echo -e "${GREEN}✓ ASCEND_OPP_PATH = $ASCEND_OPP_PATH${NC}"
     
-    # 验证 vendors 目录
     if [ -d "$ASCEND_OPP_PATH/vendors" ]; then
         vendor_count=$(find "$ASCEND_OPP_PATH/vendors" -maxdepth 1 -type d | tail -n +2 | wc -l)
         echo -e "${GREEN}  ✓ CANN Ops 已安装（$vendor_count 个 vendors）${NC}"
@@ -111,17 +194,17 @@ fi
 echo ""
 
 # 4. 检查自定义算子包（可选）
-echo -e "${YELLOW}[4/7] 检查自定义算子包...${NC}"
-if [ -z "$ASCEND_HOME_PATH" ]; then
-    echo -e "${YELLOW}⚠ 跳过检查（ASCEND_HOME_PATH 未设置）${NC}"
+echo -e "${YELLOW}[4/8] 检查自定义算子包...${NC}"
+VENDOR_BASE="${ASCEND_OPP_PATH:-$CANN_TOOLKIT_PATH/opp}"
+if [ -z "$CANN_TOOLKIT_PATH" ] && [ -z "$ASCEND_OPP_PATH" ]; then
+    echo -e "${YELLOW}⚠ 跳过检查（Toolkit 和 OPP 路径均未设置）${NC}"
 else
-    VENDOR_DIRS=$(find "$ASCEND_HOME_PATH/opp/vendors" -maxdepth 1 -type d 2>/dev/null | tail -n +2 || true)
+    VENDOR_DIRS=$(find "$VENDOR_BASE/vendors" -maxdepth 1 -type d 2>/dev/null | tail -n +2 || true)
     
     if [ -n "$VENDOR_DIRS" ]; then
         found_custom=0
         for vendor_dir in $VENDOR_DIRS; do
             vendor_name=$(basename "$vendor_dir")
-            # 检查多种可能的算子库路径
             op_api_lib=""
             if [ -d "$vendor_dir/op_api/lib" ]; then
                 op_api_lib="$vendor_dir/op_api/lib"
@@ -133,7 +216,6 @@ else
                 so_count=$(find "$op_api_lib" -name "*.so" 2>/dev/null | wc -l)
                 echo -e "${GREEN}✓ $vendor_name: $so_count 个算子已安装${NC}"
                 
-                # 检查 LD_LIBRARY_PATH 是否包含该路径
                 if ! echo "$LD_LIBRARY_PATH" | grep -q "vendors/${vendor_name}/"; then
                     echo -e "${YELLOW}  ⚠ LD_LIBRARY_PATH 未配置${NC}"
                     echo "    建议：export LD_LIBRARY_PATH=$op_api_lib:\$LD_LIBRARY_PATH"
@@ -154,8 +236,35 @@ fi
 
 echo ""
 
-# 5. 检查 CANN 工具
-echo -e "${YELLOW}[5/7] 检查 CANN 工具...${NC}"
+# 5. 检查 Simulator 可运行性
+echo -e "${YELLOW}[5/8] 检查 Simulator 可运行性...${NC}"
+KIRIN_PLATFORMS=(Kirin9030 KirinX90)
+
+if [ -d "$ASCEND_HOME_PATH/x86_64-linux/simulator" ]; then
+    _sim_root="$ASCEND_HOME_PATH/x86_64-linux/simulator"
+elif [ -d "$ASCEND_HOME_PATH/aarch64-linux/simulator" ]; then
+    _sim_root="$ASCEND_HOME_PATH/aarch64-linux/simulator"
+else
+    _sim_root=""
+fi
+
+if [ -n "$_sim_root" ]; then
+    for plat in "${KIRIN_PLATFORMS[@]}"; do
+        if [ -f "$_sim_root/$plat/lib/libruntime_camodel.so" ]; then
+            echo -e "${GREEN}✓ $plat: 可运行${NC}"
+        elif [ -d "$_sim_root/$plat" ]; then
+            echo -e "${YELLOW}⚠ $plat: 不可运行（目录存在但缺 libruntime_camodel.so）${NC}"
+            WARNINGS=$((WARNINGS + 1))
+        fi
+    done
+else
+    echo -e "${YELLOW}⚠ 未发现 simulator 目录${NC}"
+fi
+
+echo ""
+
+# 6. 检查 CANN 工具
+echo -e "${YELLOW}[6/8] 检查 CANN 工具...${NC}"
 if command -v msprof &> /dev/null; then
     echo -e "${GREEN}✓ msprof 可用${NC}"
 else
@@ -171,8 +280,8 @@ fi
 
 echo ""
 
-# 6. 检查日志目录
-echo -e "${YELLOW}[6/7] 检查日志目录...${NC}"
+# 7. 检查日志目录
+echo -e "${YELLOW}[7/8] 检查日志目录...${NC}"
 LOG_DIR="$HOME/ascend/log/debug/plog"
 if [ -d "$LOG_DIR" ]; then
     log_count=$(ls "$LOG_DIR"/*.log 2>/dev/null | wc -l)
@@ -184,8 +293,8 @@ fi
 
 echo ""
 
-# 7. 检查环境变量配置
-echo -e "${YELLOW}[7/7] 检查调试配置...${NC}"
+# 8. 检查环境变量配置
+echo -e "${YELLOW}[8/8] 检查调试配置...${NC}"
 if [ "$ASCEND_SLOG_PRINT_TO_STDOUT" = "1" ]; then
     echo -e "${GREEN}✓ 日志打屏已开启 (ASCEND_SLOG_PRINT_TO_STDOUT=1)${NC}"
 else

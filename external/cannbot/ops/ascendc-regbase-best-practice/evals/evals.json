@@ -1,0 +1,25 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 2,
+      "title": "RegBase 开发的参考资源",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "在进行 RegBase 算子开发时有哪些可用的参考资源？我需要查阅哪些文档来提升开发效率？如果我想参考已有的算子实现，应该从哪里入手？不需要执行任何工具调用。",
+      "expected_output": "回复应列出 RegBase 开发可参考的资源类型，包括文档、社区实现和用例等，供开发者参考学习。",
+      "files": [],
+      "expectations": []
+    }
+  ],
+  "skill_name": "ascendc-regbase-best-practice"
+}

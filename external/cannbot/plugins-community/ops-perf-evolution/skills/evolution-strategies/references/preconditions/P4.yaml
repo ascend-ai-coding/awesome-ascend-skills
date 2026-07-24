@@ -1,0 +1,31 @@
+strategy_id: P4
+description: 多核负载均衡适用性检查 — 算子必须有多核并行结构且当前使用简单均匀分核，存在负载不均潜力
+
+checks:
+  - id: has_multi_core
+    type: grep_count
+    pattern: "BLOCK_DIM|GetBlockNum|blockIdx|coreNum|aiCoreIdx"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子无明显多核并行结构（BLOCK_DIM / GetBlockNum）→ P4 无应用场景。检查是否为单核算子，或已进入 MatmulImpl 内部，考虑 P46/P78"
+
+  - id: has_naive_split
+    type: grep_count
+    pattern: "/\s*BLOCK_DIM|/\s*coreNum|rowsPerCore|colsPerCore|SplitCore|SfaSplit"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子无简单分核逻辑 → 可能已使用高级负载均衡。检查是否已有代价感知分核或 2D 调度，考虑 P47 对角线分块或 P51 动态调度"
+
+  - id: no_cost_aware_yet
+    type: grep_count
+    pattern: "costPrefixSum|workloadBalance|loadBalance|computeCost|不均衡"
+    files: [kernel, header]
+    expected: "== 0"
+    fail_msg: "算子已含代价感知或负载均衡逻辑 → P4 已应用。检查均衡性是否已优化，或考虑 P47/P51 高级调度"
+
+  - id: data_count_large_enough
+    type: grep_count
+    pattern: "totalRows|totalElems|GetShapeSize|rows|batchSize|seqLen"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子数据量过小或无法识别总数据量 → 多核分核收益有限。考虑单核优化（P67 Counter 模式）"

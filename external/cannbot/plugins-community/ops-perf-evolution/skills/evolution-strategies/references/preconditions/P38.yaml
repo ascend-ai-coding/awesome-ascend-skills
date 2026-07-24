@@ -1,0 +1,31 @@
+strategy_id: P38
+description: Softmax 状态常驻适用性检查 — 算子必须有 online softmax 或 Flash Attention 模式，且有跨循环状态累积
+
+checks:
+  - id: has_online_softmax
+    type: grep_count
+    pattern: "SoftmaxFlash|online.*softmax|softmaxMax|softmaxSum|softmaxExp|FlashAttention|flash_attention"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无 online softmax 或 Flash Attention → P38 不适用。检查是否为普通 elementwise softmax"
+
+  - id: has_s2_loop
+    type: grep_count
+    pattern: "for.*s2|for.*seq|for.*tile.*outer|loop.*s2|loopCount"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无跨循环结构 → 状态无需常驻。检查是否为单次计算"
+
+  - id: no_resident_state_yet
+    type: grep_count
+    pattern: "preLoadNum|resident|stateBuff|softmaxMaxBuff|softmaxSumBuff|softmaxExpBuff"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已有状态常驻或 preLoadNum → P38 已应用"
+
+  - id: has_ub_space
+    type: grep_count
+    pattern: "InitBuffer|TBuf|TQue|BUFFER_NUM"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无 UB buffer 管理 → 无法分配常驻状态 buffer。先实现基础 UB 管理"

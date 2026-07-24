@@ -1,0 +1,78 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "子模块和三方库拉取",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "TileLang 的子模块拉取失败了，请帮我重新拉取代码仓库和第三方依赖。",
+      "expected_output": "回复应执行自动拉取流程，包含两个核心操作：git submodule update --init --recursive（拉取子模块）和 git pull --recurse-submodules（拉取主仓最新代码）。应配置 git 镜像加速源（ghfast.top）。支持前台直接运行或后台 nohup 运行，提供实时终端输出和日志记录到 logs/git_pull.log。拉取成功后自动停止脚本。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "git submodule update --init --recursive",
+          "description": "回复中提到了 git submodule update --init --recursive"
+        },
+        {
+          "type": "contains",
+          "pattern": "git pull --recurse-submodules",
+          "description": "回复中提到了 git pull --recurse-submodules"
+        },
+        {
+          "type": "contains",
+          "pattern": "auto_pull.sh",
+          "description": "回复中提到了 auto_pull.sh"
+        },
+        {
+          "type": "contains",
+          "pattern": "ghfast.top",
+          "description": "回复中提到了 ghfast.top"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "错误检测与自动重试机制",
+      "config": {
+        "max_tokens": 80000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "网络不稳定导致子模块拉取失败了，脚本会怎么处理？会不会一直重试到永远？",
+      "expected_output": "回复应说明脚本会自动检测关键词（Could not access、error、fatal、Failed to clone、unable to access），发现错误后等待 1 小时（3600 秒）自动重试。有超时保护机制：后台运行超过 10 小时（36000 秒）自动停止并记录日志，防止忘记关闭。重试过程持续输出到终端和日志文件，方便用户查看进度。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "Could not access",
+          "description": "回复中提到了 Could not access"
+        },
+        {
+          "type": "contains",
+          "pattern": "3600",
+          "description": "回复中提到了 3600"
+        },
+        {
+          "type": "contains",
+          "pattern": "10 小时",
+          "description": "回复中提到了 10 小时"
+        },
+        {
+          "type": "contains",
+          "pattern": "重试",
+          "description": "回复中提到了 重试"
+        }
+      ]
+    }
+  ],
+  "skill_name": "tilelang-submodule-pull"
+}

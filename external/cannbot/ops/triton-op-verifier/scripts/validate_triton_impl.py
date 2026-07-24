@@ -77,11 +77,20 @@ ALLOWED_TENSOR_METHODS = {
     "requires_grad_", "zero_",
     # 切片相关（一般通过 __getitem__ 而非方法，但以防万一）
     "index_select",
+    # 安全方法（不触发计算）
+    "fill_", "copy_",
 }
 
 ALLOWED_TRITON_ATTRS = {
     "cdiv", "next_power_of_2",
 }
+
+# host 侧循环体内允许的无副作用 Python 内置 / math 调用
+_ALLOWED_BUILTIN_CALLS = (
+    "list", "tuple", "range", "len", "min", "max",
+    "int", "float", "str", "enumerate", "zip",
+)
+_ALLOWED_MATH_CALLS = ("prod", "ceil", "floor", "log2", "pow")
 
 FORBIDDEN_TENSOR_METHODS = {
     # 计算操作
@@ -441,7 +450,124 @@ def _violation_for_node(node):
     return None
 
 
-def check_forbidden_torch_ops(forward_node):
+def _resolved_call_allowed(resolved):
+    """判断已解析的调用 (qual, attr) 是否属于 loop 体内允许的 host 侧调用。"""
+    if not resolved:
+        return False
+    qual, attr = resolved
+    # torch.empty / torch.empty_like 等 buffer 分配允许
+    if qual == "torch" and attr in ALLOWED_TORCH_FUNCS:
+        return True
+    # 允许的 tensor 方法
+    if attr in ALLOWED_TENSOR_METHODS and qual is not None:
+        return True
+    # list / tuple / range / len 等 Python 内置允许
+    if qual is None and attr in _ALLOWED_BUILTIN_CALLS:
+        return True
+    # math.prod / math.ceil 等 math 模块函数允许
+    if qual == "math" and attr in _ALLOWED_MATH_CALLS:
+        return True
+    # self.xxx(...) 放宽，由后续 torch/F 检测兜底
+    return qual == "self"
+
+
+def _is_loop_pure_kernel_launch(loop_node, kernel_names, wrapper_names):
+    """检查循环体是否仅包含 kernel 启动和允许的 host 侧操作。
+    允许的语句：kernel[grid](...)、赋值、条件判断（if/else）、
+    torch.empty/empty_like、属性访问、方法调用（如 .contiguous/.numel 等）。
+    禁止的语句：任何非 kernel 的 torch/F 计算操作、nn.Module 调用等。
+    """
+
+    def _check_stmt(stmt):
+        if isinstance(stmt, ast.If):
+            for s in stmt.body + stmt.orelse:
+                if not _check_stmt(s):
+                    return False
+            return True
+        if isinstance(stmt, ast.For):
+            return False  # 嵌套循环禁止
+        if isinstance(stmt, ast.While):
+            return False
+        if isinstance(stmt, ast.With):
+            return False
+        if isinstance(stmt, ast.Try):
+            return False
+        if isinstance(stmt, ast.Expr):
+            return _check_expr(stmt.value)
+        if isinstance(stmt, ast.Assign):
+            for target in stmt.targets:
+                if not _check_expr(target):
+                    return False
+            return _check_expr(stmt.value)
+        if isinstance(stmt, ast.AugAssign):
+            return _check_expr(stmt.target) and _check_expr(stmt.value)
+        if isinstance(stmt, ast.AnnAssign):
+            return _check_expr(stmt.target) and (stmt.value is None or _check_expr(stmt.value))
+        if isinstance(stmt, ast.Return):
+            return stmt.value is None or _check_expr(stmt.value)
+        if isinstance(stmt, ast.Pass):
+            return True
+        if isinstance(stmt, (ast.Continue, ast.Break)):
+            return True
+        return False
+
+    def _check_call_expr(expr):
+        # kernel[grid](...) 允许
+        if isinstance(expr.func, ast.Subscript):
+            name = _get_subscript_value_name(expr.func)
+            if name in kernel_names or name in wrapper_names:
+                return True
+        if _resolved_call_allowed(_resolve_call_name(expr)):
+            return True
+        # 递归检查参数
+        for kw in expr.keywords:
+            if not _check_expr(kw.value):
+                return False
+        for arg in expr.args:
+            if not _check_expr(arg):
+                return False
+        return True
+
+    def _check_expr_collection(expr):
+        if isinstance(expr, ast.Compare):
+            return all(_check_expr(e) for e in [expr.left] + expr.comparators)
+        if isinstance(expr, ast.BoolOp):
+            return all(_check_expr(v) for v in expr.values)
+        if isinstance(expr, (ast.Tuple, ast.List)):
+            return all(_check_expr(e) for e in expr.elts)
+        if isinstance(expr, ast.Dict):
+            return all(_check_expr(k) for k in expr.keys) and all(_check_expr(v) for v in expr.values)
+        if isinstance(expr, ast.JoinedStr):
+            return all(_check_expr(v) for v in expr.values)
+        if isinstance(expr, ast.IfExp):
+            return _check_expr(expr.test) and _check_expr(expr.body) and _check_expr(expr.orelse)
+        # 其余（Lambda / 推导式 / Await / Yield 等）默认不允许
+        return False
+
+    def _check_expr(expr):
+        if isinstance(expr, ast.Call):
+            return _check_call_expr(expr)
+        if isinstance(expr, (ast.Name, ast.Constant)):
+            return True
+        if isinstance(expr, ast.Attribute):
+            return _check_expr(expr.value)
+        if isinstance(expr, ast.Subscript):
+            return _check_expr(expr.value) and _check_expr(expr.slice)
+        if isinstance(expr, (ast.Starred, ast.FormattedValue)):
+            return _check_expr(expr.value)
+        if isinstance(expr, ast.UnaryOp):
+            return _check_expr(expr.operand)
+        if isinstance(expr, ast.BinOp):
+            return _check_expr(expr.left) and _check_expr(expr.right)
+        return _check_expr_collection(expr)
+
+    for stmt in loop_node.body:
+        if not _check_stmt(stmt):
+            return False
+    return True
+
+
+def check_forbidden_torch_ops(forward_node, kernel_names=None, wrapper_names=None):
     """检查 forward 中是否使用了禁止的 torch 计算操作或 Python 控制流。
 
     返回违规列表 [{"line": N, "call": str, "reason": str}, ...]
@@ -455,17 +581,25 @@ def check_forbidden_torch_ops(forward_node):
         if v is not None:
             violations.append(v)
 
-    # --- 规则 B: 如果 forward() 中 kernel 启动次数 > 1，视为 Type3 退化 ---
-    kernel_launch_count = _count_kernel_launches_in_forward(forward_node)
-    if kernel_launch_count > 1:
-        violations.append({
-            "line": forward_node.lineno,
-            "call": f"kernel 启动 {kernel_launch_count} 次",
-            "reason": (
-                "forward() 中只能启动一次 Triton kernel，"
-                "多次启动表明核心计算在 host 端循环中完成"
-            ),
-        })
+    # --- 规则 B: 检查 Host 侧循环 ---
+    # 如果循环体仅包含 kernel 启动和允许的 host 侧操作，则允许
+    # 否则视为 Type3 退化
+    if kernel_names is None:
+        kernel_names = set()
+    if wrapper_names is None:
+        wrapper_names = set()
+    for node in ast.walk(forward_node):
+        if isinstance(node, (ast.For, ast.While)):
+            if not _is_loop_pure_kernel_launch(node, kernel_names, wrapper_names):
+                loop_type = "for" if isinstance(node, ast.For) else "while"
+                violations.append({
+                    "line": node.lineno,
+                    "call": f"{loop_type} 循环",
+                    "reason": (
+                        f"forward() 中 {loop_type} 循环体包含非 kernel 的计算操作，"
+                        "核心计算必须在 Triton kernel 内完成"
+                    ),
+                })
 
     return violations
 
@@ -524,7 +658,7 @@ def _check_kernel_exists(result, tree):
 
 
 def _check_forward_calls_kernel(result, tree, kernel_names):
-    """填充 kernel_called_from_forward 检查；返回 (passed, forward_node)。"""
+    """填充 kernel_called_from_forward 检查；返回 (passed, forward_node, wrapper_names)。"""
     forward_node = find_model_new_forward(tree)
     if forward_node is None:
         result["checks"]["kernel_called_from_forward"]["error"] = (
@@ -532,7 +666,7 @@ def _check_forward_calls_kernel(result, tree, kernel_names):
         )
         result["regression_type"] = 2
         result["suggestion"] = "代码缺少 ModelNew 类或 forward 方法。"
-        return False, None
+        return False, None, set()
 
     wrapper_names = find_wrapper_functions(tree, kernel_names)
     called = check_kernel_calls_in_forward(forward_node, kernel_names, wrapper_names)
@@ -552,15 +686,15 @@ def _check_forward_calls_kernel(result, tree, kernel_names):
             "forward() 必须通过 kernel_name[grid](...) 形式启动 kernel。"
             f"{wrapper_hint}"
         )
-        return False, forward_node
+        return False, forward_node, wrapper_names
 
     result["checks"]["kernel_called_from_forward"]["passed"] = True
-    return True, forward_node
+    return True, forward_node, wrapper_names
 
 
-def _check_no_forbidden_ops(result, forward_node):
+def _check_no_forbidden_ops(result, forward_node, kernel_names, wrapper_names):
     """填充 no_forbidden_torch_ops 检查；返回 passed。"""
-    violations = check_forbidden_torch_ops(forward_node)
+    violations = check_forbidden_torch_ops(forward_node, kernel_names, wrapper_names)
     result["checks"]["no_forbidden_torch_ops"]["violations"] = violations
 
     if not violations:
@@ -602,11 +736,11 @@ def validate(code, filepath="<unknown>"):
     if not ok:
         return result
 
-    ok, forward_node = _check_forward_calls_kernel(result, tree, kernel_names)
+    ok, forward_node, wrapper_names = _check_forward_calls_kernel(result, tree, kernel_names)
     if not ok:
         return result
 
-    if not _check_no_forbidden_ops(result, forward_node):
+    if not _check_no_forbidden_ops(result, forward_node, kernel_names, wrapper_names):
         return result
 
     result["valid"] = True

@@ -227,13 +227,17 @@ def _make_npu_helpers():
 
 
 def _check_tensor_nan_inf(t, name: str):
-    """返回单一 tensor 的 NaN/Inf 描述，正常返回 None。"""
+    """返回单一 tensor 的 NaN / +Inf 描述，正常返回 None。
+
+    -Inf 为 top-k / top-p 等算子对被掩码位置的合法取值（掩码到 -inf 使 softmax→0），不拦截；
+    仅 NaN 与 +Inf 视为异常。
+    """
     import torch
     if isinstance(t, torch.Tensor):
         if torch.isnan(t).any():
             return f"{name} contains NaN"
-        if torch.isinf(t).any():
-            return f"{name} contains Inf"
+        if torch.isposinf(t).any():
+            return f"{name} contains +Inf"
     return None
 
 

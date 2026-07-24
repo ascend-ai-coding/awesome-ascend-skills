@@ -1,0 +1,198 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "标准工程目录结构与开发流程",
+      "config": {
+        "max_tokens": 150000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 180000,
+          "glm-5": 160000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请介绍 ascendc-registry-invoke-template 技能中算子工程的标准目录结构和开发流程。op_host、op_kernel、op_api、op_graph、tests 各目录分别放什么文件？关键交付件有哪些？",
+      "expected_output": "回复应说明标准目录结构和开发流程：\n- op_host/：算子定义（{op}_def.cpp）、Shape推导（{op}_infershape.cpp）、Tiling实现（arch22/{op}_tiling.cpp、arch35/{op}_tiling.cpp）\n- op_kernel/：Kernel入口（{op}_arch22.cpp、{op}_arch35.cpp）、TilingData结构体（arch22/{op}_tiling_data.h）、TilingKey定义（arch22/{op}_tiling_key.h）、Kernel类实现（arch22/{op}.h）\n- op_api/：ACLNN接口（aclnn_{op}.cpp/h L2 API、{op}.cpp/h L0 API）\n- op_graph/：图模式适配（{op}_proto.h）\n- tests/：UT测试（ut/op_host/、ut/op_api/）、ST测试（st/）\n- 开发流程：算子设计 → 算子定义 → Tiling实现 → Kernel实现 → 测试验证 → 编译部署",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "算子定义与 Tiling 实现",
+      "config": {
+        "max_tokens": 150000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 180000,
+          "glm-5": 160000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请介绍 ascendc-registry-invoke-template 技能中算子定义和 Tiling 实现的关键知识点。_def.cpp 怎么写？TilingData 结构体有什么约束？TilingKey 模板编程怎么用？",
+      "expected_output": "回复应覆盖算子定义和 Tiling 实现的核心知识：\n- _def.cpp：class Op : public OpDef，Input/Output定义（ParamType、DataType、Format），AddConfig芯片配置，ExtendCfgInfo配置Kernel文件名映射（opFile.value对应kernel入口文件名），OP_ADD注册\n- TilingData约束：仅支持POD类型（基本数据类型、数组），禁止成员函数、指针/引用、虚函数/虚继承、模板类\n- TilingKey模板编程：ASCENDC_TPL_ARGS_DECL定义模板参数，ASCENDC_TPL_UINT_DECL定义UINT参数（UI_RANGE范围/UI_LIST穷举/UI_MIX混合），GET_TPL_TILING_KEY宏自动配置TilingKey，Kernel侧用if constexpr实现编译期分支",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "Kernel 实现与 ACLNN 接口",
+      "config": {
+        "max_tokens": 150000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 180000,
+          "glm-5": 160000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请介绍 ascendc-registry-invoke-template 技能中 Kernel 实现和 ACLNN 接口的关键知识点。核函数签名是什么？L0 和 L2 API 分别做什么？",
+      "expected_output": "回复应覆盖 Kernel 实现和 ACLNN 接口的核心知识：\n- 核函数签名：template <uint32_t schMode> __global__ __aicore__ void op_name(GM_ADDR input..., GM_ADDR output, GM_ADDR workspace, GM_ADDR tiling)，参数顺序固定为输入→输出→workspace→tiling\n- Kernel类结构：Init()初始化输入输出tensor和tiling data，Process()执行计算（CopyIn→Compute→CopyOut循环）\n- L2 API（aclnn_{op}.cpp）：对外暴露的ACLNN接口，流程为CREATE_EXECUTOR→CheckParams→Contiguous→l0op调用→ViewCopy→GetWorkspaceSize\n- L0 API（{op}.cpp）：内部实现接口，流程为InferShape→IsAiCoreSupport→AllocTensor→AiCore执行",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 4,
+      "title": "编译部署与 build.sh",
+      "config": {
+        "max_tokens": 150000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 180000,
+          "glm-5": 160000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请介绍 ascendc-registry-invoke-template 技能中编译部署的流程。build.sh 有哪些常用命令？CMakeLists.txt 怎么配置？安装和卸载怎么做？",
+      "expected_output": "回复应覆盖编译部署的完整流程：\n- build.sh常用命令：--soc=ascend910b编译指定芯片，-u运行UT测试，-s运行ST测试，-e运行调用示例（默认aclnn），--graph运行图模式示例，-a运行全部测试，--make_clean清理构建目录，--list-socs查看支持芯片\n- CMakeLists.txt配置：ARCH32_COMPUTE_UNITS（ascend910b/ascend910_93）和ARCH35_COMPUTE_UNITS（ascend950）代际映射，ACLNNTYPE aclnn自动生成接口\n- 构建产物：Kernel二进制（build/op_kernel/ascendc_kernels/binary/<soc>/*.o）、安装包（build/custom_opp_ubuntu_aarch64.run）\n- 安装：./build/custom_opp_ubuntu_aarch64.run\n- 卸载：./build/scripts/uninstall.sh",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 5,
+      "title": "多芯片架构适配",
+      "config": {
+        "max_tokens": 240000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 288000,
+          "glm-5": 256000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请介绍 ascendc-registry-invoke-template 技能中多芯片架构适配的方法。arch22 和 arch35 怎么隔离代码？新增同架构芯片时需要改哪些文件？",
+      "expected_output": "回复应覆盖多芯片架构适配的核心知识：\n- 代际隔离位置：ACLNN接口和IR定义共用，CMakeLists.txt/op_host/arch*/op_kernel/arch*按架构隔离\n- AddConfig为不同芯片配置不同参数（ascend910b/ascend950），ExtendCfgInfo配置不同架构Kernel入口（{op}_arch22/{op}_arch35）\n- 适配清单5项：_def.cpp追加AddConfig、CMakeLists.txt追加芯片号到列表、build.sh合并芯片判断、op_graph/op_api/op_host追加条件判断、辅助脚本追加条目\n- 核心原则：同架构芯片在运行时必须走完全相同的代码路径，构建系统按芯片号区分、算子代码按架构（NpuArch）分支\n- 编译配置两种模式：列表声明（SUPPORT_COMPUTE_UNIT/SUPPORT_TILING_DIR 1:1对应）和条件分支（if/elseif/else按芯片分发）",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 6,
+      "title": "ST 测试开发",
+      "config": {
+        "max_tokens": 150000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 180000,
+          "glm-5": 160000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请介绍 ascendc-registry-invoke-template 技能中 ST 测试的开发方法。C++ 原生测试和 PyTorch 接入测试有什么区别？Mock 和 Real 模式怎么切换？",
+      "expected_output": "回复应覆盖 ST 测试开发的完整知识：\n- C++原生测试（默认方式）：test_aclnn_{op}.cpp包含ComputeGolden CPU golden计算、CompareResults精度比对、TestGoldenCorrectness golden自测、RunTest统一执行器、GetTestCases测试用例定义\n- Mock/Real模式切换：通过-DUSE_MOCK编译选项，Mock模式（-DUSE_MOCK=ON）算子代码未就绪时验证测试框架，Real模式（-DUSE_MOCK=OFF）执行真实NPU精度验证\n- PyTorch接入测试（可选）：torch/目录包含test.py+golden.py+compare.py+torch_adapter.cpp，仅支持Real模式需完整CANN/NPU环境\n- 精度标准（CANN社区标准）：FLOAT16 MERE/MARE 2^-10≈0.000977，BFLOAT16 2^-7≈0.00781，FLOAT32 2^-13≈0.000122，INT32精确匹配\n- 运行命令：bash run.sh默认Real模式，bash run.sh --mock Mock模式",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 7,
+      "title": "SIMT 工程开发差异",
+      "config": {
+        "max_tokens": 150000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 180000,
+          "glm-5": 160000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请介绍 ascendc-registry-invoke-template 技能中 SIMT 算子开发与 SIMD 算子开发的工程差异。SIMT 有哪些专属约束？Tiling 侧有什么不同？",
+      "expected_output": "回复应覆盖 SIMT 工程开发的独有规范：\n- SIMT 6条专属约束：__simt_vf__修饰函数内自定义子函数必须带__simt_callee__修饰、线程数必须是constexpr编译期常量（LAUNCH_BOUND与Simt::Dim3使用同一常量）、DCache一致性（Scalar写GM后需DataCacheCleanAndInvalid刷新）、纯SIMT用GM_ADDR参数避免GlobalTensor中转、禁止在Simt::Dim3中使用tilingData变量、VF参数size控制28×32bit以内\n- Tiling差异：线程数不在tiling侧设置（kernel侧constexpr）、SetLocalMemorySize为ubsize-DCACHE_SIZE（128KB）、多核交换数据需SetScheduleMode(1)同步模式\n- Include路径差异：必须包含arch35/{op}_simt.h（会级联包含tiling_data.h和tiling_key.h）",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 8,
+      "title": "正向看护-多 skill 环境下正确触发",
+      "config": {
+        "max_tokens": 350000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "distractor_skills": [
+          "ascendc-direct-invoke-template",
+          "ascendc-direct-invoke-to-registry-invoke",
+          "ascendc-tiling-design",
+          "ascendc-api-best-practices"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我想从零开始创建一个 Ascend C 自定义算子工程，需要标准的目录结构、代码模板和 UT/ST 测试样例，支持 ascend910b 和 ascend950 多芯片架构。请告诉我应该怎么搭建工程？",
+      "expected_output": "回复应正确激活 ascendc-registry-invoke-template skill，基于标准目录结构和 add_example 模板给出工程搭建指导：\n- 参照 add_example/ 模板创建标准目录结构（op_host/op_kernel/op_api/op_graph/tests）\n- 算子定义（_def.cpp）+ Tiling实现（arch22/arch35）+ Kernel实现 + ACLNN接口\n- 使用 build.sh --soc=ascend910b 编译，-u 运行 UT，-s 运行 ST\n- 多芯片支持：arch22（ascend910b/ascend910_93）和 arch35（ascend950）代际隔离\n即使在 ascendc-direct-invoke-template、ascendc-direct-invoke-to-registry-invoke 等相似 skill 共存的环境下，也应正确选择 ascendc-registry-invoke-template。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 9,
+      "title": "信息不足时主动追问",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "帮我搭建算子工程",
+      "expected_output": "回复应主动追问关键信息，而不是直接生成工程代码。应至少询问以下信息中的一项或多项：算子名称、目标芯片架构（ascend910b/ascend910_93/ascend950）、是否需要 UT/ST 测试、是否需要 ACLNN 接口、是否需要图模式适配。不应在缺乏算子规格的情况下直接生成工程模板。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 10,
+      "title": "使用边界-不适用于直调转注册",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请介绍 ascendc-registry-invoke-template 技能的适用边界。它适合从零创建算子工程，还是适合将已有 .asc 直调工程迁移为注册调用工程？请说明理由。不需要执行任何操作，只需要介绍知识。",
+      "expected_output": "回复应说明 ascendc-registry-invoke-template 的适用边界：\n- 适合场景：从零创建完整自定义算子工程，提供标准目录结构、代码模板、UT/ST样例和多芯片架构参考\n- 不适合场景：将已有 kernel 直调工程（.asc 文件）迁移为 CANN 标准自定义算子工程\n- 理由：本 skill 提供的是工程模板和示例参考，不涉及 .asc 文件读取、OpDef 契约表提取、msopgen 生成验证工程等迁移流程\n- 如提及替代方案，可建议使用其他专门处理直调转注册的 skill",
+      "files": [],
+      "expectations": []
+    }
+  ],
+  "skill_name": "ascendc-registry-invoke-template"
+}

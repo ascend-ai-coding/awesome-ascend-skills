@@ -1,24 +1,21 @@
 # API 文档索引
 
-基于 `asc-devkit/docs/api/` 的完整 API 文档索引。
+基于 `$ASC_DEVKIT_DIR/docs/zh/api/` 的完整 API 文档索引。
 
 ---
 
 ## 文档位置
 
 ```
-asc-devkit/docs/api/
-├── context/           # 基础数据结构（LocalTensor、GlobalTensor 等）
-├── basic_api/         # 基础 API（表2-13）
-├── adv_api/           # 高阶 API（表14-15）
-├── utils/             # 公共辅助函数
-├── aicpu_api/         # AI CPU API
-└── c_api/             # C API
+$ASC_DEVKIT_DIR/docs/zh/api/  — Ascend C API 文档根目录
 ```
+
+> 子目录结构随 CANN 版本演进有变化（如 `context/` 扁平结构 → `SIMD-API/SIMT-API` 层级结构）。
+> **不要假设具体的子目录名**，统一用 `find "$ASC_DEVKIT_DIR/docs/zh/api/" -name "{APIName}*.md"` 搜索。
 
 ---
 
-## 一、基础数据结构（context/）
+## 一、基础数据结构
 
 | API | 说明 |
 |-----|------|
@@ -30,7 +27,7 @@ asc-devkit/docs/api/
 
 ---
 
-## 二、基础 API（basic_api/）
+## 二、基础 API
 
 ### 表2：标量计算 API
 | API | 说明 |
@@ -104,37 +101,41 @@ asc-devkit/docs/api/
 
 ---
 
-## 三、高阶 API（adv_api/）
+## 三、高阶 API
 
-### 表14：数学计算 API
-| 类别 | API |
-|-----|-----|
-| 三角函数 | `Acos`、`Acosh`、`Asin`、`Asinh`、`Atan`、`Atanh`、`Cos`、`Cosh`、`Sin`、`Sinh`、`Tan`、`Tanh` |
-| 双曲函数 | `Sinh`、`Cosh`、`Tanh` |
-| 位运算 | `BitwiseAnd`、`BitwiseNot`、`BitwiseOr`、`BitwiseXor` |
-| 类型转换 | `Cast` |
-| 复合运算 | `Addcdiv`、`Addsub` 等 |
+> 实际目录 `docs/zh/api/SIMD-API/高阶API/` 下含 13 个子类，下表为索引。HCCL 通信类详见[第七章](#七hccl-通信-api)。
 
-### 表15：量化操作 API
-| API | 说明 |
-|-----|------|
-| 量化相关操作 | 量化/反量化操作 |
-
----
-
-## 四、Utils API（utils/）
-
-公共辅助函数，提供通用工具支持。
+| 子目录 | 类别 | 典型 API |
+|--------|------|---------|
+| `数学计算/` | 三角/双曲/位运算/类型转换 | `Acos`、`Acosh`、`Cos`、`Cast`、`BitwiseAnd`、`BitwiseOr`、`Addcdiv`、`Addsub` |
+| `量化操作/` | 量化/反量化 | 量化相关操作 |
+| `归约操作/` | 归约 | `ReduceMax`、`ReduceSum` |
+| `排序操作/` | 排序 | `Sort`、`TopK` |
+| `张量变换/` | 张量重排 | `Broadcast`、`Transpose` |
+| `归一化操作/` | 归一化 | `LayerNorm` 相关 |
+| `激活函数/` | 激活 | `Relu`、`Sigmoid`、`Gelu` |
+| `矩阵计算/` | 矩阵 | `Mmad` 相关 |
+| `卷积计算/` | 卷积 | 卷积相关 |
+| `索引计算/` | 索引 | 索引相关 |
+| `数据过滤/` | 过滤 | 数据过滤相关 |
+| `随机函数/` | 随机 | 随机数生成 |
+| `HCCL通信类/` | 集合通信 | 详见[第七章](#七hccl-通信-api) |
 
 ---
 
-## 五、AI CPU API（aicpu_api/）
+## 四、Utils API
 
-AI CPU 处理器相关 API。
+> 实际目录 `docs/zh/api/Utils-API/`，含调测接口（printf、asc_dump）等。用 `find "$ASC_DEVKIT_DIR/docs/zh/api/Utils-API/" -name "*.md"` 查阅。
 
 ---
 
-## 六、C API（c_api/）
+## 五、AI CPU API
+
+> 实际目录 `docs/zh/api/AI-CPU-API/`。用 `find "$ASC_DEVKIT_DIR/docs/zh/api/AI-CPU-API/" -name "*.md"` 查阅。
+
+---
+
+## 六、C API
 
 | 类别 | 说明 |
 |-----|------|
@@ -145,14 +146,37 @@ AI CPU 处理器相关 API。
 
 ---
 
+## 七、HCCL 通信 API
+
+HCCL（集合通信）API 文档位于 `docs/zh/api/SIMD-API/高阶API/HCCL通信类/`，分三个子目录：
+
+| 子目录 | 内容 | 典型 API |
+|--------|------|---------|
+| `HCCL-Kernel侧接口/` | Kernel 侧通信原语 | `Hccl::InitV2`、`Hccl::AlltoAllV`、`Hccl::Wait`、`Hccl::Finalize` |
+| `HCCL-Tiling侧接口/` | Host 侧 Tiling 配置 | `Mc2CcTilingConfig`、`SetCcTilingV2` |
+| `HCCL-Context/` | 通信上下文 | `HcclCombineOpParam` |
+
+**建议先读使用说明**，获取完整调用流程和代码示例，再按需查阅单个 API 文档：
+- `HCCL-Kernel侧接口/HCCL使用说明.md` — Kernel 侧 6 步调用流程（InitV2 → SetCcTilingV2 → Prepare → Commit → Wait → Finalize），含完整 Kernel 代码示例
+- `HCCL-Tiling侧接口/HCCL-Tiling使用说明.md` — Tiling 侧配置流程（创建 Mc2CcTilingConfig → Set 系列配置 → GetTiling），含代码示例
+- `HCCL-Context/HCCL-Context简介.md` — 通信上下文 GetHcclContext/SetHcclContext 说明
+
+查找命令（路径含中文，必须加引号）：
+```bash
+find "$ASC_DEVKIT_DIR/docs/zh/api/SIMD-API/高阶API/HCCL通信类/" -name "*.md"
+```
+
+HCCL 头文件另见 `$ASC_DEVKIT_DIR/include/adv_api/hccl/`（`hccl.h`、`hccl_common.h`、`hccl_tiling.h`、`hccl_tilingdata.h`）。
+
+---
+
 ## 使用建议
 
-1. **API 文档查找优先级**：
+1. **API 文档查找**：
+   ```bash
+   find "$ASC_DEVKIT_DIR/docs/zh/api/" -name "${APIName}*.md"
    ```
-   asc-devkit/docs/api/context/  →  基础数据结构
-   asc-devkit/docs/api/basic_api/ →  基础 API
-   asc-devkit/docs/api/adv_api/   →  高阶 API
-   ```
+   （不依赖具体子目录结构）
 
 2. **查阅 API 文档时注意**：
    - **Restriction 章节**：查看使用限制和对齐要求

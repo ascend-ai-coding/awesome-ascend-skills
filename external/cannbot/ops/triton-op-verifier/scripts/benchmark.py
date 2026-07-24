@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 
 # 确保同目录下的 _log_utils 可被导入（脚本可能从其他工作目录调用）
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _log_utils import setup_logger as _setup_logger_shared  # noqa: E402
+from _log_utils import setup_logger as _setup_logger_shared  # noqa: E402	 
 from _common_utils import describe_input as _describe_input_shared  # noqa: E402
 
 logger = logging.getLogger("triton_op_verifier.benchmark")
@@ -48,7 +48,7 @@ def _setup_logger() -> None:
 # ============================================================================
 
 WARMUP_DEFAULT = 5
-REPEATS_DEFAULT = 50
+REPEATS_DEFAULT = 20
 TRITON_IMPL_NAME_DEFAULT = "triton_ascend_impl"
 ERROR_MSG_LIMIT = 2000
 
@@ -67,6 +67,9 @@ class BenchmarkConfig:
     repeats: int = REPEATS_DEFAULT
     skip_framework: bool = False
     framework_latency_ms: float = 0.0
+    clear_l2_cache: bool = False  # 是否清除 L2 cache
+    keep_res: bool = False        # 是否保留 profiling 结果目录
+    max_retries: int = 3          # 采集失败时的最大重试次数
 
 
 @dataclass
@@ -177,6 +180,7 @@ class BenchmarkResult:
     total_cases: int = 1
     passed_cases: int = 0
     failed_cases: int = 0
+    max_retries: int = 3
     nan_indices: List[int] = field(default_factory=list)
     inf_indices: List[int] = field(default_factory=list)
     zero_indices: List[int] = field(default_factory=list)
@@ -294,104 +298,96 @@ def cleanup_profile_path(profile_path: str) -> None:
 # 性能分析逻辑
 # ============================================================================
 
-def parse_operator_latency(profile_path: str, active_count: int) -> Tuple[Optional[Dict[str, float]], Optional[float]]:
-    """从 profiling 结果文件中提取算子时延数据，计算平均执行时间。"""
+def parse_operator_latency(
+    profile_path: str, warmup: int, active_count: int, keep_res: bool = False,
+) -> Tuple[Optional[Dict[str, float]], Optional[float]]:
+    """从 kernel_details.csv 提取算子时延数据，计算平均执行时间（毫秒）。
+
+    兼容多个 Triton kernel 场景：
+    - 每次 test_fn() 调用可能启动多个 kernel，kernel_details.csv 中每行对应一个 kernel 的一次执行
+    - 通过 Name groupby 统计每个 kernel 的耗时，再汇总得到总时延
+    """
     import pandas as pd
 
-    operator_details_file = find_profile_file(profile_path, "operator_details.csv")
+    # 在 profile_path 目录下递归查找 kernel_details.csv
+    kernel_details_file = None
+    for root, _, files in os.walk(profile_path):
+        for file in files:
+            if file == "kernel_details.csv":
+                kernel_details_file = os.path.join(root, file)
+                break
 
-    if not operator_details_file or not os.path.exists(operator_details_file):
+    if kernel_details_file is None or not os.path.exists(kernel_details_file):
         cleanup_profile_path(profile_path)
         return None, None
 
     try:
-        df = pd.read_csv(operator_details_file)
+        df = pd.read_csv(kernel_details_file)
     except Exception:
         cleanup_profile_path(profile_path)
         return None, None
 
-    required_columns = ["Name", "Device Self Duration(us)"]
-    missing_columns = [col for col in required_columns if col not in df.columns]
-    if missing_columns:
-        cleanup_profile_path(profile_path)
-        return None, None
-
-    if "Count" not in df.columns:
-        return _parse_without_count(df, profile_path, active_count)
-
-    return _parse_with_count(df, profile_path, active_count)
-
-
-def _parse_without_count(
-        df: Any, profile_path: str, active_count: int
-) -> Tuple[Optional[Dict[str, float]], Optional[float]]:
+    # 按 Name groupby，统计每个 kernel 在 active 阶段的平均耗时
     operator_avg_times = {}
-    grouped = df.groupby("Name")["Device Self Duration(us)"].sum()
-    for op_name_str, total_us in grouped.items():
-        operator_avg_times[op_name_str] = total_us / active_count
-
-    total_avg_us = sum(operator_avg_times.values())
-    total_avg_ms = total_avg_us / 1000.0
-
-    cleanup_profile_path(profile_path)
-    return operator_avg_times, round(total_avg_ms, 4)
-
-
-def _parse_with_count(
-        df: Any, profile_path: str, active_count: int
-) -> Tuple[Optional[Dict[str, float]], Optional[float]]:
-    valid_ops = df[df["Count"] == active_count].copy()
-
-    if valid_ops.empty:
-        cleanup_profile_path(profile_path)
-        return None, None
-
-    operator_avg_times = {}
-    grouped = valid_ops.groupby("Name")
-    for op_name_str, group in grouped:
-        total_us = group["Device Self Duration(us)"].sum()
+    grouped = df.groupby("Name")
+    for name, group in grouped:
+        # 每个 kernel 的总执行次数 = total = warmup + active_count
+        # 前 warmup 次为 warmup 数据，后 active_count 次为有效数据
+        # 按行顺序，取后 active_count 行（active 阶段）
+        active_rows = group.iloc[-active_count:]
+        total_us = active_rows["Duration(us)"].sum()
         avg_us = total_us / active_count
-        operator_avg_times[op_name_str] = avg_us
+        operator_avg_times[name] = avg_us
 
+    # 总时延 = 所有 kernel 在单次 test_fn() 调用中的耗时之和
     total_avg_us = sum(operator_avg_times.values())
-    total_avg_ms = total_avg_us / 1000.0
+    total_avg_ms = total_avg_us / 1e3
 
-    cleanup_profile_path(profile_path)
+    # 清理 profile_path（由 keep_res 控制）
+    if not keep_res:
+        cleanup_profile_path(profile_path)
+
     return operator_avg_times, round(total_avg_ms, 4)
 
 
-def run_profiler_with_config(test_fn: callable, warmup: int, repeats: int, profile_name: str) -> str:
+def run_profiler_with_config(test_fn: callable, warmup: int, repeats: int, profile_name: str,
+                             clear_l2_cache: bool = False) -> str:
     """运行NPU profiler并返回生成的性能分析目录路径。"""
     import torch
     import torch_npu
+    import triton.runtime as runtime
 
-    # 例外：torch_npu 未提供 _ExperimentalConfig 的公开等价物，
-    # 上游官方示例同样以此方式配置 profiler，使用 getattr 间接访问以保持封装语义
+    # 手动 warmup（执行一次）
+    test_fn()
+    torch.npu.synchronize()
+
+    # experimental_config 按 testing.py 方式构造
+    # _ExperimentalConfig 为 torch_npu.profiler 暴露的实验配置入口，经 getattr 取用
     experimental_config_cls = getattr(torch_npu.profiler, "_ExperimentalConfig")
     experimental_config = experimental_config_cls(
-        aic_metrics=None,
+        aic_metrics=torch_npu.profiler.AiCMetrics.PipeUtilization,
         profiler_level=torch_npu.profiler.ProfilerLevel.Level1,
         l2_cache=False,
         data_simplification=False,
     )
 
-    test_fn()
-    torch.npu.synchronize()
+    # 总迭代次数：warmup 次预热 + repeats 次有效采集
+    total = warmup + repeats
 
-    skip_first = 1 + warmup
-    total_steps = skip_first + repeats
-
+    # profile_path 保持 benchmark.py 当前方式
     timestamp = int(time.time() * 1000)
     profile_path = os.path.join(os.getcwd(), f"{profile_name}_{timestamp}")
 
+    # clear_l2_cache 支持
+    if clear_l2_cache:
+        buffer = runtime.driver.active.get_empty_cache_for_benchmark()
+        buffer = buffer.float()
+        buffer.sum()
+        torch.npu.synchronize()
+
+    # 无 schedule，用 with 上下文 + for 循环
     with torch_npu.profiler.profile(
-        activities=[
-            torch_npu.profiler.ProfilerActivity.NPU,
-            torch_npu.profiler.ProfilerActivity.CPU
-        ],
-        schedule=torch_npu.profiler.schedule(
-            wait=0, warmup=warmup, active=repeats, repeat=1, skip_first=skip_first
-        ),
+        activities=[torch_npu.profiler.ProfilerActivity.NPU],
         on_trace_ready=torch_npu.profiler.tensorboard_trace_handler(profile_path),
         record_shapes=False,
         profile_memory=False,
@@ -400,16 +396,23 @@ def run_profiler_with_config(test_fn: callable, warmup: int, repeats: int, profi
         with_modules=False,
         experimental_config=experimental_config,
     ) as prof:
-        for _ in range(total_steps):
+        for _ in range(total):
+            if clear_l2_cache:
+                buffer.sum()
+                torch.npu.synchronize()
             test_fn()
-            prof.step()
             torch.npu.synchronize()
+
+    if clear_l2_cache:
+        del buffer
 
     return profile_path
 
 
 def measure_single(
         ctx: MeasureContext,
+        clear_l2_cache: bool = False,
+        keep_res: bool = False,
 ) -> Tuple[Optional[Dict[str, float]], Optional[float], float]:
     """测量单次性能（warmup + profiling）"""
     import torch
@@ -418,50 +421,14 @@ def measure_single(
     torch.npu.reset_peak_memory_stats()
     test_fn = prepare_model_fn(ctx.model, ctx.inputs, ctx.device)
 
-    try:
-        profile_path = run_profiler_with_config(test_fn, ctx.warmup, ctx.repeats, ctx.profile_name)
-        operators, latency_ms = parse_operator_latency(profile_path, ctx.repeats)
-    except Exception as e:
-        logger.warning("torch_npu.profiler 获取数据失败: %s，使用兜底测试机制...", e)
-        operators, latency_ms = None, None
-
-    if operators is None or latency_ms is None or latency_ms <= 0.0001:
-        logger.warning(
-            "profiler 无法获取有效时延数据（当前:%s ms），将使用 time.perf_counter() 兜底...",
-            latency_ms,
-        )
-        return measure_single_fallback(ctx)
+    profile_path = run_profiler_with_config(
+        test_fn, ctx.warmup, ctx.repeats, ctx.profile_name,
+        clear_l2_cache=clear_l2_cache,
+    )
+    operators, latency_ms = parse_operator_latency(profile_path, ctx.warmup, ctx.repeats, keep_res=keep_res)
 
     peak_memory = torch.npu.max_memory_allocated() / (1024 * 1024)
     return operators, latency_ms, round(peak_memory, 2)
-
-
-def measure_single_fallback(
-        ctx: MeasureContext,
-) -> Tuple[Optional[Dict[str, float]], Optional[float], float]:
-    """使用time.perf_counter()的兜底测试机制"""
-    import torch
-    import torch_npu  # noqa: F401
-    import statistics
-
-    with torch.no_grad():
-        for _ in range(ctx.warmup):
-            _ = ctx.model(*ctx.inputs)
-    torch.npu.synchronize()
-
-    latencies = []
-    for _ in range(ctx.repeats):
-        torch.npu.synchronize()
-        start = time.perf_counter()
-        with torch.no_grad():
-            _ = ctx.model(*ctx.inputs)
-        torch.npu.synchronize()
-        end = time.perf_counter()
-        latencies.append((end - start) * 1000)
-
-    avg_latency_ms = statistics.mean(latencies)
-    peak_memory = torch.npu.max_memory_allocated() / (1024 * 1024)
-    return {}, round(avg_latency_ms, 4), round(peak_memory, 2)
 
 
 # ============================================================================
@@ -471,7 +438,15 @@ def measure_single_fallback(
 def _move_inputs_to_device(inputs: List[Any], device: Any) -> List[Any]:
     """把张量类输入搬到目标 device，标量原样透传。"""
     import torch
-    return [x.to(device) if isinstance(x, torch.Tensor) else x for x in inputs]
+    result = []
+    for x in inputs:
+        if isinstance(x, torch.Tensor):
+            result.append(x.to(device))
+        elif isinstance(x, list):
+            result.append(_move_inputs_to_device(x, device))
+        else:
+            result.append(x)
+    return result
 
 
 def _measure_framework(
@@ -496,7 +471,9 @@ def _measure_framework(
             repeats=config.repeats,
             profile_name=f"framework_profile_case{case_idx}",
             device=device,
-        )
+        ),
+        clear_l2_cache=config.clear_l2_cache,
+        keep_res=config.keep_res,
     )
     return operators or {}, latency_ms, peak_memory
 
@@ -518,7 +495,9 @@ def _measure_impl(
             repeats=config.repeats,
             profile_name=f"impl_profile_case{case_idx}",
             device=device,
-        )
+        ),
+        clear_l2_cache=config.clear_l2_cache,
+        keep_res=config.keep_res,
     )
     return operators or {}, latency_ms, peak_memory
 
@@ -737,46 +716,59 @@ def _safe_del_model(name, model_ref):
 
 def _run_shape_case(config, model_spec: BenchmarkModelSpec,
                     inputs, device, case_ctx: CaseContext) -> SingleShapeResult:
-    """执行单个 shape 的 benchmark；失败时返回 status=fail 的结果。"""
+    """执行单个 shape 的 benchmark；失败时重试，最终仍失败则返回 status=fail 的结果。"""
     case_idx = case_ctx.case_idx
     total_cases = case_ctx.total_cases
     input_desc = describe_input(inputs)
-    framework_model = None
-    impl_model = None
-    try:
-        framework_model, impl_model = _instantiate_bench_models(
-            model_spec.framework_cls, model_spec.impl_cls, model_spec.get_init_inputs, device,
-        )
-        fw_perf, impl_perf, speedup = run_single_benchmark(
-            ModelPair(framework_model, impl_model), inputs, config, device, case_ctx,
-        )
-        return SingleShapeResult(
-            case_idx=case_idx,
-            input_desc=input_desc,
-            status="pass",
-            framework=fw_perf,
-            implementation=impl_perf,
-            speedup_vs_torch=speedup,
-        )
-    except Exception as e:
-        err_detail = traceback.format_exc()
-        logger.error(
-            "  [用例 %d/%d] 失败: %s: %s",
-            case_idx, total_cases, type(e).__name__, e,
-        )
-        return SingleShapeResult(
-            case_idx=case_idx,
-            input_desc=input_desc,
-            status="fail",
-            error_type=type(e).__name__,
-            error_msg=truncate_error(err_detail),
-        )
-    finally:
-        _safe_del_model("framework_model", framework_model)
-        _safe_del_model("impl_model", impl_model)
+
+    last_error_type = None
+    last_error_msg = None
+
+    for attempt in range(config.max_retries):
         framework_model = None
         impl_model = None
-        cleanup_npu_memory()
+        try:
+            framework_model, impl_model = _instantiate_bench_models(
+                model_spec.framework_cls, model_spec.impl_cls, model_spec.get_init_inputs, device,
+            )
+            fw_perf, impl_perf, speedup = run_single_benchmark(
+                ModelPair(framework_model, impl_model), inputs, config, device, case_ctx,
+            )
+            return SingleShapeResult(
+                case_idx=case_idx,
+                input_desc=input_desc,
+                status="pass",
+                framework=fw_perf,
+                implementation=impl_perf,
+                speedup_vs_torch=speedup,
+            )
+        except Exception as e:
+            last_error_type = type(e).__name__
+            last_error_msg = traceback.format_exc()
+            if attempt < config.max_retries - 1:
+                logger.warning(
+                    "  [用例 %d/%d] 第 %d/%d 次尝试失败: %s: %s，将重试...",
+                    case_idx, total_cases, attempt + 1, config.max_retries,
+                    last_error_type, e,
+                )
+        finally:
+            _safe_del_model("framework_model", framework_model)
+            _safe_del_model("impl_model", impl_model)
+            framework_model = None
+            impl_model = None
+            cleanup_npu_memory()
+
+    logger.error(
+        "  [用例 %d/%d] 失败（已重试 %d 次）: %s",
+        case_idx, total_cases, config.max_retries, last_error_type,
+    )
+    return SingleShapeResult(
+        case_idx=case_idx,
+        input_desc=input_desc,
+        status="fail",
+        error_type=last_error_type,
+        error_msg=truncate_error(last_error_msg),
+    )
 
 
 def benchmark_implementations(config: BenchmarkConfig) -> BenchmarkResult:
@@ -809,6 +801,7 @@ def benchmark_implementations(config: BenchmarkConfig) -> BenchmarkResult:
         op_name=config.op_name,
         warmup=config.warmup,
         repeats=config.repeats,
+        max_retries=config.max_retries,
         framework=overall.framework,
         implementation=overall.implementation,
         speedup_vs_torch=overall.speedup_vs_torch,
@@ -845,6 +838,7 @@ def result_to_dict(result: BenchmarkResult) -> Dict[str, Any]:
         "op_name": result.op_name,
         "warmup": result.warmup,
         "repeats": result.repeats,
+        "max_retries": result.max_retries,
         "total_cases": result.total_cases,
         "passed_cases": result.passed_cases,
         "failed_cases": result.failed_cases,
@@ -1011,7 +1005,7 @@ def _build_argparser():
     parser.add_argument("--triton_impl_name", default=TRITON_IMPL_NAME_DEFAULT,
                        help="Triton 实现模块名")
     parser.add_argument("--warmup", type=int, default=WARMUP_DEFAULT, help="warmup 次数（默认 5）")
-    parser.add_argument("--repeats", type=int, default=REPEATS_DEFAULT, help="正式测试次数（默认 50）")
+    parser.add_argument("--repeats", type=int, default=REPEATS_DEFAULT, help="正式测试次数（默认 20）")
     parser.add_argument("--output", help="输出文件路径（JSON 格式）")
     parser.add_argument("--skip_framework", action="store_true",
                        help="跳过 framework 性能测试（GPU Kernel 模式使用）")
@@ -1019,6 +1013,12 @@ def _build_argparser():
                        help="预设的 framework 参考延迟（毫秒），用于计算 speedup")
     parser.add_argument("--verify_not_required", action="store_true",
                        help="跳过 L1 verify 闸门（默认强制要求 verify_result 全过）")
+    parser.add_argument("--clear_l2_cache", action="store_true",
+                       help="每次迭代前清除 L2 cache")
+    parser.add_argument("--keep_res", action="store_true",
+                       help="保留 profiling 结果目录（默认清理）")
+    parser.add_argument("--max_retries", type=int, default=3,
+                        help="采集失败时的最大重试次数（默认 3）")
     return parser
 
 
@@ -1068,6 +1068,9 @@ def _build_config(args, verify_dir):
         repeats=args.repeats,
         skip_framework=args.skip_framework,
         framework_latency_ms=args.framework_latency_ms,
+        clear_l2_cache=args.clear_l2_cache,
+        keep_res=args.keep_res,
+        max_retries=args.max_retries,
     )
 
 

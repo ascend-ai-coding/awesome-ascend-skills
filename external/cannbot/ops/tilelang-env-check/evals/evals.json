@@ -1,0 +1,78 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "TileLang-Ascend 环境检查流程",
+      "config": {
+        "max_tokens": 250000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "帮我检查 TileLang-Ascend 开发环境是否配置正确，包括代码仓库、编译状态和环境变量。",
+      "expected_output": "回复应按顺序执行环境检查步骤：检查 Python 包依赖、CANN 环境变量、代码仓库完整性、编译安装状态和环境变量配置。发现问题时自动修复并按依赖顺序处理。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "ASCEND_HOME_PATH",
+          "description": "回复中提到了 ASCEND_HOME_PATH"
+        },
+        {
+          "type": "contains",
+          "pattern": "install_ascend.sh",
+          "description": "回复中提到了 install_ascend.sh"
+        },
+        {
+          "type": "contains",
+          "pattern": "set_env.sh",
+          "description": "回复中提到了 set_env.sh"
+        },
+        {
+          "type": "contains",
+          "pattern": "quick_verify.py",
+          "description": "回复中提到了 quick_verify.py"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "自动修复策略与依赖顺序",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "环境检查发现子模块不完整怎么办？修复子模块后还需要做什么操作？",
+      "expected_output": "回复应说明发现子模块不完整时，先告知用户问题存在，自动调用 tilelang-submodule-pull skill 拉取子模块，完成后告知用户修复结果。由于子模块更新，必须重新执行编译（bash install_ascend.sh），然后设置环境变量（source set_env.sh），最后运行测试验证。强调修复前必须告知用户问题，修复后告知结果，所有提示都要打印给用户。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "tilelang-submodule-pull",
+          "description": "回复中提到了 tilelang-submodule-pull"
+        },
+        {
+          "type": "contains",
+          "pattern": "install_ascend.sh",
+          "description": "回复中提到了 install_ascend.sh"
+        },
+        {
+          "type": "contains",
+          "pattern": "source set_env.sh",
+          "description": "回复中提到了 source set_env.sh"
+        },
+        {
+          "type": "contains",
+          "pattern": "前置",
+          "description": "回复中提到了 前置"
+        }
+      ]
+    }
+  ],
+  "skill_name": "tilelang-env-check"
+}

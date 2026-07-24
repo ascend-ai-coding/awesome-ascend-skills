@@ -1,5 +1,13 @@
 # SIMT API C++风格转换为C风格规范
 
+<适用>
+语言: C++
+侧别: Kernel
+领域: true
+触发: Simt::GetThreadNum, Simt::GetBlockIdx, Simt::GetBlockNum, Simt::VF_CALL, Simt::Dim3, Simt::Min, Simt::Max, Simt::Floor, Simt::Ceil, Simt::Abs, Simt::AtomicAdd, Simt::AtomicSub, Simt::ThreadBarrier, Simt::UintDiv, Simt::WarpShflSync, Simt::IsNan, Simt::IsFinite, Simt::IsInf, simt_api/asc_simt.h
+默认启用: true
+</适用>
+
 > **适用场景**：Kernel 侧 SIMT 代码检视
 >
 > **检视目标**：识别 C++ 风格 SIMT API，指导转换为 C 风格 API。
@@ -8,7 +16,7 @@
 
 ## 检视前置要求
 
-> **重要**：Agent 在检视本条例时，必须先查阅 asc-devkit 中的 SIMT API 头文件，确认 API 的转换规则、C 风格替代 API 是否存在等信息是否与条例描述一致。若头文件与条例有差异，以最新头文件为准，并记录差异供后续更新条例。
+> **重要**：Agent 在检视本条例时，必须先通过 `/ascendc-docs-search` skill 查阅 `$ASC_DEVKIT_DIR` 中的 SIMT API 头文件，确认 API 的转换规则、C 风格替代 API 是否存在等信息是否与条例描述一致。若头文件与条例有差异，以最新头文件为准，并记录差异供后续更新条例。
 
 ### 需要查阅头文件的 API
 
