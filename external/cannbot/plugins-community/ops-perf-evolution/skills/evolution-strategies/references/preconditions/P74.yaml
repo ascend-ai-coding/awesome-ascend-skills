@@ -1,0 +1,17 @@
+strategy_id: P74
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "L2|l2|Cache|cache|缓存"
+    min_count: 1
+    fail_msg: "未检测到 L2 Cache 相关逻辑 → 无缓存优化空间，不适用 P74。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "KV|kv|推理|infer|decode|Decode"
+    min_count: 1
+    fail_msg: "未检测到 KV/推理场景 → L2 thrashing 风险低，不适用 P74。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "SetL2CacheHint|CACHE_MODE|Disable|disable"
+    min_count: 0
+    fail_msg: "已存在 L2 Cache 控制逻辑 → 可能冗余，优先验证现有策略效果。"

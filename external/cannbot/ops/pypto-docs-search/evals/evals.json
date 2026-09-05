@@ -1,0 +1,128 @@
+{
+  "skill_name": "pypto-docs-search",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "按错误码排障检索",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "disabled": false
+      },
+      "prompt": "PyPTO 报了个带错误码的错误，我想按错误码找对应的排障文档，怎么查？",
+      "expected_output": "报错带错误码时应通过 pypto-docs-search 的错误码索引（错误码前缀 → 组件排障文档）定位对应排障文档；或在缓存 docs/ 下按关键词 Grep 发现文档后读全文。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "缓存未就绪时先装配再检索",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ]
+      },
+      "prompt": "我第一次用 PyPTO 文档检索，本地缓存还不存在，该怎么开始？",
+      "expected_output": "应先运行 scripts/sync_devkit.py 装配缓存到 $PYPTO_DEVKIT_DIR，成功标准是目录下出现 docs/ ops/ tests/；无法装配（离线受限）时按索引查确定文档路径，用 WebFetch 取在线文档，不凭空猜测资源位置。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "已知确定路径的单点读取不经检索",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ]
+      },
+      "prompt": "我已经知道 PyPTO 某个 API 文档的确切路径和 URL，还需要先走检索流程吗？",
+      "expected_output": "不需要。已知确定路径或 URL 的单点读取直接 Read/WebFetch，不经本检索；检索用于按关键词发现、跨算子/跨文件定位，不是已知路径的重复查询。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 4,
+      "title": "缓存资源分类与 pro_ops 可选性",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "pypto-devkit 缓存里 docs、ops、tests、pro_ops 分别是什么？缺少 pro_ops 是否表示同步失败？",
+      "expected_output": "回复应说明 docs 是 API/排障/教程等文档，ops 是权威算子参考实现，tests 是 golden/测试，pro_ops 是 PyPTO-Pro 的 pl.* 用法参考。同步成功必须有 docs/ops/tests；pro_ops 仅在源仓存在时装配，缺少它不算失败。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "已知 API 名的低噪声发现与全文读取",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我知道要查 pypto.rms_norm，但不知道文档路径。应该怎样在缓存里低噪声定位并拿到完整约束？",
+      "expected_output": "回复应在 $PYPTO_DEVKIT_DIR/docs/api 下用精确 API 名如 pypto-rms_norm 做 Glob 文件名发现，命中后直接 Read 全文提取签名和约束；不应只根据 grep 摘要或记忆回答。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "宽泛子串命中需要筛选候选",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我用关键词 mul 搜 PyPTO 资源，结果同时命中了 mul、matmul 和其它文件。能否把所有命中都当作目标 API 的证据？",
+      "expected_output": "回复应指出检索是子串匹配，mul 会连带命中 matmul，不能把所有命中直接当证据；应筛选目标候选、读取命中文件全文，已知 API 名时改用更精确的 pypto-<name> 关键词降低噪声。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "离线回退仅覆盖文档站资源",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "本地缓存装配失败了。我能否从 pypto 文档站同时下载 API 文档、生产算子参考实现和 golden？",
+      "expected_output": "回复应说明无法装配时可按索引得到确定文档路径，再从 pypto.gitcode.com/_sources/<sub>.md.txt 获取文档；算子参考实现和 golden 没有文档站形态，只能在本地缓存存在时检索，不能声称在线站点也能提供。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 8,
+      "title": "大范围跨目录检索使用 Explore",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我要找 attention 能力相关的全部 PyPTO 生产实现和 golden，不是读取一个已知文件。该怎样组织检索？",
+      "expected_output": "回复应将其视为跨目录、多角度发现任务，派 Explore subagent 并明确目标与范围，在 $PYPTO_DEVKIT_DIR/ops 搜生产实现、在 tests 搜 golden，遍历候选后逐个读取相关文件；不是走已知路径的单点 Read。",
+      "expectations": [],
+      "files": []
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+strategy_id: P83
+description: L1 常驻复用与多 Buffer 分区适用性检查 — 算子为 Cube 密集型且左矩阵跨迭代复用，当前未常驻 L1 且未做 buffer 分区
+checks:
+  - id: has_cube_intensive
+    type: grep_count
+    pattern: "Cube|cube|Matmul|matmul|FlashAttention|IFA|MLA"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子非 Cube 密集型 → P83 不适用"
+
+  - id: has_reusable_left
+    type: grep_count
+    pattern: "Q|query|left.*matrix|CopyQ|左矩阵|reuseLeft|跨迭代"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子左矩阵不跨迭代复用 → P83 收益低"
+
+  - id: no_l1_resident_yet
+    type: grep_count
+    pattern: "L1.*常驻|resident.*L1|reuseLeft|AllocTensor.*L1|CubeInBuffer"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已有 L1 常驻 → P83 已应用"
+
+  - id: not_pure_validation
+    type: grep_count
+    pattern: "OP_CHECK|shape.*check|dim.*check|validation"
+    files: [kernel, header]
+    expected: "<= 3"
+    fail_msg: "纯 Host 侧 shape 校验 → P83 解决的是 L1 常驻优化"

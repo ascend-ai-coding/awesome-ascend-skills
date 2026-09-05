@@ -1,0 +1,17 @@
+strategy_id: P92
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "Matmul|matmul|Mmad|mmad"
+    min_count: 1
+    fail_msg: "未检测到 Matmul 调用 → 不适用 P92。检查其他 MTE2 优化策略如 P1、P2。"
+  - type: grep_count
+    path: shared/original/op_host
+    pattern: "SetFixSplit|baseM|baseN|baseK|FixSplit"
+    min_count: 1
+    fail_msg: "未检测到 SetFixSplit 或 baseM/baseN 参数 → Matmul 基本块由框架自动选择，不适用 P92。"
+  - type: grep_count
+    path: shared/original
+    pattern: "CFG_MDL|CFG_NORM|CFG_IBShare|CFG_NBuffer33"
+    min_count: 1
+    fail_msg: "未检测到 Matmul 配置模板 → 非 Matmul 算子，不适用 P92。"

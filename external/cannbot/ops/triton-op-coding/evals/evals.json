@@ -1,0 +1,148 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "Triton Ascend 算子代码生成",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请根据以下任务描述，为一个 Ascend NPU 上的 softmax 算子生成 Triton Ascend 内核代码。算子名称是 softmax，任务文件路径为 /workspace/tasks/softmax.py，架构为 A2。请按照 triton-op-coding skill 的要求生成包含 ModelNew 类的完整内核代码。",
+      "expected_output": "回复应生成包含 import 语句、@triton.jit 装饰的 kernel 函数以及 ModelNew(nn.Module) 类的完整 Python 代码。kernel 函数中应使用 tl.load、tl.store、tl.arange 等 Triton 语言 API 实现核心计算逻辑。ModelNew 类的 forward() 方法中只能进行 buffer 分配、形状操作、元信息查询和 kernel 启动，禁止出现 torch.*/F.* 计算操作或 tensor 方法计算。必须遵守禁止 PyTorch 退化的约束，所有核心计算必须在 @triton.jit kernel 中实现。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "@triton.jit",
+          "description": "回复中提到了 @triton.jit"
+        },
+        {
+          "type": "contains",
+          "pattern": "ModelNew",
+          "description": "回复中提到了 ModelNew"
+        },
+        {
+          "type": "contains",
+          "pattern": "triton_ascend",
+          "description": "回复中提到了 triton_ascend"
+        },
+        {
+          "type": "contains",
+          "pattern": "tl.load",
+          "description": "回复中提到了 tl.load"
+        },
+        {
+          "type": "contains",
+          "pattern": "tl.store",
+          "description": "回复中提到了 tl.store"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "代码生成模式与使用边界",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "triton-op-coding 有哪些代码生成模式？什么情况下应该使用这个 skill，什么情况下应该使用 triton-op-designer？",
+      "expected_output": "回复应说明 triton-op-coding 支持三种模式：首次生成（无历史信息时）、代码修改（有 previous_code + user_requirements 时）、迭代修复（有 verifier_error / conductor_suggestion 时）。该 skill 的触发条件是用户需要根据任务描述生成或迭代修复 Triton Ascend 内核代码。triton-op-designer 负责设计算法草图（UnifiedSketch DSL 格式）而非生成可执行代码，而 triton-op-coding 负责将草图或任务描述转换为可执行的 Triton Ascend 内核代码。如果传入了 sketch 参数，必须以此为基础进行代码实现。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "首次生成",
+          "description": "回复中提到了 首次生成"
+        },
+        {
+          "type": "contains",
+          "pattern": "迭代修复",
+          "description": "回复中提到了 迭代修复"
+        },
+        {
+          "type": "contains",
+          "pattern": "triton-op-designer",
+          "description": "回复中提到了 triton-op-designer"
+        },
+        {
+          "type": "contains",
+          "pattern": "sketch",
+          "description": "回复中提到了 sketch"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "GPU 参考代码的 Ascend 适配",
+      "config": {
+        "max_tokens": 110000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "参考 GPU Triton kernel 里有 num_warps=8、num_stages=4 和 num_ctas=2。生成 Ascend 代码时可以原样保留吗？",
+      "expected_output": "回复应说明只能借鉴签名、grid 和数据流骨架，不能直接移植；num_warps、num_stages、num_ctas 是 GPU 特有参数，在 NPU 上不生效，应删除并根据 Ascend 规则使用 num_cores 等配置。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "Layer 1 约束优先于草图",
+      "config": {
+        "max_tokens": 110000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "传入 sketch 要求单 kernel 展平实现，但项目 template/category.md 的 Layer 1 明确禁止这种架构。coding 应忠实照草图还是改架构？",
+      "expected_output": "回复应先读取算子类别经验文件，并以 Layer 1 硬约束为准修正代码架构；sketch 是实现基础但不能覆盖已验证的硬边界。应保留草图可用思路，并说明为何进行了架构修正。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "代码修改模式保持最小范围",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "已有 previous_code，只要求修复最后一维非整除时的 mask。能否顺便重写 kernel 划分和重命名整个类？",
+      "expected_output": "回复应进入代码修改模式，只修改用户要求的边界 mask 及必要关联部分，不重构无关代码；最终仍输出完整文件，保持 ModelNew、原 Model 的 __init__/forward 签名和既有行为一致。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "随机权重必须与基线一致",
+      "config": {
+        "max_tokens": 120000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "原 Model 依次创建两个 Linear 和一个 torch.randn 参数。ModelNew 如何保证 verifier 比较时权重一致？",
+      "expected_output": "回复应要求 ModelNew.__init__ 第一行调用 torch.manual_seed(0)，并严格按原 Model 相同顺序创建对应参数或模块，因为每次随机调用都会推进状态；不能只保证形状相同或事后使用另一组随机权重。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "Layout transform 禁止通用逐元素主路径",
+      "config": {
+        "max_tokens": 130000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "实现 transpose、swap adjacent dims、reverse dims 等布局变换时，能否统一使用一个 div/mod + tl.where 的 1D gather kernel 作为主路径？",
+      "expected_output": "回复应禁止把通用逐元素 gather 作为常见模式主路径；forward 应按 dims 分发到专用 kernel，先 view 合并连续维，每个常见模式使用 tile-based 连续 tl.load/tl.store。通用 gather 仅能作为罕见 permutation fallback，并注明无法特化原因。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "triton-op-coding"
+}

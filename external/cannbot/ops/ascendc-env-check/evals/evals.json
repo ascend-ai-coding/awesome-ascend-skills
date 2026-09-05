@@ -1,0 +1,209 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "NPU设备信息查询",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "如何查看NPU设备的详细信息，应该使用什么命令？",
+      "expected_output": "回复应说明使用 npu-smi info 查看NPU设备列表和状态（设备数、健康、温度、功耗、HBM 等），推荐使用 npu_info.sh 脚本进行综合查询；并说明芯片型号不从 npu-smi 获取（npu-smi 的 Chip Name 作为 short-soc-version 不可信，issue #587），应使用 get_npu_arch.py 获取芯片型号",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "NPU架构检测",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "如何查看当前昇腾设备的NPU架构信息？",
+      "expected_output": "回复应推荐使用 get_npu_arch.py 脚本检测NPU架构，说明其输出完整报告：full-soc-version（如 Ascend950PR_9579）、NpuArch（如 3510，末行 dav-3510）、short-soc-version（如 Ascend950，用于算子原型定义文件 xxx算子_def.cpp 的 AddConfig() 第一个参数）、CCE_AIV_version 与 variant_dir（如 dav_c310）；并说明获取链：芯片型号优先 asys info -r=hardware 的 Chip Info、备选 DSMI，NpuArch 优先 asys Arch Info、备选 ini 文件精确匹配，运行前需 source CANN 安装目录下的 set_env.sh",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "环境变量配置注意点",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "配置CANN环境变量的时候有什么需要注意的地方？ASCEND_HOME_PATH和ASCEND_HOME有什么区别？",
+      "expected_output": "回复应指出官方环境变量为 ASCEND_HOME_PATH，并说明部分旧文档中使用的 ASCEND_HOME 是错误用法，不应混淆",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 4,
+      "title": "NPU不可见故障排查",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "disabled": true,
+        "eval_mode": "text"
+      },
+      "prompt": "我的昇腾服务器上看不到NPU设备，npu-smi info没有输出设备信息，怎么排查？",
+      "expected_output": "回复应提供NPU设备不可见的排查思路；可能会先输出当前环境的NPU设备状态再给出排查建议",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 5,
+      "title": "算子运行失败排查",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "disabled": true,
+        "eval_mode": "text"
+      },
+      "prompt": "我开发的算子在昇腾NPU上运行失败了，怎么排查是不是环境配置的问题？",
+      "expected_output": "回复应建议优先运行 check_env.sh 检查环境配置是否完整，并检查关键环境变量是否已正确设置",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 6,
+      "title": "正向看护-多skill环境下正确触发目标skill",
+      "config": {
+        "max_tokens": 180000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "distractor_skills": [
+          "cann-env-setup",
+          "npu-arch",
+          "ascendc-runtime-debug",
+          "ascendc-docs-search"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我有一台昇腾服务器，想对NPU设备进行环境检查和设备查询，查看设备的详细信息和资源使用情况，应该用什么命令？",
+      "expected_output": "回复应说明使用 npu-smi info 命令查看NPU设备信息（设备数、健康、资源使用），推荐使用 npu_info.sh 脚本进行综合查询；芯片型号由 get_npu_arch.py 获取（asys/DSMI 链）。即使在多个 skill 同时可用的环境下，也应正确识别并激活 ascendc-env-check skill 而不是干扰 skill。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 7,
+      "title": "npu-smi 结构化子命令查询",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我想在脚本里自动获取 NPU 的温度和功耗，但直接解析 `npu-smi info` 的输出经常因为格式变化而失效。有没有更稳定的方法？",
+      "expected_output": "回复应推荐使用 `npu-smi info -t <type> -i <device_id>` 结构化子命令，说明其返回 key:value 格式，比主表格更稳定。应列出常用 type（temp、power、memory、usages、common、health 等），并说明第一步先用 `npu-smi info -m` 确认设备 ID；另提醒芯片型号不可从 npu-smi 获取（Chip Name 作为 short-soc-version 不可信，issue #587），应使用 get_npu_arch.py",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 8,
+      "title": "npu-smi 已变更/废弃命令",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我以前的脚本里用了 `npu-smi top` 和 `npu-smi health` 命令，现在好像不能用了？还有 `npu-smi release` 和 `npu-smi lock` 呢？",
+      "expected_output": "回复应说明 `npu-smi top` 已被 `npu-smi info -t usages -i <device_id>` 替代，`npu-smi health` 已被 `npu-smi info -t health -i <device_id>` 替代。`npu-smi release`、`npu-smi lock/unlock`、`npu-smi perf` 等命令在新版本中可能已不存在。应建议通过 `npu-smi --help` 和 `npu-smi info --help` 查询当前版本支持的命令。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 9,
+      "title": "脚本中可靠获取 NPU 信息",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我需要写一个 Python 脚本来自动收集 NPU 设备信息（温度、功耗、使用率等），有什么可靠的方法可以避免硬编码 npu-smi 命令？",
+      "expected_output": "回复应推荐编写 Python 脚本来调用 npu-smi 结构化子命令，说明可通过 `npu-smi info --help` 动态发现可用子命令，优先使用 `npu-smi info -t common` 批量获取数据，避免硬编码命令列表。应给出使用示例。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 10,
+      "title": "Kirin 平台开发环境检查",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我要在 KirinX90 设备上开发端侧算子，环境检查结果里的 Simulator 状态是什么意思？怎么判断当前环境支不支持 Kirin 平台开发？",
+      "expected_output": "回复应说明 Kirin 系列芯片（KirinX90、Kirin9030 等以 Kirin 开头的平台）是端侧 AI 处理器，主要通过模拟器 Simulator 进行开发；应检查环境检查结果中的 Simulator 支持情况，如不支持则环境检查结论为不支持 Kirin 平台开发，需要强调并告知用户；Kirin 开发需要安装 mobile-station 版本的 CANN 才有对应的 Kirin Simulator。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 11,
+      "title": "Python 结构化获取 NPU 信息",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我写自动化脚本要读取 NPU 设备的健康状态和设备 ID 列表，不想解析 npu-smi 的文本输出，仓库里有没有现成的 Python 工具能直接拿到结构化数据？",
+      "expected_output": "回复应推荐调用 _npu_info.py Python 脚本获取结构化 NPU 数据，并说明支持 --json（完整 JSON 输出）、--list（设备 ID 列表）、--health（健康状态）等参数。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 12,
+      "title": "确认 NPU 是否被进程占用",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我用 npu-smi 看到某块卡有 HBM 占用，怀疑被别的进程占用了，怎么确认到底有没有进程在用这块卡？空闲的设备显示少量 HBM 占用正常吗？",
+      "expected_output": "回复应说明使用 npu-smi info -t usages -i <device_id> 查看设备上运行中的进程；并指出空闲设备仍会有少量 HBM 被驱动占用，这是正常现象，不应误判为设备被进程占用。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 13,
+      "title": "CANN 环境检查清单与关键配置项",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我要在一台新昇腾服务器上运行自定义算子，跑之前想系统检查一遍 CANN 环境，应该用哪个脚本、重点确认哪些配置项？",
+      "expected_output": "回复应推荐运行 bash scripts/check_env.sh 做完整环境检查，并说明重点检查项：ASCEND_HOME_PATH（CANN Toolkit 路径，必需）、ASCEND_OPP_PATH（CANN Ops 路径，运行时必需）、自定义算子包 op_api（运行自定义算子必需）、CANN 工具 msprof/cannsim（可选）等；并确认 CANN 版本及运行时依赖基线。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "ascendc-env-check"
+}

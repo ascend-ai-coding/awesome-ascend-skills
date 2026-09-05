@@ -1,0 +1,158 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "Developer 模式与 Expert 模式对比",
+      "config": {
+        "max_tokens": 80000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "在 TileLang-Ascend 中，Developer 模式和 Expert 模式有什么区别？我应该如何选择？",
+      "expected_output": "回复应从五个维度对比两种模式：内存分配（Developer 用 T.alloc_shared/T.alloc_fragment，Expert 用 T.alloc_L1/T.alloc_ub/T.alloc_L0A/L0B/L0C）、作用域（Developer 自动分离 Cube/Vector，Expert 手动 T.Scope）、同步（Developer 自动插入，Expert 手动 T.barrier_all/T.set_flag/T.wait_flag）、CV 交互（Developer 消除 workspace+vid 片上直连，Expert 显式 GM workspace）、pass_configs（Developer 全部开启，Expert 全部关闭）。混合模式可在 Developer 主体中混合少量 Expert API。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "Developer",
+          "description": "回复中提到了 Developer"
+        },
+        {
+          "type": "contains",
+          "pattern": "Expert",
+          "description": "回复中提到了 Expert"
+        },
+        {
+          "type": "contains",
+          "pattern": "T.alloc_shared",
+          "description": "回复中提到了 T.alloc_shared"
+        },
+        {
+          "type": "contains",
+          "pattern": "T.alloc_fragment",
+          "description": "回复中提到了 T.alloc_fragment"
+        },
+        {
+          "type": "contains",
+          "pattern": "T.Scope",
+          "description": "回复中提到了 T.Scope"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "pass_configs 配置指南",
+      "config": {
+        "max_tokens": 80000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "TileLang-Ascend 有哪几个 Ascend 专用 pass_configs 开关？纯 Vector 算子和 Developer GEMM 分别应该怎么配置？",
+      "expected_output": "回复应列出四个 Ascend 专用 pass_configs：TL_ASCEND_AUTO_SYNC（自动核内同步）、TL_ASCEND_MEMORY_PLANNING（自动内存规划）、TL_ASCEND_AUTO_CV_COMBINE（自动 CV 分离）、TL_ASCEND_AUTO_CV_SYNC（自动核间同步）。纯 Vector 算子只需开启 AUTO_SYNC + MEMORY_PLANNING；Developer GEMM/CV 融合需开启全部四个。Expert 极致性能模式全部关闭并手动控制。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "TL_ASCEND_AUTO_SYNC",
+          "description": "回复中提到了 TL_ASCEND_AUTO_SYNC"
+        },
+        {
+          "type": "contains",
+          "pattern": "TL_ASCEND_MEMORY_PLANNING",
+          "description": "回复中提到了 TL_ASCEND_MEMORY_PLANNING"
+        },
+        {
+          "type": "contains",
+          "pattern": "TL_ASCEND_AUTO_CV_COMBINE",
+          "description": "回复中提到了 TL_ASCEND_AUTO_CV_COMBINE"
+        },
+        {
+          "type": "contains",
+          "pattern": "TL_ASCEND_AUTO_CV_SYNC",
+          "description": "回复中提到了 TL_ASCEND_AUTO_CV_SYNC"
+        },
+        {
+          "type": "contains",
+          "pattern": "threads=2",
+          "description": "回复中提到了 threads=2"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "自动 CV 分离与手写 Scope 不能混用",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "Developer GEMM 已开启 TL_ASCEND_AUTO_CV_COMBINE，还想保留 with T.Scope('C'/'V') 确保分核。可以吗？",
+      "expected_output": "回复应说明不能混用：AUTO_CV_COMBINE 开启时由编译器按 buffer 和原语自动分离 Cube/Vector，应删除手写 T.Scope；两套控制同时存在可能导致编译器处理错误。若要手动 Scope，应选择对应的手动/Expert 路线并关闭自动开关。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "纯 Vector 不应无条件开启 CV 开关",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "纯 elementwise Vector kernel 没有 Cube 阶段，是否也要把四个 Ascend pass 全开？",
+      "expected_output": "回复应说明纯 Vector 通常只开启 TL_ASCEND_AUTO_SYNC 和 TL_ASCEND_MEMORY_PLANNING；无 Cube/Vector 跨核交互时不需要 AUTO_CV_COMBINE 和 AUTO_CV_SYNC。Developer GEMM、FA 或 CV 融合才推荐四个全开。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "自动同步关闭后必须补齐手动同步",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "Expert 模式把 AUTO_SYNC 和 AUTO_CV_SYNC 都关掉，但代码里没有 barrier、flag 或 cross flag。这样只是性能问题吗？",
+      "expected_output": "回复应判为正确性风险：AUTO_SYNC 关闭后需手动管理搬运/计算的 barrier 或 set_flag/wait_flag，AUTO_CV_SYNC 关闭后需手动 set_cross_flag/wait_cross_flag。Expert 全关代表承担全部同步责任，不只是性能选择。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "Developer CV 消除 workspace 的前提链",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "把 Expert CV kernel 转为 Developer 时，能否只删除 workspace_idx，继续保留 (cid,vid) 和 vid 偏移？",
+      "expected_output": "回复应说明不能跳级，前提链是 threads=2→消除 vid→消除 workspace。应改 T.Kernel 为 threads=2 仅返回 cid，删除 workspace_idx/参数和所有 vid 偏移，恢复整程循环，并把 GM 两跳改为片上一跳 T.copy，由四个自动 pass 处理中转同步。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "复杂多版本流水允许回退 workspace vid",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "所有 Developer CV 场景都必须无 workspace、无 vid 吗？复杂同步和多版本流水无法片上直连时怎么办？",
+      "expected_output": "回复应说明无 workspace/vid 是 Developer 默认推荐路线，不是无条件定律；复杂同步或多版本流水可按 mode-examples 的兜底路径保留显式 workspace+vid，但要明确索引和手动同步，并说明为何默认四步转换不适用。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "tilelang-programming-model-guide"
+}

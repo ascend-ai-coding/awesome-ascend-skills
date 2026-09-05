@@ -1,0 +1,17 @@
+strategy_id: P91
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "softmax.*grad|SoftmaxGrad|sfmg|flash.*attention.*grad|attention.*backward"
+    min_count: 1
+    fail_msg: "未检测到 Softmax Gradient 或 Flash Attention Backward 代码 → 不适用 P91。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "ReduceSum|ReduceMax|ReduceMin"
+    min_count: 1
+    fail_msg: "未检测到 Reduce 操作 → P91 仅适用于需要 dY*O ReduceSum 的 FA 反向场景。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "Mul.*Vec|Broadcast|dY|dy.*O"
+    min_count: 1
+    fail_msg: "未检测到 dY*O 逐元素乘法 → 不适用 P91。"

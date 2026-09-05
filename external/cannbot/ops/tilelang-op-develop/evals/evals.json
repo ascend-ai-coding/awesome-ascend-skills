@@ -1,0 +1,148 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "根据设计文档生成算子代码",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请介绍 tilelang-op-develop 技能如何根据设计文档生成算子代码的核心工作流程，包括从设计文档提取哪些关键信息、如何查找参考实现、以及生成代码后的验证步骤。不需要执行任何工具调用。",
+      "expected_output": "回复应从 design.md 提取关键信息，基于参考实现生成算子代码，并运行验证检查代码正确性。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "design.md",
+          "description": "回复中提到了 design.md"
+        },
+        {
+          "type": "contains",
+          "pattern": "examples/",
+          "description": "回复中提到了 examples/"
+        },
+        {
+          "type": "contains",
+          "pattern": "golden",
+          "description": "回复中提到了 golden"
+        },
+        {
+          "type": "contains",
+          "pattern": "验证",
+          "description": "回复中提到了 验证"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "参考来源优先级与冲突处理",
+      "config": {
+        "max_tokens": 80000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "当设计文档中的伪代码和 examples/ 目录下的参考实现不一致时，应该以哪个为准？如何处理这种冲突？",
+      "expected_output": "回复应以 examples/ 中的参考实现为准，因为参考实现已验证通过，可信度高。当 design.md 与参考实现冲突时，优先参考参考实现，在代码注释中记录差异说明为何偏离，重大差异需询问用户确认。同时强调应查阅 tilelang-api-best-practices 和 tilelang-programming-model-guide 获取 API 用法和 pass_configs 的正确配置。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "参考实现",
+          "description": "回复中提到了 参考实现"
+        },
+        {
+          "type": "contains",
+          "pattern": "design.md",
+          "description": "回复中提到了 design.md"
+        },
+        {
+          "type": "contains",
+          "pattern": "tilelang-api-best-practices",
+          "description": "回复中提到了 tilelang-api-best-practices"
+        },
+        {
+          "type": "contains",
+          "pattern": "冲突处理",
+          "description": "回复中提到了 冲突处理"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "只提取有量化约束的设计字段",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "design.md 很长，包含多轮模式推理、未量化风险和“待确认”内容。开发阶段应该全部照搬吗？",
+      "expected_output": "回复应只提取公式/算法、API映射/伪代码、shape/dtype、block、pass_configs、golden、L0计划、按 dtype 精度标准，以及有具体 shape/dtype/超时/GM-DMA 成本或回退路径的量化约束；忽略推理过程、纯文件清单、待确认和无量化笼统风险。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "Host 禁止真实数据重排和 dtype 转换",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "为了实现 transpose 和 BF16 fallback，想在 host 侧对 NPU tensor 调 .contiguous().to(fp16)，再把新 buffer 传 kernel。可以吗？",
+      "expected_output": "回复应禁止 host 侧真实重排、dtype 转换、改写或替换 buffer；只允许证明不物理化的 metadata view、数据准备、kernel 调用和验证。重排与 dtype fallback 必须移入 kernel，优先块/二维 T.copy、同宽 reinterpret 或 kernel 内 cast，并检查生成源码无大张量 GM 标量路径。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "海量短 DMA 门禁必须先重设计",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "数据重排实现精度看起来正确，但 REORDER-COST-AUDIT 估算最大 case 有百万次短 DMA 和 numel 级 GM 标量访问。能否先进入精度验收？",
+      "expected_output": "回复应禁止进入精度验收：必须按连续 record、成本选路、聚合搬运、UB-local reorder、必要分阶段、数字验收的配方重设计。审计需量化 GM pass、DMA 数与平均字节、GM 标量访问、div/mod、active cores、每核任务和 timeout。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "L0 通过后仍要跑性能可行性哨兵",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "python test_op.py --level l0 已通过，design 的最大 dtype/最大任务数 case 标为 large/L1。可以把它留给后续测试设计吗？",
+      "expected_output": "回复应要求开发阶段仍实际运行每条路径的性能可行性哨兵并设置单 case timeout，用户明确的失败/超时 case 也必须跑。任一超时不得宣称完成，应修复搬运；API 无法满足时返回 [DESIGN_ERROR] 和 GM/DMA 成本证据。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "NaN Inf 必须做位置敏感比较",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "特殊值测试只用全 NaN 输入，并用 torch.allclose(equal_nan=True)。这能发现重排错位吗？",
+      "expected_output": "回复应说明不能：应在 CPU 固定 seed 生成有限值与稀疏 NaN/正Inf/负Inf 混合输入，保证特殊值和有限值都存在；先严格比较三种特殊值 mask 的位置，再只对有限位置算混合容差。全特殊值只能补充，不能作为唯一门禁。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "tilelang-op-develop"
+}

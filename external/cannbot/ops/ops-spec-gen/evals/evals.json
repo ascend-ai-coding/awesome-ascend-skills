@@ -1,0 +1,114 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "ops-spec-gen 技能的主要功能与两种模式",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "ops-spec-gen 技能的主要功能是什么？它有哪两种运行模式？可以加载技能，不需要执行其他外部工具调用。",
+      "expected_output": "回复应说明 ops-spec-gen 的两个主要模式：生成模式用于创建 spec.yaml 脚手架文件，校验模式用于执行 9 阶段 L0 验证以确保算子规格定义的正确性和完整性。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "spec.yaml 的 9 阶段 L0 验证",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "ops-spec-gen 的 9 阶段 L0 验证具体包含哪些检查项？可以加载技能，不需要执行其他外部工具调用。",
+      "expected_output": "回复应说明 spec.yaml 的 9 阶段 L0 验证具体包含哪些检查项以及每阶段的作用。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "category 单选与 paradigms 多选的职责边界",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "给一个同时包含广播和计算的算子生成 spec 时，op.category 和 op.paradigms 应如何选择？能不能只看 cheatsheet 的启发式规则决定 category？",
+      "expected_output": "回复应说明 category 是按算子主要数学目的选择的 26 类单选，paradigms 是能力标签多选并包含 category 的必含范式；不得仅凭 cheatsheet 启发式选 category，应依据数学语义区分例如 Broadcast 与 LayoutTransform。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "生成器骨架中的必填 TODO",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "generate_spec.py 已经生成 spec.yaml，是否可以不修改直接交给下游？哪些核心字段必须由算子 owner 手工补全？",
+      "expected_output": "回复应说明生成器只产骨架，不能直接视为真值；至少要手填输出 shape_rule 或 data_dependent 描述、dtype_rule、可执行 formula、真实 reference oracle API、supported_combinations，以及覆盖所有输出 dtype 的 per_dtype tolerance，并结合需求校核边界和极端输入。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "无归约轴接口时禁止误注入 dim",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "一个 Reduction 算子的 REG_OP、ACLNN 参数和需求描述里都没有归约轴参数。非交互生成 spec 时应该让工具自动注入 dim/keep_dims 吗？",
+      "expected_output": "回复应说明自动注入只是启发式，不能凭空增加接口字段；当接口无归约轴参数时，应按真实语义显式指定 --axis-source fixed 或 --axis-source implicit_all，避免错误注入 dim/keep_dims。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "可选依赖缺失时的 9-stage 降级语义",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "环境只有 pyyaml 和 jsonschema，没有 numpy、torch 等 reference framework。9-stage 中哪些部分会降级？能否宣称已经真实执行 oracle？",
+      "expected_output": "回复应说明 stage 8 formula smoke eval 因无 numpy 而 SKIP，stage 9 的真实 framework import 检查 SKIP，但占位符检查仍执行；不能宣称真实执行了 oracle，因为 stage 9 本来也只验证 callable 可达而不运行 oracle。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "spec 字段所有权阻止下游重新推导",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "下游测试设计发现 REQUIREMENTS.md 的文字似乎与 spec.yaml 的 dtype、shape、容差不一致，能否自行按需求正文重写这些字段？测试生成参数又应该放在哪里？",
+      "expected_output": "回复应说明 spec.yaml 是 dtype、shape、数学语义、边界和容差等 L0 字段的唯一真值源，下游不得从 REQUIREMENTS.md 重新推导或覆盖，应先走 spec 修订流程；测试生成参数独立放在 operators/{op}/tests/st/design/02_测试配置.yaml，而非放回 spec 的 test_matrix。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "ops-spec-gen"
+}

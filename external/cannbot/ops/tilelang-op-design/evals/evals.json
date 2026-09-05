@@ -1,0 +1,148 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "算子设计文档生成",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请介绍 tilelang-op-design 技能生成算子设计文档时需要包含哪些核心设计环节，以及编程模式选型（Developer/Expert）如何选择？不需要执行任何工具调用。",
+      "expected_output": "回复应说明算子设计文档的核心设计环节：编程模式选型、API 映射设计、内存层级规划、Tiling 策略等。应解释 Developer/Expert 模式的区别和适用场景。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "编程模式",
+          "description": "回复中提到了 编程模式"
+        },
+        {
+          "type": "contains",
+          "pattern": "Developer",
+          "description": "回复中提到了 Developer"
+        },
+        {
+          "type": "contains",
+          "pattern": "Tiling",
+          "description": "回复中提到了 Tiling"
+        },
+        {
+          "type": "contains",
+          "pattern": "API 映射",
+          "description": "回复中提到了 API 映射"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "算子设计输入的必填信息",
+      "config": {
+        "max_tokens": 80000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "设计一个 TileLang-Ascend 算子需要提供哪些信息？如果信息不完整会怎么处理？",
+      "expected_output": "回复应列出必需信息：算子名称、数学公式、输入张量规格（shape/dtype）、输出张量规格（shape/dtype）、编程模式偏好（Developer/Expert/混合）。推荐信息包括典型配置、参考实现、性能目标、动态轴说明。信息不完整时 skill 会通过逐一提问补全，每次只询问一个字段。若被 orchestrator 调度且字段已提供则跳过提问环节。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "算子名称",
+          "description": "回复中提到了 算子名称"
+        },
+        {
+          "type": "contains",
+          "pattern": "数学公式",
+          "description": "回复中提到了 数学公式"
+        },
+        {
+          "type": "contains",
+          "pattern": "输入张量规格",
+          "description": "回复中提到了 输入张量规格"
+        },
+        {
+          "type": "contains",
+          "pattern": "编程模式",
+          "description": "回复中提到了 编程模式"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Subagent 缺字段时返回 orchestrator 追问",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "tilelang analyst Subagent 收到的 op_requirements 缺少输出 dtype。它能在自己的上下文直接 AskUserQuestion 吗？",
+      "expected_output": "回复应说明不能，因为 Subagent 的提问无法透传真实用户；应返回 partial_input 和明确缺失字段给 orchestrator，由 Primary 上下文一次只追问一个字段。调用方已提供的其它字段全部跳过，不重复询问。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "迁移设计必须有原算子路径与输出形状",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "要把已有算子迁移到 TileLang，但只给了公式和输入 shape，没有原文件路径和原输出 shape。能否直接生成可证明正确的 design？",
+      "expected_output": "回复应说明迁移场景还必须提供原算子文件路径和输出形状，用于取得一致的 golden 与证明输出契约；缺少时应按提问规则补齐或返回 partial_input，不能自行推断。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "非整除尾块禁止 host padding crop",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "M 可能小于或不整除 block_M，是否应该在 host 侧 padding 到整块，kernel 后再 crop？",
+      "expected_output": "回复应禁止 host padding+crop：用 T.ceildiv 保证至少一个任务，输入输出两侧用显式 valid extent/BufferRegion 和动态切片 T.copy 处理尾块。多个 group 紧凑共享输出时，metadata 记录 valid_m，只写 Y[m_start:m_start+valid_m] 防止越界竞态。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "内置 API 路线的 0.8x 回退决策",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "内置 API 需要一次 Cast，但能正确运行；自定义路径尚未测试。设计阶段应优先哪条路线，性能低于什么条件再切换？",
+      "expected_output": "回复应优先内置库/API，并允许为满足 API dtype 要求做有理由的 Cast；若最终性能测试加速比低于 0.8x，再实测自定义步骤。若自定义更慢则回退内置路线；任何路线有精度损失或运行错误立即排除。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "proto dtype 必须机械派生自精度表全集",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "design.md 只在数据规格 §4.1 展示了一个代表性 fp16。生成 proto.yaml 时能否只写 fp16？",
+      "expected_output": "回复应说明不能：proto.yaml 是覆盖门禁的权威 dtype/attr 来源，inputs[].dtype 全集必须从 design.md §9.3 精度表逐行机械派生，§4.1 代表性 dtype 不是全集来源；attr 从 §1/§4 取，每个算子都必须与 design 同目录产出 proto。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "tilelang-op-design"
+}

@@ -1,0 +1,111 @@
+{
+  "skill_name": "msnpureport-toolkit",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "单次导出Device侧日志",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "训练任务报错了，怎么用 msnpureport 把 Device 侧的系统日志导出来？",
+      "expected_output": "回复应说明先创建专用目录并 cd 进去（导出内容落在当前目录的时间戳文件夹下），再执行 msnpureport report；应提示该命令需要 root 用户执行",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "日志导出不全改用连续导出",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我的训练任务跑很久，任务失败后用 msnpureport 导出的 Device 日志总是不全，怎么办？",
+      "expected_output": "回复应指出日志被老化或 Device 异常导致导不全，建议在任务启动之前使用 msnpureport report --permanent 常驻进程连续导出，并说明用 Ctrl+C 或 kill -15 pid 结束",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "查询与设置Device日志级别",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "怎么查看和修改 Device 侧的日志级别？我想把全局级别改成 info。",
+      "expected_output": "回复应给出查询命令 msnpureport config --get（或 msnpureport -r）和设置命令 msnpureport config --set --log -g info，并说明 -d 指定的是逻辑 ID、默认为 Device 0",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 4,
+      "title": "屏蔽AI Core定位故障核",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "怀疑某个 AI Core 有故障，想屏蔽掉它验证一下，msnpureport 怎么操作？有什么风险？",
+      "expected_output": "回复应给出 msnpureport config --set --aic_switch 0 --coreid <id> 命令，说明最多同时指定 4 个核、恢复方式为 --aic_switch 1 --coreid 0xFFFF；应提示涉及核间同步的算子在剩余核数不足时会执行失败，且建议应用进程退出后再执行",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 5,
+      "title": "导出目录结构解读",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "msnpureport 导出的目录里 hisi_logs、slog、stackcore 分别是什么？进程 coredump 的调用栈在哪看？",
+      "expected_output": "回复应说明 hisi_logs 为黑匣子及设备异常信息、slog 为 Device 侧系统类日志、stackcore 为进程 coredump 调用栈信息，并指出 stackcore 下的文件需要用 asys 工具解析",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 6,
+      "title": "获取更精准的寄存器信息",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "AI Core 报错想拿到更详细的寄存器信息定位，msnpureport 该怎么配合？",
+      "expected_output": "回复应说明先用 msnpureport config --set --accelerator_recover 0 设置不自动复位加速器，再复现问题，然后用 msnpureport report -t 2 导出；必须提示该配置影响性能且定位完成后需要重启运行环境才能恢复 AI Core 业务",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 7,
+      "title": "容器场景使用限制",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "在容器里能用 msnpureport 导出 Device 日志吗？",
+      "expected_output": "回复应说明非特权容器下仅支持导出 Host 侧驱动内核日志、连续导出不支持，需添加 --docker 参数并配置 export PATH=/usr/local/Ascend/driver/tools:$PATH，且建议设置 --print 1 打屏展示",
+      "files": [],
+      "expectations": []
+    }
+  ]
+}

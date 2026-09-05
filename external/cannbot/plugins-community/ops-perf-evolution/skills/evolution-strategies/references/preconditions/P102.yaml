@@ -1,0 +1,17 @@
+strategy_id: P102
+description: scalar/向量模拟矩阵运算 → MIX CV 融合重写 — kernel 必须存在标量/向量模拟矩阵运算特征且尚未是 MIX/Cube 架构
+
+checks:
+  - id: has_scalar_matmul_emulation
+    type: grep_count
+    pattern: "for\\s*\\([^)]*\\+\\+[^)]*\\)\\s*\\{?\\s*for\\s*\\(|reinterpret_cast.*GetPhyAddr|\\.GetPhyAddr\\(\\)"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到嵌套标量循环或 raw pointer 标量计算 → 无 scalar 模拟矩阵运算特征，不适用 P102。纯 elementwise 标量循环检查 P94/P95。"
+
+  - id: not_already_mix_architecture
+    type: grep_count
+    pattern: "KERNEL_TYPE_MIX|ASCEND_IS_AIC|Mmad"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "检测到 KERNEL_TYPE_MIX/ASCEND_IS_AIC/Mmad → 已是 MIX/Cube 架构，P102 重写已完成。进阶优化检查 P29/P87/P92，三角求解检查 P103。"

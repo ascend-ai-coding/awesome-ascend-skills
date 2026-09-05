@@ -1,0 +1,17 @@
+strategy_id: P65
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "Vector|vector|VEC|Add|Mul|计算"
+    min_count: 1
+    fail_msg: "未检测到 Vector 计算逻辑 → 无 bank 冲突优化空间，不适用 P65。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "UB|ub|LocalTensor|TBuf|InitBuffer"
+    min_count: 1
+    fail_msg: "未检测到 UB 使用 → 无 bank 冲突场景，不适用 P65。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "bank|Bank|冲突|conflict|stride"
+    min_count: 0
+    fail_msg: "已存在 bank 冲突规避逻辑 → 可能冗余，优先验证现有策略效果。"

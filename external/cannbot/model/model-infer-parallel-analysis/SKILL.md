@@ -4,8 +4,8 @@ description: 基于 PyTorch 框架的昇腾 NPU 模型推理并行策略分析�
   parallel_config 推荐及定量依据。
 original-name: model-infer-parallel-analysis
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-26'
-synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
+synced-date: '2026-09-05'
+synced-commit: a426ec91e1038f233066724d63235c719a46a10d
 license: UNKNOWN
 ---
 
@@ -21,18 +21,20 @@ license: UNKNOWN
 - **硬件平台**：昇腾 Atlas A2 / A3 系列
 - **决策范围**：`parallel_config` 中各 `*_tp_size`（TP）、`o_proj_tp_size`、`cp_size`（CP）、`kvp_size`（KVP）的值，以及由此推导的 DP/EP 度（`*_dp_size = world_size // *_tp_size`）
 
+> **CP / KVP 实施支持**：本 skill 输出可包含 `cp_size` / `kvp_size` 候选，但 `model-infer-parallel-impl` skill 当前不直接支持这两个维度的代码实施，需参照仓内已有模型手动改造（CP 参考 `cann-recipes-infer/models/deepseek-v3.2-exp/`，KVP 参考 `cann-recipes-infer/models/longcat-flash/`）。
+
 ## 分析流程
 
 ```
 第一步：提取模型参数与模块链路
     ↓
-第二步：定性分类 → 候选并行模式
+第二步：模块级拆解 → 定性分类 → 候选并行模式
     ↓
-第三步：定量估算（先查阅 references/config-index.md 获取起点数值）
+第三步：定量估算（先查阅 references/config-index.md 获取候选种子）
     ↓
 第四步：方案审查 → 输出推荐
     ↓
-（可选）第五步：Profiling 校准
+（可选）第五步：Profiling 数据校准
 ```
 
 **禁止**：跳过前三步直接给配置、不做估算凭经验拍数
@@ -67,7 +69,7 @@ MLA 模型额外提取：
 | Q 压缩维度 | `q_lora_rank` | MLA 的 compressed Q dim |
 | V head dim | `v_head_dim` | oproj_tp 约束：`N_h * v_head_dim % oproj_tp == 0` |
 
-### 1.2 模块链路识别
+### 1.2 模块链路识别与并行拆解
 
 不同模块在 Prefill 和 Decode 阶段的计算特性不同，但当前分析目标是在**单套 parallel_config** 下兼顾两阶段。需要识别模型的关键模块链路：
 
@@ -84,7 +86,15 @@ MLA 模型额外提取：
 
 > **关键认知**：单机部署下 Prefill 和 Decode 共用一套配置。分析时根据用户目标场景确定侧重：高吞吐侧重 Decode，低时延侧重 Prefill TTFT，均衡则两者兼顾。不要输出两套独立 parallel_config。
 
-> **注意非标准模块**：模型中可能存在非标准的大参数模块（如 N-gram Embedding、多模态 Vision Encoder 等），其切分方式可能与标准 TP 不同。需要单独分析这些模块在不同并行配置下的切分约束和显存占用，避免方案看起来显存可行但实际因某个模块无法切分而 OOM。
+> **模块级拆解优先**：parallel_config 不是按模型名或参考配置继承，而是由模块组合得到。给出候选方案前，必须分别分析 Attention/MLA、Dense MLP、MoE Expert、Embedding、LMHead，以及其他非标准大参数模块的并行方式。不同模块只有在结构、通信边界和收益判断一致时，才默认复用同一个 tp_size 或通信组。
+
+> **非标准大参数模块**：例如额外 embedding / 子表、多模态编码器等，需要单独判断是否 TP、复制或复用通信组。不要默认跟随 `attn_tp_size`、`embed_tp_size` 或参考模型配置。
+
+模块级拆解至少回答：
+- 该模块是否在 Decode / Prefill 热路径上
+- 参数量和单卡复制显存是否可接受
+- 更适合 TP、DP 复制、EP，还是保持本地计算
+- 与前后模块的 TP 度不一致时是否存在明显通信代价
 
 ### 1.3 部署信息确认
 
@@ -101,11 +111,14 @@ MLA 模型额外提取：
 
 > **当前限制**：本框架仅支持单机 BF16 部署，不支持多机分布式、PD 分离和量化推理。分析时 TP/EP 通信均在节点内，显存按 BF16 估算。
 
+> **重分析触发**：卡数 / 序列长度 / batch_size / 场景任一变更，需重做并行分析。
+
 ### 完成标志
 
 - [ ] 架构类型已确认（Dense / MoE / MoE+MLA / MoE+DSA）
 - [ ] 基础参数完整提取
 - [ ] 模块链路已识别，Prefill/Decode 计算特性已标注并纳入单套配置权衡
+- [ ] 模块级并行拆解已完成，非标准大参数模块已单独分析
 - [ ] 部署信息已确认（W, M, 目标场景, 序列长度）
 - [ ] 已确认仓库中是否有相似模型
 
@@ -113,7 +126,9 @@ MLA 模型额外提取：
 
 ## 第二步：定性分类
 
-根据模型参数和部署场景，用决策树确定候选并行模式。**优先向仓库已验证的最佳实践靠拢**。
+根据模型参数和部署场景，用决策树确定候选并行模式。仓库已验证配置只作为候选种子和 sanity check，不作为默认结论。
+
+> 若目标模型是 Lite、裁剪版、客户改造版或实现分支不同，必须以当前模型的模块结构为准重新拆解。参考模型与目标模型存在模块差异时，优先相信模块级分析。
 
 > 决策树表达分析思路，所有判断均为基线候选而非硬约束，需结合定量估算验证。硬约束、强经验、实现特性的分类见第四步"约束检查"。
 
@@ -136,14 +151,14 @@ MLA 模型额外提取：
    ├─ MoE 层
    │  ├─ EP 和 TP 均需对比（单机场景 EP 度 = 卡数）
    │  ├─ expert_ffn 较小时 TP 会导致碎矩阵，EP 计算效率更高
-   │  └─ EP 需确认 experts_per_rank ≤ 24（dispatch_v2 硬件约束）
+   │  └─ EP 需关注专家分布均衡和通信开销
    │
    ├─ Dense FFN
    │  ├─ 有独立 Dense 层 → TP，度数控制在节点内
    │  └─ 全 MoE 无独立 Dense → dense_tp=1
    │
-   ├─ O_proj（MLA 模型）→ 待第二层确定 attn_tp 后决定
-   │  attn_tp>1 时 oproj_tp=1，attn_tp=1 时可独立设值
+   ├─ O_proj（MLA 模型）→ 独立评估 oproj_tp
+   │  不默认跟随 attn_tp，需结合计算收益和边界通信决定
    │
    ├─ Embed/LMHead
    │  ├─ 大词表（V>100K）→ 独立设 TP
@@ -152,7 +167,7 @@ MLA 模型额外提取：
    └─ 单机部署规模（卡数 W 由 1.3 确认）
       ├─ 单卡 → 无需并行
       ├─ 少卡（W < 节点满配）→ 纯 TP 为主，节点内 HCCS 带宽充足
-      └─ 满卡（W = 节点满配）→ 纯 TP 或混合 EP+TP，注意 TP 碎矩阵退化
+      └─ 满卡（W = 节点满配）→ 纯 TP 或模块级差异化并行（如 MoE EP + Dense/LMHead TP），注意 TP 碎矩阵退化
 ```
 
 #### 第二层：场景调整
@@ -162,19 +177,19 @@ MLA 模型额外提取：
 ```
 目标场景？
 ├─ 高吞吐（大 batch）
-│  ├─ MLA → attn_tp=1，最大化 DP，各卡独立处理不同请求
+│  ├─ MLA → attn_tp=1 作为高吞吐 baseline，最大化 DP
 │  └─ GQA → Decode 默认 attn_tp=1 以最大化 DP；
 │     Prefill 需结合 batch 和 seq_len 判断，若单卡 attention 计算成为瓶颈则保留提升 attn_tp 的候选
 │
 ├─ 低时延（小 batch）
-│  ├─ MLA → 保留小度数 attn_tp（如 2/4）作为候选，分摊 Prefill 计算降低 TTFT；
-│     Decode 阶段仅在 profiling 显示 attention 计算成为明显瓶颈时才提升 attn_tp
+│  ├─ MLA → 保留小度数 attn_tp（如 2/4）作为候选，分摊 Q/O 或 Prefill 计算；
+│     不因 MLA KV 压缩直接排除 attention TP
 │  └─ GQA → attn_tp 适度，分摊 Prefill 计算降低 TTFT
 │
 └─ 均衡
    → 在高吞吐和低时延之间折中
 
-背景：MLA 压缩 KV 不按 head 存，TP 对 KV 侧无收益，但 Q/O 计算仍可分摊
+背景：MLA 压缩 KV 不按 head 存，KV 侧通常不从 head TP 获得直接收益，但 Q/O 投影、Prefill 计算和低时延场景仍可能受益。
 ```
 
 #### 第三层：序列长度附加
@@ -203,8 +218,8 @@ CP 和 KVP 作为附加机制，默认在不推翻前两层主干的前提下叠
 |------|---------|---------|-----------|
 | Dense 中小规模 | 纯 TP | all tp = W | GPT-OSS 8卡 |
 | MoE 大规模高吞吐 | Attn DP + MoE EP + 差异化 TP | attn_tp=1, moe_tp=1 | R1/V3.2/GLM-5/Kimi-K2 128卡 |
-| MoE 中规模 | 混合 EP+TP 或 纯 TP | 需对比两种方案 | LongCat 32卡 / R1 16卡 |
-| MoE 小规模低时延 | 纯 TP 或 attn_tp>1 + EP | attn_tp=W, moe_tp=1 | 待验证 |
+| MoE 中规模 | 模块级差异化并行或统一 TP | 需对比模块解耦与统一 TP | LongCat 32卡 / R1 16卡 |
+| MoE 小规模低时延 | 统一 TP 或 attn_tp>1 + EP | 不默认排除模块解耦 | 待验证 |
 | 长序列 + MLA | 叠加 CP | +cp_size | V3.2/GLM-5/Kimi-K2 64卡 |
 | 长序列 + GQA | 大 TP 或 叠加 CP | attn_tp=W 或 +cp_size | R1 32卡 |
 | 超长序列 | 叠加 KVP | +kvp_size, oproj_tp=kvp_size | LongCat 131K |
@@ -224,27 +239,28 @@ CP 和 KVP 作为附加机制，默认在不推翻前两层主干的前提下叠
 | 长序列 + CP（MLA） | Attn 走 CP + MoE EP | V3.2/GLM-5/Kimi-K2 64卡 |
 | 长序列 + 大 TP（GQA） | 所有非 MoE 模块统一大 TP | R1 32卡 |
 
-> **使用方式**：从速查表选候选模式，再从此表确认模式特征是否匹配，定量估算时查阅 reference 获取具体数值。
+> **使用方式**：从速查表选候选模式，再从此表确认模式特征是否匹配，定量估算时查阅 reference 获取可参考的候选取值。
 
 ### 完成标志
 
 - [ ] 候选并行模式已确定（一套配置 + 可选 CP/KVP 附加）
-- [ ] 各模块的 TP 度方向已确定，参考了已验证配置
-- [ ] 关联了仓库中最接近的参考模型
+- [ ] 各模块的 TP 度方向已确定，并说明与已验证配置的差异
+- [ ] 关联了仓库中最接近的参考模型，或说明没有足够接近的参考模型
 
 ---
 
 ## 第三步：定量估算
 
-根据候选模式，查阅参考配置获取起点数值，再做量化评估确定 parallel_config 具体值。
+根据候选模式，查阅参考配置获取候选种子，再做量化评估确定 parallel_config 具体值。
 
 ### 3.0 查阅参考配置
 
-从 `{file:./references/config-index.md}` 中找到与候选模式最匹配的已验证配置，作为定量估算的起点：
+从 `{file:./references/config-index.md}` 中找到与候选模式最匹配的已验证配置，作为候选种子：
 
 - 按部署场景（Decode 高吞吐/低时延/混合、Prefill 长序列、超长序列）查找
 - 读取匹配模型的实际 YAML 配置文件和设计文档（匹配表见 config-index 末尾）
-- 以已验证数值为基准，结合目标模型的参数差异做调整
+- 对比目标模型与参考模型的模块差异，不直接继承整套配置
+- 以模块级拆解结果为主，参考配置只用于发现可尝试的组合
 
 ### 3.1 参数量计算
 
@@ -301,8 +317,9 @@ bytes_per_param：当前仅支持 BF16 = 2
 **KV Cache 显存**（每卡 B_local = B / dp_size）：
 ```
 标准 GQA：B_local × S × L × 2 × N_kv × D_h × bytes_per_kv
-MLA 压缩：B_local × S × L × kv_lora_rank × bytes_per_kv
+MLA absorb：B_local × S × L × (kv_lora_rank + qk_rope_head_dim) × bytes_per_kv
 ```
+> MLA absorb 同时缓存 nope（`kv_lora_rank`）和 rope（`qk_rope_head_dim`）两部分，仅按 `kv_lora_rank` 估算会低估约 12%。
 > 注意：实际 KV Cache 还受 page/block 分配粒度、prefix cache、chunked prefill 等影响
 
 **其他显存开销**（公式无法精确估算，需关注）：
@@ -331,12 +348,18 @@ MLA 压缩：B_local × S × L × kv_lora_rank × bytes_per_kv
 | AllGather / ReduceScatter | 模块间 TP 度切换边界 | 数据量 = tensor_size |
 | Send/Recv | CP 的 KV 分片交换、AFD 通信 | 点对点，可与计算重叠 |
 
-**层 3：是否可被计算重叠**
+**层 3：发生频率和热路径**
+- 不只看通信字节量，还要看 collective 发生次数。每层高频小通信可能在 Decode 中累积成主要延迟。
+- 区分 batch=1 Decode、小 batch Decode 和大 S Prefill，不要用单一通信直觉外推所有阶段。
+- 节点内小消息 AllToAll 未必比高频 AllReduce 更差；不能只根据原语名称判断优劣。
+- 模块 TP 度不一致时，检查边界通信是否抵消模块 TP 收益。
+
+**层 4：是否可被计算重叠**
 - 多流并行可以隐藏部分通信延迟（Send/Recv + Compute 并行）
 - AllReduce / AllToAll 通常在关键路径上，难以完全重叠
 - 仓库实践：LongCat AFD 用 Send/Recv 替代 AllReduce 正是为了利用重叠
 
-> 排序优先级：通信是否跨节点 > 原语类型 > 通信字节量 > 是否可 overlap
+> 排序优先级：通信是否跨节点 > 是否在热路径高频发生 > 原语类型 > 通信字节量 > 是否可 overlap
 
 ### 3.4 根据估算结果调整策略
 
@@ -363,7 +386,7 @@ MLA 压缩：B_local × S × L × kv_lora_rank × bytes_per_kv
 - 单卡 Prefill 计算量过大（S > 4K）→ 需要 TP 或 CP 分摊
 - MLA 模型优先 CP，标准 GQA 优先 TP（原因见决策树）
 
-> 如果估算显示已验证配置的参考值合理（显存可行 + 通信在节点内），优先直接采用已验证值，不必重新推导。
+> 如果估算显示已验证配置的参考值合理（显存可行 + 通信在节点内），可将其保留为高优先级候选，但仍需说明它与目标模型模块拆解结果是否一致。
 
 ### 完成标志
 
@@ -391,10 +414,12 @@ MLA 压缩：B_local × S × L × kv_lora_rank × bytes_per_kv
 - [ ] tp_size ≤ 单节点卡数（避免跨节点 TP）
 - [ ] Decode 阶段 attn_tp 不大于必要值（避免 S=1 时的无效通信）
 
-**[C] 本仓库实现检查**（依赖具体框架/模型实现）：
+**[C] 当前实现检查**（用于识别适配工作量，不用于过早裁剪候选）：
 - [ ] dp_size 由 `world_size // tp_size` 自动推导（本框架特性，见 inference_config.py）
 - [ ] KVP 模式下 `oproj_tp_size == kvp_size`（本仓库 KVP 实现约束）
 - [ ] `N_h * v_head_dim % oproj_tp_size == 0`（MLA o_proj 切分约束）
+
+> 分析阶段不要因为脚本、配置字段、rank group 创建方式等当前实现限制过早否定结构上合理的方案。此类问题应记录为"实施适配点"，交由 parallel-impl 阶段处理。只有模型结构或数学维度上不可行的情况，才直接裁掉候选。
 
 ### 输出格式
 
@@ -412,8 +437,8 @@ candidate_a:
     embed_tp_size: {value}
     lmhead_tp_size: {value}
     o_proj_tp_size: {value}     # MLA 模型需要，非 MLA 可省略
-    cp_size: {value}            # 按需设置
-    kvp_size: {value}           # 按需设置
+    cp_size: {value}            # 长序列；parallel-impl skill 暂不直接支持，参照 deepseek-v3.2-exp 手动实施
+    kvp_size: {value}           # 超长序列；parallel-impl skill 暂不直接支持，参照 longcat-flash 手动实施
   estimation:
     params_per_card_gb: {value}
     kv_cache_per_card_gb: {value}
@@ -436,7 +461,7 @@ candidate_b:
 1. 显存可行性（不可行直接排除）
 2. 跨节点通信风险（有则降级）
 3. 预期性能（定量估算显示结构性优势的方案优先）
-4. 与已验证配置的距离（无性能差异时，越近越优先）
+4. 与已验证配置的距离（仅作为性能差异不明显时的 tie-breaker）
 
 > 当定量分析明确显示某方案有结构性性能优势（如 EP 的完整矩阵 vs TP 的碎矩阵），即使该方案未经验证，也应标注为"推荐对比测试"，不因已验证距离自动降级。
 
@@ -453,13 +478,13 @@ candidate_b:
 
 - [ ] 硬约束全部通过
 - [ ] 推荐配置含定量依据
-- [ ] 已关联仓库参考配置
+- [ ] 已关联仓库参考配置，或说明没有足够接近的参考配置
 
 ---
 
-## （可选）第五步：Profiling 校准
+## （可选）第五步：Profiling 数据校准
 
-当有实际 profiling 数据时，校准第三步的估算。
+当用户或外部 profiling skill 提供 profiling 数据时，校准第三步的估算。本 skill 不负责采集 profiling，也不要求每次分析都执行 profiling。
 
 ### 需要的三个关键指标
 
@@ -478,7 +503,7 @@ candidate_b:
 - 验证第三步的估算偏差
 - 确定 batch_size 可以开多大
 
-> 当前仓库 profiler 配置 `profile_memory=False`，需额外插入一行代码获取
+> 若外部 profiling 数据未包含显存信息，可跳过该项，或由 profiling 步骤单独补充采集。
 
 **指标 3：Rank 间耗时方差**（MoE EP 专属）
 
@@ -504,11 +529,9 @@ candidate_b:
 | 错误模式 | 根因 | 预防 |
 |---------|------|------|
 | 跳过分析直接用默认全 TP | 未评估通信开销 | 必须完成通信量估算再定配置 |
-| MoE 模型小规模部署只考虑一种方案 | 未对比 EP 和 TP 的通信效率 | 中小规模需对比 EP 和 TP，参考 R1 16 卡两种配置 |
-| 忽略 Embed/LMHead 的 tp_size | 大词表模型中这两层显存占比不低 | V > 100K 时独立设置，参考 V3.2/Kimi-K2 embed=16 |
+| 直接套参考模型整套配置 | 模型名相似但模块结构或实现不同 | 参考配置只作为候选种子，最终按模块拆解组合 |
+| 忽略非标准大参数模块 | 额外 embedding / 子表、多模态编码器等可能有独立并行收益 | 单独分析显存、热路径和通信边界 |
 | 显存估算漏掉 KV Cache | Decode 长序列时 KV Cache 是显存大头 | 必须单独计算 KV Cache，MLA 用 kv_lora_rank 估算 |
-| MLA 模型对 Attention 做 TP | MLA KV Cache 是压缩向量不按 head 存，TP 无收益 | MLA 模型 attn_tp=1，Prefill 用 CP 替代 |
-| 只看 Decode 或只看 Prefill 单侧指标 | 单机部署下两阶段共用一套 parallel_config，单侧最优可能导致整体退化 | 在单套配置下同时评估吞吐、TTFT 和长序列需求 |
 | TP 通信跨节点 | 跨节点 RDMA 带宽远低于节点内 HCCS | tp_size ≤ 单节点卡数 |
 | 改了 parallel_config 但没重新转换权重 | offline split 的权重和配置绑定 | 推荐 enable_online_split_weight，或改配置后重跑 weight_convert |
 

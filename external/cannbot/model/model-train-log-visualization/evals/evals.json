@@ -1,0 +1,111 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "单日志画曲线",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "我有一份 NPU 训练的 stdout 日志，想画 loss 和 grad_norm 曲线，怎么做？",
+      "expected_output": "回复应说明用本技能的绘图脚本按 step 解析日志并绘制 loss/grad_norm 曲线，并先确认主日志路径等输入",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-train-log-visualization",
+          "description": "技能 model-train-log-visualization 被激活"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "双日志对比",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "我有正常和异常两份训练日志，想画在同一张图上对比 loss，还想看误差曲线。",
+      "expected_output": "回复应说明双日志对比会绘制 loss/grad_norm 及 loss 的绝对/相对误差曲线，并提示无共同 step 时脚本会报错退出避免误导",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "grad_norm",
+          "description": "回复中提到了 grad_norm"
+        },
+        {
+          "type": "skill_activated",
+          "pattern": "model-train-log-visualization",
+          "description": "技能 model-train-log-visualization 被激活"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "追加可选指标",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "画训练日志曲线时，我还想顺便看 memory、tps、mfu 这些指标，能加吗？",
+      "expected_output": "回复应说明可通过 --metrics 追加 memory/tps/mfu 等可选指标，并提示指标不存在时会跳过并告警",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-train-log-visualization",
+          "description": "技能 model-train-log-visualization 被激活"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "正向看护-多 skill 环境下正确触发",
+      "config": {
+        "max_tokens": 150000,
+        "distractor_skills": [
+          "model-infer-runtime-debug",
+          "model-infer-precision-debug",
+          "model-infer-superkernel"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "帮我把两份训练日志的 loss 曲线画出来对比一下。",
+      "expected_output": "回复应正确激活 model-train-log-visualization 进行日志解析与绘图，即使存在 OOM 分析、精度调试等相似 skill 也应选日志可视化专项",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-train-log-visualization",
+          "description": "技能 model-train-log-visualization 被激活"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "使用边界",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "我的训练 loss 偏了，帮我用日志可视化 skill 找出精度问题的根因。",
+      "expected_output": "回复应说明本技能只负责从日志解析并绘制曲线，不做精度根因定位，定位根因应改用对应的精度调试 skill（可先用本技能画曲线辅助观察）",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-train-log-visualization",
+          "description": "技能 model-train-log-visualization 被激活"
+        }
+      ]
+    }
+  ],
+  "skill_name": "model-train-log-visualization"
+}

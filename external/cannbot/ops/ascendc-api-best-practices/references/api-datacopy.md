@@ -52,6 +52,33 @@ AscendC::printf("debug: xGm[0]=%f\n", xGm.GetValue(0));  // 仅调试
 3. Tiling 设计时可能产生非对齐的 tile 大小
 4. 对齐场景下性能差异可忽略
 
+### DataCopyPad 参数选择：统一使用 Ext 版本
+
+`DataCopyPad` 同时接受 `DataCopyParams` 和 `DataCopyExtParams`，两者底层走**同一条硬件指令**，性能无差异。统一使用 Ext 版本：
+
+| 参数 | 非 Ext 版本 | Ext 版本 | 推荐 |
+|------|-----------|---------|------|
+| 搬运参数 | `DataCopyParams`（uint16_t，blockLen 最大 65535） | `DataCopyExtParams`（uint32_t，blockLen 最大 2097151） | **Ext** |
+| 填充参数 | `DataCopyPadParams`（paddingValue 为 uint64_t） | `DataCopyPadExtParams<T>`（paddingValue 为 T 类型） | **Ext** |
+
+**理由**：
+1. 参数范围更大，避免溢出风险
+2. `DataCopyPadExtParams<T>` 填充值类型安全，编译期检查
+3. 性能完全一致（底层同一条 MTE 指令）
+4. 唯一代价是多写一个 `rsv=0` 字段
+
+```cpp
+// ❌ 不推荐：DataCopyParams 参数范围有限，paddingValue 类型不安全
+AscendC::DataCopyParams copyParams{1, cols * sizeof(float), 0, 0};
+AscendC::DataCopyPadParams padParams{true, 0, padElements, 0};
+AscendC::DataCopyPad(xLocal, xGm, copyParams, padParams);
+
+// ✅ 推荐：统一使用 Ext 版本
+AscendC::DataCopyExtParams copyParams{1, cols * sizeof(float), 0, 0, 0};
+AscendC::DataCopyPadExtParams<float> padParams{true, 0, padElements, 0.0f};
+AscendC::DataCopyPad(xLocal, xGm, copyParams, padParams);
+```
+
 ---
 
 ## 32 字节对齐要求
@@ -63,6 +90,7 @@ AscendC::printf("debug: xGm[0]=%f\n", xGm.GetValue(0));  // 仅调试
 | half (2 bytes) | 16 | 32 |
 | float (4 bytes) | 8 | 32 |
 | int32_t (4 bytes) | 8 | 32 |
+| fp8 (1 byte) | 32 | 32 |
 
 ---
 
@@ -90,6 +118,44 @@ AscendC::printf("debug: xGm[0]=%f\n", xGm.GetValue(0));  // 仅调试
 - 框架自动处理非对齐
 - 搬到 GM 时自动丢弃 dummy
 
+### UB 端起始地址 32B 对齐（易踩坑）
+
+`DataCopyPad(GM, UB, ...)` 与 `DataCopyPad(UB, GM, ...)` 的 **UB 端起始地址必须 32 字节对齐**（blockLen 可以非 32B 对齐，但起始地址不能）。
+
+按行索引访问 UB buffer 时，行偏移字节数必须是 32 的倍数：
+
+```cpp
+// ❌ cols * sizeof(elem) 不是 32 倍数时，row * cols 偏移可能落非对齐地址
+// 例如 fp8 + cols=4 时每行 4 字节，只有 row ∈ {0, 8, 16,...} 满足 32B 对齐
+DataCopyPad(gmOut[off], ubBuf[row * cols], copyParams);
+```
+
+修复方式：引入 strided staging buffer，把不规则行宽数据重排到每行 32B 对齐的连续区：
+
+```cpp
+// ✅ 用 strided buf 重排，保证每行 UB src 起址 32B 对齐
+auto stridedBuf = strideBuf_.Get<elem_T>();
+for (int row = 0; row < mEff; ++row) {
+    for (int j = 0; j < cols; ++j) {
+        stridedBuf.SetValue(row * 32 + j, ubBuf.GetValue(row * cols + j));
+    }
+}
+DataCopyPad(gmOut[off], stridedBuf[row * 32], copyParams);  // src 每行 32B 对齐
+```
+
+**错误码症状**：
+- `AIV error 80: The UB address accessed by the VEC instruction is not aligned`
+- 连锁触发 `AIC error: timeout or trap error. subErrType: 0x4`
+
+### blockCount 参数限制
+
+`DataCopyPad` 的 `blockCount` 字段最大值 4095，超出需分批搬运。Host 侧 Tiling 计算必须 clip：
+
+```cpp
+constexpr uint32_t MAX_BLOCK_COUNT = 4095;
+tileRows = std::max(1u, std::min(tileRows, MAX_BLOCK_COUNT));
+```
+
 ---
 
 ## 使用场景示例
@@ -99,8 +165,8 @@ AscendC::printf("debug: xGm[0]=%f\n", xGm.GetValue(0));  // 仅调试
 ```cpp
 // cols=5 (FP32)，blockLen=20字节，非对齐
 // 后续计算只处理 cols 个元素，dummy 被忽略
-AscendC::DataCopyParams copyParams{1, cols * sizeof(float), 0, 0};
-AscendC::DataCopyPadParams padParams{false, 0, 0, 0};
+AscendC::DataCopyExtParams copyParams{1, cols * sizeof(float), 0, 0, 0};
+AscendC::DataCopyPadExtParams<float> padParams{false, 0, 0, 0.0f};
 AscendC::DataCopyPad(xLocal, xGm, copyParams, padParams);
 
 // 后续计算只处理 cols 个元素
@@ -120,7 +186,7 @@ AscendC::DataCopyPad(xLocal, xGm, copyParams, padParams);
 
 ```cpp
 // CopyOut 自动处理非对齐，搬到 GM 时丢弃 dummy
-AscendC::DataCopyParams copyParams{1, cols * sizeof(float), 0, 0};
+AscendC::DataCopyExtParams copyParams{1, cols * sizeof(float), 0, 0, 0};
 AscendC::DataCopyPad(yGm, yLocal, copyParams);
 ```
 
@@ -160,11 +226,12 @@ uint32_t rLength = 13;                           // 有效数据个数
 uint32_t rLengthAlign = (rLength + 7) / 8 * 8;   // 对齐到 8 元素（FP32 下 32 字节）
 
 // ========== 数据搬运 ==========
-AscendC::DataCopyPad(xLocal, xGm[offset], 
-    {static_cast<uint16_t>(rows),           // blockCount: 行数
-     static_cast<uint32_t>(rLength * sizeof(T)), // blockLen: 有效数据长度（非对齐！）
-     0, 0},                                  // stride: 连续存储
-    {false, 0, 0, 0});                       // padParams: 自动处理
+AscendC::DataCopyExtParams copyInParams{
+    static_cast<uint16_t>(rows),             // blockCount: 行数
+    static_cast<uint32_t>(rLength * sizeof(T)), // blockLen: 有效数据长度（非对齐！）
+    0, 0, 0};                                // stride + rsv: 连续存储
+AscendC::DataCopyPadExtParams<T> padInParams{false, 0, 0, static_cast<T>(0)};
+AscendC::DataCopyPad(xLocal, xGm[offset], copyInParams, padInParams);
 
 inQueueX.EnQue(xLocal);
 auto xIn = inQueueX.DeQue<T>();
@@ -181,8 +248,9 @@ for (uint32_t row = 0; row < rows; row++) {
 }
 
 // ========== 写回 GM ==========
-AscendC::DataCopyPad(yGm[offset], yOut, 
-    {static_cast<uint16_t>(rows), static_cast<uint32_t>(rLength * sizeof(T)), 0, 0, 0});
+AscendC::DataCopyExtParams copyOutParams{
+    static_cast<uint16_t>(rows), static_cast<uint32_t>(rLength * sizeof(T)), 0, 0, 0};
+AscendC::DataCopyPad(yGm[offset], yOut, copyOutParams);
 ```
 
 **关键对照表**：
@@ -223,10 +291,13 @@ UB（对齐存储）:  [row0: 13+3=16][row1: 13+3=16][row2: 13+3=16]...
 ```cpp
 // UB 中每行: [cols 有效数据][padElements padding]
 // 相邻行间隔 = paddedColsT - cols 个元素
+// stride 单位取决于操作数逻辑位置：VECIN/VECOUT 侧为 32 字节块，GM 侧为字节
+AscendC::DataCopyExtParams copyParams;
 copyParams.blockCount = rowsThisTile;
 copyParams.blockLen = cols * sizeof(T);
 copyParams.srcStride = (paddedColsT - cols) * sizeof(T) / 32;  // UB stride 单位: 32字节
 copyParams.dstStride = 0;  // GM stride 单位: 字节
+copyParams.rsv = 0;
 
 AscendC::DataCopyPad(yGm, yLocal, copyParams);
 ```
@@ -243,6 +314,29 @@ copyParams.srcStride = (paddedColsT - cols) * sizeof(T) / 32;
 
 ---
 
+## 性能规则：64B pitch 与 2D 合并搬运
+
+多行搬运场景（如批量归约把 GM 的分片数据搬入 UB）的两条性能规则：
+
+1. **行 pitch 对齐到 64B（而非最小 32B）**：UB 侧行宽 padding 到 64B 的整数倍，GM 侧目标地址同样按 64B 对齐——DMA 突发粒度对齐后 GM 访存/MTE2/MTE3 带宽利用率显著提升。UB 预算必须按 **pitch 后**元素数核算（不是按有效列数）
+2. **非连续行用一次 2D DataCopyPad（blockCount + srcStride/dstStride），禁止逐行多次 1D 调用**：每次 DataCopyPad 调用都有固定下发开销，逐行调用会把搬运变成同步点密集的串行序列；2D 模式一次调用完成全部行，且便于与双缓冲/事件流水配合
+3. **累加/归约循环内 blockCount 必须 > 1**：归约/累加循环搬运多行数据时，`blockCount` 必须等于本批行数（多行一次搬运）。`blockCount=1` 逐行搬运 = **性能反模式**——flag/同步次数 = 行数 × 段数 × 来源数 爆炸（生产踩坑：归约逐行搬运曾是某多行归约实现的性能缺陷根因之一）
+
+> ⚠️ **硬件隐式上限（DAV_3510 实测）**：2D DataCopyPad 当 `srcStride > 0` 或 `dstStride > 0`（行间跳步）时，`blockCount` 存在 **~29-32 行隐式上限**，超出行**静默丢弃为零**（无报错、无异常，输出呈周期性零值分布，period=blockCount）。防御三法（可并用）：① host 侧钳制单批行数 ≤ 32（strided 场景）；② strided 场景退化 1D 逐行 DataCopyPad（blockCount=1 无 stride，绕开限制——非 strided 场景仍保留 2D 批量）；③ 用例必须覆盖 strided 边界场景（隐式上限类缺陷只在边界用例下暴露，常规用例无法发现）。
+
+```cpp
+// ✅ 2D 合并搬运：tileM 行一次完成，行 pitch 64B 对齐
+// GM 侧：行间隔 dstStride/srcStride（字节）；UB 侧：paddedCols = round_up(cols*sizeof(T), 64)/sizeof(T)
+copyParams.blockCount = tileM;
+copyParams.blockLen   = cols * sizeof(T);
+copyParams.srcStride  = gmRowPitchBytes - cols * sizeof(T);        // GM 行间隔（字节）
+copyParams.dstStride  = (paddedCols - cols) * sizeof(T) / 32;      // UB 行间隔（32B 块）
+```
+
+> 连带纪律：批量（多行）处理后**一批数据一次 SetFlag/WaitFlag**（MTE2/V/MTE3 FIFO 特性），不要逐行配对事件——flag 次数是搬运-计算流水的主要隐藏开销。
+
+---
+
 ## 常见错误与调试
 
 ### 错误1：CopyIn/CopyOut 非对齐数据用 DataCopy
@@ -252,6 +346,8 @@ copyParams.srcStride = (paddedColsT - cols) * sizeof(T) / 32;
 AscendC::DataCopy(xLocal, xGm, 4);  // cols=4 (16 bytes)，数据错误
 
 // ✅ 正确
+AscendC::DataCopyExtParams copyParams{1, 4 * sizeof(float), 0, 0, 0};
+AscendC::DataCopyPadExtParams<float> padParams{false, 0, 0, 0.0f};
 AscendC::DataCopyPad(xLocal, xGm, copyParams, padParams);
 ```
 
@@ -262,7 +358,9 @@ AscendC::DataCopyPad(xLocal, xGm, copyParams, padParams);
 AscendC::DataCopyPad(xLocal, xGm, copyParams, padParams);
 AscendC::DataCopy(yGm, yLocal, 4);  // 输出错误
 
-// ✅ 正确：两边都用 DataCopyPad
+// ✅ 正确：两边都用 DataCopyPad（统一 Ext 版本）
+AscendC::DataCopyExtParams copyParams{1, cols * sizeof(float), 0, 0, 0};
+AscendC::DataCopyPadExtParams<float> padParams{false, 0, 0, 0.0f};
 AscendC::DataCopyPad(xLocal, xGm, copyParams, padParams);
 AscendC::DataCopyPad(yGm, yLocal, copyParams);
 ```

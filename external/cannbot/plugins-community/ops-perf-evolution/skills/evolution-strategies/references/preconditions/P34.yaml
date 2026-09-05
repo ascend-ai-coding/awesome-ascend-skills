@@ -1,0 +1,17 @@
+strategy_id: P34
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "weight|Weight|scale|Scale|gamma|Gamma"
+    min_count: 1
+    fail_msg: "未检测到 weight/scale/gamma 相关数据 → 无常驻复用对象，不适用 P34。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "for.*loop|loop|迭代|Process"
+    min_count: 1
+    fail_msg: "未检测到循环迭代结构 → 无跨迭代复用场景，不适用 P34。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "DataCopy|CopyIn|CopyOut"
+    min_count: 1
+    fail_msg: "未检测到数据搬运操作 → 无搬运优化空间，不适用 P34。"

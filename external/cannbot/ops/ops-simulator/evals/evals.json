@@ -1,0 +1,114 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "NPU Simulator (cannsim) 的核心能力",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "NPU Simulator（cannsim）提供了哪些核心能力？cannsim record 和 cannsim report 分别有什么作用？不需要执行任何工具调用。",
+      "expected_output": "回复应说明 NPU Simulator 的两类核心能力：精度仿真（bit 级精度模拟）和性能仿真（指令流水线图分析）。cannsim record 用于采集仿真过程中的数据，cannsim report 用于生成仿真分析报告。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "NPU Simulator 的使用场景",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "什么情况下应该使用 NPU Simulator 而非真实硬件？请说明典型使用场景。不需要执行任何工具调用。",
+      "expected_output": "回复应说明使用 NPU Simulator 替代真实硬件的场景：无硬件环境下的功能验证、精度问题定位、性能瓶颈分析等。Simulator 可以模拟硬件行为并支持仿真分析。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "npusim 命令更名与基本执行链路",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "CANN 9.2.0 环境里我要对 ./kernel 做 Ascend950 仿真并生成报告，再只查看 core 0-2。应该使用什么新命令？旧命令现在是什么状态？只给命令和必要说明，不执行。",
+      "expected_output": "回复应使用 npusim record ./kernel -s Ascend950 --gen-report 采集并生成报告，再用 npusim report -e <仿真输出目录> -n 0-2 生成指定核的报告；说明从 CANN 9.2.0 起 cannsim 已更名为 npusim，旧命令仍兼容但已废弃。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "仿真器硬约束阻止不支持场景",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我想用 NPU Simulator 仿真 Ascend 910B 上的双卡 MC2/HCCL 算子，代码固定使用 device 1。这个方案能直接执行吗？",
+      "expected_output": "回复应明确不能直接执行：该仿真器仅支持 Ascend950、仅支持单卡且代码只能设置 0 卡、仅支持 AI Core 计算类算子，不支持 MC2/HCCL；应先调整目标或改用真实硬件验证。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "单核采样假象优先于负载均衡结论",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "summary.json 显示 ai_core_active=1、imbalance_ratio=1.0、各 overlap 接近 0，但 blockDim=16。能否据此说单核运行且负载均衡、双缓冲失效？",
+      "expected_output": "回复应拒绝该结论：blockDim>1 但只采到一个核更可能是 profiler 采样假象；imbalance_ratio=1.0 不能证明均衡，接近零的 overlap 也不能证明双缓冲问题。应按多核不均衡路径做结构化检查，先确认真实核数。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "工作量不足时停止流水线瓶颈分类",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "一个纯 Vector kernel 的 dominant_pipeline_util=0.32，SIMD 和 SIMT mean 都低于 0.03，所有 overlap 近零。现在应该按 MTE2 或 SCALAR 瓶颈继续分类吗？",
+      "expected_output": "回复应先判定 kernel 工作量不足以支撑瓶颈分析，可能是 blockDim 对 shape 过大或 shape 太小；应先调整工作量并重新仿真，不应继续进入 Step 2 按 pipe-bound 规则分类。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "summary 优先并以 trace 确认因果",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我已经有 npusim 的 summary.json 和 trace_core0.json。性能诊断应先分析哪个？什么情况下才值得下钻 trace？",
+      "expected_output": "回复应先用 summary.json 的聚合指标做快速诊断；只有 summary 已指出瓶颈类型但尚不能定位具体原因，例如 overlap 偏低而源码已开启双缓冲或需要追踪具体阻塞指令时，才下钻 trace 做空泡分类、因果归因、周期性和重叠度分析。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "ops-simulator"
+}

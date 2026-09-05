@@ -1,0 +1,143 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "算子测试方案设计",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请介绍 tilelang-op-test-design 技能如何为算子设计测试方案。它包含哪些测试层级（L0/L1/L2/Boundary），每个层级测试什么内容？不需要执行任何工具调用。",
+      "expected_output": "回复应从 design.md 提取算子信息生成多层测试配置，包含 L0 门槛测试、L1 功能测试、L2 异常测试、Boundary 边界测试等不同层级。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "L0",
+          "description": "回复中提到了 L0"
+        },
+        {
+          "type": "contains",
+          "pattern": "L1",
+          "description": "回复中提到了 L1"
+        },
+        {
+          "type": "contains",
+          "pattern": "L2",
+          "description": "回复中提到了 L2"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "多场景测试设计能力",
+      "config": {
+        "max_tokens": 80000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "这个测试设计 skill 支持哪些场景？如果我已经写好了算子代码但还没有测试，应该使用哪个场景？",
+      "expected_output": "回复应说明本技能支持四种场景：场景 A（从 design.md 设计测试）、场景 B（从 custom/{op}/*.py 算子文件补充测试）、场景 C（用户口头描述生成测试模板）、场景 D（测试覆盖率分析）。如果用户已有算子实现代码但无测试，应使用场景 B，通过读取 custom/{op}/ 目录下的算子实现代码来分析计算逻辑，判断算子类别，分析现有测试覆盖情况，然后补充缺失的测试用例。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "场景 A",
+          "description": "回复中提到了 场景 A"
+        },
+        {
+          "type": "contains",
+          "pattern": "场景 B",
+          "description": "回复中提到了 场景 B"
+        },
+        {
+          "type": "contains",
+          "pattern": "场景 C",
+          "description": "回复中提到了 场景 C"
+        },
+        {
+          "type": "contains",
+          "pattern": "场景 D",
+          "description": "回复中提到了 场景 D"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "缺少精度标准时阻塞测试生成",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "design.md 有公式和 shape，但 §9.3 没有按 dtype 的精度标准。测试设计能否自行用统一 atol=1e-3？",
+      "expected_output": "回复应阻塞并返回 Stage 1 补齐精度契约，不能猜统一容差。测试应按 dtype 使用 atol、rtol、max_abs_error_limit、required_matched_ratio 的混合标准；整数输出要求 0 误差精确匹配。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "非对齐 shape 必须确定性生成",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "随机生成的 20 个 shape 恰好都对齐 block，能否认为已覆盖非对齐尾块？",
+      "expected_output": "回复应说明不能依赖随机碰撞；非对齐场景必须按覆盖矩阵与 shape 规则确定性生成，包含小于 block、不能整除和关键轴尾块等强制维度，并在每条 L1 用例 tags 中标注对应 D-* 维度。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "L2 与 Boundary 均为非阻塞但语义不同",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "说明 L2 异常用例和 Boundary 边界用例的判定与退出码。边界精度不过是否要让整个测试失败？",
+      "expected_output": "回复应说明 L2 用 _run_exception，期望非法输入被拒绝，抛异常为 PASS；Boundary 用 _run_boundary 做精度对比，不通过为 WARN。两类都 try/except 隔离、失败继续且不改变退出码；只有 L0/L1 精度失败才 exit(1)。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "覆盖门禁不允许豁免强制维度",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "coverage_check.py 报一个强制 D-* 维度 MISS。能否在 COVERAGE_NA 写“暂不支持”后仍返回 PRECISION_PASS？",
+      "expected_output": "回复应拒绝：每条 L1 需 tags，文件需 COVERAGE_MANIFEST/COVERAGE_NA，但强制维度不能用豁免绕过。coverage_check.py --proto 任一未豁免 MISS 或对强制项写豁免都退出1，必须补用例重跑到全 PASS/N/A 后才可交付。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "场景 B 只扩展分层桩体且保持分发接口",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "现有 test_op.py 已有 L0 和稳定的 --level 分发器。场景 B 补测试时是否应该重写 main？",
+      "expected_output": "回复应保留开发阶段生成的 main 与 --level {l0,l1,l2,boundary,all} 接口，分析实现和现有覆盖后填充 L1/L2/Boundary 桩体；随后跑 --level all 和 coverage_check。不得破坏已有 L0 门槛或分层标记。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "tilelang-op-test-design"
+}

@@ -5,8 +5,8 @@ description: 基于 PyTorch 框架的昇腾 NPU 模型推理图模式适配技�
   LLM 模型改造指南。
 original-name: model-infer-graph-mode
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-26'
-synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
+synced-date: '2026-09-05'
+synced-commit: a426ec91e1038f233066724d63235c719a46a10d
 license: UNKNOWN
 ---
 
@@ -24,6 +24,9 @@ license: UNKNOWN
 - **NPU 不支持的后端**：`aot_eager`、`inductor`、`cudagraphs` 等不可用
 - **固定 tensor 图外预创建**：atten_mask、KV cache 等推理全程不变的 tensor 在图外预创建，用 `torch._dynamo.mark_static()` 标记
 - **LLM Decode 重编译注意**：`kv_len`/`actual_seq_lengths_kv` 每步变化，npugraph_ex 可能触发重编译，遇到 `hit recompile_limit` 参考重编译解决方案排查
+- **npugraph_ex decode 用 host list 长度字段**：从 `ForwardMetaData` 取 `actual_seq_lengths_list_kv/q` / `actual_seq_lengths_cu_list_kv/q`（`List[int]` 形态）传给静态图路径，普通 eager / GE 路径仍用对应的 Tensor 字段
+- **图模式验证项**：确认 warmup 阶段首次编译功能正常；正式推理 decode 阶段直接复用 warmup 编译的图，不出现重编译（检查日志中是否有 `recompile` 标识）
+- **编译缓存使用时机**：先用常规图模式确认图可稳定捕获且无非预期重编译，再按官方指南使用 `cache_compile` 降低冷启动 / 重复编译耗时
 - **精度问题调试**：遇到精度问题可调用 `model-infer-precision-debug` skill 进行排查
 
 ---
@@ -55,6 +58,7 @@ license: UNKNOWN
 - **编译验证**：运行 `torch.compile`，检查是否成功，记录编译日志
 - **功能验证**：运行模型，对比图模式前后输出
 - **性能验证**：记录 Prefill/Decode 阶段耗时
+- **编译缓存验证（可选）**：图结构稳定后可验证 `cache_compile` 是否降低二次启动编译耗时
 - **测试报告**：整理测试环境、测试用例、对比数据
 
 ---
@@ -110,6 +114,12 @@ output = opt_model(input_tensor)
 ```
 
 > 详细文档：npugraph_ex 见 `references/npugraph_ex-guide.md`，GE 见 `references/ge-graph-guide.md`
+
+---
+
+## 编译缓存使用建议
+
+`cache_compile` 适合在图模式已跑通、输入 shape / guard / 通信域稳定后启用，用于降低冷启动或多次拉起时的编译耗时；它不用于修复 Graph Break 或非预期重编译。启用时需按官方指南改造封装函数：npugraph_ex 使用 `torch.npu.npugraph_ex.inference.cache_compile`，GE / Ascend IR 使用 `torchair.inference.cache_compile`；使用后原 `torch.compile` 编译流程不再需要。被缓存的函数应是 module method、未被其他装饰器修饰、能形成 full graph，且同一缓存函数只能触发一次 Dynamo trace；Prefill / Decode 或 guard 不同的场景应拆分封装。若模型代码、输入规格、分布式 rank/world_size、CANN/torch_npu 版本发生变化，需重新生成或清理缓存。npugraph_ex 参考 `references/npugraph_ex-guide.md`，GE / Ascend IR 参考 `references/ge-graph-guide.md`。
 
 ---
 
@@ -306,7 +316,7 @@ import torch
 import torch_npu
 
 # 查询是否有 Tensor 类型的 actual_seq_lengths 接口
-# 通过 subagent 调用 /model-infer-fusion 查询
+# 通过 subagent 调用 model-infer-fusion 查询
 
 # 如果有支持的接口：
 attn_output = torch.ops.npu.npu_fused_infer_attention_score(
@@ -322,11 +332,11 @@ opt_model = torch.compile(model, backend="npugraph_ex", dynamic=False)
 
 ### FA 接口查询
 
-如需查询具体的 FA 接口参数和版本支持，使用 subagent 调用 `/model-infer-fusion` 技能：
+如需查询具体的 FA 接口参数和版本支持，使用 subagent 调用 `model-infer-fusion` 技能：
 
 ```
 启动 subagent（类型：general-purpose），提示词包含：
-1. 明确指示调用 /model-infer-fusion 技能
+1. 明确指示调用 model-infer-fusion 技能
 2. 询问具体问题，例如：
    - "查询 npu_fused_infer_attention_score 的 actual_seq_lengths 参数是否支持 Tensor 类型"
    - "查询 npu_fused_infer_attention_score_v2 在图模式下的推荐配置"

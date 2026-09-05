@@ -1,0 +1,31 @@
+strategy_id: P9
+description: 确定性输出适用性检查 — 算子必须有多核并行、存在顺序敏感写操作，且尚未引入 workspace 确定性机制
+
+checks:
+  - id: has_multi_core
+    type: grep_count
+    pattern: "BLOCK_DIM|GetBlockNum|blockIdx|coreNum"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子无多核并行 → P9 无应用场景。检查是否为单核算子"
+
+  - id: has_order_sensitive_write
+    type: grep_count
+    pattern: "AtomicAdd|AtomicMax|outputGm.*=|+=.*outputGm"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无多核写冲突或顺序敏感操作 → 输出天然确定。考虑 P4 负载均衡或 P67 Counter 模式"
+
+  - id: no_workspace_yet
+    type: grep_count
+    pattern: "workspaceGm|workspace.*GlobalBuffer|deterministic"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已使用 workspace 或 deterministic 标记 → P9 已应用。检查是否所有输出路径都已确定性化"
+
+  - id: has_sparse_or_reduction_pattern
+    type: grep_count
+    pattern: "indices|index|sparse|grad|update|reduce|sum|smooth|norm"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子无稀疏索引/累加/归一化模式 → 写覆盖概率低，确定性需求不迫切。优先性能策略"

@@ -5,7 +5,7 @@ description: 当用户提供 GitHub 文件页面链接，或希望读取某个�
   docs 前优先读取同仓库同 ref 的 `agent_router.md`，根据其中声明的目录结构或路由规则拼出真实路径，并优先通过 `curl` 获取内容。
 original-name: github-raw-fetch
 synced-from: https://github.com/kali20gakki/mindstudio-skills
-synced-date: '2026-05-26'
+synced-date: '2026-09-05'
 synced-commit: f6695da3cfa864a100db5a94f594b638aeff6389
 license: UNKNOWN
 ---

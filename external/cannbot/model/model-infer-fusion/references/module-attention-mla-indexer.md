@@ -57,7 +57,7 @@ output = o_proj(output)
 
 ## 与 MLA Absorb（无 Indexer）的核心差异
 
-| 维度 | MLA Absorb（deepseek-r1） | MLA + Indexer（deepseek-v3.2） |
+| 维度 | MLA Absorb（deepseek_r1） | MLA + Indexer（deepseek-v3.2） |
 |------|----------------------|------------------------|
 | Prefill Attention | 展开 K/V → 标准 FA（v1） | absorb → Indexer → 稀疏 FA |
 | Decode Attention | absorb → FA v2（全量 KV） | absorb → Indexer → 稀疏 FA |

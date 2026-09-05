@@ -3,14 +3,21 @@
 ## 快速决策树
 
 ```
-程序无法运行完
+程序无法运行完或偶发崩溃
     │
     ├─ 程序崩溃？
     │   └─ Coredump 调试
-    │       └─ GDB 分析 coredump 文件
+    │       ├─ GDB 分析 coredump 文件
+    │       └─ 如堆栈不清晰 → 流程3：mssanitizer 主动检测内存错误
     │
-    └─ 程序卡死？
-        └─ Kernel挂起调试 → 查看plog → 定位卡死位置
+    ├─ 程序卡死/超时？
+    │   └─ Kernel挂起调试 → 查看plog → 定位卡死位置
+    │
+    └─ 偶发崩溃/怀疑内存错误导致异常？
+        └─ 流程3：mssanitizer 主动检测内存错误
+            ├─ 堆栈不清晰
+            ├─ 偶发崩溃无法复现
+            └─ aic error 代码逻辑复杂
 ```
 
 ## 流程1：Kernel挂起调试
@@ -133,6 +140,44 @@ p variable      # 打印变量值
     └─ PipeBarrier 滥用 → 全流水线停顿，后续操作依赖未完成数据
 ```
 
+## 流程3：mssanitizer 内存检测
+
+**适用场景**：偶发崩溃无法复现、aic error 代码逻辑复杂、coredump 堆栈不清晰、怀疑内存错误导致异常时主动检测内存错误。
+
+### 能检测的 6 类内存异常
+
+| 异常类型 | 级别 | 含义 |
+|----------|------|------|
+| Illegal Read/Write | ERROR | 访问未分配的内存区域 |
+| Multi-core Overwrite（多核踩踏） | WARNING | 多个核访问了重叠的 GM 区域且至少一个核写入了数据 |
+| Misaligned Access（非对齐访问） | ERROR | DMA 地址不满足 32B 对齐要求 |
+| Illegal Free（非法释放） | ERROR | 释放未分配或已释放的内存地址 |
+| Memory Leak（内存泄漏） | ERROR | 申请内存后未释放（需加 `--leak-check=yes`） |
+| Unused Memory（分配未使用） | WARNING | 分配的内存从未被访问（需加 `--check-unused-memory=yes`） |
+
+### 快速开始
+
+```bash
+# 1. 拷贝配置模板，填写算子信息
+cp scripts/memcheck_input.json.template ./memcheck_input.json
+
+# 2. 拷贝并执行自动化检测脚本
+cp scripts/run_memcheck_pre.sh .
+chmod +x run_memcheck_pre.sh
+./run_memcheck_pre.sh
+
+# 3. 分析输出结果
+grep "====== ERROR:" <code_base>/memcheck_output/memcheck/ascendc_memcheck_report_raw.txt
+grep "====== WARNING:" <code_base>/memcheck_output/memcheck/ascendc_memcheck_report_raw.txt
+```
+
+### 详细文档
+
+- **[memcheck](memcheck/)** — 完整工作流（分析 + 报告生成）
+- **[memcheck/README.md](memcheck/README.md)** — 前置条件 + 配置字段说明 + 常见问题
+- **[memcheck/automated_workflow.md](memcheck/automated_workflow.md)** — 自动化脚本详细参数
+- **[memcheck/mssanitizer_guide.md](memcheck/mssanitizer_guide.md)** — msSanitizer 工具原始文档
+
 ## 调试工具速查
 
 | 工具/方法 | 用途 | 使用场景 |
@@ -145,3 +190,4 @@ p variable      # 打印变量值
 | `msDebug` | 单步调试 | 复杂问题（卡死、越界） |
 | `ulimit -c unlimited` | 启用 coredump | 程序崩溃前设置 |
 | `gdb <exe> <core>` | 分析 coredump | 程序崩溃时优先使用 |
+| `mssanitizer --tool=memcheck` | 主动检测内存错误 | 堆栈不清晰、偶发崩溃、多核踩踏、aic error |

@@ -4,8 +4,8 @@ description: PyPTO 算子开箱性能调优技能。主要关注代码级的调�
   优化、TileShape 设置、前端优化。
 original-name: tune-frontend
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-26'
-synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
+synced-date: '2026-09-05'
+synced-commit: a426ec91e1038f233066724d63235c719a46a10d
 license: UNKNOWN
 ---
 
@@ -15,36 +15,215 @@ license: UNKNOWN
 
 开箱性能调优主要关注代码级的调优、前端写法不同导致的性能差异。在算子初始编写过程中直接得到较好的开箱性能。
 
+> 资料获取统一使用 skill `pypto-docs-search`：按需搜索算子参考实现与 tile 配置等文件/目录/内容。
 
-## ⚡ 代码分析（最重要！）
+## ⛔ 调优三阶段流程（编排器强制执行）
 
-**必须按顺序检查以下问题**：
+开箱调优必须严格按以下三阶段顺序执行，编排器会逐阶段核查输出制品：
 
-### 🔥 P0 - 最常见问题（80%的性能问题都在这里）
+```
+阶段A: 全局分析 (F-1~F-10) ──→ 阶段B: 局部分析 (F-11~F-15) ──→ 阶段C: 逐项优化
+  │                               │                               │
+  │ 产出:                         │ 产出:                         │ 产出:
+  │ · A1 Loop结构分析表           │ · B1 数据操作分析表            │ · 逐项优化记录
+  │ · A2 常量依赖关系图           │                               │
+  │ · A3 Reshape全局分析表        │                               │
+  │ · A4 基本块(TileShape)审查表  │                               │
+  │                               │                               │
+  └──── 编排器核查 ───────────────┘└──── 编排器核查 ───────────────┘└─ 按分析结果逐项优化
+       制品完整性                     制品完整性                     每项验证精度+性能
+```
 
-1. **任务粒度是否足够大？**
-   - 检查最内层循环的任务粒度（如 Matmul 的 M/N/K 轴）
-   - ❌ 常见错误：Matmul 的 M 轴只有 1，无法利用 Cube 计算能力
-   - ✅ 解决方案：对外层轴切块，增大任务粒度
+**⛔ 禁止：未完成阶段A+阶段B的分析就直接进入阶段C逐项优化。**
+**⛔ 禁止：凭直觉选择优化点跳过分析环节。**
 
-2. **循环体一次的计算量是否太小？**
-   - 检查循环体内部的计算量，如果太小，用不满算力。
-   - ✅ 解决方案：
-   - 考虑开启 loop_unroll
-   - 分析循环轴的切块是否合理。太小的话，需要增加切分块大小
+## 阶段A: 全局分析（对应优化点 F-1~F-10）
 
-3. **循环次数是否过多？**
-   - 循环次数过多会导致调度开销大
-   - ✅ 解决方案：切块，减少循环次数
+**目标**：从算子整体结构出发，理解循环组织、常量依赖、Reshape 分布、基本块(TileShape)配置。对应阶段C中的"全局性能优化"（F-1~F-10）。
 
-4. **shape 是否可以提前合轴？**
-   - 如果 shape 是 2 维以上，性能会比较差。因为 npu 指令支持的维度是两维的。考虑在进入循环前，先进行合轴处理
-   - ✅ 解决方案：进入循环前，使用 `reshape inplace` 进行合轴
+### A1. Loop 结构分析（对应优化点 F-1~F-3, F-5~F-8）
 
-### P1 - 其他常见问题
+调 unroll / stitch 前，先用 `pypto-docs-search` 搜索算子参考实现中现有 production kernel 的 loop 写法（如 `loop_unroll` / `unroll_list` / `stitch`）作为初始候选，不要从零猜。
 
-1. loop 层级是否太深，考虑合并 loop
-2. 计算 op 是否冗余，考虑使用更高效的 operation
+逐行扫描算子 kernel 代码中所有 `pypto.loop` 和 Python `for`/`range` 调用，填写下表：
+
+| # | 循环名 | 代码行 | 类型(pypto.loop/Python for) | 轴性质(静态/动态) | 循环次数 | 循环体主要操作 | 最内层? |
+|---|--------|-------|---------------------------|------------------|---------|-------------|--------|
+| 1 | LOOP_n2 | L272 | pypto.loop | 动态(num_kv_tiles) | 4 | Q@K^T matmul, P@V matmul, online softmax | 否(外层) |
+| 2 | range(num_kv_heads) | L272 | Python for | 静态(8) | - | - | - |
+
+**关键检查项**：
+- [ ] 静态轴是否使用了 `pypto.loop`？（应改为 Python for）
+- [ ] 最内层循环次数是否 > 100？（应切块）
+- [ ] 最内层循环体计算量是否太小？（应 unroll 或增大切块）
+- [ ] 是否有可合并的独立 loop？
+- [ ] 外层循环体内的常量/配置是否与内层循环变量无关联？（可外提）
+
+### A2. 常量与参数依赖分析（对应优化点 F-11）
+
+扫描算子中所有硬编码常量（如 BLOCK_SIZE、s_tile、g_tile 等），以及 `jit` 装饰器中的 `runtime_options`、`pass_options`：
+
+| # | 常量名 | 值 | 代码行 | 被引用位置(行号) | 引用的TileShape/基本块 | 影响范围 |
+|---|--------|-----|-------|-----------------|---------------------|---------|
+| 1 | s_tile | 512 | L146 | L282,L292,L298,L304,L308,L318 | vec_tile(s_tile, kv_size) | 循环次数、view shape、vec_tile |
+
+**关键检查项**：
+- [ ] 常量值变更后，所有引用该常量的 `set_vec_tile_shapes` / `set_cube_tile_shapes` 是否需要同步调整？
+- [ ] `runtime_options` / `pass_options` 的每个参数是否有明确的作用说明？
+
+### A3. Reshape 全局分析（对应优化点 F-4）
+
+对算子中**每一个** `pypto.reshape` 调用，逐个分析：
+
+**分析方法**：
+1. 使用 `grep -nE "pypto\.(reshape|squeeze|unsqueeze)" <算子文件>` 获取所有 reshape/squeeze/unsqueeze 调用位置
+2. 逐行分析每个操作的输入来源、目标 shape、是否在 loop 内
+
+| # | 代码行 | 输入 Tensor | 源 Shape | 目标 Shape | 在loop内? | 输入类型(原始/中间/输出) | inplace? | 冗余? | 问题与建议 |
+|---|--------|------------|---------|-----------|----------|----------------------|----------|------|-----------|
+| 1 | L183 | input_ln_weight | [4096] | [1,4096] | 否 | 原始输入 | ✅ | 否 | 无问题 |
+| 2 | L246 | k_embed | [8,128] | [8,128] | 否 | 中间结果 | ❌ | **✅冗余** | 源shape==目标shape，删除 |
+
+**关键检查项**：
+- [ ] 源 Shape == 目标 Shape 的冗余 reshape？（应删除）
+- [ ] 原始输入的 reshape 是否在 loop 外？（应外提）
+- [ ] 原始输入的 reshape 是否使用了 `inplace=True`？（必须用）
+- [ ] 原始输入的 squeeze/unsqueeze 是否在 loop 内？（⚠️ squeeze/unsqueeze 不支持 inplace，应替换为等价的 `pypto.reshape(..., inplace=True)` 外提）
+- [ ] 中间结果或输出 tensor 是否使用了 `inplace=True`？（禁止用）
+- [ ] loop 内的 reshape 是否依赖循环变量？（不依赖则外提）
+- [ ] reshape 前后是否有对应的 `set_vec_tile_shapes` 变更？
+
+### A4. 基本块(TileShape)审查（对应优化点 F-9, F-10）
+
+调 TileShape 前，先用 `pypto-docs-search` 搜索算子参考实现中现有 production kernel 的 tile 配置（如 `set_vec_tile_shapes` / `set_cube_tile_shapes`）作为初始候选，不要从零猜。
+
+对算子中**每一个 operation**，逐行审查其 shape 与 TileShape 设置：
+
+**分析方法**：
+1. 使用 `grep -n "set_cube_tile_shapes\|set_vec_tile_shapes\|matmul\|cast\|mul\|add\|sum\|exp\|div\|assemble\|view" <算子文件>` 获取所有 operation 和 TileShape 调用
+2. 逐行配对：每个 operation 前最近的 TileShape 设置是否匹配该 operation 的实际 tensor shape
+
+| # | 代码行 | Operation | 输入 Shape | 输出 Shape | 前置TileShape | 合理? | 问题与建议 |
+|---|--------|-----------|-----------|-----------|-------------|------|-----------|
+| 1 | L292 | view(key_cache) | [max_kv_len, kv_size] | [s_tile, kv_size] | vec(s_tile=2048, kv_size=1024) | ⚠️ | 数据量4MB远超UB |
+
+**关键检查项**：
+- [ ] `vec_tile_shapes` 每维是否 ≤ 对应 tensor 实际维度？
+- [ ] `vec_tile_shapes` 数据量是否在 16~64KB 范围内？
+- [ ] `cube_tile_shapes` 的 L1 是否超过实际轴长？
+- [ ] 多个不同 shape 的 matmul 是否各自独立设置了 `cube_tile_shapes`？
+- [ ] Decode 场景 M=1 的 matmul 是否使用了 K 轴三维配置 `[kL0, kAL1, kBL1]`？
+- [ ] reshape 前的 vec_tile 是否按源 shape 设？reshape 后是否按目标 shape 重设？
+- [ ] assemble 前的 vec_tile 是否匹配目标 shape？
+
+**冗余操作一并检查**：
+
+| # | 检查类型 | 代码行 | 具体操作 | 是否冗余 | 建议 |
+|---|---------|--------|---------|---------|------|
+| 1 | 重复TileShape | L94, L109 | 两次 `set_vec_tile_shapes(1, 4096)` | 可能冗余 | 同shape连续设置可合并 |
+| 2 | 冗余reshape | L246 | reshape 到相同 shape | 冗余 | 删除 |
+
+**基本块全局分析：op 前后 TileShape 边界审查**：
+
+检查每个 op 前后的 TileShape 设置一致性，识别基本块（子图）拆分边界。基本块的拆分由 TileShape 设置决定——当相邻 op 的 TileShape 不兼容（维度不匹配、切分粒度不统一）时，它们会被分配到不同子图，形成多对一/一对多/多对多的基本块拼接模式，增加 GM 搬运和调度开销。
+
+**基本块拼接模式说明**（由 TileShape 边界决定，非数据依赖）：
+
+| 模式 | 形成原因（TileShape 视角） | 示意图 | 性能影响 |
+|------|--------------------------|--------|---------|
+| 一对一 | op A 的输出 TileShape 与 op B 的输入需求兼容 → 合并为同一子图 | `A→B` | 最优 |
+| 一对多 | op A 的 TileShape 与多个下游 op 的 TileShape 均不兼容 → 每个下游自成一子图 | `A→{B,C}` | 重复搬运相同数据 |
+| 多对一 | 多个上游 op 的 TileShape 各不同，到 op B 处需汇聚 → GM 落地后再合并 | `{A,B}→C` | 中间结果写回 GM |
+| 多对多 | 同时存在前后 TileShape 多方向不兼容 | `{A,B}→{C,D}` | 最复杂，搬运叠加 |
+
+**分析方法**：
+1. 逐行定位每个 op 前最近的 `set_cube_tile_shapes` / `set_vec_tile_shapes` 调用
+2. 检查相邻 op 的 TileShape 是否兼容：前序 op 的输出 shape 的 tile 切分，是否能被后续 op 的 TileShape 直接消费
+3. 判断每个 op 边界的拼接模式
+
+**审查表格**：
+
+| # | 拼接模式 | op位置 | 前序TileShape | 该opTileShape | 后序TileShape | 边界问题 | 优化建议 |
+|---|---------|--------|-------------|--------------|-------------|---------|---------|
+| 1 | 一对多 | cast(L80) | vec(8,128) | vec(8,128) | sub(L85):vec(8,128), add(L86):vec(8,128) | 无，TileShape兼容 | 可合图 |
+| 2 | 多对一 | cast(L87) | sub(L85):vec(8,128), add(L86):vec(8,64) | vec(8,128) | - | sub和add的尾轴TileShape不同(128 vs 64) | 统一add的vec_tile为(8,128)使多对一变为一对一 |
+| 3 | 一对多 | gathermask(L72) | vec(256,128) | vec(32,128) | cast×6(L79-L84):各vec(32,128) | gathermask切出6个tensor，每个独立子图 | 增大vec_tile减少gathermask次数 |
+
+**关键检查项**：
+- [ ] 相邻 op 的 TileShape 是否兼容？（输出 shape 的 tile 切分能否被下游直接消费）
+- [ ] 是否存在**一对多 fan-out**导致重复搬运？（优化：统一下游 TileShape 使兼容，或使用合图消除 GM 落地）
+- [ ] 是否存在**多对一 fan-in**导致 GM 中间结果？（优化：调整上游 TileShape 使兼容，拆解为多个一对一链）
+- [ ] 是否存在**多对多**复杂结构？（优化：先拆分基本块为多对一+一对多的组合，再逐级优化）
+- [ ] fan-out/fan-in 是否在**最内层热循环**中？（优先级最高，调度开销叠加最明显）
+- [ ] 共享输出是否可通过调整 TileShape 减小数据量，从而降低搬运开销？
+
+### A5. 全局分析输出要求
+
+阶段A完成后，**必须产出**：
+1. **Loop结构分析表**（按 A1 模板填写）
+2. **常量依赖关系图**（按 A2 模板填写）
+3. **Reshape全局分析表**（按 A3 模板填写，每个 reshape 一行）
+4. **基本块(TileShape)审查表**（按 A4 模板填写，每个 operation 一行）
+5. **基本块 TileShape 边界分析表**（按 A4 新增模板填写，标注 op 前后 TileShape 拼接模式）
+6. **基于分析的优化建议清单**（标注优先级 P0/P1/P2）
+
+编排器核查：以上 6 项制品齐全 → 允许进入阶段B。
+
+---
+
+## 阶段B: 局部分析（对应优化点 F-11~F-15）
+
+**目标**：对算子中的数据操作逐行审查，识别局部优化机会（NZ格式、Transpose融合、冗余搬运消除、尾轴 broadcast 合轴）。对应阶段C中的"局部性能优化"（F-11~F-15，其中 F-11 常量分析已在阶段A2完成）。
+
+### B1. 数据操作分析（对应优化点 F-12~F-15）
+
+对算子中**所有涉及数据格式和搬运的操作**，逐行分析：
+
+**分析方法**：
+1. 使用 `grep -n "transpose\|concat\|assemble" <算子文件>` 获取相关调用
+2. 检查权重矩阵的 shape 和访问模式（F-12）
+3. 检查是否有 transpose + matmul 模式（F-13）
+4. 检查 concat 是否可替换为 assemble（F-14）
+5. 扫描所有 tensor shape，查找尾轴为 1 的 broadcast 二元运算（F-15）
+
+| # | 检查类型 | 优化点 | 代码行 | 具体操作 | 适用? | 问题与建议 |
+|---|---------|--------|--------|---------|------|-----------|
+| 1 | 输入矩阵格式 | F-12 | - | 权重矩阵 shape 检查 | ❌/✅ | Shape 较大时可尝试 NZ 格式 |
+| 2 | Transpose+Matmul | F-13 | - | transpose 后紧跟 matmul | ❌/✅ | 可通过 a_trans/b_trans 融合 |
+| 3 | 冗余搬运 | F-14 | - | concat → assemble 替换 | ❌/✅ | 可替换 concat 为 assemble |
+| 4 | 尾轴 broadcast | F-15 | - | `[M,1]*[M,N]` 等尾轴1 broadcast | ❌/✅ | 可添加 `combine_axis=True` 内联 brcb |
+
+**关键检查项**：
+- [ ] 权重矩阵 Shape 较大（>1024）？（F-12：可尝试 NZ 格式）
+- [ ] 有 transpose 后紧跟 matmul 的模式？（F-13：可用 a_trans/b_trans 融合）
+- [ ] 有 concat 数据搬运操作？（F-14：可替换为 assemble）
+- [ ] 存在尾轴为 1 的 tensor 参与 broadcast 二元运算？（F-15：可尝试 `combine_axis=True`）
+
+### B2. 局部分析输出要求
+
+阶段B完成后，**必须产出**：
+1. **数据操作分析表**（按 B1 模板填写，覆盖 F-12~F-15）
+2. **最终优化点排序清单**（基于 A+B 分析结果，按优先级排序，引用 optimization_catalog.md 编号）
+
+编排器核查：以上 2 项制品齐全 → 允许进入阶段C（逐项优化）。
+
+---
+
+## 阶段C: 逐项优化
+
+**前提**：阶段A和阶段B的分析已完成，优化点排序清单已生成。
+
+**执行方式**：按优化点排序清单，由编排器的迭代循环（ITER_START → ITER_MODIFY → ITER_VERIFY → ITER_MEASURE → ITER_RECORD → ITER_JUDGE）逐项执行。
+
+**每项优化前必须确认**：
+1. 该优化点来源于阶段A或阶段B的分析结论（有明确的分析表格行号引用）
+2. 修改只涉及一个参数
+3. 修改后该参数的依赖项是否需要同步调整（参考 A2 常量依赖关系图）
+4. 如果本项优化涉及代码结构变更（loop合并/拆分、reshape移动、循环切块），必须在修改后重新检查受影响的 A1/A3/A4 表格行，更新过期的分析结论
+
+**以下各章节为具体的优化操作指南，供 ITER_MODIFY 阶段参考。**
+
+---
 
 ## 💡 关键启发
 
@@ -66,14 +245,23 @@ license: UNKNOWN
 
 **优化目标**：在保证任务粒度的前提下，最大化并行度，最小化调度开销。
 
-## 调优方向
+## 调优方向（阶段C 参考指南）
 
-### 1. Loop 写法优化
+以下各章节为阶段C逐项优化时的具体操作指南。每个章节对应 optimization_catalog.md 中的优化点编号。
+
+**阶段C 优化顺序规则**：
+1. **先全局后局部**：P0（F-1~F-4）→ P1（F-5~F-8）→ P2（F-9~F-10）→ P3（F-11~F-15）
+2. **每次只执行一个优化点**，按 ITER 循环执行
+3. **优先执行阶段A/B分析中发现的问题**，而非盲目按编号顺序
+
+### 全局性能优化（P0: F-1~F-4, P1: F-5~F-8, P2: F-9~F-10）
+
+#### 1. Loop 写法优化（F-1~F-3, F-5~F-8）
 
 **增加 root function 的大小，减少它们的个数**
 由于不同 root function 之间的子图不能合并，而子图合并是 PyPTO 优化性能的关键手段。
 
-#### 1.1 静态轴使用 Python for 循环
+##### 1.1 静态轴使用 Python for 循环
 
 `pypto.loop` 方法会按当前轴循环展开成不同的 root function。因此静态轴上的循环应使用 Python 的 for 循环。
 
@@ -87,8 +275,8 @@ for i in pypto.loop(batch_size, name="LOOP_1", idx_name="i"):
     result[i] = process(data[i])
 ```
 
-#### 1.2 减少循环次数，增加并行度
-##### 1.2.1 如果外层的动态轴范围很大，使用切块处理（高优先级）
+##### 1.2 减少循环次数，增加并行度
+###### 1.2.1 如果外层的动态轴范围很大，使用切块处理（高优先级）
 
 算子的循环轴的 dim 数值范围往往较广，往往需要对其进行静态切分，否则循环次数太大。
 
@@ -106,7 +294,7 @@ for b_idx in pypto.loop(b_loop, name="LOOP_1", idx_name="b_idx"):
     y = pypto.matmul(x_view, W)
 ```
 
-##### 1.2.2 如果内层的动态轴范围很大，调整切块大小或使用loop_unroll展开，增加并行度
+###### 1.2.2 如果内层的动态轴范围很大，调整切块大小或使用loop_unroll展开，增加并行度
    ```python
    for idx in pypto.loop(A.shape[0] // 64, unroll_list=[128, 64, 8, 1], name="A", idx_name='b'):
        offset = idx * s2_tile
@@ -124,8 +312,9 @@ for b_idx in pypto.loop(b_loop, name="LOOP_1", idx_name="b_idx"):
     - 数值代表**并行块大小**，不是简单的展开次数
     - 目的是**增加并行度**，让多个任务可以并行执行
     - **unroll_list 的最大值，不要超过循环次数**
+    - 改多值 `unroll_list` 后若精度回归，立即回退该 loop
 
-##### 1.2.3 切块优化策略：外层切块 + 内层unroll
+###### 1.2.3 切块优化策略：外层切块 + 内层unroll
 
 **核心思路**：对循环轴切块，减少循环次数，增大任务粒度，然后在最内层使用unroll增加并行度。
 
@@ -173,7 +362,7 @@ for q_block_idx in pypto.loop(num_q_blocks, name="LOOP_Q"):  # 4 次
 - 平衡任务粒度和内存占用
 - 调整中间 tensor 的 shape
 
-#### 1.3 尽可能合并 loop
+##### 1.3 尽可能合并 loop
 
 检查算子代码是否有可以合并的 loop 块：
 
@@ -191,61 +380,28 @@ for b_idx in pypto.loop(bsz, name="LOOP_1", idx_name="b_idx"):
     out_2 = Operation2(x2[b_idx, :], y)
 ```
 
-### 2. TileShape 设置优化
+#### 2. Reshape 全局优化
 
-TileShape 切分大小直接决定：
-- 算子切分后的任务数量
-- 实际执行时的分核数、计算轮次
-- 算子的算数强度
+> **⛔ 执行 F-4 Reshape 优化时，必须加载 [Reshape 全局优化](references/reshape-global-optimization.md) 获取完整操作指南。**
 
-**优化关键**：优化 Tiling 配置
+#### 3. 基本块优化
 
-#### 2.1 Matmul 初始 Tiling 配置
+> **⛔ 执行 F-9/F-10 TileShape 优化时，必须加载 [基本块优化](references/basic-block-optimization.md) 获取完整规范。**
 
-针对矩阵运算场景（A、B 矩阵均为 DT_BF16 或 DT_FP16 类型）：
+### 局部性能优化（P3: F-11~F-15）
 
-```python
-# Cube 的相关计算建议采用如下的 TileShape
-pypto.set_cube_tile_shapes([128, 128], [64, 256], [256, 256])
-pypto.set_cube_tile_shapes([256, 256], [64, 256], [128, 128])
-pypto.set_cube_tile_shapes([128, 128], [128, 512], [128, 128])
-```
-
-**优点**：
-- 在满足 L0 Buffer 约束的条件下达到较大的算数强度
-- 后续进一步使用合图相关接口进行深度调优时，有机会开启 Double Buffer
-
-#### 2.2 Vector 初始 Tiling 配置
-
-针对向量运算场景：
-
-**配置原则**：
-1. 满足特定 Operation 对 TileShape 的规格约束
-2. 保证 Operation 的输入与输出 Tensor 可以在 UB 中分配内存
-3. TileShape 不能过大也不能过小（数据块大小在 16 到 64KB 之间）
-4. 尾轴 32B 对齐
-5. 归约类计算尽可能不要在归约轴上进行切分
-
-```python
-# Vector 的相关计算建议采用如下的 TileShape
-pypto.set_vec_tile_shapes(64, 512)
-```
-
-**归约轴切分问题示例**：
-
-对于输入 Shape 为 (56, 1024) 的 RMSNorm：
-- ❌ 对 reduce 轴切分：多个子图的输出需要在同一个子图进行 reduce 操作，产生 GM 搬运和调度开销
-- ✅ 不对 reduce 轴切分：上下游子图合并，没有 GM 搬运和调度开销
-
-### 3. 数据操作优化
-
-#### 3.1 输入矩阵格式优化
+#### 局部§1. 输入矩阵格式优化（对应优化点 F-12）
 
 检查输入矩阵、尤其是 Shape 较大的权重矩阵是否可以提前以 NZ 格式存储。
 
 **NZ 格式的数据搬运到 L1 的带宽更高。**
 
-#### 3.2 Transpose 优化
+**调优方法**：
+- 算子入口处对权重矩阵调用 `tensor.to_format(pypto.NZ)` 转换格式
+- 要求权重矩阵在算子调用前已按 NZ 格式存储在 HBM 中
+- NZ 格式的数据搬运到 L1 的带宽更高，适合只读一次的大权重矩阵
+
+#### 局部§2. Transpose 优化（对应优化点 F-13）
 
 矩阵乘前后有 transpose 时，可以尝试更换左右矩阵并使用左右矩阵转置的配置。
 
@@ -254,185 +410,77 @@ pypto.set_vec_tile_shapes(64, 512)
 **⚠️ 重要原则**
 - `transpose + matmul` 的结构，可以通过 matmul 的 `a_trans` 及 `b_trans` 参数进行配置，完成 op 融合。好处是，matmul 运算时，可以随路 transpose
 
-#### 3.3 冗余搬运优化
+**代码示例**：
+
+```python
+# ❌ 不推荐：先 transpose 再 matmul
+b_t = pypto.transpose(b, [1, 0])
+y = pypto.matmul(a, b_t)
+
+# ✅ 推荐：matmul 参数直接带转置
+y = pypto.matmul(a, b, b_trans=True)
+
+# 当 M 轴大于 N 轴时，交换左右矩阵
+# A: [M, K], B: [N, K]
+# y = matmul(A, B, b_trans=True)  →  Matmul shape: [M, N]
+# 等价于 y^T = matmul(B, A, a_trans=True)  →  Matmul shape: [N, M]
+```
+
+#### 局部§3. 冗余搬运优化（对应优化点 F-14）
 
 检查是否有不合理数据操作导致的冗余搬运：
 
-- 更换 concat 为 assemble
-- 尝试对 reshape 配置 `inplace = True` 参数
+**优化方法**：
+- 更换 concat 为 assemble：当目标仅是将数据拼接到已有 tensor 的指定位置时，`pypto.assemble` 比 `pypto.concat` 开销更低
+- 识别 concat 拼接后不再修改的场景，替换为 assemble 直接写入
 
-### 4. ⚠️ 合轴优化
-#### 4.1 尽可能减少循环体中 shape 的维度
-**症状**
-循环体内参与计算的 tensor 的 shape 的维度超过两维
-**原因**
-shape 维度太多，会导致处理复杂，此外，pto 指令对多维的 tensor 处理不友好，性能较差
-**解决**
-在循环体外部对输入先进行 `reshape`，并配置`inplace = True` 参数，对多维的 tensor 进行合轴处理。输出保持原有 shape 维度不变。
+**判断依据**：
+- `concat`：需要分配新内存 + 数据搬运，开销高
+- `assemble`：直接写入目标位置，零额外内存分配
 
-#### 4.2 合轴的输入输出分离原则
+#### 局部§4. 尾轴 Broadcast 合轴优化（对应优化点 F-15）
 
-**只读输入可合轴，输出 tensor 不能 inplace reshape 后再切片写入。**
+##### 局部§4.1 问题诊断
 
-```python
-# ✅ 正确：只读 Q/K/V 合轴为 2D，output 保持原始维度
-query_2d = pypto.reshape(query, [batch * heads * seq_q, dim], inplace=True)
-key_2d = pypto.reshape(key, [batch * heads * seq_kv, dim], inplace=True)
-value_2d = pypto.reshape(value, [batch * heads * seq_kv, dim], inplace=True)
+当算子中存在形如 `[M, 1] * [M, N]` 的尾轴 1 broadcast 二元运算时，默认编译策略会先将 `[M, 1]` 展开（broadcast）为 `[M, N]` 再执行计算，多一次数据搬运。
 
-for b_idx in pypto.loop(batch, ...):
-    for n_idx in range(heads):
-        q_offset = b_idx * heads * seq_q + n_idx * seq_q + q_start
-        q_block = pypto.view(query_2d, [BLOCK, dim], [q_offset, 0], ...)
-        # ...
-        # output 保持 4D 切片写入
-        output[b_idx:b_idx+1, n_idx:n_idx+1, ...] = result_4d
-```
+**典型来源**：online softmax 中的 `sum_update`/`max_update`（`pypto.sum(keepdim=True)` / `pypto.amax(keepdim=True)` 产生），形如 `[g_tile, 1]`。
+
+**诊断步骤**：
+1. 扫描算子所有 tensor shape，标记 shape 尾轴为 1 的 tensor
+2. 追踪该 tensor 的参与的所有二元运算（mul/add/sub/div），检查另一侧 tensor 尾轴是否 >1
+3. 确认尾轴 1 的 tensor 是否由前序 reduce 操作（`sum`/`amax` 等 + `keepdim=True`）产生（保证 GM 连续）
+
+##### 局部§4.2 优化方法
+
+在 JIT 函数体首行添加：
 
 ```python
-# ❌ 错误：output 也合轴为 2D，切片写入会得到全零结果
-output_2d = pypto.reshape(output, [batch * heads * seq, dim], inplace=True)
-output_2d[offset:offset+block, :] = result_2d  # 写入无效，输出全零
+pypto.experimental.set_operation_options(combine_axis=True)
 ```
 
-**原因**：inplace reshape 改变了 tensor 的内存视图，output 的切片写入依赖原始 shape 索引，reshape 后索引关系断裂导致写入失败。
+编译器会将 `[32,1] + [32,128]` 优化为：`[32,1]` 通过 brcb 指令扩展到 `[32,8]`，再做 `[32,8] + [32,128]`，省去完整 broadcast 的数据搬运。
 
+##### 局部§4.3 约束条件
 
-## 性能优化建议库
+- 尾轴 broadcast 输入尾轴**必须连续**，否则功能失效
+- `pypto.sum(keepdim=True)` / `pypto.amax(keepdim=True)` 输出保证连续，符合条件
+- 若前序是 COPY_IN，需在前端保证 GM 连续
+- 设置是**局部**的，只影响当前 jit/loop 作用域
 
-### 建议 1：Loop 优化
+##### 局部§4.4 收益预期
 
-| 问题 | 解决方案 | 代码示例 |
-|------|---------|---------|
-| 静态轴使用 pypto.loop | 改用 Python for | `for i in range(n):` |
-| 多个独立 loop | 合并 loop | 合并到同一个 loop 内 |
-| 内层动态轴切分 | 使用 loop_unroll | `pypto.loop_unroll(..., unroll_list=[64, 16, 4])` |
-| 外层动态轴切分 | 使用静态切块 | `pypto.loop(b // b_block_size, ...)` |
+- ✅ **Vector 密集算子**（纯 softmax、layer norm、激活函数）：预期有明显收益
+- ✅ **尾轴 1 broadcast 位于内层热循环**且执行次数多：预期有收益
+- ⚠️ **Cube 密集型算子**（大 matmul 占 >80% 时间）：收益有限，vector 操作非瓶颈
 
-### 建议 2：TileShape 优化
+##### 局部§4.5 案例
 
-| 场景 | 推荐配置 | 说明 |
-|------|---------|------|
-| Cube 计算 | `[128, 128], [64, 256], [256, 256]` | 高算数强度 |
-| Vector 计算 | `64, 512` | UB 利用率高 |
-| Reduce 操作 | 不切归约轴 | 避免额外 GM 搬运 |
-
-### 建议 3：常量配置优化
-在算子中写死的部分常量配置参数，可以尝试调整优化
-
-### 建议 4：数据操作优化
-
-| 问题 | 解决方案 |
-|------|---------|
-| 大矩阵搬运慢 | 使用 NZ 格式存储 |
-| transpose 性能差 | 调整左右矩阵顺序 |
-| concat 冗余搬运 | 使用 assemble |
-| reshape 冗余搬运 | 配置 `inplace=True` |
-
-### 建议 5：合轴优化
-
-| 问题 | 解决方案 |
-|------|---------|
-| 计算节点的 shape 维度超过两维 | 算子入口对输入进行合轴处理 |
-
-
-**优化优先级**：
-1. ⭐⭐⭐ **任务粒度优化**（切块、合并loop、合轴） - **最重要**
-2. ⭐⭐ **TileShape 优化**（Cube/Vector 推荐配置） - **很重要**
-3. ⭐⭐ **loop_unroll 配置**（最内层）
-4. ⭐ **常量配置调整**（BLOCK_SIZE 等）
-
-## 调优流程
-
-**⚠️ 重要：开箱性能调优不需要查看性能报告的详细分析，但需要对比基准执行时间！**
-
-### 1. 建立性能基准
-
-**首次运行算子用例**，记录基准性能：
-```bash
-python3 custom/operator_name/operator.py --run-mode npu
-```
-
-**记录基准执行时间**：
-```
-基准执行时间: XXX us
-```
-
-### 2. 迭代优化循环
-
-```
-┌───────────────────────────────────┐
-│     开箱调优迭代流程              │
-├───────────────────────────────────┤
-│                                   │
-│  1. 选择一个优化点                │
-│     ├─ Loop 写法优化              │
-│     ├─ TileShape 设置优化         │
-│     └─ 数据操作优化               │
-│                                   │
-│  2. 修改代码                      │
-│     └─ 每次只修改一个参数         │
-│                                   │
-│  3. 验证精度 ⭐                   │
-│     ├─ 运行测试用例               │
-│     └─ 失败，尝试解决，不行则回退 │
-│                                   │
-│  4. 对比性能 ⭐                   │
-│     ├─ 记录新执行时间             │
-│     ├─ 对比基准执行时间           │
-│     └─ 计算提升百分比             │
-│                                   │
-│  5. 判断是否保留                  │
-│     ├─ 性能提升：保留修改         │
-│     └─ 性能下降：回退修改         │
-│                                   │
-│  6. 检查终止条件                  │
-│     ├─ 达到性能目标               │
-│     └─ 连续5次优化无提升          │
-│                                   │
-└───────────────────────────────────┘
-```
-
-### 3. 优化检查清单
-
-**🔥 P0 - 任务粒度（最重要）**：
-- [ ] **Matmul 的 M/N/K 轴是否充分利用硬件？**（M 轴 < 8 是常见问题）
-- [ ] **任务总数是否过多？**（> 1000 可能调度开销大）
-- [ ] **合轴优化：shape 的维度是否超过 2 维？**（超过两维，搬运及计算的开销较大）
-
-**P1 - Loop 写法**：
-- [ ] 静态轴是否使用 Python for
-- [ ] 是否可以合并独立 loop
-
-**P2 - TileShape 设置**：
-- [ ] Cube 计算：是否使用推荐配置
-- [ ] Vector 计算: 是否使用推荐配置
-- [ ] 归约轴是否避免切分
-
-**P3 - 常量配置**：
-- [ ] BLOCK_SIZE 是否合理（16/32/64）
-
-**P4 - 数据操作**：
-- [ ] 输入矩阵格式是否优化（NZ 格式）
-- [ ] transpose 配置是否合理
-- [ ] reshape 操作是否可以消除
-- [ ] 是否存在冗余搬运
-
-### 4. 性能对比示例
-
-```markdown
-## 优化记录
-
-| 轮次 | 优化内容 | 执行时间(us) | 提升比例 | 精度结果 |
-|------|---------|-------------|---------|---------|
-| 基准 | 无优化 | 27469.66 | - | 通过 |
-| 1 | 静态轴改用Python for | 25123.45 | 8.5% | 通过 |
-| 2 | TileShape优化 | 22456.78 | 10.6% | 通过 |
-| 3 | 合并loop | 21345.12 | 4.9% | 通过 |
-```
+详见 [尾轴 Broadcast 合轴优化案例](cases/combine-axis-broadcast.md)
 
 ## 参考资料
 
-- [性能调优文档](../../../../docs/tutorials/debug/performance.md)
-- [GDR 算子案例](../../../../docs/tutorials/debug/performance_case_GDR.md)
-- [Matmul 高性能编程](../../../../docs/tutorials/debug/matmul_performance_guide.md)
+- [性能调优文档](https://raw.gitcode.com/cann/pypto/raw/master/docs/zh/tutorials/debug/performance.md)
+- [GDR 算子案例](https://raw.gitcode.com/cann/pypto/raw/master/docs/zh/tutorials/debug/performance_case_GDR.md)
+- [Matmul 高性能编程](https://raw.gitcode.com/cann/pypto/raw/master/docs/zh/tutorials/debug/matmul_performance_guide.md)
+- [典型案例库](cases/README.md)

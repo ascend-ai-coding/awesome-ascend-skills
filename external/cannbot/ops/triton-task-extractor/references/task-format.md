@@ -157,7 +157,7 @@ def get_init_inputs():
 | 可执行（单 case） | `Model(*get_init_inputs())(*get_inputs())` 必须直接运行 |
 | 可执行（多 case） | `Model(*get_init_inputs())(*get_input_groups()[i])` 对所有 `i` 都必须直接运行 |
 | 确定性 | 给定相同输入，输出必须一致 |
-| 无 NaN/Inf | forward 输出不能包含 NaN 或 Inf |
+| 无 NaN/+Inf | forward 输出不能包含 NaN 或 +Inf；-Inf 允许（top-k/top-p 掩码取值） |
 | 合理输入 | 输入规模不能过小或过大 |
 | 一致返回 | 返回类型/形状必须与原始实现一致 |
 | 模式选择 | **禁止**将多 case 源（含 `get_input_groups`）降级为单 case 任务文件 |

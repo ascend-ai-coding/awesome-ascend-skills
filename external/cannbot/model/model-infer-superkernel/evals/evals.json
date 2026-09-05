@@ -1,0 +1,215 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "SuperKernel 适用约束",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "SuperKernel 在昇腾 NPU 上启用有哪些前提约束？硬件、执行模式、推理阶段分别有什么要求？",
+      "expected_output": "回复应说明 SuperKernel 仅支持 Atlas A3 硬件、仅 ge_graph 执行模式、仅在 decode 阶段生效",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "ge_graph",
+          "description": "回复中提到了 ge_graph"
+        },
+        {
+          "type": "contains",
+          "pattern": "A3",
+          "description": "回复中提到了 A3"
+        },
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-superkernel",
+          "description": "技能 model-infer-superkernel 被激活"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "superkernel_scope 标记方式",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "启用 SuperKernel 时 superkernel_scope 该加在哪里、怎么用？",
+      "expected_output": "回复应说明导入上下文管理器，在 decode 方法中用 superkernel_scope 标记融合范围",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-superkernel",
+          "description": "技能 model-infer-superkernel 被激活"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "二进制融合收益机制",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "SuperKernel 通过算子二进制融合减少调度开销，为什么只在 decode 阶段有收益？说明原因和机制。",
+      "expected_output": "回复应说明 decode 单步算子多、调度开销占比高，二进制融合减少任务下发开销；Prefill 计算量大、调度占比低收益有限",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-superkernel",
+          "description": "技能 model-infer-superkernel 被激活"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "信息不足时主动确认",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "帮我给模型启用 SuperKernel。",
+      "expected_output": "回复应先确认启用前提条件再动手，而不是缺信息直接改造",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-superkernel",
+          "description": "技能 model-infer-superkernel 被激活"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "正向看护-多 skill 环境下正确触发",
+      "config": {
+        "max_tokens": 150000,
+        "distractor_skills": [
+          "model-infer-graph-mode",
+          "model-infer-fusion",
+          "model-infer-prefetch"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "A3 上 decode 调度开销太大，想用算子二进制融合减少任务下发，往哪个方向改？只说方向不用写代码。",
+      "expected_output": "回复应正确激活 model-infer-superkernel，给出 SuperKernel 二进制融合方向，即使存在图模式、融合算子、预取等相似 skill 也应选 SuperKernel 专项",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-superkernel",
+          "description": "技能 model-infer-superkernel 被激活"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "使用边界",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "我在 Atlas A2 上用 eager 模式跑推理，想启用 SuperKernel，可以吗？",
+      "expected_output": "回复应说明 SuperKernel 仅支持 A3 + ge_graph + decode，A2 和 eager 模式不满足条件，应建议用户先满足硬件和执行模式前提",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-superkernel",
+          "description": "技能 model-infer-superkernel 被激活"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Scope 策略需结合结构并由用户选择",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "模型满足 A3+ge_graph+Decode 前提。我能直接照搬另一个模型的全 Decoder SuperKernel scope 吗？",
+      "expected_output": "回复应拒绝盲目照搬，先分析 Attention、MoE、FFN、Prefill/Decode 分支和潜在不支持点，再让用户在 Attention、MoE、全 Decoder、自动分析或自定义范围中确认；首次尝试优先较小的 Attention scope，验证后再扩大",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 8,
+      "title": "动态控制流与不支持算子需先识别",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "候选 scope 里包含依赖 tensor 值的 Python if、动态 KV shape 和一个 Tiling 下沉算子。只要包上 superkernel_scope 就一定能融合吗？",
+      "expected_output": "回复应说明不能保证，必须在结构分析阶段识别动态 shape、Python 控制流和不支持的 Tiling 下沉算子，必要时缩小或调整 scope，并在 ge_graph 编译和运行中验证，不能为扩大范围而改变模型语义",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 9,
+      "title": "SuperKernel 开关与阶段条件",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "配置里 enable_superkernel=True 后，我在共享 forward 的 Prefill 和 Decode 两阶段都无条件进入 scope。这样可以吗？",
+      "expected_output": "回复应要求 exe_mode=ge_graph、custom_params.enable_superkernel=True，并在 scope 条件中同时检查开关和非 Prefill，只让 Decode 生效；Prefill 动态长度下应自动禁用，aclgraph/eager 也不能使用",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 10,
+      "title": "无实际对照测试不得宣称优化成功",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "代码和配置都改好了，但没有模型权重，无法在 A3 上运行。可以按预期收益填写优化报告并宣布完成吗？",
+      "expected_output": "回复应拒绝伪造性能结果或宣称完成，说明第四步实际性能验证不可跳过；只有以同工况启用/禁用 SuperKernel 对比 Decode 单步耗时、吞吐和输出正确性后，才能填写真实改善百分比",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 11,
+      "title": "最终交付只保留代码与实测报告",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "SuperKernel 适配完成后最终应交付哪些文件？结构分析和 scope 规划是否也要各生成一份正式文档？",
+      "expected_output": "回复应说明最终交付为启用开关的配置、加入 scope 的 modeling 代码、baseline/optimized 测试日志和含真实对比数据的 superkernel_optimization_report.md；模型结构分析与 scope 规划只作内部记录，不额外生成正式中间文档",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "model-infer-superkernel"
+}

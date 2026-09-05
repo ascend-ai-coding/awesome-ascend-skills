@@ -1,0 +1,210 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "权重预取优化流程",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "想给模型加权重预取提速，整体按什么步骤做？只讲方法不用写代码。",
+      "expected_output": "回复应给出确定预取位置→计算预取大小→代码实现→性能验证的流程，强调先靠 profiling 找到 memory-bound 热点算子再下手",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-prefetch",
+          "description": "技能 model-infer-prefetch 被激活"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "适用前提判断",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "什么样的算子瓶颈才适合用权重预取来优化？怎么从 profiling 判断？",
+      "expected_output": "回复应说明预取适合 memory-bound 的 MatMul/QBMM/GMM 等权重搬运热点，compute-bound 算子加预取无收益，需先看 profiling 确认搬运占比",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "memory-bound",
+          "description": "回复中提到了 memory-bound"
+        },
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-prefetch",
+          "description": "技能 model-infer-prefetch 被激活"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "预取位置与依赖窗口",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "预取调用插在哪、依赖节点怎么选才能真正重叠搬运？只讲方向。",
+      "expected_output": "回复应说明把预取插在目标算子前、用其直接前驱作依赖节点，留足搬运窗口让权重预取与前驱计算重叠，依赖不在同路径需另处理",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-prefetch",
+          "description": "技能 model-infer-prefetch 被激活"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "信息不足时主动确认",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "帮我给模型加预取。",
+      "expected_output": "回复应先确认必要信息再动手，而不是缺信息直接插预取代码",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-prefetch",
+          "description": "技能 model-infer-prefetch 被激活"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "正向看护-多 skill 环境下正确触发",
+      "config": {
+        "max_tokens": 150000,
+        "distractor_skills": [
+          "model-infer-multi-stream",
+          "model-infer-fusion",
+          "model-infer-graph-mode"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "profiling 显示 MatMul 是 memory-bound 热点，想把权重提前搬到片上和计算重叠，往哪个方向改？只说方向不用写代码。",
+      "expected_output": "回复应正确激活 model-infer-prefetch，给出权重预取方向，即使存在多流、融合、图模式等相似 skill 也应选预取专项",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-prefetch",
+          "description": "技能 model-infer-prefetch 被激活"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "预取大小确定",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "预取大小该怎么定，给太大或太小分别有什么问题？只讲思路。",
+      "expected_output": "回复应说明预取大小按目标权重张量大小估算、受片上空间约束，太大挤占搬运/超容反伤、太小盖不住搬运不够重叠，需结合权重维度和数据类型字节数计算",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-prefetch",
+          "description": "技能 model-infer-prefetch 被激活"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "预取必须默认关闭并保留回退",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "为了让优化默认生效，我准备直接调用 torch_npu.npu_prefetch，不加 enable_prefetch 开关。这样可以吗？",
+      "expected_output": "回复应拒绝无开关改造，要求从 YAML/InferenceConfig 贯通 enable_prefetch 且默认 False，调用走条件保护并保留原路径；还应校验启用 prefetch 时已有所需图模式和多流支持，便于单点对比和快速回退",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 8,
+      "title": "没有安全依赖窗口时放弃候选",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "目标 GMM 是 memory-bound，但它之前沿关键路径全是大通信和大搬运，找不到足够长的非争抢窗口。是否仍应随便选一个前驱插预取？",
+      "expected_output": "回复应明确当前候选没有安全窗口并放弃，不能为了产生改动硬插；通信和重搬运会争带宽或引入等待，应继续寻找其他目标或更早且语义匹配的依赖节点",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 9,
+      "title": "图模式依赖节点不得跨分支复用",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "图模式里 MLP 目标算子消费 attn_output，但我把另一个可选分支里的 tensor x 当 npu_prefetch dependency，因为它出现得更早。可以吗？",
+      "expected_output": "回复应拒绝跨分支依赖，要求 dependency 是与目标算子同一逻辑路径、时序稳定的明确 Tensor 节点，优先直接前驱或经验证的更早前驱；否则可能编译失败或只移动等待位置",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 10,
+      "title": "先单点再逐步调大小和位置",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "Roofline 找到十个候选后，我想一次全部加预取并把 max_size 设为权重全量，出现回归再一起调。合理吗？",
+      "expected_output": "回复应要求先选一个目标、一个稳定窗口和保守的理论权重大小约 50%，验证后先固定位置调 max_size，再固定大小调 dependency，最后才叠加多个目标，避免无法归因和片上空间或带宽争抢",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 11,
+      "title": "性能验收必须有开关前后实测",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "代码能编译且目标 MatMul 看起来应该更快，能否直接宣布预取优化成功？",
+      "expected_output": "回复应说明不能只凭编译或理论判断，必须分别以 enable_prefetch=False/True 实测 profiling 和输出一致性，对比目标算子、关键路径、依赖窗口退化和新拖尾，报告 baseline、优化值与改善百分比；无实测条件时只能交付脚本和报告模板并标明未验证",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "model-infer-prefetch"
+}

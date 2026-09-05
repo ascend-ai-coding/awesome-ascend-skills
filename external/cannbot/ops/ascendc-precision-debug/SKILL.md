@@ -4,8 +4,8 @@ description: Ascend C 算子精度调试技能，提供精度问题诊断和解�
   不达标）、FP16 精度差于预期、Cast 后数据错误、需要排查流水线同步（EnQue/DeQue）或 DataCopy 对齐问题。
 original-name: ascendc-precision-debug
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-26'
-synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
+synced-date: '2026-09-05'
+synced-commit: a426ec91e1038f233066724d63235c719a46a10d
 license: UNKNOWN
 ---
 
@@ -41,13 +41,13 @@ license: UNKNOWN
 
 **💡 推荐实践**：调试时建议在至少两个 dtype（如 FP16 和 FP32）上用**同一 shape + 同一数据**验证。如果一种 dtype 通过另一种失败，可按下方对应的诊断模式快速缩小范围。
 
-### 2. 检索 asc-devkit ⭐
+### 2. 检索官方文档 ⭐
 
 > **禁止凭直觉修改代码**
 
 **检索顺序**：
-1. 搜索 `asc-devkit/examples/` 查找类似算子。
-2. 查看 `asc-devkit/docs/api/context/` API 文档。
+1. 使用 `/ascendc-docs-search` skill 搜索示例代码，查找类似算子。
+2. 使用 `/ascendc-docs-search` skill 查阅 API 文档。
 3. 对比官方实现与当前实现。
 
 ### 3. 清理缓存和临时文件
@@ -167,7 +167,7 @@ mkdir -p build/input build/output
     │   └─ 检查中间计算是否因 FP16 的更高精度要求暴露了算法缺陷
     │
     └─ 交叉验证
-        ├─ 检查 asc-devkit 文档确认相关 API 是否支持 BF16
+        ├─ 使用 `/ascendc-docs-search` skill 查阅文档确认相关 API 是否支持 BF16
         ├─ 如果 API 不支持 BF16 → 优先按原因1排查
         └─ 如果 API 支持 BF16（BF16/FP16 走相同路径）→ 优先按原因2排查
 ```
@@ -226,6 +226,22 @@ Compute(x);
 
 ---
 
+## SIMT 精度调试
+
+SIMT 算子有独特的精度调试问题：DCache 一致性、核内共享内存同步等。
+
+详细说明见 [references/simt-precision-debug.md](references/simt-precision-debug.md)
+
+### SIMT 特有精度陷阱
+
+| 陷阱 | 症状 | 解决方案 |
+|-----|------|----------|
+| **DCache 一致性** | VF 外通过 Scalar 单点写 GM 后其他核读不到 | 使用 DataCacheCleanAndInvalid 刷新 |
+| **SIMT printf 调试** | 需要在 VF 内打印变量 | VF 内用 AscendC::Simt::printf，VF 外用 PRINTF |
+| **workspace 数据同步** | 多核通过 workspace 交换数据后读取不一致 | 在同步位置加 SyncAll() + SetScheduleMode(1) |
+
+---
+
 ## 调试策略层级
 
 ```
@@ -234,6 +250,7 @@ Compute(x);
     ├─ 快速方法（优先尝试，≤7次）
     │   ├─ 误差分布分析 → 识别误差模式
     │   ├─ Printf 特定位置 → 缩小范围
+    │   ├─ DumpTensor 7步法 → kernel 内插桩 + CPU golden 逐段对比 ⭐
     │   └─ 常见陷阱排查 → 对症下药
     │
     └─ 二分调试（保底手段）
@@ -241,6 +258,12 @@ Compute(x);
 ```
 
 > **重要原则**：不要盲目试错超过 7 次
+
+### DumpTensor 7步法
+
+kernel 内插桩调试的标准工具：在 CopyIn / Compute / CopyOut 关键点插入 `DumpTensor`，配合 CPU golden 同 desc 编号 (100/200/300) 逐段对比，快速定位异常出现在数据流哪一阶段。适用：输出错误、NaN/Inf、需要追踪 CopyIn → Compute → CopyOut 各阶段数据。
+
+详细说明见 [references/ascendc-dumptensor.md](references/ascendc-dumptensor.md)
 
 ---
 
@@ -313,7 +336,7 @@ Compute(x);
 
 **调试阶段**：
 - [ ] 已固定最小可复现用例
-- [ ] 已检索 asc-devkit 确认 API 用法 ⭐
+- [ ] 已通过 `/ascendc-docs-search` skill 确认 API 用法 ⭐
 - [ ] 已清理缓存和临时文件
 - [ ] **已排查流水线同步问题**（DataCopy 后是否 EnQue/DeQue）⭐⭐⭐
 - [ ] **已排查输出全为 0 问题**（DataCopy 对齐 / GlobalTensor.SetValue → LocalTensor.SetValue + DataCopyPad）⭐⭐⭐
@@ -337,6 +360,7 @@ Compute(x);
 - [printf-debug.md](references/printf-debug.md) - Printf 调试法
 - [data-comparison.md](references/data-comparison.md) - 数据对比法
 - [tools-reference.md](references/tools-reference.md) - 工具和命令参考
+- [ascendc-dumptensor.md](references/ascendc-dumptensor.md) - DumpTensor 7步法（含 API、错误模式）
 
 ### 实战案例
 - [case-studies.md](references/case-studies.md) - 实战调试案例

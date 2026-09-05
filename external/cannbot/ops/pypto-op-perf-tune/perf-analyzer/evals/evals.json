@@ -1,0 +1,100 @@
+{
+  "skill_name": "perf-analyzer",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "性能分析完整工作流",
+      "config": {
+        "max_tokens": 120000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 150000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "请介绍 PyPTO 算子性能分析的完整工作流程，需要哪些输入数据，产出什么结果？",
+      "expected_output": "回复应覆盖：性能分析的输入文件（bubble_analysis.log、merged_swimlane.json、machine_runtime_operator_trace.json），关键性能指标（AIC/AIV wait time、work time、AicoreTime、core utilization ratio、bubble rate），分析流程（定位数据文件→提取指标→计算利用率→瓶颈分析→优化建议），以及性能评级标准。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "bubble_analysis" },
+        { "type": "contains", "pattern": "AicoreTime" },
+        { "type": "contains", "pattern": "swimlane" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "性能瓶颈定位",
+      "config": {
+        "max_tokens": 120000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 150000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "我的 PyPTO 算子性能数据中 bubble rate 很高，怎么分析瓶颈在哪里？",
+      "expected_output": "回复应说明 bubble rate 的定义和计算方法，分析高 bubble rate 的常见原因（AIV 等待、数据搬运瓶颈、TileShape 不合理等），给出从泳道图和 bubble_analysis.log 中定位具体瓶颈点的方法，以及如何将分析结果转换为优化建议。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "bubble" },
+        { "type": "contains", "pattern": "AIV" },
+        { "type": "contains", "pattern": "利用率" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "性能评级与解读",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "我从泳道图分析中得到了一些性能指标，如何解读这些指标并评判算子性能处于哪个水平？",
+      "expected_output": "回复应说明 core utilization ratio 的计算方式，性能评级的各级标准，如何根据 AIC/AIV 的 wait time 和 work time 判断是否存在资源争抢或数据搬运瓶颈，以及如何从泳道图的时序信息推断优化方向。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "utilization" },
+        { "type": "contains", "pattern": "wait" },
+        { "type": "contains", "pattern": "work" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "信息不足场景：追问性能数据",
+      "config": {
+        "max_tokens": 80000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 100000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "我的算子性能不太好，帮我分析一下。",
+      "expected_output": "回复应主动追问关键信息：算子类型、性能数据文件是否已生成、具体的性能指标（如 bubble rate、AicoreTime、core utilization ratio）、当前性能数据文件的路径和内容。不应在缺少性能数据的情况下给出具体的优化建议。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "bubble" },
+        { "type": "contains", "pattern": "数据文件" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "正向看护：区分 PyPTO 性能调优技能",
+      "config": {
+        "max_tokens": 120000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 150000
+        },
+        "ascend_platforms": ["A2"],
+        "distractor_skills": ["tune-frontend", "tune-incore", "tune-swimlane", "tune-orchestrator"]
+      },
+      "prompt": "我的 PyPTO 算子跑完了，有泳道图和 bubble 日志，能帮我分析一下性能瓶颈在哪吗？",
+      "expected_output": "回复应聚焦性能分析技能的核心职责：读取性能数据文件、提取关键指标、计算利用率和 bubble rate、定位瓶颈，为后续调优提供方向。不应直接给出代码级优化方案。",
+      "files": [],
+      "expectations": [
+        { "type": "skill_activated", "pattern": "perf-analyzer" },
+        { "type": "contains", "pattern": "bubble" }
+      ]
+    }
+  ]
+}

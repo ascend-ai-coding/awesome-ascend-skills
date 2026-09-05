@@ -1,6 +1,6 @@
 # 示例代码目录
 
-基于 `asc-devkit/examples/` 的完整示例代码索引，共 587 个代码文件。
+基于 `$ASC_DEVKIT_DIR/examples/` 的完整示例代码索引，共 587 个代码文件。
 
 ---
 
@@ -144,7 +144,7 @@ examples/
 
 ### 00_add_doublebuffer - 高性能模板
 
-**位置**：`asc-devkit/examples/04_best_practices/00_add_doublebuffer/`
+**位置**：`$ASC_DEVKIT_DIR/examples/04_best_practices/00_add_doublebuffer/`
 
 这是实现高性能算子的**核心参考模板**，展示：
 - 双缓冲技术

@@ -1,0 +1,17 @@
+strategy_id: P50
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "SwiGLU|swiglu|sigmoid|gate|Mul.*Exp|FFN"
+    min_count: 1
+    fail_msg: "未检测到 SwiGLU 相关计算模式 → 不适用 P50。检查 P69 或 P81。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "Cube.*Vector|Vector.*Cube|CV|MIX"
+    min_count: 1
+    fail_msg: "未检测到 Cube+Vector 融合模式 → SwiGLU 融合流水线无意义，不适用 P50。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "PipeBarrier|SyncAll|SetFlag|WaitFlag"
+    min_count: 1
+    fail_msg: "未检测到同步原语 → 无流水线优化空间，不适用 P50。"

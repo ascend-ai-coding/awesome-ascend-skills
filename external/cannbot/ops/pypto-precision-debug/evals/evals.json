@@ -1,0 +1,148 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "精度问题排查与规避方法",
+      "config": {
+        "max_tokens": 120000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我的 PyPTO Add 算子精度验证失败，输出结果和 golden 有偏差。请帮我排查精度问题。算子的实现使用了 @pypto.frontend.jit 装饰器，但某些 shape 下（如尾轴为 1 时）精度异常。",
+      "expected_output": "回复应说明精度调试的排查流程：检查前端写法、检查用户代码语法、按优先级尝试快速规避方法、必要时转入 precision-compare 二分定位。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "pypto.frontend.jit",
+          "description": "回复中提到了 pypto.frontend.jit"
+        },
+        {
+          "type": "contains",
+          "pattern": "unroll_list",
+          "description": "回复中提到了 unroll_list"
+        },
+        {
+          "type": "contains",
+          "pattern": "submit_before_loop",
+          "description": "回复中提到了 submit_before_loop"
+        },
+        {
+          "type": "contains",
+          "pattern": "规避方法",
+          "description": "回复中提到了 规避方法"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "职责范围与使用边界",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "pypto-precision-debug 和 pypto-precision-compare 这两个 skill 在精度问题上如何分工？什么情况下应该先用 precision-debug，什么情况下应该直接用 precision-compare？precision-debug 能定位到框架层面的问题吗？",
+      "expected_output": "回复应说明 pypto-precision-debug 与 pypto-precision-compare 的分工：debug 负责用户代码层面的语法检查和规避方法，不负责底层框架根因排查。当 debug 的规避方法无效时转入 compare 进行精确定位。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "用户代码层面",
+          "description": "回复中提到了 用户代码层面"
+        },
+        {
+          "type": "contains",
+          "pattern": "不负责",
+          "description": "回复中提到了 不负责"
+        },
+        {
+          "type": "contains",
+          "pattern": "pypto-precision-compare",
+          "description": "回复中提到了 pypto-precision-compare"
+        },
+        {
+          "type": "contains",
+          "pattern": "规避方法",
+          "description": "回复中提到了 规避方法"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "view 后 reshape 禁止 inplace",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "精度异常集中在 pypto.view 后紧接 pypto.reshape(..., inplace=True)，单独 reshape 的其它路径正常。优先怎么规避？",
+      "expected_output": "回复应将 view 后的 reshape 改为 inplace=False 并重新验证，因为 view 的 offset/valid_shape 元数据可能在 inplace 路径传播错误；不应笼统禁止所有独立 reshape 的 inplace=True。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "循环展开精度异常先关闭展开",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "只有开启多值 unroll 后结果出错，关闭优化时正确。第一项有证据的规避措施是什么？",
+      "expected_output": "回复应先把相关 pypto.loop 的 unroll_list 设为 [1] 关闭展开，规避 RegisterCopy pass 的寄存器拷贝问题并重新验证；若是嵌套循环，再有针对性尝试 submit_before_loop=True，而不是同时改多个参数。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "未初始化 Tensor 导致随机漂移",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "同一输入每次输出异常值都不同，代码用 pypto.Tensor 创建累加 buffer，循环里先读后写。怎么排查？",
+      "expected_output": "回复应判断未初始化内存参与计算的可能性，pypto.Tensor 创建后不是零值；对 read-modify-write buffer 使用 pypto.zeros 等在 JIT 内显式初始化，或保证先完整写后读，再重复验证确定随机漂移是否消失。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "动态尾块精度问题检查 valid_shape",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "整除 shape 正确，最后一块不足固定 tile 时输出错误。精度调试应检查什么？",
+      "expected_output": "回复应检查 view/reshape 是否传入与实际有效数据一致的 valid_shape，避免尾块读取固定块之外的无效数据；同时核对 dtype 和 shape 定义。可用不同非整除 shape 复测，不能只靠调整 shape 避开生产问题。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "框架问题结论必须满足完整前提",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "试了 +0.0 没效果，能否直接结论为 PyPTO 框架 Bug？",
+      "expected_output": "回复应拒绝过早定性：只有步骤0前端、步骤1代码语法/shape/dtype/valid_shape、步骤2七类规避都完成，代码审查无逻辑错误，且步骤3 precision-compare 二分定位已执行仍未解决，才可报告“可能是底层框架问题”，不能确认框架 Bug。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "pypto-precision-debug"
+}

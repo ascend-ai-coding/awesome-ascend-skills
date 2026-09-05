@@ -1,0 +1,163 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "精度对比方法与流程",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我有一个 Add 算子的精度问题，最终输出结果和 golden 不一致。请帮我使用 pypto-precision-compare skill 定位精度差异来源。算子的输出和 torch.add 的结果有偏差，但我不知道问题出在哪里。",
+      "expected_output": "回复应调用 pypto-precision-compare skill，按决策树流程执行精度定位。应覆盖以下要点：\n- 检查用户是否指定了 mode 参数，未指定则走标准决策树流程\n- 步骤 1：在算子实现中配置 verify_options（enable_pass_verify=True, pass_verify_save_tensor=True），开启 tensor_graph 校验\n- 使用 pypto.set_verify_golden_data 设置 golden 数据\n- 步骤 2：运行测试后查看校验结果（interpreter.log）\n- 步骤 3：根据校验结果选择调试路线：\n  - Tensor Graph FAIL → 使用精度工具对比法（precision-verify），添加 pypto.pass_verify_save() 调用\n  - Tensor Graph PASS → 进行 Pass 校验（precision-pass），配置 PreCheck/PostCheck\n  - Pass 校验通过但仍有问题 → 上板二分定位（precision-binary-search），添加检查点 tensor 参数\n- 提供三种方法对比：精度工具对比法（Op级别）、Pass精度校验法（Pass级别）、二分对比法（Op级别）\n- 完成后移除 verify_options 配置和 golden 数据设置代码",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "tensor_graph",
+          "description": "回复中提到了 tensor_graph"
+        },
+        {
+          "type": "contains",
+          "pattern": "pass_verify_save",
+          "description": "回复中提到了 pass_verify_save"
+        },
+        {
+          "type": "contains",
+          "pattern": "set_verify_golden_data",
+          "description": "回复中提到了 set_verify_golden_data"
+        },
+        {
+          "type": "contains",
+          "pattern": "precision-verify",
+          "description": "回复中提到了 precision-verify"
+        },
+        {
+          "type": "contains",
+          "pattern": "precision-binary-search",
+          "description": "回复中提到了 precision-binary-search"
+        },
+        {
+          "type": "contains",
+          "pattern": "interpreter.log",
+          "description": "回复中提到了 interpreter.log"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "三种精度对比方法的适用场景与使用边界",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "pypto-precision-compare 的三种精度对比方法分别在什么场景下使用？它们的定位粒度和使用难度有何不同？什么情况下应该用 pypto-precision-debug 而不是 pypto-precision-compare？",
+      "expected_output": "回复应说明三种精度对比方法的适用场景和使用边界：\n- 精度工具对比法（precision-verify）：Tensor Graph 校验失败时使用，使用 pypto.pass_verify_save() 保存中间结果，定位 Op 级别，使用难度简单，不需要修改 kernel 函数签名\n- Pass 精度校验法（precision-pass）：Tensor Graph 校验通过时使用，使用 PreCheck/PostCheck 配置，定位 Pass 级别，使用难度中等\n- 二分对比法（precision-binary-search）：前两种方法都通过但仍有问题时使用，添加检查点 tensor 作为输入参数在内存中直接对比，定位 Op 级别，使用难度较复杂，需要修改 kernel 函数签名\n- 与 pypto-precision-debug 的区分：\n  - precision-compare：负责精度差异的定位和对比，通过 tensor_graph / pass_verify / 二分等方法找到具体出问题的位置\n  - precision-debug：负责用户代码层面的语法逻辑检查和规避方法尝试，提供快速修复方案\n  - 通常在 precision-debug 的规避方法无效后，才使用 precision-compare 进行精确定位",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "精度工具对比法",
+          "description": "回复中提到了 精度工具对比法"
+        },
+        {
+          "type": "contains",
+          "pattern": "Pass 精度校验",
+          "description": "回复中提到了 Pass 精度校验"
+        },
+        {
+          "type": "contains",
+          "pattern": "二分对比",
+          "description": "回复中提到了 二分对比"
+        },
+        {
+          "type": "contains",
+          "pattern": "tensor_graph",
+          "description": "回复中提到了 tensor_graph"
+        },
+        {
+          "type": "contains",
+          "pattern": "定位粒度",
+          "description": "回复中提到了 定位粒度"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "明确关键词直接路由而不重复 tensor_graph",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "用户明确说“用上板二分和检查点 tensor 定位”。还需要先执行 tensor_graph 和 Pass 校验吗？",
+      "expected_output": "回复应识别为 mode=binary，跳过标准判断并直接加载 precision-binary-search；关键词“二分/上板二分/检查点tensor”代表用户已选路线，不应再重复 tensor_graph 或 Pass 流程。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "Golden 设置顺序和设备要求",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "tensor_graph 校验里，我先运行 PyPTO kernel，再把 NPU 上的 torch_output 传给 set_verify_golden_data，可以吗？",
+      "expected_output": "回复应指出顺序和设备都错误：必须先计算 golden，再把 CPU 上的 golden 通过 pypto.set_verify_golden_data 设置好，最后执行 PyPTO kernel；顺序错会导致 verify 日志为空或输入输出不匹配。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "首次自动校验前必须编译安装",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "auto 模式准备开启 tensor_graph 校验，能否直接运行旧安装环境里的算子？",
+      "expected_output": "回复应要求执行算子前先运行 python3 -m pip install . --verbose 完成编译安装，再配置 enable_pass_verify、pass_verify_save_tensor 和空 pass filter；不能默认旧安装已包含当前验证配置。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "拿到 tensor_graph 结果后清理验证注入",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "interpreter.log 已产生明确 tensor_graph 结果。verify_options 和 set_verify_golden_data 可以一直留在生产代码里继续定位吗？",
+      "expected_output": "回复应要求确认结果后移除 @jit 的 verify_options 参数和 pypto.set_verify_golden_data 注入，再按结果进入 precision-verify 或 precision-pass；这些诊断配置不应残留在生产路径。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "卡资源冲突与空日志的分流处理",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "开启校验后一次报 aicore/MPU 地址访问无效，另一次 verify 日志为空。这两类现象分别先查什么？",
+      "expected_output": "回复应分流：aicore/MPU 无效地址优先怀疑 NPU 卡冲突或异常，切换 TILE_FWK_DEVICE_ID 到空闲卡重试；verify 日志为空则检查 golden 是否设置、是否按计算 golden→CPU set_verify_golden_data→运行算子的顺序，以及输入输出数量是否匹配。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "pypto-precision-compare"
+}

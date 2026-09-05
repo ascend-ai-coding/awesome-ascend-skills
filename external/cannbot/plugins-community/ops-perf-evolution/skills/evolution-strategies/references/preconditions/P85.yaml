@@ -1,0 +1,17 @@
+strategy_id: P85
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "InitBuffer|TBuf|workspace|wsLocal|zone"
+    min_count: 1
+    fail_msg: "未检测到 Buffer/workspace 分配 → 无分区复用空间，不适用 P85。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "stage|Stage|阶段|phase|Phase|串行|serial"
+    min_count: 1
+    fail_msg: "未检测到多阶段串行结构 → 无分时复用场景，不适用 P85。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "offset|Offset|alias|Alias|reuse.*zone|zone.*reuse"
+    min_count: 0
+    fail_msg: "已存在 zone reuse/alias 逻辑 → 可能冗余，优先验证现有策略效果。"

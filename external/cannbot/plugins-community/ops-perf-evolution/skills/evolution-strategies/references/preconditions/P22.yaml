@@ -1,0 +1,31 @@
+strategy_id: P22
+description: TQueBind 双向复用适用性检查 — 算子必须有同 shape 读-改-写场景，当前使用分离 VECIN/VECOUT，且 UB 存在压力
+
+checks:
+  - id: has_read_modify_write
+    type: grep_count
+    pattern: "CopyIn.*CopyOut|DataCopy.*in.*DataCopy.*out|read.*modify.*write|inplace|in.*place"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无读-改-写模式 → TQueBind 无收益。检查是否为纯 compute-through 算子"
+
+  - id: separate_in_out_queues
+    type: grep_count
+    pattern: "TQue.*VECIN|TQue.*VECOUT|TBuf.*VECIN|TBuf.*VECOUT"
+    files: [kernel]
+    expected: ">= 2"
+    fail_msg: "算子无分离的 VECIN/VECOUT → 可能已用 TQueBind 或其他方式复用。检查已有 buffer 结构"
+
+  - id: no_tquebind_yet
+    type: grep_count
+    pattern: "TQueBind"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已使用 TQueBind → P22 已应用"
+
+  - id: ub_pressure_exists
+    type: grep_count
+    pattern: "BUFFER_NUM.*[3-9]|InitBuffer.*[0-9]{5,}|TBuf.*TBuf.*TBuf"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "UB buffer 数量少或空间充裕 → TQueBind 的 50% 节省收益有限。考虑其他优化策略"

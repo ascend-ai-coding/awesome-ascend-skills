@@ -1,0 +1,30 @@
+strategy_id: P48
+description: 多量化模式编译期分发适用性检查 — 算子涉及多量化路径，且当前未用编译期宏/TilingKey 分发
+checks:
+  - id: has_quantization_path
+    type: grep_count
+    pattern: "quant|Quant|A8W8|A4W4|A16W8|MSD|dequant"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子无量化路径 → P48 不适用"
+
+  - id: has_multiple_modes
+    type: grep_count
+    pattern: "int8|int4|half|float|A8|A4|W8|W4"
+    files: [kernel]
+    expected: ">= 2"
+    fail_msg: "算子仅单精度 → P48 收益低"
+
+  - id: no_dispatch_yet
+    type: grep_count
+    pattern: "TILING_KEY_IS|GMM_A8W8|GMM_A4W4|编译期.*分发|if.*defined"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已有编译期分发 → P48 已应用"
+
+  - id: not_pure_validation
+    type: grep_count
+    pattern: "OP_CHECK|shape.*check|dim.*check|validation"
+    files: [kernel, header]
+    expected: "<= 3"
+    fail_msg: "纯 Host 侧 shape 校验 → P48 解决的是量化路径分发"

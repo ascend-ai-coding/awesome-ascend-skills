@@ -1,0 +1,17 @@
+strategy_id: P45
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "topk|TopK|sparse|Sparse|block|Block|attention|Attention"
+    min_count: 1
+    fail_msg: "未检测到 topK/sparse attention 相关逻辑 → 无离散块处理需求，不适用 P45。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "index|Index|indices|Indices|cache|Cache"
+    min_count: 1
+    fail_msg: "未检测到索引/缓存相关逻辑 → 无索引缓存优化空间，不适用 P45。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "Iterator|iterator|迭代器|chunk|Chunk"
+    min_count: 0
+    fail_msg: "已存在迭代器/分块逻辑 → 可能冗余，优先验证现有策略效果。"

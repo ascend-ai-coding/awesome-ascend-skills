@@ -1,0 +1,209 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "并行切分实施流程",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "已经定好并行方案，要把模型代码改成多卡并行，整体按什么步骤实施？只讲流程不用写代码。",
+      "expected_output": "回复应给出按 parallel_config 创建通信组→逐模块并行层替换→Embedding/LMHead 并行→YAML 配置→权重处理→验证的实施流程，强调前置依赖已确认的 parallel_config",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "parallel_config",
+          "description": "回复中提到了 parallel_config"
+        },
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-parallel-impl",
+          "description": "技能 model-infer-parallel-impl 被激活"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "并行线性层替换方式",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "TP 切分时模型里的线性层要怎么替换成并行版本？列切和行切分别用什么？只讲思路。",
+      "expected_output": "回复应说明按列切用 ColumnParallelLinear、按行切用 RowParallelLinear 替换，按模块通信特征选择切分方向",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "ColumnParallelLinear",
+          "description": "回复中提到了 ColumnParallelLinear"
+        },
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-parallel-impl",
+          "description": "技能 model-infer-parallel-impl 被激活"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "权重处理",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "并行切分改完代码后，权重还需要做什么处理才能加载？只讲方向。",
+      "expected_output": "回复应说明权重需按并行配置做切分转换，或启用在线切分，使各 rank 加载对应分片",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 4,
+      "title": "前置条件不满足时确认",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "帮我把模型直接改成 8 卡并行。",
+      "expected_output": "回复应说明实施前提是 parallel_config 已由并行策略分析确定并确认，若未确定应先用 model-infer-parallel-analysis 定方案，而不是直接开切",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-parallel-impl",
+          "description": "技能 model-infer-parallel-impl 被激活"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "正向看护-多 skill 环境下正确触发",
+      "config": {
+        "max_tokens": 150000,
+        "distractor_skills": [
+          "model-infer-parallel-analysis",
+          "model-infer-kvcache",
+          "model-infer-migrator"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "并行配置已经确认好了，现在要把代码切分、建通信组、改 YAML，往哪个方向做？只说方向不用写代码。",
+      "expected_output": "回复应正确激活 model-infer-parallel-impl，给出并行化代码改造方向，即使存在分析、KVCache、迁移等相似 skill 也应选并行实施专项",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-parallel-impl",
+          "description": "技能 model-infer-parallel-impl 被激活"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "通信组创建与层替换次序",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "多卡并行实施时，通信组创建和并行层替换的先后关系是什么？为什么不能先替换层再建通信组？只讲思路。",
+      "expected_output": "回复应说明先按 parallel_config 创建各模块通信组，并行层替换依赖通信组做集合通信，故通信组必须先建，否则层替换无组可用",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "parallel_config",
+          "description": "回复中提到了 parallel_config"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "按产物信号选择框架或独立部署",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "parallel_config 已确认，但 dispatch 未写部署模式。模型注册在 support_models.py 时怎么实现通信组；只有自管 runner 且不继承框架基类时又怎么实现？",
+      "expected_output": "回复应将前者判为框架部署，通过 CommManager 按需注册和获取通信组并由框架 launch；后者判为独立部署，在 Runner 中初始化 HCCL、inline ParallelContext、注入 modeling 并用 torchrun 启动，不能混用两套控制流",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 8,
+      "title": "tp_size 等于 1 仍统一使用并行层包装",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "某个模块的 tp_size=1，我是否应保留原生 nn.Linear，而其他模块才换 ParallelLinear？",
+      "expected_output": "回复应说明线性层和 Embedding 仍统一使用对应 ParallelLinear 包装，即使 tp_size=1 也不产生集合通信，以保留统一的 weight_loader、quant_method 和通信上下文契约；只有对应 TP 通信组无需创建",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 9,
+      "title": "MC2 组必须独立物理注册",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "MoE EP 的普通进程组和 fullmesh_v2 MC2 组形状完全相同，我让 CommManager 自动复用同一个 HCCL 物理组可以吗？",
+      "expected_output": "回复应拒绝复用，要求 moe_ep_group_mc2 注册时 allow_physical_reuse=False，并按需要计算 hccl_buffer_size；普通 ProcessGroup 用 get_group，NPU dispatch/combine 所需 HCCL 名称用 get_group_name，二者不能混淆",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 10,
+      "title": "TP 加 DP 的 packed Token 通信协议",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "attn_tp_size>1 且 attn_dp_size>1 的 packed TND 模型里，我直接在每层做 AllReduce，并让各 rank 接收不同长度 token，可以吗？",
+      "expected_output": "回复应要求用 all_gather_into_tensor 与 reduce_scatter_tensor 配对而非 AllReduce，并将 packed T pad 到 TP 倍数后等长切分；Attention 入口聚合后裁回 T_real 供 cache/FA，出口补零后 ReduceScatter，metadata 仍按真实 token 构造",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 11,
+      "title": "MoE EP 分阶段实现与专家权重过滤",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "moe_tp_size=1 的 EP 模型能否让 Prefill 和 Decode 共用同一套 dispatch/combine，并让每个 rank 加载所有专家权重？",
+      "expected_output": "回复应说明 Prefill 走 re_routing 加 AllToAll，Decode 走 MC2 dispatch/combine，不能共用一套链路；FusedMoEGMM 的 weight_loader 应按 ep_rank 只保留本 rank 专家范围，并用全局 expert mapping 正确加载与执行后处理",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "model-infer-parallel-impl"
+}

@@ -1,0 +1,135 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "OOM 整体排查流程",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "我的 NPU 训练第 1 步就报 NPU out of memory 崩了，整体按什么流程定位？只讲方法不用写代码。",
+      "expected_output": "回复应给出 日志分类 → 静态估算 → snapshot 分析 → 优化建议 的流程，先判定 OOM 类型与发生时机再决定方向",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-train-oom-analysis",
+          "description": "技能 model-train-oom-analysis 被激活"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "渐进型 OOM 方向判断",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "训练前几步都正常，到 step 15 左右才 OOM，这种该往哪个方向查？只讲思路。",
+      "expected_output": "回复应指出训练后期才 OOM 多为内存泄漏而非配置不足，建议用多 step snapshot 对比增长趋势并做代码审查定位泄漏类别",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "snapshot",
+          "description": "回复中提到了 snapshot"
+        },
+        {
+          "type": "skill_activated",
+          "pattern": "model-train-oom-analysis",
+          "description": "技能 model-train-oom-analysis 被激活"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Workspace/HCCL 临时内存 OOM",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "报错里出现 workspace allocator 内存不足，但我估算模型本身放得下，怎么处理？只讲方向。",
+      "expected_output": "回复应判断为 PTA 缓存分配器占用过多导致临时内存/通信缓冲不足，建议通过内存水线（如 torch_npu_memory_ratio）限制 PTA 占用为 workspace/HCCL 预留空间",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "torch_npu_memory_ratio",
+          "description": "回复中提到了 torch_npu_memory_ratio"
+        },
+        {
+          "type": "skill_activated",
+          "pattern": "model-train-oom-analysis",
+          "description": "技能 model-train-oom-analysis 被激活"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "信息不足时主动确认",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "我的训练 OOM 了，帮我解决。",
+      "expected_output": "回复应先索要 OOM 完整日志、训练配置、NPU 显存规格等必要信息再动手，而不是缺证据直接给配置",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-train-oom-analysis",
+          "description": "技能 model-train-oom-analysis 被激活"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "正向看护-多 skill 环境下正确触发",
+      "config": {
+        "max_tokens": 150000,
+        "distractor_skills": [
+          "model-train-accuracy-debug",
+          "model-infer-kvcache",
+          "model-infer-runtime-debug"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "大模型训练跑到一半因为显存不足崩了，想做内存优化，往哪个方向排查？只说方向不用写代码。",
+      "expected_output": "回复应正确激活 model-train-oom-analysis，给出 OOM 内存诊断与优化方向，即使存在精度调试、KVCache 等相似 skill 也应选内存诊断专项",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-train-oom-analysis",
+          "description": "技能 model-train-oom-analysis 被激活"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "使用边界",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "我的训练 loss 偏离基线了，帮我用 OOM 分析 skill 修一下精度。",
+      "expected_output": "回复应说明本 skill 只诊断 OOM/内存问题，loss 偏离/NaN 等精度问题不在范围，应建议改用 model-train-accuracy-debug",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-train-oom-analysis",
+          "description": "技能 model-train-oom-analysis 被激活"
+        }
+      ]
+    }
+  ],
+  "skill_name": "model-train-oom-analysis"
+}

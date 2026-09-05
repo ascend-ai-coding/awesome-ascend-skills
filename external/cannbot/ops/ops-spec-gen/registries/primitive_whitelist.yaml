@@ -1,0 +1,67 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+
+# Primitive（白盒原语）—— FusedComposite 类算子分解后允许出现的"基础计算单元"
+#
+# 作用：
+#   有些算子（softmax、attention、layer_norm、复数构造……）不是单一计算，而是
+#   多个基础步骤拼出来的"复合算子"。spec.yaml 的 math_semantics.composition.primitives[]
+#   把这些步骤白盒地写成一串原语序列，下游的 Developer Agent 据此判定：
+#     - 哪些原语可以融合到同一个 kernel
+#     - 中间 tensor 是否真的不外漏（GM 多余往返审计 / AP-006）
+#     - 数据流是否闭合（没有未定义的中间引用）
+#   本文件登记所有合法的原语 op 名，校验器（stage 2）逐条比对。
+#
+# 使用方法：
+#   spec.yaml 中 paradigms 含 FusedComposite 时必填 composition，例如 softmax：
+#     math_semantics:
+#       composition:
+#         primitives:
+#           - id: m
+#             op: reduce               # 必须落在本文件
+#             inputs: [x]
+#             outputs: [x_max]
+#           - id: sub
+#             op: elementwise_binary
+#             inputs: [x, x_max]
+#             outputs: [x_shift]
+#           - id: e
+#             op: elementwise_unary
+#             inputs: [x_shift]
+#             outputs: [x_exp]
+#           - id: s
+#             op: reduce
+#             inputs: [x_exp]
+#             outputs: [denom]
+#           - id: d
+#             op: elementwise_binary
+#             inputs: [x_exp, denom]
+#             outputs: [y]
+#         dataflow:
+#           intermediates: [x_max, x_shift, x_exp, denom]
+#           no_leak: true
+#           fusable_groups: [[m, sub, e, s, d]]
+#
+# 维护：新增原语必须先登记到本文件，并在 schemas/op-spec.json 的
+#       composition.primitives.op.enum 同步增加。原则上保持小集合 —— 新增原语
+#       说明缺乏可复用模式，应先看是否能用现有原语组合表达。
+
+schema_version: 1
+
+primitives:
+  - broadcast            # numpy 风格广播；e.g. add 的 [1,N]+[M,N] 对齐到 [M,N]
+  - reduce               # 沿轴聚合；e.g. softmax 内部 sum(exp); reduce_sum / reduce_max
+  - elementwise_unary    # 一元逐元素；e.g. exp / log / sqrt / relu / sin
+  - elementwise_binary   # 二元逐元素；e.g. add / mul / sub / max(x,y)
+  - cast                 # dtype 转换；e.g. fp16→fp32 累加; fp32→bf16 输出
+  - permute              # 维度重排；e.g. transpose, NCHW→NHWC
+  - concat               # 沿轴拼接；e.g. cat([a,b], axis=-1)
+  - slice                # 切片；e.g. attention 中 q/k/v 拆分; 取子区间
+  - stack                # 沿新轴堆叠；e.g. where 三参数版的虚拟拼接
+  - gemm                 # 矩阵乘加（含 batch）；Cube 单元的核心；e.g. linear / matmul
+  - conv                 # 卷积（含转置卷积）；Cube + Vector 协同；e.g. conv2d

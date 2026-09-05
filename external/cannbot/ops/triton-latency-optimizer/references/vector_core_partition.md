@@ -366,6 +366,7 @@ def softmax_kernel(
 | 策略 | 适用场景 | Grid 大小 |
 |------|---------|---------|
 | **一维分核** | 单维度处理（如逐行） | min(N / BLOCK, num_cores) |
+| **二维分核** | 矩阵运算（如 matmul） | (M / BM, N / BN) |
 | **多行并行** | 行级 reduce（如 softmax） | min(M / ROWS_PER_BLOCK, num_cores) |
 
 ### 选择依据
@@ -523,6 +524,86 @@ kernel[grid](
 | Reduction (sum, mean) | True | False | 有归约操作 |
 | 复杂控制流 | False | False | 寄存器压力大 |
 
+## 八、Grid 分裂与多任务迭代（自然 grid 不足时）
+
+### 适用情形
+
+前面各节处理的都是 **grid 过大**（核空转）的问题。相反的极端是 **自然 grid 过小**：当 kernel 的逻辑并行度 `grid_dim0 × grid_dim1` 远小于物理核数，而每个 program 又在内部循环遍历整个迭代维度时，硬件利用率严重不足。
+
+```python
+# 问题：每个 (k_block, sub_chunk) 组合处理全部 NT 个时间步
+# 若 NK*NC*B*H << 物理核数，大部分核空闲
+grid = (NK * NC, B * H)
+
+@triton.jit
+def kernel(..., NT, NC, ...):
+    i_kc, i_bh = tl.program_id(0), tl.program_id(1)
+    i_k, i_i = i_kc // NC, i_kc % NC
+    for i_t in range(NT):     # 每个 program 做全部 NT 步，并行度不足
+        ...
+```
+
+**与「多行并行」的区别**：多行并行是把多个独立任务（如多行）打包进一个 program 以**缩小** grid；Grid 分裂是反过来**扩大** grid——把一个 program 内的迭代维度（如时间步 NT）拆成 NSPLIT 份，让更多 program 并行。
+
+### 优化方案：引入分裂维度 NSPLIT
+
+将迭代维度拆分为 NSPLIT 份，每个 program 只处理 `NT/NSPLIT` 步，grid 扩大 NSPLIT 倍。
+
+```python
+NSPLIT = 3
+NK_NC = NK * NC
+grid = (NK_NC * NSPLIT, B * H)   # 扩大 NSPLIT 倍，接近物理核数
+
+@triton.jit
+def kernel(..., NT, NC, NSPLIT: tl.constexpr,
+           NK_NC_CONST: tl.constexpr, ...):
+    i_kc, i_bh = tl.program_id(0), tl.program_id(1)
+    i_split = i_kc // NK_NC_CONST
+    i_kc_inner = i_kc - i_split * NK_NC_CONST
+    i_k, i_i = i_kc_inner // NC, i_kc_inner - (i_kc_inner // NC) * NC
+
+    # 每个 split 只处理 NT/NSPLIT 个时间步
+    NT_per_split = tl.cdiv(NT, NSPLIT)
+    NT_start = i_split * NT_per_split
+    NT_end = min((i_split + 1) * NT_per_split, NT)
+    for i_t_chunk in range(NT_start, NT_end):
+        ...
+```
+
+### 变换规则
+
+| 原始 | 优化后 |
+|------|--------|
+| `grid = (NK * NC, B * H)` | `grid = (NK * NC * NSPLIT, B * H)` |
+| `i_kc = tl.program_id(0)` | `i_split = i_kc // NK_NC; i_kc_inner = i_kc % NK_NC` |
+| `for i_t in range(NT)` | `for i_t in range(NT_start, NT_end)` |
+| 无 NSPLIT | 新增 `NSPLIT: tl.constexpr` 与 `NK_NC_CONST: tl.constexpr` |
+
+### NSPLIT 选择
+
+| NT 范围 | 推荐 NSPLIT |
+|---------|------------|
+| NT ≤ 4 | 不需分裂 |
+| 4 < NT ≤ 16 | 2-3 |
+| NT > 16 | 3-4 |
+
+约束：`NK * NC * NSPLIT * B * H` 应接近但不超过物理核数。
+
+### 注意事项
+
+1. **NSPLIT、NK_NC_CONST 必须为 `tl.constexpr`**：避免运行时整数除法/取余降级为标量（参见优化点 5/6）
+2. **边界截断**：最后一个 split 的 `NT_end` 用 `min(...)` 防越界
+3. **附加收益**：同一 batch+head 的指针（如 `q + (bos*H + i_h)*K`）可跨时间步复用，且前一时间步加载的数据可能仍在 UB/L1 缓存
+4. **避免交织划分**：每个 split 处理连续的 `NT_per_split` 段，符合 checklist「Task 任务划分禁止交织」规范
+
+### 判定要点（命中优化点 3 的此子分支）
+
+- 自然 grid 总数远小于物理核数
+- 存在一个可拆分、且每个 program 内部循环遍历的迭代维度（时间步、batch 块等）
+- 拆分后 grid 能接近物理核数且不超
+
+若 grid 已接近物理核数，或无迭代维度可拆 → 不适用，跳过。
+
 ## 常见错误
 
 ### 错误 1：Grid 远超物理核数
@@ -589,3 +670,41 @@ grid = (min(num_blocks, num_cores),)
 | 多行并行 | 减少 Grid 大小 | 2D 向量化加载 |
 | Tiling 策略 | 大数据用内部 tiling | 动态 grid，内部循环 |
 | 编译选项 | 内存密集用 multibuffer | multibuffer=True |
+
+---
+
+## 来自 SKILL.md 的原始描述（优化点 3：分核优化）
+
+**适用条件**：代码中 Grid 大小设置不合理，或未充分利用 NPU 硬件资源
+
+**典型代码特征**：
+```python
+# 特征 1：Grid 远大于物理核数
+grid = (batch_size,)  # 如果 batch_size=128，远超 48 核
+
+# 特征 2：Grid 远小于物理核数
+grid = (batch_size // 64,)  # 如果 batch_size=128，只有 2 核
+
+# 特征 3：每个 program 只处理 1 行数据
+row_idx = tl.program_id(0)
+x = tl.load(ptr + row_idx * stride + cols, mask=mask)
+
+# 特征 4：未使用编译优化选项（multibuffer、unit_flag）
+kernel[grid](...)  # 未传入 multibuffer、unit_flag
+
+```
+
+**判断逻辑**：
+- 检查 Grid 大小是否接近物理核数（40-48）
+  - 如果 Grid >> 48 或 Grid << 48 或者 Grid值无从判断 → 涉及
+- 检查每个 program 处理的数据量
+  - 如果每个 program 只处理少量数据（如 1 行）→ 涉及
+- 检查是否使用了编译优化选项
+  - 如果未使用 multibuffer 且是内存密集型算子 → 涉及
+- 如果 Grid 合理且已使用优化选项 → 不涉及，跳过
+
+**命中条件**：代码中 Grid 大小设置不合理，或未充分利用 NPU 硬件资源
+
+**参考文档**：`references/vector_core_partition.md`
+
+---

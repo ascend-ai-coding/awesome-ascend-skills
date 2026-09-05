@@ -1,0 +1,31 @@
+strategy_id: P55
+description: BlockReduceMax 替代 DataCopy slice 的适用性检查 — 必须有 stride DataCopy slice 证据 + 支持的 dtype + 归约语义匹配
+
+checks:
+  - id: has_stride_datacopy
+    type: grep_count
+    pattern: "DataCopyPad|DataCopyExtParams"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子无 DataCopyPad / DataCopyExtParams 使用 → P55 的改造对象（stride slice 短搬运）不存在。若瓶颈是 scalar，换 P67 Counter 模式；若瓶颈是 MTE3 大块搬运，换 P10 向量化拷贝"
+
+  - id: has_nonzero_stride_config
+    type: grep_count
+    pattern: "srcStride\\s*=\\s*[^0)]|dstStride\\s*=\\s*[^0)]"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子的 DataCopyPad 均为 stride=0 的连续搬运 → P55 针对的 stride slice 场景不存在。MTE3 短搬运问题换 P10 / P56（DataCopy batch output）/ P66（GM 512B 对齐）"
+
+  - id: has_vector_compute_for_reduce
+    type: grep_count
+    pattern: "\\b(Max|Min|Sum|Mul|Add|Cast)\\b"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子无 Vector 计算基础 → 无法支撑 BlockReduce 后的 Cast/PipeBarrier 链路。换纯 DMA 优化策略（P10 / P66）"
+
+  - id: no_existing_block_reduce
+    type: grep_count
+    pattern: "BlockReduceMax|BlockReduceMin|BlockReduceSum"
+    files: [kernel, header]
+    expected: "== 0"
+    fail_msg: "算子已使用 BlockReduce → P55 核心改造已完成。若仍要进一步优化，考虑 P67 Counter 模式（消除手算 repeat）或 P68 低延迟归约"

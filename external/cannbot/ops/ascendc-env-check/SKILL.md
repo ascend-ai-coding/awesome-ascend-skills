@@ -1,11 +1,12 @@
 ---
 name: external-cannbot-ops-ascendc-env-check
 description: Ascend C 算子开发环境检查技能。用于：(1) 通过 npu-smi 查询 NPU 设备信息（设备列表、状态、资源使用），(2) 检查
-  CANN 环境配置（CANN Toolkit、Ops、自定义算子包），(3) 验证开发依赖是否完整。触发关键词：环境检查、NPU设备、npu-smi、CANN安装、设备查询、资源监控、检查CANN环境变量。
+  CANN 环境配置（CANN Toolkit、Ops、自定义算子包），(3) 验证开发依赖是否完整，(4) 运行时检测当前设备 NPU 架构。触发关键词：环境检查、NPU设备、npu-smi、CANN安装、设备查询、资源监控、检查CANN环境变量、NPU架构、npu
+  arch。
 original-name: ascendc-env-check
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-26'
-synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
+synced-date: '2026-09-05'
+synced-commit: a426ec91e1038f233066724d63235c719a46a10d
 license: UNKNOWN
 ---
 
@@ -19,10 +20,13 @@ license: UNKNOWN
 环境检查
     │
     ├─ NPU 设备检查
-    │   └─ npu-smi list / scripts/npu_info.sh
+    │   └─ npu-smi info -m / scripts/npu_info.sh
     │
-    └─ CANN 环境检查
-        └─ scripts/check_env.sh
+    ├─ CANN 环境检查
+    │   └─ scripts/check_env.sh
+    │
+    └─ NPU 架构检测
+        └─ scripts/get_npu_arch.py
 ```
 
 ## NPU 设备检查
@@ -34,7 +38,7 @@ license: UNKNOWN
 npu-smi info
 
 # 监控设备资源
-npu-smi top
+npu-smi info -t usages -i <device_id>
 ```
 
 ### 脚本工具
@@ -62,10 +66,42 @@ bash scripts/check_env.sh
 | ASCEND_OPP_PATH | CANN Ops 路径 | 运行时必需 |
 | 自定义算子包 | op_api 库 | 运行自定义算子必需 |
 | CANN 工具 | msprof/cannsim | 可选 |
+| Simulator状态 | 检查必要的模拟器状态 | KirinX90、Kirin9030 等 Kirin 平台开发必需 |
 
 > ⚠️ **注意**：官方环境变量为 `ASCEND_HOME_PATH`，不是 `ASCEND_HOME`。部分旧文档或示例代码可能使用 `ASCEND_HOME`，这是错误用法。
 
 详细环境配置见 [env_config_guide.md](references/env_config_guide.md)，版本配套关系见其中「CANN 版本兼容性」章节
+
+## NPU 架构检测
+
+**前置条件**：先 source CANN 安装目录下的 `set_env.sh`（asys 与 DSMI 库依赖其 PATH / LD_LIBRARY_PATH）。
+
+**重要**：npu-smi 的 Chip Name 作为 short-soc-version **不可信**（A3 机型误报 `Ascend910`，issue #587），禁止用于芯片型号识别。
+
+```bash
+# 人读报告（含用途注释与证据链）
+python3 scripts/get_npu_arch.py
+
+# 仅输出裸 NpuArch 数值（如 3510）
+python3 scripts/get_npu_arch.py --raw
+
+# 机器可读 JSON（键名：full_soc / full_soc_source / npu_arch / npu_arch_source / short_soc / ccec_aiv_version / variant_dir / ini_path / npu_count / warnings）
+python3 scripts/get_npu_arch.py --json
+```
+
+**获取链**：
+
+| 获取项 | 优先来源 | 备选来源 |
+|---|---|---|
+| full-soc-version（如 `Ascend950PR_9579`） | asys `info -r=hardware` Chip Info | DSMI `dsmi_get_chip_info` |
+| NpuArch（如 `3510`） | asys Arch Info | ini 文件（full-soc-version 精确匹配） |
+| short-soc-version / CCE_AIV_version / variant_dir | ini 文件 | — |
+
+- short-soc-version（如 `Ascend950`）用于算子原型定义文件 `xxx算子_def.cpp` 的 `AddConfig()` 第一个参数（如 `this->AICore().AddConfig("ascend950", aicConfig)`）
+- variant_dir（如 `dav_c310`）决定读CANN安装目录下源码时只看 `**/dav_c310/` 下的文件
+- ini 匹配按 `SoC_version=` 字段精确匹配，禁止文件名/前缀模糊匹配
+
+**依赖**：Ascend driver 和 CANN toolkit。
 
 ## 诊断脚本
 
@@ -73,11 +109,22 @@ bash scripts/check_env.sh
 |------|------|
 | `scripts/npu_info.sh` | NPU 设备信息综合查询 |
 | `scripts/check_env.sh` | CANN 环境配置检查 |
+| `scripts/get_npu_arch.py` | 运行时检测当前设备 NPU 架构 |
+
+也可直接调用 `_npu_info.py` Python 脚本获取结构化数据，支持 `--json`（完整 JSON 输出）、`--list`（设备 ID 列表）、`--health`（健康状态）等参数。
+
+## Kirin 平台开发
+
+Kirin 系列芯片（KirinX90、Kirin9030等以 Kirin 开头的平台）是端侧 AI 处理器，当前主要支持使用模拟器 Simulator 的开发方式，需要注意环境检查结果中的 Simulator 支持情况，**如不支持则环境检查结论是不支持 Kirin 平台开发，需要强调并告知用户。**
+
+当前 Kirin 开发使用的 CANN 版本和服务器有差异，Kirin 系列芯片开发，需要安装对应的 mobile-station 版本的 CANN 才有 Kirin 的 Simulator。
+
+详细内容（mobile-station CANN 的安装方法、常见问题）见 [kirin_platform_guide.md](references/kirin_platform_guide.md)
 
 ## 常见问题
 
-- **NPU 不可见**：检查 `npu-smi list` 是否能识别设备
-- **算子运行失败**：优先运行 `check_env.sh` 检查环境配置
+- **NPU 不可见**：先执行 `npu-smi info -m` 检查设备映射表，再排查驱动是否安装正确
+- **算子运行失败**：**优先**运行 `check_env.sh` 检查环境配置是否完整，并检查关键环境变量（`ASCEND_HOME_PATH`、`ASCEND_OPP_PATH`）是否已正确设置
 - **确认是否有进程占用 NPU**：使用 `npu-smi info -t usages -i <device_id>` 查看运行中的进程；注意空闲设备仍会有少量 HBM 被驱动占用（正常现象），不应误判为设备被占用
 
 详细排查见 [troubleshooting.md](references/troubleshooting.md)

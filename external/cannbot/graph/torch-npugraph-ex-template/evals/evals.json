@@ -1,0 +1,125 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "生成标准 MRE 模板",
+      "config": {
+        "max_tokens": 180000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 210000,
+          "glm-5": 195000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "file_based"
+      },
+      "prompt": "请为我生成一个 npugraph_ex 的标准 MRE 代码模板，包含完整的 import、模型定义和编译配置。",
+      "expected_output": "生成的模板应包含：import 部分（torch、torchair 等）、模型定义、infer_one_step 函数、if __name__ == \"__main__\" 入口。应使用 backend=\"npugraph_ex\"、fullgraph=True、dynamic=False 配置。变量命名应遵循固定约定（config、compiled_model、dummy_input、output）。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "file_list",
+          "pattern": "*.py",
+          "description": "存在匹配 *.py 的文件"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "生成编译缓存模板",
+      "config": {
+        "max_tokens": 288000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 336000,
+          "glm-5": 312000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "file_based"
+      },
+      "prompt": "我需要一个带编译缓存的 npugraph_ex MRE 模板，包括 enable_compile_cache 的配置。请帮我生成。",
+      "expected_output": "生成的模板应包含 npugraph_ex compile cache 的配置，包括 enable_compile_cache 的使用。应包含完整的模板三部分结构（imports、infer_one_step、main），变量命名符合约定。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "固定 Shape 的基础模板约束",
+      "config": {
+        "max_tokens": 120000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请只说明 npugraph_ex 基础 MRE 的三段式结构、固定变量名和 torch.compile 核心参数，不需要写业务模型。",
+      "expected_output": "回复应说明结构为 import、infer_one_step()、main 入口，固定使用 config、compiled_model、dummy_input、output 等约定变量；torch.compile 设置 backend=\"npugraph_ex\"、fullgraph=True、dynamic=False，并说明固定 shape 与整图捕获含义。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "cache_compile 模板职责",
+      "config": {
+        "max_tokens": 110000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "使用 torch.npu.npugraph_ex.inference.cache_compile 时，应该包裹哪个函数，dynamic 和 cache_dir 如何设置？",
+      "expected_output": "回复应在模型初始化中用 cache_compile 包裹实际 _forward，forward 调用 cached_forward；使用 dynamic=False，cache_dir 是可选缓存路径且默认 .torchair_cache。该模板替代普通 torch.compile 的调用方式。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "custom_op 原地与非原地骨架",
+      "config": {
+        "max_tokens": 130000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "MRE 中嵌入 NPU custom_op 时，非原地和原地版本的 mutates_args、device_types、register_fake 返回值分别是什么？",
+      "expected_output": "回复应说明非原地算子使用 mutates_args=()、device_types=\"npu\"，fake 返回按元信息构造的新张量；原地算子准确声明 mutates_args=(\"x\",)、同样指定 NPU，真实函数与 fake 都返回 None。Meta 不执行实际计算。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "op-plugin 入图前置链路",
+      "config": {
+        "max_tokens": 130000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请用 torch-npugraph-ex-template 直接替我生成完整 Ascend C kernel 和 op-plugin 工程，可以吗？这个模板实际覆盖哪一段？",
+      "expected_output": "回复应说明该模板不负责实现 Ascend C kernel 或完整 op-plugin 工程；前置需用 msOpGen 建工程、部署 custom_opp、在 op_plugin_functions.yaml 配 schema/gen_opapi 并重编 torch_npu。模板只提供 Python 侧 Meta 注册和 MRE 接入骨架。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "op-plugin 原地 schema 约束",
+      "config": {
+        "max_tokens": 120000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "PyTorch 2.6+ 的 op-plugin 原地算子 schema 和 Meta 有什么硬约束？npugraph_ex 还需要额外写 Converter 吗？",
+      "expected_output": "回复应说明被修改输入在 schema 中用 Tensor(a!) 标注，且不能把被修改输入作为返回值；Meta 必须在 torch.compile 前注册。npugraph_ex 通过 aclgraph capture/replay Eager 调用，完成 Meta 注册即可入图，无需额外 Converter，函数化由 TorchAir 处理。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "torch-npugraph-ex-template"
+}

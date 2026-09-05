@@ -1,0 +1,17 @@
+strategy_id: P24
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "DataCopy|CopyIn|CopyOut|TransData|transpose"
+    min_count: 1
+    fail_msg: "未检测到 DataCopy/TransData 操作 → 无格式转换优化空间，不适用 P24。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "ND|NZ|nd2nz|Nz2Nd|format|Format"
+    min_count: 1
+    fail_msg: "未检测到 ND/NZ 格式相关逻辑 → 无格式转换需求，不适用 P24。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "Nd2NzParams|TransData|ScatterUpdateNZ"
+    min_count: 0
+    fail_msg: "已存在 ND↔NZ 转换优化 → 可能冗余，优先验证现有策略效果。"

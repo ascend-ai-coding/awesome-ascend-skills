@@ -5,8 +5,8 @@ description: PyTorch 昇腾 NPU npugraph_ex DFX 问题分诊入口。统一执�
   + 分类 + 加载下游 skill」。触发：当用户报告 npugraph_ex 相关报错、断图、精度差异或性能回退、需要 debug/dump 定位时加载。关键词：问题定位、报错、断图、精度、性能、debug、dump、aot_eager。
 original-name: torch-npugraph-ex-dfx-triage
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-26'
-synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
+synced-date: '2026-09-05'
+synced-commit: a426ec91e1038f233066724d63235c719a46a10d
 license: UNKNOWN
 ---
 
@@ -143,82 +143,41 @@ compiled = torch.compile(
 )
 ```
 
-#### 运行命令模板
+#### 运行命令：调用 run_triage.sh
 
-**所有环境变量都用内联前缀写法（`VAR=value python xxx.py`），不要 `export`，避免污染当前 terminal。** plog 通过 `ASCEND_PROCESS_LOG_PATH` 直接落到本次子目录，无需事后从 `~/ascend/log/` 复制。  
-如果用户原始复现命令是 `torchrun ... train.py ...`、`python -m ...` 等形式，**保持原启动方式不变**，只把脚本路径替换成对应 step 的副本。
+**目录建立、env 快照、5-step 顺序执行、失败即停、日志完整性检查、SUCCESS / first_failure / warnings 标记** 全部由本 skill 自带的 `scripts/run_triage.sh` 完成。agent 不要再现写 bash 模板，只负责：
+
+1. 选择 ROOT 路径并 `mkdir -p "$ROOT/scripts"`。
+2. 把用户原始脚本复制到 `$ROOT/scripts/original.py`。
+3. 按上文「agent 最小化改造原则」+「compile 参数继承规则」生成 5 个 step 脚本（文件名固定，缺哪个就跳过哪个）：
+   - `step1-eager.py`
+   - `step2-compile-eager.py`
+   - `step3-compile-aot_eager.py`
+   - `step4-npugraph_ex-force_eager.py`
+   - `step5-npugraph_ex.py`
+4. 调用 `run_triage.sh`，传入 ROOT 和**原始启动命令模板**（用 `{SCRIPT}` 占位符替代脚本路径）。
 
 ```bash
+SKILL_DIR=<本 skill 所在目录>   # 即 .../graph/torch-npugraph-ex-dfx-triage
 ROOT=torch-npugraph-ex-triage-logs/$(date +%Y%m%d-%H%M%S)-pid$$
 mkdir -p "$ROOT/scripts"
 
-# 版本快照
-{
-  python -c "import torch, torch_npu; print('torch', torch.__version__); print('torch_npu', torch_npu.__version__)" 2>&1
-  python -c "import torchair; print('torchair', torchair.__version__)" 2>&1
-  cat /usr/local/Ascend/ascend-toolkit/latest/version.cfg 2>/dev/null
-} > "$ROOT/env.txt"
-
-# 备份用户原始脚本，并由 agent 生成 5 个最小修改副本
 cp <用户脚本> "$ROOT/scripts/original.py"
-# agent 继续生成：
-#   "$ROOT/scripts/step1-eager.py"
-#   "$ROOT/scripts/step2-compile-eager.py"
-#   "$ROOT/scripts/step3-compile-aot_eager.py"
-#   "$ROOT/scripts/step4-npugraph_ex-force_eager.py"
-#   "$ROOT/scripts/step5-npugraph_ex.py"
+# agent 在这里写出 step1-eager.py ... step5-npugraph_ex.py 到 "$ROOT/scripts/"
 
-# 统一执行模板：step1-3 用 TORCH_LOGS="+all"，step4-5 用 TORCH_COMPILE_DEBUG=1
-run_step () {
-  local name=$1 script=$2
-  local dir="$ROOT/$name"
-  local status=0
-  mkdir -p "$dir/ascend_plog"
+# 单卡:
+bash "$SKILL_DIR/scripts/run_triage.sh" "$ROOT" "python {SCRIPT}"
 
-  case "$name" in
-    step1-*|step2-*|step3-*)
-      TORCH_LOGS="+all" \
-      ASCEND_PROCESS_LOG_PATH="$dir/ascend_plog" \
-      ASCEND_GLOBAL_LOG_LEVEL=1 \
-      ASCEND_SLOG_PRINT_TO_STDOUT=0 \
-      <原始启动命令，把脚本路径替换为 "$script"> > "$dir/stdout_stderr.log" 2>&1
-      status=$?
-      ;;
-    step4-*|step5-*)
-      mkdir -p "$dir/torch_compile_debug"
-      TORCH_COMPILE_DEBUG=1 \
-      TORCH_COMPILE_DEBUG_DIR="$dir/torch_compile_debug" \
-      ASCEND_PROCESS_LOG_PATH="$dir/ascend_plog" \
-      ASCEND_GLOBAL_LOG_LEVEL=1 \
-      ASCEND_SLOG_PRINT_TO_STDOUT=0 \
-      <原始启动命令，把脚本路径替换为 "$script"> > "$dir/stdout_stderr.log" 2>&1
-      status=$?
-      ;;
-  esac
+# 带启动参数:
+bash "$SKILL_DIR/scripts/run_triage.sh" "$ROOT" "python {SCRIPT} --batch 32 --device npu:0"
 
-  if [ "$status" -eq 0 ]; then
-    touch "$dir/SUCCESS"
-  elif [ ! -f "$ROOT/first_failure.txt" ]; then
-    printf '%s exit_code=%s\n' "$name" "$status" > "$ROOT/first_failure.txt"
-  fi
-
-  if [ ! -s "$dir/stdout_stderr.log" ]; then
-    echo "$name stdout_stderr.log missing or empty" >> "$ROOT/warnings.txt"
-  fi
-  if [ ! -d "$dir/ascend_plog" ] || [ -z "$(ls -A "$dir/ascend_plog" 2>/dev/null)" ]; then
-    echo "$name ascend_plog missing or empty" >> "$ROOT/warnings.txt"
-  fi
-
-  return "$status"
-}
-
-# 失败即停
-run_step step1-eager                   "$ROOT/scripts/step1-eager.py"                   || { echo "step1 failed"; exit 1; }
-run_step step2-compile-eager           "$ROOT/scripts/step2-compile-eager.py"           || { echo "step2 failed"; exit 1; }
-run_step step3-compile-aot_eager       "$ROOT/scripts/step3-compile-aot_eager.py"       || { echo "step3 failed"; exit 1; }
-run_step step4-npugraph_ex-force_eager "$ROOT/scripts/step4-npugraph_ex-force_eager.py" || { echo "step4 failed"; exit 1; }
-run_step step5-npugraph_ex             "$ROOT/scripts/step5-npugraph_ex.py"             || { echo "step5 failed"; exit 1; }
+# torchrun 多卡:
+bash "$SKILL_DIR/scripts/run_triage.sh" "$ROOT" "torchrun --nproc_per_node=8 {SCRIPT} --config cfg.yaml"
 ```
+
+`run_triage.sh` 退出码：`0` 表示全通过，`1-5` 表示首个失败 step 编号，`64` 表示参数错误。agent 拿到退出码后直接读 `$ROOT/first_failure.txt` 和对应 step 目录的 `stdout_stderr.log` / `torch_compile_debug/` / `ascend_plog/` 做分诊，不需要重复跑。
+
+> 设计意图：5-step 执行链路是**确定性**工作，不应每次让 LLM 现写 bash。脚本化后行为可复现、失败语义统一、agent 上下文聚焦在「脚本最小化改造」「致因报错识别」「分诊路由」这三件真正需要推理的事上。
 
 #### 边界提示
 
@@ -263,6 +222,8 @@ run_step step5-npugraph_ex             "$ROOT/scripts/step5-npugraph_ex.py"     
 - 已收集到哪些日志（文件名 + 关键行号）
 - 命中了哪条分诊规则、依据是哪一行报错或现象
 - 首个失败的 step 是哪一个；若 `step4` 成功但 `step5` 失败，要明确写出这是 `force_eager=False` 才出现的问题
+- 若即将加载 `torch-npugraph-ex-performance-diagnosis`，必须一并交接 `step5-npugraph_ex/torch_compile_debug/run_<ts>-pid_<pid>/` 的精确路径；不要只写“step5 success”
+- 若即将加载 `torch-npugraph-ex-accuracy-diagnosis`，优先一并交接 `step4-npugraph_ex-force_eager/torch_compile_debug/run_<ts>-pid_<pid>/` 与 `step5-npugraph_ex/torch_compile_debug/run_<ts>-pid_<pid>/` 的精确路径（若存在）
 - 即将加载的 sub-skill 名称
 - 还缺哪些信息需要用户补充（若有）
 
