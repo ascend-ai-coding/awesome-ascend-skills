@@ -4,8 +4,8 @@ description: 基于 PyTorch 框架的昇腾 NPU 模型推理融合算子优化�
   融合算子替换、MoE/Attention/FFN/Norm 等模块的推理算子适配、torch_npu API 使用咨询。基于仓库已有模型的融合算子经验，按计算语义推荐最佳方案。
 original-name: model-infer-fusion
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-26'
-synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
+synced-date: '2026-09-05'
+synced-commit: a426ec91e1038f233066724d63235c719a46a10d
 license: UNKNOWN
 ---
 
@@ -31,6 +31,7 @@ license: UNKNOWN
 - 量化需求：BF16 / W8A8 / W8A8C8 / W4A16
 - 分布式配置：TP / EP / DP，影响 MoE 路由算子选择
 - 固定约束：layout（NZ/BSND/TND）、cache 格式、metadata
+- 中间输出消费关系：候选链路内的中间张量是否被融合范围外模块、hook、graph 输出、debug 路径或多分支复用
 
 **关键子链路展开**：对 Attention、MoE 等复杂模块，展开到可替换链路级别：
 - **Attention**：RoPE、KV Cache 写入/读取、Attention Core（FA / FA v2 / Sparse FA）
@@ -41,6 +42,10 @@ license: UNKNOWN
 ### 第二步：按模块独立匹配仓库参考实现
 
 对第一步拆解的每个模块，**独立**在仓库参考实现中匹配最接近的算子链路。命中后，将该路径作为**候选蓝图**，并对照第一步的关键子链路清单补充分析该路径未覆盖的部分；未命中的模块跳到第三步在算子总表中搜索。
+
+候选蓝图必须说明：匹配到的已有 `torch_npu` API / 仓库参考链路、该链路实际覆盖的子链路、未覆盖的子链路，以及未覆盖部分是继续独立评估、需要前置改造，还是当前无现成融合算子。
+
+仓库参考实现只能作为候选蓝图，不能替代官方 API 文档校验。凡是进入候选清单的 `torch_npu` API，后续必须查阅对应官方详情文档，并记录文档路径、关键参数约束和当前模型是否满足。
 
 #### Attention 层
 
@@ -99,19 +104,29 @@ Attention 架构？
        └─ 路由 + 专家计算（按并行模式和阶段区分）
             ├─ Prefill（纯 TP）: init_routing_v2 → grouped_matmul → finalize_routing
             ├─ Prefill（EP）:    init_routing_v2 → AllToAll → re_routing → grouped_matmul → finalize_routing
-            └─ Decode（EP+TP）:  MC2 dispatch_v2 → grouped_matmul → MC2 combine_v2
-       → 详情：references/moe-fusion-reference.md
+            └─ Decode（EP dispatch/combine）: MC2 dispatch_v2 → grouped_matmul → MC2 combine_v2
+       → 详情：../model-infer-parallel-impl/references/framework_moe_parallel.md
 ```
+
+MoE 算子适配与 EP / TP 并行、通信组、权重切分、routing 输出格式和 dispatch / combine 强耦合。本 Skill 只识别 MoE 子链路和候选 `torch_npu` API；详细实施、参数组合和参考代码统一查看 `model-infer-parallel-impl/references/framework_moe_parallel.md`。A2 常规 MC2 路径需检查每 rank MoE expert 数 `moe_expert_num / (ep_world_size - shared_expert_rank_num) <= 24`；若不满足或 MC2 不适配，double-routing、local-expert 等回退方案选择交由并行实现 / 图模式路径评估。
 
 #### 未匹配模块
 
 其他未被上述判断树覆盖的模块（Embedding、LM Head、跨层残差、Diffusion 特有模块等），跳到第三步在算子总表中搜索。
 
+未匹配到 Attention / MoE 参考链路的模块，可优先检查以下常见链路；但这只是搜索提示，剩余链路仍需对照算子总表和详情文档确认可用性，避免遗漏其他已有 `torch_npu` 融合算子。
+
+- Residual + Norm：检查 `add + rms_norm`、独立 `rms_norm` 等已有 Norm 类融合算子
+- Dense / Gated FFN：检查 `Linear + Activation/SwiGLU + Linear`、`npu_ffn` 或 activation 类融合算子
+- Linear + Activation：检查投影后紧随激活的短链路
+- Norm / Projection / RoPE / Cache 前处理：若输出消费关系单一，检查是否能并入已有 prolog、rope-cache 或其他大范围融合路径
+- 量化链路（可选）：仅在当前模型已有量化方案或任务明确要求量化时，检查量化 FFN、activation / quant、量化 / 反量化等融合算子
+
 ---
 
 ### 第三步：查阅算子接口文档，确认可用性与适配性
 
-对第二步命中的算子或未匹配到模式的模块，按以下优先级查阅 torch_npu 接口文档：
+无论第二步是否命中仓库参考实现，都必须查阅 torch_npu 算子接口文档。按以下优先级使用：
 
 **优先：本地 docstring**
 
@@ -128,14 +143,18 @@ python3 scripts/torch_npu_query.py search "<keyword>"
 python3 scripts/torch_npu_query.py list [--prefix npu_]
 ```
 
+**算子详情（在线）**：[op-plugin 在线文档](https://gitcode.com/Ascend/op-plugin/tree/7.3.0/docs/context/) — 参数说明、dtype/shape 约束、代码示例
+
+**回退：算子总表**：无 torch_npu 环境又拿不到 `_op_plugin_docs.py`（远端调试、分析机无 NPU）时，用 `references/torch_npu_API/torch_npu_list.md` 当算子目录；脚本此时自动降级到 `_FALLBACK_DOCS` 兜底集并提示。该表是版本快照，只作为候选目录，**进入候选清单后必须用本地 docstring 或在线文档核对算子在当前 torch_npu 版本是否存在、签名是否一致**，不能直接当可用算子。
+
 **确认可用性**：
 
-- 对模式命中的算子：查阅详情文档确认参数约束和适配场景
+- 对模式命中的算子：逐个查阅详情文档确认函数签名、必选/可选参数、dtype/shape/layout、静态图/动态图、架构或并行约束
 - 对未命中模式的模块：在算子总表中搜索，阅读详情文档分析功能
 
 **适配验证**：
 
-- 检查 shape、dtype、layout、cache 组织及 metadata 是否满足算子要求
+- 检查 shape、dtype、layout、cache 组织及 metadata 是否满足算子要求（shape / control-flow / metadata 动态性仅用于判断已有 `torch_npu` API 是否可覆盖，不展开 kernel 级设计判决）
 - 若差异可通过合理前置改造解决（如格式转换、RoPE 预计算与取值路径整理、KV Cache 静态化/PA 改造等），应标记为“候选 + 需前置改造”，并说明所需改造项；部分流程较复杂的改造可询问用户是否采用
 - 仅当差异属于硬约束且无法通过合理前置改造解决时，才可标记为”不适配”。标记时必须注明具体硬约束（如算子报错信息、文档明确的参数限制），不能仅以”需改动较大”为由标记不适配
 
@@ -150,15 +169,15 @@ python3 scripts/torch_npu_query.py list [--prefix npu_]
 **分析阶段审查项**：
 - [ ] 模块拆解完整：已展开到可替换链路级别（含 Prefill/Decode 分支差异），Attention/MoE 关键子链路已覆盖
 - [ ] 参考匹配完整：已按模块匹配仓库参考实现（或确认无匹配），已补充分析参考路径未覆盖的子链路
-- [ ] 算子约束已确认：已查阅 reference / API 文档确认候选算子的适配约束和量化兼容性
-- [ ] 候选清单已形成：每个候选模块明确前置条件、最小验证切口和阻塞点
+- [ ] 算子约束已确认：每个候选 `torch_npu` API 均已查阅官方详情文档，并记录文档路径、关键参数约束、适配结论和量化兼容性（如涉及）
+- [ ] 候选清单已形成：每个候选模块明确适配状态、前置条件、最小验证切口和阻塞点；跳过/不适配项必须附 API 约束、代码位置、外部消费者或运行报错证据
 
 
 ---
 
 ### 第五步：逐模块实施替换
 
-已有全面的算子候选分析后，依照替换流程对候选清单中的所有模块逐个迭代替换，每次只改一处，验证通过再继续下一个；不得跳过任何已进入候选清单的模块。若当前模块无法继续实施，也必须记录其失败证据、阻塞原因和当前结论。
+已有全面的算子候选分析后，依照替换流程对候选清单中的候选模块 / 融合链路逐项处理。每次优先落一个可独立验证的候选链路，完成必要的精度对齐与性能观察后再继续下一个；不得跳过任何已进入候选清单的模块。若当前模块无法继续实施，也必须记录其失败证据、阻塞原因和当前结论。
 
 若候选模块依赖以下前置改造且尚未完成，可按需查阅对应资源：
 
@@ -174,15 +193,15 @@ python3 scripts/torch_npu_query.py list [--prefix npu_]
 5. 若验证通过 → 保留，继续下一个模块
 6. 若验证失败 → 回退改动，重新分析该模块：
    - 是否有其他可用算子或替代方案？→ 尝试替代方案
-   - 确认当前无适配算子但有融合收益 → 记录为新需求（模块位置、计算语义、不适配原因、期望融合形式）
+   - 确认当前无现成 `torch_npu` API 可适配但有明确融合收益 → 记录为新增融合算子需求（模块位置、子图语义、期望融合范围、输入输出、dtype/layout/cache/量化信息、当前不适配证据），并移交新增融合算子范围分析与开发链路
    - 当前无法继续实施 → 回退后记录失败证据和阻塞原因，继续下一个
-7. 记录该模块的优化报告：精度对比结果、性能对比结果、日志或报错路径
+7. 记录该模块 / 候选链路的优化报告：精度对比结果、性能观察结果、日志或报错路径
 
 注：替换时可参考仓库中最接近的模型实现和 `references/` 下的算子接口文档使用说明。
 
 **实施阶段检查项**：
 - [ ] 候选清单中的所有模块均已逐一处理（替换或记录跳过原因），无遗漏
-- [ ] 每个已实施模块均记录了精度和性能对比结果
+- [ ] 每个已实施模块均记录了精度对比和性能观察 / 对比结果
 - [ ] 实施失败的模块已记录报错信息、尝试过的处理方式和最终结论
 
 ---
@@ -194,9 +213,11 @@ python3 scripts/torch_npu_query.py list [--prefix npu_]
 | 主题 | 路径 |
 |------|------|
 | **torch_npu API 文档查询脚本** | [`scripts/torch_npu_query.py`](scripts/torch_npu_query.py) |
+| torch_npu 算子总表（回退目录，链在线文档，需核对版本兼容性） | [`references/torch_npu_API/torch_npu_list.md`](references/torch_npu_API/torch_npu_list.md) |
+| torch_npu 官方算子详情（在线） | [op-plugin docs](https://gitcode.com/Ascend/op-plugin/tree/7.3.0/docs/context/) |
 | Attention: GQA 参考链路 | [`references/module-attention-gqa.md`](references/module-attention-gqa.md) |
 | Attention: MLA Absorb 参考链路 | [`references/module-attention-mla-absorb.md`](references/module-attention-mla-absorb.md) |
 | Attention: MLA+Indexer 参考链路 | [`references/module-attention-mla-indexer.md`](references/module-attention-mla-indexer.md) |
-| MoE 算子模式详解 | [`references/moe-fusion-reference.md`](references/moe-fusion-reference.md) |
+| MoE 并行与融合算子链路 | [`../model-infer-parallel-impl/references/framework_moe_parallel.md`](../model-infer-parallel-impl/references/framework_moe_parallel.md) |
 | RotaryEmbedding 预计算与调用模式 | [`references/rotary-embedding-pattern.md`](references/rotary-embedding-pattern.md) |
 | op-plugin 仓库（在线） | [gitcode.com/Ascend/op-plugin](https://gitcode.com/Ascend/op-plugin) |

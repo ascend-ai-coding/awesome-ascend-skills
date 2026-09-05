@@ -1,0 +1,126 @@
+{
+  "skill_name": "msaicerr-toolkit",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "分析AI Core Error问题",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "跑训练报错 there is an aicore error，怎么用 msaicerr 分析？",
+      "expected_output": "回复应给出 python3 msaicerr.py -p <故障信息目录> -out <结果目录> 命令，说明 -p 为必选参数；应提示先 cd 到 ${install_path}/tools/msaicerr 目录，并根据终端提示的 info.txt 进行问题定位",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "工具解析卡住的路径原因",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我 cd 到故障信息目录里执行 msaicerr.py -p . 结果一直卡住不动，为什么？",
+      "expected_output": "回复应指出不能进入 -p 指定的目录或其子目录下执行 msaicerr 工具，否则会出现解析卡住或失败；应说明 -out 指定目录同样不能是 -p 目录或其子目录，建议切换到 ${install_path}/tools/msaicerr 下执行并让 -p 与 -out 指向独立路径",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "分析前检查故障信息完整性",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "msaicerr 提取不到 AI Core Error 信息，要检查哪些东西？",
+      "expected_output": "回复应说明需提前检查 dfx/data-dump 目录下是否存在 dump 文件、是否存在异常算子编译信息（*.o 和 *.json 文件）、dfx/log/host/cann 目录下是否存在日志文件，若不存在则无法使用 msaicerr 提取信息，需重新采集；可提示查看 debug_info.txt 中的执行日志",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 4,
+      "title": "解析Dump文件查看算子输入输出",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "想看看出错算子的输入输出数据，怎么把 dump 文件解析出来？",
+      "expected_output": "回复应给出 python3 msaicerr.py -d <dump文件路径> 命令，说明 -d 为必选参数且需包含文件名，解析结果为 .bin 或 .npy 文件（记录算子输入、输出、workspace 信息），不指定 -out 时结果默认与 Dump 文件同路径",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 5,
+      "title": "bin文件转换数据类型",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "解析出来的 .bin 文件怎么按 int8 转成 npy？如果 dtype 填错了会怎样？",
+      "expected_output": "回复应给出 python3 msaicerr.py -d <bin文件> -dtype int8 命令，说明 -d 与 -dtype 均为必选参数；应指出指定的数据类型与源 Dump 文件不一致时工具只给 Warning 提示并按用户指定类型解析，因此需先确认算子真实数据类型",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 6,
+      "title": "数据类型无法识别的处理",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "debug_info.txt 里提示 Can not read with dtype bfloat16，怎么解决？",
+      "expected_output": "回复应说明该提示表示存在工具不能识别的数据类型，需由用户自行安装第三方库文件，针对 bfloat16 需安装 bfloat16ext 库后重试",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 7,
+      "title": "检查软硬件环境",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "怀疑环境有问题，msaicerr 能不能先验证一下环境是否正常？",
+      "expected_output": "回复应给出 python3 msaicerr.py -e 命令（-e 为必选参数，-dev 可选指定 Device ID、默认为 0），说明工具会运行内置算子样例检查软硬件环境；可提示 -p 分析 AI Core Error 时会自动运行该样例，无需单独执行 -e",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 8,
+      "title": "不支持的算子与使用约束",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "MatmulAllReduce 算子报 aicore error，能用 msaicerr 分析吗？我想把日志拷回开发机上分析。",
+      "expected_output": "回复应明确指出 msaicerr 暂不支持分析 MatmulAllReduce 类算子的 AI Core Error 问题，需改用其他定位手段；同时应说明该工具仅支持本地分析，部署工具的环境必须与日志所在环境为同一运行环境，因此不能拷到开发机上分析",
+      "files": [],
+      "expectations": []
+    }
+  ]
+}

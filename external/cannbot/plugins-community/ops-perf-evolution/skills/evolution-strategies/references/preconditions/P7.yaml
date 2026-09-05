@@ -1,0 +1,24 @@
+strategy_id: P7
+description: 32B Alignment + DataCopyPad 适用性检查 — 必须有 DataCopy 调用 + 非 32B 对齐的搬运场景
+
+checks:
+  - id: has_datacopy
+    type: grep_count
+    pattern: "DataCopy\\b|DataCopyPad\\b|DataCopyExt"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无 DataCopy 调用 → 32B 对齐优化无应用场景"
+
+  - id: shape_not_strictly_aligned
+    type: grep_count
+    pattern: "(?:tileSize|elemsPerCore|dataCount|nElement)\\s*%\\s*32|sizeof\\(T\\)\\s*%\\s*32|32B\\s*(?:align|aligned)"
+    files: [kernel, header]
+    expected: "<= 3"
+    fail_msg: "Kernel 已含 3+ 处 32B 对齐显式检查 → 可能已应用 P7，确认是否需要进一步优化"
+
+  - id: not_pure_matmul_high_level
+    type: grep_count
+    pattern: "MatmulImpl|Matmul<"
+    files: [kernel]
+    expected: "<= 2"
+    fail_msg: "纯 MatmulImpl 高阶 API 算子 → CANN 内置已处理对齐，P7 收益有限，优先考虑 P46/P78"

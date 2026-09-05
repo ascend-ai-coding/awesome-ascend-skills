@@ -1,0 +1,115 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 2,
+      "title": "RegBase 开发的参考资源",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "在进行 RegBase 算子开发时有哪些可用的参考资源？我需要查阅哪些文档来提升开发效率？如果我想参考已有的算子实现，应该从哪里入手？不需要执行任何工具调用。",
+      "expected_output": "回复应列出 RegBase 开发可参考的资源类型，包括文档、社区实现和用例等，供开发者参考学习。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 3,
+      "title": "UpdateMask 计数变量只能有一个推进者",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "RegBase VF tail 循环写成 `uint32_t remaining = cols; for (...) { auto mask = UpdateMask<float>(remaining); remaining -= VL; }`，并声称这样可以显式推进循环。请判断问题并给出两种合法修复：一种让 UpdateMask(remaining) 独自推进，另一种让 UpdateMask(active) 与独立的 remaining/索引推进配合。不要执行工具。",
+      "expected_output": "必须指出当前 SDK 的 UpdateMask<T>(uint32_t&) 会通过引用更新传入计数；对同一个 remaining 再手工递减是 double-decrement，会跳过 slice/tail。合法方案包括 UpdateMask(remaining) 后不再修改 remaining，或先保存 step、把 active 传给 UpdateMask(active)，再用未被更新的 step 推进 remaining 和 offset。不能依赖调用后的 active 推导偏移，也不能把 MaskReg 当作同步原语；应回到当前 SDK header 核对 dtype/trait 细节。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "新 RegBase 算子的参考实现选择流程",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我要在 DAV_3510 上写一个 fp16 的逐元素缩放算子，想先从开源仓找一个值得阅读的参考实现再动手。请问应如何定位候选算子目录，以及需要确认哪些证据才能判断该目录真的包含 RegBase 实现？我希望按规范一步步来。可阅读该技能文档获取规范，但不要实际去 clone 仓库或修改代码。",
+      "expected_output": "应通过 reference-ops/open_source_operator_table.md 定位候选算子目录（命中只代表候选、不代表可直接复用），并按代码路径找到最接近的实现子树。必须确认目录中存在 RegBase 证据，如 op_kernel/arch35/*regbase*、*_apt.cpp、__VEC_SCOPE__、__simd_vf__、RegTensor 或 AscendC::MicroAPI::*；再按 kernel entry（TILING_KEY_IS 路由）→ Init → Process → VF body 的顺序阅读真实源码，并对当前任务的 shape、dtype、tail 和 API 适配性重新判断。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "VF body 内误用 DataCopy 等 MemBase API",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我在写 RegBase 算子的 VF body，打算在 __simd_vf__ 函数里直接调用 DataCopy 把数据从 GM 搬到 UB 再计算，同事说这样不行。请问在 VF 函数内到底该用什么 API 搬运数据，以及在使用任何 RegBase API 之前需要先做哪些确认？可阅读该技能文档获取规范，但不要实际执行修改代码。",
+      "expected_output": "必须指出 DataCopy / DataCopyPad 属于 GM/UB 搬运（MTE），只能放在 CopyIn/CopyOut 的 kernel 侧，不能写进 __simd_vf__。进入 VF 后应使用 AscendC::Reg::*（开源代码中常写作 AscendC::MicroAPI::*，是同一 VF-safe family）的 LoadAlign / StoreAlign / Load / Store 等 API，在 UB address 与 RegTensor 之间搬运。引用 API 前必须检查 regbase_api_whitelist.md 与 SDK header（如 basic_api/reg_compute/），不要凭函数名猜测；VF 入口保持 __simd_vf__ + asc_vf_call 结构。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "RegBase 算子整体结构分层设计",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我第一次写 RegBase 算子，觉得既然计算核心是寄存器级，那把整个 kernel 写成一个大的 VF 函数就够了，不需要 TPipe、TQue 那些队列。这个想法对吗？正确的分层结构应该怎么组织？可阅读该技能文档获取规范，但不要实际执行修改代码。",
+      "expected_output": "应指出把整个 kernel 写成一个大 VF 函数是常见错误。RegBase 使用四层模型：Host/tiling 层、Kernel outer shell（管理 TPipe、GlobalTensor、TQue、LocalTensor、Init/Process）、UB 层数据流（CopyIn -> Compute -> CopyOut）、VF 寄存器计算内层（__VEC_SCOPE__ / __simd_vf__ 内使用 RegTensor、MaskReg、LoadDist、StoreDist）。RegBase 不是不需要队列；outer shell 仍用 TQue/LocalTensor 做 UB staging，RegBase 身份来自 Compute 的数学核心进入寄存器级 VF body，且 Compute 通过 asc_vf_call 调用 __simd_vf__ 入口。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "VF body 里用 SyncAll / SetFlag 修本地 stage 顺序",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我写了一个 RegBase 算子，VF body 里 LoadAlign 之后觉得数据还没就绪，就在 __simd_vf__ 里加了 SyncAll 和 SetFlag/WaitFlag 想确保顺序，但编译总报错。我应该怎么做才是对的？可阅读该技能文档获取规范，但不要实际执行修改代码。",
+      "expected_output": "必须指出 SyncAll、SetFlag、WaitFlag 属于 outer shell 的同步/事件机制，不能写进 __simd_vf__ 的默认 callable surface；普通 LoadAlign -> Reg 计算 -> StoreAlign 寄存器链不需要 barrier。MaskReg 是有效通道控制、LoadDist/StoreDist 是 load/store 分布描述，都不是同步 fence，用它们修本地 stage ordering 是同步陷阱。VF 内出现真实 producer/consumer 顺序风险时才考虑 AscendC::Reg::LocalMemBar，并按 MemType 确认使用边界。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 8,
+      "title": "设计含 TQue/LocalTensor 是否意味着不是 RegBase",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "Reviewer 看了我的 RegBase 设计方案，发现外层用了 TPipe、TQue 和 LocalTensor 做数据搬运，就说这其实是 MemBase 而不是 RegBase，让我重写。我该怎么判断和回应？可阅读该技能文档获取规范，但不要实际执行修改代码。",
+      "expected_output": "应说明 RegBase outer shell 使用 TPipe、TQue、LocalTensor 做 UB staging 是允许的，这不等于 MemBase；RegBase 与 MemBase 的区别在于 Compute 的数学核心是否进入寄存器级 VF body（__VEC_SCOPE__ 内使用 RegTensor/MaskReg），而不是外层是否用队列。不应因为出现 TQue 就否定 RegBase；也不要一边声明 asc_vf_call 一边给出 MemBase API 伪代码。应重新画 Host/Kernel/UB/VF 分层，区分 UB staging 与 VF compute，并对不确定的 API 回到白名单和参考实现验证。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "ascendc-regbase-best-practice"
+}

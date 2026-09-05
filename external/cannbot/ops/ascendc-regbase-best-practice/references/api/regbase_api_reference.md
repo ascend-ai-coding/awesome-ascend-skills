@@ -84,6 +84,52 @@ __simd_vf__ inline void MyOpVf(__ubuf__ float* in, __ubuf__ float* out, uint32_t
 }
 ```
 
+### `UpdateMask` 的计数副作用
+
+当前 SDK 的 RegBase header 将 `UpdateMask<T>` 声明为
+`UpdateMask(uint32_t&)`；实现通过 post-update 语义把传入计数推进到本次
+VF slice 之后的剩余数量。写 VF tail 循环前必须以当前 SDK header 和实现为准
+核对支持的 dtype、`RegTrait` 与更新行为，不能把它当作只读的 mask 工厂。
+
+一个进度变量只能有一个推进者。下面的写法由 `UpdateMask` 独自推进
+`remaining`，索引用不变的 `offset`/循环步长计算：
+
+```cpp
+uint32_t remaining = cols;
+for (uint32_t offset = 0; offset < cols; offset += VEC_LEN) {
+    MaskReg mask = AscendC::Reg::UpdateMask<float>(remaining);
+    // 使用 offset 和 mask 访问当前 slice；不要再修改 remaining。
+    ComputeSlice(in + offset, out + offset, mask);
+}
+```
+
+也可以让 `UpdateMask` 只推进独立的 `active`，而由外层使用调用前保存的
+`step` 推进 `remaining` 和索引：
+
+```cpp
+uint32_t remaining = cols;
+for (uint32_t offset = 0; offset < cols;) {
+    uint32_t step = Min(remaining, VEC_LEN);
+    uint32_t active = step;
+    MaskReg mask = AscendC::Reg::UpdateMask<float>(active);
+    ComputeSlice(in + offset, out + offset, mask);
+    offset += step;
+    remaining -= step;
+}
+```
+
+以下模式是错误的 double-decrement：`UpdateMask(remaining)` 已经推进了
+`remaining`，循环体再次按 `VEC_LEN` 递减会跳过 tail/slice，不能用一次精度
+通过掩盖该错误：
+
+```cpp
+MaskReg mask = AscendC::Reg::UpdateMask<float>(remaining);
+remaining -= VEC_LEN;  // 错误：同一个进度变量有两个推进者
+```
+
+`MaskReg` 只描述本次向量操作的有效 lane，不提供 GM/UB 或跨核同步；同步仍
+由 Kernel/流水层按对应事实源闭合。
+
 ### 二元 / 标量
 
 来源：`kernel_reg_compute_vec_binary_intf.h`、`kernel_reg_compute_vec_binary_scalar_intf.h`。

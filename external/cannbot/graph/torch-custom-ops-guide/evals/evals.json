@@ -1,0 +1,232 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "自定义算子入图完整流程",
+      "config": {
+        "max_tokens": 180000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 210000,
+          "glm-5": 195000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我有一个已在 Eager 模式下使用 torch.library.custom_op 注册并跑通的自定义 PyTorch 算子，想接入 npugraph_ex 图模式。请问完整的接入流程是什么？",
+      "expected_output": "回复应说明当前算子的状态确认（Eager 已有、custom_op 注册）后，下一步即为编写 Meta 推导函数（register_fake）实现 shape/dtype/device 传播，完成后即可支持入图；如遇问题可路由到 dfx-triage 子 skill 进行问题定位。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "register_fake",
+          "description": "回复中提到了 register_fake"
+        },
+        {
+          "type": "contains",
+          "pattern": "Meta",
+          "description": "回复中提到了 Meta"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "custom_op vs Library 注册方式",
+      "config": {
+        "max_tokens": 150000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 180000,
+          "glm-5": 165000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "torch-custom-ops-guide 支持哪两种算子注册方式？各适用于什么场景？",
+      "expected_output": "回复应说明两种注册方式：torch.library.custom_op（推荐用于单个自定义算子，简洁）和纯 Python torch.library.Library（适用于批量注册或需要更精细控制）。应说明各自的使用场景和选择依据。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "custom_op",
+          "description": "回复中提到了 custom_op"
+        },
+        {
+          "type": "contains",
+          "pattern": "Library",
+          "description": "回复中提到了 Library"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Meta 推导函数编写要点",
+      "config": {
+        "max_tokens": 150000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 180000,
+          "glm-5": 165000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "编写 Meta 推导函数（register_fake）时需要注意哪些要点？它解决了什么问题？",
+      "expected_output": "回复应说明 Meta 推导函数的作用：在不实际执行计算的情况下推导输出的 shape/dtype/device，使 torch.compile 能够构建计算图。应说明编写要点包括正确推导输出张量的元信息、处理动态 shape、以及常见陷阱。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "register_fake",
+          "description": "回复中提到了 register_fake"
+        },
+        {
+          "type": "contains",
+          "pattern": "shape",
+          "description": "回复中提到了 shape"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "信息不足时主动追问",
+      "config": {
+        "max_tokens": 120000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 150000,
+          "glm-5": 135000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我想让我的算子支持图模式。",
+      "expected_output": "回复应主动询问关键信息：算子当前状态（从零开发/Eager已有）、注册方式偏好、是否已有图模式相关报错等。不应在缺乏信息的情况下直接给出具体代码。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "算子",
+          "description": "回复中提到了 算子"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "正向看护-多 graph skill 环境下正确触发",
+      "config": {
+        "max_tokens": 180000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 210000,
+          "glm-5": 195000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "distractor_skills": [
+          "torch-npugraph-ex-knowledge",
+          "torch-npugraph-ex-dfx-triage",
+          "torch-npugraph-ex-template",
+          "torch-npugraph-ex-compile-error-diagnosis"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我有一个自定义的 FlashAttention 算子，已经在 Eager 模式下跑通了，现在想把它接入 npugraph_ex 图模式。请问需要做什么？",
+      "expected_output": "回复应激活 torch-custom-ops-guide skill，说明自定义算子入图的流程。即使在多个 npugraph_ex 相关 skill 共存的环境下，也应正确激活 torch-custom-ops-guide。在信息不足时，回应用户问题可先询问算子的当前状态（如是否已有 Eager 实现、注册方式等），再给出完整入图指导。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "Eager",
+          "description": "回复中提到了 Eager"
+        },
+        {
+          "type": "skill_activated",
+          "pattern": "torch-custom-ops-guide",
+          "description": "技能 torch-custom-ops-guide 被激活"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "从零开发自定义算子的路由",
+      "config": {
+        "max_tokens": 120000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我还没有 Eager 算子实现，只有输入输出定义，想从零做一个能进入 npugraph_ex 的自定义算子。第一步该做什么？",
+      "expected_output": "回复应识别为从零开发路径，先使用自定义算子模板建立可运行的最小工程或 MRE，并完成真实 Eager 实现；实现占位内容不能冒充已完成算子。Eager 跑通后再补注册和 Meta 以支持入图。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "原地与非原地算子的注册差异",
+      "config": {
+        "max_tokens": 140000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "同一个自定义算子既可能返回新张量，也可能原地修改输入。用 custom_op 或 Library 注册时，schema 和 Meta 分别该怎么表达？",
+      "expected_output": "回复应区分两类语义：custom_op 的原地版本声明 mutates_args，Library schema 用 Tensor(a!) 标出别名和写入；原地算子的 Meta/fake 实现返回 None，非原地算子返回只含正确 shape、dtype、device 的空张量。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 8,
+      "title": "纯 Python Library 注册闭环",
+      "config": {
+        "max_tokens": 130000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "不用 custom_op 装饰器，如何在一个 Python 用户脚本里用 torch.library.Library 完成算子定义、NPU 实现和图模式支持？",
+      "expected_output": "回复应给出同一脚本中的完整职责：用 Library(namespace, \"FRAGMENT\") 和 define 声明 schema，为 PrivateUse1 注册真实 NPU 实现，并为 Meta 注册只做元信息推导的实现。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 9,
+      "title": "Meta 实现不得执行真实计算",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "为了保证结果正确，我能在 register_fake/Meta 函数里直接调用 NPU kernel 算出输出吗？",
+      "expected_output": "回复应明确不能在 Meta/fake 路径执行真实 kernel 或读取真实数据；它只根据输入元信息推导输出 shape、dtype、device，并返回对应的 fake/meta 张量。真实计算只属于设备实现。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 10,
+      "title": "已有入图实现出现异常时转诊",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我的自定义算子已经有 Eager 实现、注册和 Meta，也能被 torch.compile 捕获，但图模式运行时出错。还应该继续按接入教程重写吗？",
+      "expected_output": "回复应判断接入步骤已经完成，不应无依据重写算子；应转到 torch-npugraph-ex-dfx-triage，先根据错误发生在编译、运行时还是性能阶段路由到对应诊断流程。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "torch-custom-ops-guide"
+}

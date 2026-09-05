@@ -13,6 +13,26 @@
 from typing import Any, Dict, List
 
 
+def move_to_device(x: Any, device: Any) -> Any:
+    """递归把 x 中的所有 torch.Tensor（含嵌套 list/tuple 内的）迁移到 device。
+
+    - torch.Tensor: 直接 .to(device)
+    - list: 递归迁移每个元素，保留 list 类型
+    - tuple: 递归迁移每个元素，保留 tuple 类型
+    - 其他（标量 / None）: 原样返回
+
+    verify.py / benchmark.py 共用，避免在两个脚本中重复实现递归迁移逻辑。
+    """
+    import torch
+    if isinstance(x, torch.Tensor):
+        return x.to(device)
+    if isinstance(x, list):
+        return [move_to_device(e, device) for e in x]
+    if isinstance(x, tuple):
+        return tuple(move_to_device(e, device) for e in x)
+    return x
+
+
 def describe_input(inputs: List[Any]) -> List[Dict[str, Any]]:
     """将输入列表描述为结构化字段，便于写入 JSON。
 

@@ -1,0 +1,31 @@
+strategy_id: P28
+description: 自定义 HardEvent 同步适用性检查 — 算子必须有流水线多阶段，当前使用粗粒度同步，且 buffer 交互复杂
+
+checks:
+  - id: has_pipeline_stages
+    type: grep_count
+    pattern: "CopyIn|CopyOut|DataCopy|Compute|EnQue|DeQue"
+    files: [kernel]
+    expected: ">= 3"
+    fail_msg: "算子无多阶段流水 → HardEvent 无收益。检查是否为单阶段 elementwise"
+
+  - id: uses_coarse_sync
+    type: grep_count
+    pattern: "SyncAll|PipeBarrier|WaitFlag|SetFlag"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无粗粒度同步 → 可能已使用细粒度事件或纯串行。检查 P30 PipeBarrier 或 A4 SetFlag/WaitFlag"
+
+  - id: no_custom_hardevent_yet
+    type: grep_count
+    pattern: "HardEvent|ConsWaitProdStatus|EventP2C|MTE2_MTE1|MTE1_M|M_FIX"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已使用 HardEvent 自定义同步 → P28 已应用"
+
+  - id: has_buffer_interactions
+    type: grep_count
+    pattern: "TQue|TBuf|L0A|L0B|L0C|VECIN|VECOUT|L1"
+    files: [kernel]
+    expected: ">= 2"
+    fail_msg: "算子 buffer 交互简单 → 粗粒度同步 overhead 可忽略。考虑 P1 双缓冲或 P67 Counter 模式"

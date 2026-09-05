@@ -1,0 +1,31 @@
+strategy_id: D5
+description: BF16/多平台处理适用性检查 — 算子需支持 BF16 或多平台部署，且当前为单平台硬编码
+
+checks:
+  - id: has_bf16_or_multiplatform_need
+    type: grep_count
+    pattern: "BF16|bf16|bfloat16|platform|chip|ascend910|kirinx90|310P"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子无 BF16 或多平台需求 → D5 不适用。检查是否为纯 FP32 单平台算子"
+
+  - id: single_platform_config
+    type: grep_count
+    pattern: "AddConfig|aicore_config|chip|platform"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子无平台配置相关代码 → 无法判断平台适配点。检查 build 配置或 op_host 注册代码"
+
+  - id: no_feature_detection_yet
+    type: grep_count
+    pattern: "GetChipFeature|HasBf16Support|chipFeature|platformId"
+    files: [kernel, header]
+    expected: "== 0"
+    fail_msg: "算子已有芯片特性检测 → D5 已应用。检查是否所有平台路径都覆盖了"
+
+  - id: not_pure_highlevel_api
+    type: grep_count
+    pattern: "MatmulImpl|Matmul<"
+    files: [kernel]
+    expected: "<= 2"
+    fail_msg: "纯 MatmulImpl 高阶 API → 平台适配由 CANN 内部处理，D5 无介入点"

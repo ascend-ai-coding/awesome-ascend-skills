@@ -1,0 +1,148 @@
+{
+  "skill_name": "ascendc-blaze-migration",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "迁移边界与冻结 Tiling",
+      "config": {"max_tokens": 200000, "ascend_platforms": ["A5"], "eval_mode": "text"},
+      "prompt": "请使用 ascendc-blaze-migration skill。把 Ascend 950 GroupMatmul 核函数迁移到 Blaze。为了适配现有组件，我准备同时调整主机侧 tiling、blockDim、工作空间和尾块任务映射，可以吗？",
+      "expected_output": "不能直接这样做。G1 必须冻结主机侧 tiling、blockDim、工作空间、任务映射、核函数 ABI 和支持域；迁移默认只改约定范围内的设备侧实现。超出范围的改动应保持 G1 为 unknown 或 blocked，不能以适配组件为由静默扩大迁移范围。",
+      "expectations": [
+        {"type": "contains", "pattern": "G1"},
+        {"type": "contains", "pattern": "blockDim"},
+        {"type": "contains", "pattern": "支持域"},
+        {"type": "skill_activated", "pattern": "ascendc-blaze-migration"}
+      ],
+      "files": []
+    },
+    {
+      "id": 2,
+      "title": "当前任务与缺失信息清单",
+      "config": {"max_tokens": 200000, "ascend_platforms": ["A5"], "eval_mode": "text"},
+      "prompt": "请使用 ascendc-blaze-migration skill。我只给了原核函数路径，没有 ops-tensor 提交、CANN 路径、构建安装命令、输入和原实现结果。请直接改代码，并给我创建 Provider、Bundle 和 Receipt 跟踪状态。",
+      "expected_output": "不能直接改代码。使用当前任务唯一的 migration-record，先完成 G0 的仓库、环境、依赖、入口和缺失信息登记；状态为 unknown，只做允许的分析和取证，不创建额外的 Provider、Bundle 或 Receipt 体系，也不跳过门禁。",
+      "expectations": [
+        {"type": "contains", "pattern": "migration-record"},
+        {"type": "contains", "pattern": "unknown"},
+        {"type": "contains", "pattern": "G0"},
+        {"type": "skill_activated", "pattern": "ascendc-blaze-migration"}
+      ],
+      "files": []
+    },
+    {
+      "id": 3,
+      "title": "依赖身份与硬件环境",
+      "config": {"max_tokens": 200000, "ascend_platforms": ["A5"], "eval_mode": "text"},
+      "prompt": "请使用 ascendc-blaze-migration skill。原仓和 ops-tensor 都有未知修改，构建还会命中未记录的同级检出目录。沙箱中 aclInit 又失败了。能否把当前目录和沙箱失败直接当原实现结果固定下来？",
+      "expected_output": "不能。G0 必须固定两仓、ops-tensor 及依赖身份、工作树范围和实际依赖；未记录的同级检出不能作为隐式依赖。沙箱中的 aclInit 失败不能直接当原实现结果，设备验证应在可见设备的环境中按阶段规则执行并记录事实。环境未探测到 NPU 不阻塞后续开发，但会阻塞需要设备的验证门禁。",
+      "expectations": [
+        {"type": "contains", "pattern": "G0"},
+        {"type": "contains", "pattern": "unknown"},
+        {"type": "contains", "pattern": "设备"},
+        {"type": "contains", "pattern": "同级检出"},
+        {"type": "skill_activated", "pattern": "ascendc-blaze-migration"}
+      ],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "活动调用图与 GM ABI",
+      "config": {"max_tokens": 200000, "ascend_platforms": ["A5"], "eval_mode": "text"},
+      "prompt": "请使用 ascendc-blaze-migration skill。迁移后的 GMM 首个 AIC 报 MTE 地址错误，其他核停在同步。新核函数直接把 `weight` 的 `GM_ADDR` 强制转换成数据指针；原核函数先解析 ListTensor。源码里还有一个未调用的尾块更新方法。应怎么处理？",
+      "expected_output": "沿活动调用图确认 GM_ADDR 身份和解引用顺序，先解析 ListTensor，再计算分组偏移；先定位首个 MTE 地址错误，不能用后续同步现象替代根因。未调用方法不进入迁移契约，除非有活动调用证据。",
+      "expectations": [
+        {"type": "contains", "pattern": "GM_ADDR"},
+        {"type": "contains", "pattern": "ListTensor"},
+        {"type": "contains", "pattern": "MTE"},
+        {"type": "skill_activated", "pattern": "ascendc-blaze-migration"}
+      ],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "Blaze 事实源与约束冲突",
+      "config": {"max_tokens": 200000, "ascend_platforms": ["A5"], "eval_mode": "text"},
+      "prompt": "请使用 ascendc-blaze-migration skill。固定 ops-tensor 提交里有旧版 CODING_CONVENTIONS.md，但本地没有 ascendc-blaze-best-practice；同事口述的规范又和固定公共源码不一致。我准备只按固定提交的旧规范继续写，可以吗？",
+      "expected_output": "不能只按口述或单份旧文档编码。G1 应读取固定 checkout 中的 CODING_CONVENTIONS.md、相关 Blaze 组件和适用的 ascendc-blaze-best-practice，列出冲突、证据和影响；无法消除的规范冲突保持 unknown 或 blocked，不得静默选择较宽松的规则。",
+      "expectations": [
+        {"type": "contains", "pattern": "CODING_CONVENTIONS.md"},
+        {"type": "contains", "pattern": "ascendc-blaze-best-practice"},
+        {"type": "contains", "pattern": "unknown"},
+        {"type": "skill_activated", "pattern": "ascendc-blaze-migration"}
+      ],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "原调用链与零 CMCT",
+      "config": {"max_tokens": 200000, "ascend_platforms": ["A5"], "eval_mode": "text"},
+      "prompt": "请使用 ascendc-blaze-migration skill。迁移实现的 BlockMmad 和 Kernel 已换成 Blaze，但入口仍引用 rotate_quant_basic_cmct.h，Scheduler 和 Epilogue 仍来自 Cmct。独立样例的逐字节比对通过，可以关闭 G2 吗？",
+      "expected_output": "不能。活动入口、Scheduler 和 Epilogue 仍依赖 CMCT，说明迁移范围清理不完整；独立样例逐字节一致不能替代 CMCT/CGMCT 活动依赖清零和 G2 反模式检查。应返回 G2 修复并重新检查。",
+      "expectations": [
+        {"type": "contains", "pattern": "不能"},
+        {"type": "contains", "pattern": "CMCT"},
+        {"type": "contains", "pattern": "G2"},
+        {"type": "skill_activated", "pattern": "ascendc-blaze-migration"}
+      ],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "逐字节一致性与性能验收",
+      "config": {"max_tokens": 200000, "ascend_platforms": ["A5"], "eval_mode": "text"},
+      "prompt": "请使用 ascendc-blaze-migration skill。迁移实现更接近 CPU 参考结果，但和 original 实现有少量字节不同；平均性能相同，不过一个用例回退 2%。能否按迁移通过？",
+      "expected_output": "不能直接通过。功能验收必须比较 original 与 Blaze 的全部有效输出、动态元数据和 inplace after-state，逐字节不一致即为失败；CPU 参考只能交叉诊断。性能必须由 ops-profiling 使用 msprof 按冻结 case 逐例比较，性能合同失败也必须保留失败证据并按 owner 回退，不能用平均值或单个例外隐藏。",
+      "expectations": [
+        {"type": "contains", "pattern": "逐字节"},
+        {"type": "contains", "pattern": "ops-profiling"},
+        {"type": "contains", "pattern": "msprof"},
+        {"type": "skill_activated", "pattern": "ascendc-blaze-migration"}
+      ],
+      "files": []
+    },
+    {
+      "id": 8,
+      "title": "隔离检出与本地代码交付",
+      "config": {"max_tokens": 200000, "ascend_platforms": ["A5"], "eval_mode": "text"},
+      "prompt": "请使用 ascendc-blaze-migration skill。迁移来源是 ops-transformer。本地依赖来自未记录的同级检出目录，测试程序和输入只在 /tmp。G5 能否直接提交产品仓，过程报告和依赖信息之后再补？",
+      "expected_output": "不能。G0 必须固定隔离仓、ops-tensor 及依赖身份，禁止使用未记录的同级检出；runner、输入、报告和 OPP 等过程资产必须保留在 CLI 启动目录下的迁移工程。G6 只有在 G5 验收证据完整后创建本地 git commit，不创建 PR、不推送，且产品仓不得包含过程资产。",
+      "expectations": [
+        {"type": "contains", "pattern": "不能"},
+        {"type": "contains", "pattern": "迁移工程"},
+        {"type": "contains", "pattern": "本地 git commit"},
+        {"type": "contains", "pattern": "G6"},
+        {"type": "skill_activated", "pattern": "ascendc-blaze-migration"}
+      ],
+      "files": []
+    },
+    {
+      "id": 9,
+      "title": "回复骨架：门禁与状态",
+      "config": {"max_tokens": 100000, "ascend_platforms": ["A5"], "eval_mode": "text"},
+      "prompt": "请使用 ascendc-blaze-migration skill。我目前只知道原核函数在 ops-transformer 的路径，其他信息（ops-tensor 提交、CANN 路径、构建命令、输入和原实现结果）都还没收集。请问当前迁移处于哪个门禁？状态是什么？接下来怎么推进？",
+      "expected_output": "答复应先给出当前门禁 G0 迁移准备、当前阶段和状态 unknown，随后列出依据、缺失信息、允许动作、禁止动作和下一步；不能跳过门禁与状态直接给结论或写代码。",
+      "expectations": [
+        {"type": "contains", "pattern": "当前门禁"},
+        {"type": "contains", "pattern": "G0"},
+        {"type": "contains", "pattern": "unknown"},
+        {"type": "skill_activated", "pattern": "ascendc-blaze-migration"}
+      ],
+      "files": []
+    },
+    {
+      "id": 10,
+      "title": "migration-record 作用域隔离",
+      "config": {"max_tokens": 100000, "ascend_platforms": ["A5"], "eval_mode": "text"},
+      "prompt": "请使用 ascendc-blaze-migration skill。我在处理一个新的迁移任务，但 /tmp 里可能有之前任务的 migration-record.md。我能直接全局搜索并参考它们吗？当前任务的进度记录应该怎么维护？",
+      "expected_output": "不能。记录只属于当前 task-id，只使用当前 CLI 启动目录下迁移工程中的一个 migration-record.md；不要全局搜索或复用其它任务的记录，也不要把 /tmp 作为唯一证据来源。",
+      "expectations": [
+        {"type": "contains", "pattern": "不能"},
+        {"type": "contains", "pattern": "task-id"},
+        {"type": "contains", "pattern": "migration-record.md"},
+        {"type": "skill_activated", "pattern": "ascendc-blaze-migration"}
+      ],
+      "files": []
+    }
+  ]
+}

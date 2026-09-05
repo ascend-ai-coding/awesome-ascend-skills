@@ -1,0 +1,139 @@
+{
+  "skill_name": "ascendc-runtime-debug",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "运行时错误码范围与分类",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "在 Ascend C 算子开发中遇到运行时错误时，如何根据错误码进行定位？常见的错误码有哪些范围分类，分别代表什么类型的错误？可以加载技能，不需要执行其他外部工具调用。",
+      "expected_output": "回复应说明 Ascend C 运行时错误码的主要范围分类：161xxx 表示设备侧 Kernel 执行错误，361xxx 表示 Host 侧应用层错误，561xxx 表示运行时环境错误。调试时应先根据百位数字判断错误层面再定位原因。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 2,
+      "title": "507035 错误码的诊断",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 150000,
+          "glm-5": 140000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "在算子运行时出现 507035 错误码是什么意思？可能的原因有哪些？我该如何诊断和修复这个问题？可以加载技能，不需要执行其他外部工具调用。",
+      "expected_output": "回复应说明 507035 错误码的含义、可能的原因以及诊断和修复方法。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 3,
+      "title": "161xxx 参数错误诊断（高频错误）",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我在用 aclnn API 调用自定义 Ascend C 算子时返回了 161001/161002 错误码，怀疑是参数校验失败。该怎么定位是哪个参数出问题、需要检查哪些方面？可阅读该技能文档获取规范，但不要实际执行 profiling 或修改代码。",
+      "expected_output": "应说明 161xxx 属于参数错误：161001（ACLNN_ERR_PARAM_NULLPTR）表示参数中存在非法 nullptr，161002（ACLNN_ERR_PARAM_INVALID）表示参数校验错误。需检查输入/输出 tensor 的 dtype 是否满足类型推导关系、shape 是否满足要求、属性值是否在合法范围内、tensor format 是否支持；可利用 UT 测试在 Host 层（无需 NPU 设备）快速定位具体参数问题。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "561002 Tiling 错误诊断",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "运行自定义 Ascend C 算子时 aclnn 返回 561002（Tiling 异常），ST 阶段失败。我怀疑是 Tiling 逻辑问题，但不确定是 TilingFunc 实现还是输入参数导致的。该如何诊断？可阅读该技能文档获取规范，但不要实际执行 profiling 或修改代码。",
+      "expected_output": "应说明 561002 是 ACLNN_ERR_INNER_TILING_ERROR（Tiling 处理异常），需检查 TilingFunc 函数实现：确保所有分支都设置了 TilingKey、没有除零或数组越界等异常；同时检查输入参数 shape 元素个数是否超过限制、参数组合是否在支持范围内；可通过 UT 测试快速验证 Tiling 逻辑，UT 通过则检查 ST 环境/Kernel，UT 失败则修复 Host 侧 Tiling 代码。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "561003 Kernel 查找失败诊断",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 150000,
+          "glm-5": 140000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "算子运行时返回 561003（Kernel 查找失败），我检查了代码本身没发现明显问题。有人说是算子没安装好或环境变量问题，我该从哪些方面排查？可阅读该技能文档获取规范，但不要实际执行 profiling 或修改代码。",
+      "expected_output": "应说明 561003 是 ACLNN_ERR_INNER_FIND_KERNEL_ERROR（查找 npu kernel 异常，可能算子二进制包未安装），需按序排查：TilingKey/SEL 是否匹配；算子是否已安装（检查 $ASCEND_OPP_PATH/vendors/<vendor_name>/op_impl/ai_core/tbe/op_api/lib/ 下是否存在对应 .so）；编译时 --vendor_name 与安装目录名是否一致；--soc 与运行时设备 SOC 是否匹配；ASCEND_OPP_PATH 与 LD_LIBRARY_PATH 环境变量是否正确；是否存在多版本 vendor 包冲突。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "未知错误码的兜底排查流程",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我遇到了一个不在高频错误速查表里的错误码（比如 561118 workspace invalid），不知道该怎么查。有什么通用的排查方法？可阅读该技能文档获取规范，但不要实际执行 profiling 或修改代码。",
+      "expected_output": "应说明未知错误码的兜底排查流程：先用 aclGetRecentErrMsg() 获取详细错误信息，并查看 plog 日志（可设置 ASCEND_SLOG_PRINT_TO_STDOUT=1 打屏或查看 $HOME/ascend/log/debug/plog/）；再用 ascendc-docs-search 技能以错误码数值加错误信息关键字搜索官方文档；最后可搜索 CANN 社区 Issue 与昇腾论坛等社区资源。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "运行时日志调试与 plog 解析",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我的自定义算子运行时行为异常但返回码为 0，怀疑是 Kernel 内部逻辑问题。想通过运行时日志定位，有哪些日志工具可以用？如何开启并解析 plog 日志？可阅读该技能文档获取规范，但不要实际执行 profiling 或修改代码。",
+      "expected_output": "应说明复杂场景可开启日志调试：设置 ASCEND_SLOG_PRINT_TO_STDOUT=1 将日志打屏实时查看，或用 scripts/parse_plog.py [plog_file] 解析 plog 日志；plog 日志默认位于 $HOME/ascend/log/debug/plog/；返回码非 0 时应先调用 aclGetRecentErrMsg() 获取错误详情；环境类问题可借助 ascendc-env-check 技能检查。",
+      "expectations": [],
+      "files": []
+    }
+  ]
+}

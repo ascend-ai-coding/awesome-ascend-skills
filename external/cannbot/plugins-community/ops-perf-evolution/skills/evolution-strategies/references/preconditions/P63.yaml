@@ -1,0 +1,30 @@
+strategy_id: P63
+description: Iterate 异步接口适用性检查 — 算子为 MIX 场景且使用同步 Iterate，当前未改用异步接口
+checks:
+  - id: has_mix_iterate
+    type: grep_count
+    pattern: "MIX|mix|Iterate|IterateAll|matmulObj"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子非 MIX 或无 Iterate → P63 不适用"
+
+  - id: has_sync_overhead
+    type: grep_count
+    pattern: "Iterate.*true|SyncAll|SetFlag|WaitFlag|核间.*同步"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无同步开销 → P63 收益低"
+
+  - id: no_async_yet
+    type: grep_count
+    pattern: "Iterate.*false|IterateAll.*false|SetWorkspace|异步"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已使用异步接口 → P63 已应用"
+
+  - id: not_pure_validation
+    type: grep_count
+    pattern: "OP_CHECK|shape.*check|dim.*check|validation"
+    files: [kernel, header]
+    expected: "<= 3"
+    fail_msg: "纯 Host 侧 shape 校验 → P63 解决的是核间异步优化"

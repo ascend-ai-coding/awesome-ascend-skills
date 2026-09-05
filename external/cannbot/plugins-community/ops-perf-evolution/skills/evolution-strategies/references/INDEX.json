@@ -1,0 +1,3327 @@
+{
+  "skill": "evolution-strategies",
+  "version": "1.0",
+  "vocabulary": {
+    "bottleneck_labels": [
+      "mte2_stall",
+      "mte3_stall",
+      "tiling_imbalance",
+      "scalar_loading",
+      "scalar_compute",
+      "compute_bound",
+      "near_optimal",
+      "no_overlap",
+      "partial_overlap",
+      "undersize_transfer",
+      "icache_miss",
+      "bus_contention",
+      "l2_cache_thrash",
+      "ub_memory_pressure"
+    ],
+    "op_families": [
+      "elementwise",
+      "normalization",
+      "reduction",
+      "softmax",
+      "attention",
+      "flash_attention",
+      "cv_fusion",
+      "matmul",
+      "moe",
+      "quantization",
+      "pooling_gather",
+      "optimizer",
+      "index_scatter",
+      "broadcast_mask",
+      "special",
+      "datapath"
+    ],
+    "complexity_levels": [
+      "L0",
+      "L1",
+      "L2"
+    ]
+  },
+  "stats": {
+    "cards": 95,
+    "active_cards": 95,
+    "deprecated": 0,
+    "preconditions": 95,
+    "playbooks": 95,
+    "families": 4,
+    "discovered": 1
+  },
+  "cards": [
+    {
+      "source_key": "evolution-strategies#card/A1_fp32_intermediate",
+      "id": "A1",
+      "title": "A1: FP32 Intermediate Computation (FP32中间计算)",
+      "doc_path": "cards/A1_fp32_intermediate.md",
+      "complexity": "L0",
+      "op_families": [
+        "elementwise",
+        "moe",
+        "normalization",
+        "optimizer"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "compute_bound"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "A2",
+        "A3",
+        "A5",
+        "A6"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/A2_welford_algorithm",
+      "id": "A2",
+      "title": "A2: Welford Numerically Stable Mean/Var (Welford数值稳定算法)",
+      "doc_path": "cards/A2_welford_algorithm.md",
+      "complexity": "L0",
+      "op_families": [
+        "normalization"
+      ],
+      "triggers": {
+        "bottleneck_labels": []
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "A1",
+        "A6"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/A3_rounding_mode",
+      "id": "A3",
+      "title": "A3: Rounding Mode Control (舍入模式控制)",
+      "doc_path": "cards/A3_rounding_mode.md",
+      "complexity": "L0",
+      "op_families": [
+        "attention",
+        "matmul",
+        "quantization"
+      ],
+      "triggers": {
+        "bottleneck_labels": []
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "A1",
+        "A5"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/A4_pipeline_barrier",
+      "id": "A4",
+      "title": "A4: SetFlag/WaitFlag Event Sync (事件同步保证精度)",
+      "doc_path": "cards/A4_pipeline_barrier.md",
+      "complexity": "L0",
+      "op_families": [
+        "attention",
+        "elementwise",
+        "flash_attention"
+      ],
+      "triggers": {
+        "bottleneck_labels": []
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/A5_softmax_stability",
+      "id": "A5",
+      "title": "A5: Numerical Safety & Special Value Handling (数值安全与特殊值处理)",
+      "doc_path": "cards/A5_softmax_stability.md",
+      "complexity": "L0",
+      "op_families": [
+        "attention",
+        "broadcast_mask",
+        "flash_attention"
+      ],
+      "triggers": {
+        "bottleneck_labels": []
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "A1",
+        "A3"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/A6_high_precision_rsqrt",
+      "id": "A6",
+      "title": "A6: High-Precision rsqrt via Newton-Raphson (高精度rsqrt)",
+      "doc_path": "cards/A6_high_precision_rsqrt.md",
+      "complexity": "L0",
+      "op_families": [
+        "normalization"
+      ],
+      "triggers": {
+        "bottleneck_labels": []
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "A1",
+        "A2"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/A7_index_boundary",
+      "id": "A7",
+      "title": "A7: Index & Boundary Safety (索引与边界安全处理)",
+      "doc_path": "cards/A7_index_boundary.md",
+      "complexity": "L0",
+      "op_families": [
+        "index_scatter",
+        "pooling_gather"
+      ],
+      "triggers": {
+        "bottleneck_labels": []
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/A8_quant_precision",
+      "id": "A8",
+      "title": "A8: Quantization-Specific Precision (量化专用精度处理)",
+      "doc_path": "cards/A8_quant_precision.md",
+      "complexity": "L0",
+      "op_families": [
+        "quantization"
+      ],
+      "triggers": {
+        "bottleneck_labels": []
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/D1_mixed_precision",
+      "id": "D1",
+      "title": "D1: Mixed Precision Architecture (混合精度架构)",
+      "doc_path": "cards/D1_mixed_precision.md",
+      "complexity": "L0",
+      "op_families": [
+        "datapath"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "compute_bound"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/D2_template_kernel",
+      "id": "D2",
+      "title": "D2: Template Kernel Type Dispatch (模板化内核类型分发)",
+      "doc_path": "cards/D2_template_kernel.md",
+      "complexity": "L0",
+      "op_families": [
+        "elementwise",
+        "normalization",
+        "special"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "compute_bound",
+          "scalar_compute"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/D3_tilingkey_dispatch",
+      "id": "D3",
+      "title": "D3: TilingKey-Driven Type Dispatch (TilingKey驱动类型分发)",
+      "doc_path": "cards/D3_tilingkey_dispatch.md",
+      "complexity": "L0",
+      "op_families": [
+        "matmul",
+        "moe",
+        "quantization",
+        "special"
+      ],
+      "triggers": {
+        "bottleneck_labels": []
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/D4_fp8_int4_conversion",
+      "id": "D4",
+      "title": "D4: FP8/INT4 Quantization Conversion (FP8/INT4量化输出类型)",
+      "doc_path": "cards/D4_fp8_int4_conversion.md",
+      "complexity": "L0",
+      "op_families": [
+        "quantization"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "ub_memory_pressure"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/D5_bf16_special_handling",
+      "id": "D5",
+      "title": "D5: BF16 & Platform-Specific Handling (BF16/多平台处理)",
+      "doc_path": "cards/D5_bf16_special_handling.md",
+      "complexity": "L0",
+      "op_families": [
+        "datapath"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "no_overlap"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P10_vectorized_copy",
+      "id": "P10",
+      "title": "P10: Vectorized Data Copy & Instructions (向量化数据与指令)",
+      "doc_path": "cards/P10_vectorized_copy.md",
+      "complexity": "L0",
+      "op_families": [
+        "datapath"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "mte2_stall",
+          "no_overlap",
+          "undersize_transfer"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P11_tail_block_handling",
+      "id": "P11",
+      "title": "P11: Tail Block Handling (尾块与边界处理)",
+      "doc_path": "cards/P11_tail_block_handling.md",
+      "complexity": "L0",
+      "op_families": [
+        "pooling_gather"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "tiling_imbalance"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P12_broadcast_mask",
+      "id": "P12",
+      "title": "P12: Broadcast & Mask Operations (广播与掩码操作)",
+      "doc_path": "cards/P12_broadcast_mask.md",
+      "complexity": "L0",
+      "op_families": [
+        "broadcast_mask"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "ub_memory_pressure"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P14_cv_pipeline_preload",
+      "id": "P14",
+      "title": "P14: CV 流水预发射 (CV Pipeline Preload)",
+      "doc_path": "cards/P14_cv_pipeline_preload.md",
+      "complexity": "L2",
+      "op_families": [
+        "attention",
+        "cv_fusion",
+        "flash_attention",
+        "matmul"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "no_overlap"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P17",
+        "P18",
+        "P29",
+        "P38",
+        "P53",
+        "P60",
+        "P80"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P16_cost_driven_core_partition",
+      "id": "P16",
+      "title": "P16: Cost-Driven Core Partition (基于代价模型的多粒度分核优化)",
+      "doc_path": "cards/P16_cost_driven_core_partition.md",
+      "complexity": "L1",
+      "op_families": [
+        "cv_fusion",
+        "flash_attention"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "tiling_imbalance"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P17_cv_parallel_block_sizing",
+      "id": "P17",
+      "title": "P17: CV Parallel Block Sizing (CV并行基本块大小设计)",
+      "doc_path": "cards/P17_cv_parallel_block_sizing.md",
+      "complexity": "L1",
+      "op_families": [
+        "cv_fusion",
+        "flash_attention",
+        "matmul"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "tiling_imbalance"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P14"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P18_l1_7buf_resident_partition",
+      "id": "P18",
+      "title": "P18: L1 7-Buffer Resident Partitioning (L1 七缓冲常驻分区)",
+      "doc_path": "cards/P18_l1_7buf_resident_partition.md",
+      "complexity": "L2",
+      "op_families": [
+        "attention",
+        "cv_fusion",
+        "flash_attention"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "mte2_stall",
+          "partial_overlap"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P14",
+        "P53",
+        "P76"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P19_custom_pingpong_double_buffer",
+      "id": "P19",
+      "title": "P19: 自定义多级 PingPong 双缓冲",
+      "doc_path": "cards/P19_custom_pingpong_double_buffer.md",
+      "complexity": "L1",
+      "op_families": [
+        "normalization"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "mte2_stall",
+          "mte3_stall",
+          "no_overlap"
+        ]
+      },
+      "conflicts_with": [
+        "P1",
+        "P20",
+        "P21"
+      ],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P1_double_buffer",
+      "id": "P1",
+      "title": "P1: 双缓冲机制 (Double Buffering)",
+      "doc_path": "cards/P1_double_buffer.md",
+      "complexity": "L0",
+      "op_families": [
+        "datapath"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "bus_contention",
+          "mte2_stall",
+          "mte3_stall",
+          "no_overlap",
+          "partial_overlap"
+        ]
+      },
+      "conflicts_with": [
+        "P19",
+        "P20",
+        "P21"
+      ],
+      "synergizes_with": [
+        "P5",
+        "P8"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P20_triple_buffer_rotation",
+      "id": "P20",
+      "title": "P20: 三缓冲轮转（BuffersPolicy3buff）",
+      "doc_path": "cards/P20_triple_buffer_rotation.md",
+      "complexity": "L1",
+      "op_families": [
+        "datapath"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "mte2_stall"
+        ]
+      },
+      "conflicts_with": [
+        "P1",
+        "P19",
+        "P21"
+      ],
+      "synergizes_with": [
+        "P5",
+        "P8"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P21_matrix2x2_buffer_policy",
+      "id": "P21",
+      "title": "P21: 二维矩阵缓冲策略（Matrix2x2BufferPolicy）",
+      "doc_path": "cards/P21_matrix2x2_buffer_policy.md",
+      "complexity": "L1",
+      "op_families": [
+        "matmul",
+        "cv_fusion"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "ub_memory_pressure"
+        ]
+      },
+      "conflicts_with": [
+        "P1",
+        "P19",
+        "P20"
+      ],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P22_tquebind_bidirectional_reuse",
+      "id": "P22",
+      "title": "P22: TQueBind 双向复用队列",
+      "doc_path": "cards/P22_tquebind_bidirectional_reuse.md",
+      "complexity": "L1",
+      "op_families": [
+        "elementwise",
+        "normalization"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "ub_memory_pressure"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P44"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P24_nd2nz_format_copy",
+      "id": "P24",
+      "title": "P24: ND↔NZ 格式转换搬运",
+      "doc_path": "cards/P24_nd2nz_format_copy.md",
+      "complexity": "L1",
+      "op_families": [
+        "matmul"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "no_overlap"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P25_datacopy_pad_alignment",
+      "id": "P25",
+      "title": "P25: DataCopyPad 带 Padding 的搬运",
+      "doc_path": "cards/P25_datacopy_pad_alignment.md",
+      "complexity": "L1",
+      "op_families": [
+        "datapath"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "undersize_transfer"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P26_stride_fused_transpose",
+      "id": "P26",
+      "title": "P26: Stride 搬运模式（转置与列提取）",
+      "doc_path": "cards/P26_stride_fused_transpose.md",
+      "complexity": "L1",
+      "op_families": [
+        "matmul",
+        "flash_attention",
+        "elementwise"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "partial_overlap"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P28_hardevent_producer_consumer",
+      "id": "P28",
+      "title": "P28: 自定义 HardEvent 生产者-消费者同步",
+      "doc_path": "cards/P28_hardevent_producer_consumer.md",
+      "complexity": "L1",
+      "op_families": [
+        "matmul",
+        "cv_fusion"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "bus_contention"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P29_crosscore_aic_aiv_sync",
+      "id": "P29",
+      "title": "P29: 跨核同步（AIC-AIV CrossCore Sync）",
+      "doc_path": "cards/P29_crosscore_aic_aiv_sync.md",
+      "complexity": "L1",
+      "op_families": [
+        "cv_fusion",
+        "flash_attention"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "no_overlap",
+          "partial_overlap"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P14",
+        "P30",
+        "P5",
+        "P87"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P2_adaptive_tiling",
+      "id": "P2",
+      "title": "P2: Adaptive Tiling (自适应分块策略)",
+      "doc_path": "cards/P2_adaptive_tiling.md",
+      "complexity": "L0",
+      "op_families": [
+        "elementwise",
+        "normalization",
+        "optimizer",
+        "pooling_gather",
+        "quantization"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "mte2_stall",
+          "partial_overlap",
+          "scalar_loading",
+          "tiling_imbalance",
+          "undersize_transfer"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P30_dense_pipebarrier_vector",
+      "id": "P30",
+      "title": "P30: PipeBarrier 密集插入的纯 Vector 同步",
+      "doc_path": "cards/P30_dense_pipebarrier_vector.md",
+      "complexity": "L1",
+      "op_families": [
+        "elementwise",
+        "normalization",
+        "reduction"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "compute_bound"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P29",
+        "P5"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P32_scatter_block_stride",
+      "id": "P32",
+      "title": "P32: Scatter Block Update 的 stride 寻址",
+      "doc_path": "cards/P32_scatter_block_stride.md",
+      "complexity": "L1",
+      "op_families": [
+        "index_scatter"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "mte3_stall",
+          "undersize_transfer"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P33"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P33_gather_offset_table",
+      "id": "P33",
+      "title": "P33: Gather 偏移表驱动的结构化数据提取",
+      "doc_path": "cards/P33_gather_offset_table.md",
+      "complexity": "L1",
+      "op_families": [
+        "pooling_gather"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "mte2_stall",
+          "undersize_transfer"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P32"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P34_weight_load_once_reuse",
+      "id": "P34",
+      "title": "P34: Weight 常驻与预计算复用",
+      "doc_path": "cards/P34_weight_load_once_reuse.md",
+      "complexity": "L1",
+      "op_families": [
+        "normalization",
+        "matmul"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "bus_contention",
+          "mte2_stall"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P41",
+        "P8"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P35_tbuf_resident_accumulator",
+      "id": "P35",
+      "title": "P35: TBuf 常驻中间累加器",
+      "doc_path": "cards/P35_tbuf_resident_accumulator.md",
+      "complexity": "L1",
+      "op_families": [
+        "reduction",
+        "normalization",
+        "elementwise"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "partial_overlap",
+          "ub_memory_pressure"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P8"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P37_grad_accumulator_cross_batch",
+      "id": "P37",
+      "title": "P37: 梯度累加器跨 batch 常驻",
+      "doc_path": "cards/P37_grad_accumulator_cross_batch.md",
+      "complexity": "L1",
+      "op_families": [
+        "optimizer",
+        "elementwise"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "ub_memory_pressure"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P38_softmax_state_resident",
+      "id": "P38",
+      "title": "P38: Softmax 状态 Buffer 跨 S2 循环常驻",
+      "doc_path": "cards/P38_softmax_state_resident.md",
+      "complexity": "L1",
+      "op_families": [
+        "attention",
+        "flash_attention"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "ub_memory_pressure"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P14",
+        "P53",
+        "P80"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P3_small_d_optimization",
+      "id": "P3",
+      "title": "P3: Small-D Multi-Row Merging (小D多行合并优化)",
+      "doc_path": "cards/P3_small_d_optimization.md",
+      "complexity": "L0",
+      "op_families": [
+        "normalization"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "tiling_imbalance",
+          "undersize_transfer"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P40_workspace_double_buffer",
+      "id": "P40",
+      "title": "P40: Workspace 双缓冲中间结果常驻",
+      "doc_path": "cards/P40_workspace_double_buffer.md",
+      "complexity": "L1",
+      "op_families": [
+        "datapath"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "mte3_stall"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P41_gamma_scale_resident",
+      "id": "P41",
+      "title": "P41: gamma/scale/offset 常驻 UB",
+      "doc_path": "cards/P41_gamma_scale_resident.md",
+      "complexity": "L1",
+      "op_families": [
+        "normalization"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "mte2_stall"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P34"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P43_grad_pingpong_deferred_scatter",
+      "id": "P43",
+      "title": "P43: 反向梯度 4路PingPong 常驻与 Scatter-Add 延迟写回",
+      "doc_path": "cards/P43_grad_pingpong_deferred_scatter.md",
+      "complexity": "L1",
+      "op_families": [
+        "elementwise",
+        "normalization"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "mte2_stall",
+          "partial_overlap"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P44_transpose_buffer_resident",
+      "id": "P44",
+      "title": "P44: Transpose Buffer 常驻复用",
+      "doc_path": "cards/P44_transpose_buffer_resident.md",
+      "complexity": "L1",
+      "op_families": [
+        "matmul",
+        "flash_attention"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "undersize_transfer"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P22"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P45_topk_index_cache_iterator",
+      "id": "P45",
+      "title": "P45: 稀疏 Attention 离散块处理",
+      "doc_path": "cards/P45_topk_index_cache_iterator.md",
+      "complexity": "L1",
+      "op_families": [
+        "attention",
+        "flash_attention"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "undersize_transfer"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P46_matmulimpl_highlevel_api",
+      "id": "P46",
+      "title": "P46: MatmulImpl 高阶矩阵乘 API (MatmulImpl High-Level API)",
+      "doc_path": "cards/P46_matmulimpl_highlevel_api.md",
+      "complexity": "L1",
+      "op_families": [
+        "cv_fusion",
+        "matmul",
+        "moe"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "compute_bound"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P47",
+        "P63"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P47_diagonal_block_scheduling",
+      "id": "P47",
+      "title": "P47: 对角线块调度 (Diagonal Block Scheduling)",
+      "doc_path": "cards/P47_diagonal_block_scheduling.md",
+      "complexity": "L2",
+      "op_families": [
+        "cv_fusion",
+        "matmul"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "compute_bound",
+          "tiling_imbalance"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P46",
+        "P51",
+        "P63"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P48_multi_quant_dispatch",
+      "id": "P48",
+      "title": "P48: 多量化模式编译期分发 (Multi-Quantization Mode Dispatch)",
+      "doc_path": "cards/P48_multi_quant_dispatch.md",
+      "complexity": "L1",
+      "op_families": [
+        "matmul",
+        "moe",
+        "quantization"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "compute_bound",
+          "scalar_compute"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P49",
+        "P70"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P49_hw_dequantization",
+      "id": "P49",
+      "title": "P49: 硬件加速反量化 (Hardware-Accelerated Dequantization)",
+      "doc_path": "cards/P49_hw_dequantization.md",
+      "complexity": "L1",
+      "op_families": [
+        "matmul",
+        "moe",
+        "quantization"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "compute_bound"
+        ]
+      },
+      "conflicts_with": [
+        "P70"
+      ],
+      "synergizes_with": [
+        "P48"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P4_load_balance",
+      "id": "P4",
+      "title": "P4: 多核负载均衡 (Multi-core Load Balancing)",
+      "doc_path": "cards/P4_load_balance.md",
+      "complexity": "L0",
+      "op_families": [
+        "matmul",
+        "moe",
+        "quantization"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "tiling_imbalance"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P51"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P50_swiglu_fusion",
+      "id": "P50",
+      "title": "P50: SwiGLU 融合流水线 (SwiGLU Fusion Pipeline)",
+      "doc_path": "cards/P50_swiglu_fusion.md",
+      "complexity": "L1",
+      "op_families": [
+        "cv_fusion",
+        "moe"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "compute_bound",
+          "partial_overlap"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P51",
+        "P73"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P51_dynamic_aic_aiv_ratio",
+      "id": "P51",
+      "title": "P51: 动态 AIC/AIV 核配比 (Dynamic AIC/AIV Core Ratio)",
+      "doc_path": "cards/P51_dynamic_aic_aiv_ratio.md",
+      "complexity": "L1",
+      "op_families": [
+        "cv_fusion",
+        "matmul"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "tiling_imbalance"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P4",
+        "P47",
+        "P50",
+        "P73"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P52_l2_cache_hint",
+      "id": "P52",
+      "title": "P52: L2 Cache Hint 优化 (L2 Cache Hint Optimization)",
+      "doc_path": "cards/P52_l2_cache_hint.md",
+      "complexity": "L1",
+      "op_families": [
+        "cv_fusion",
+        "matmul"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "l2_cache_thrash"
+        ]
+      },
+      "conflicts_with": [
+        "P61"
+      ],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P53_l1_resident_reuse",
+      "id": "P53",
+      "title": "P53: L1 常驻复用策略 (L1 Resident Reuse)",
+      "doc_path": "cards/P53_l1_resident_reuse.md",
+      "complexity": "L1",
+      "op_families": [
+        "cv_fusion",
+        "flash_attention"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "partial_overlap"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P14",
+        "P18",
+        "P38"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P54_launch_overhead_optimization",
+      "id": "P54",
+      "title": "P54: 头开销优化策略 (Launch Overhead Optimization)",
+      "doc_path": "cards/P54_launch_overhead_optimization.md",
+      "complexity": "L1",
+      "op_families": [
+        "datapath"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "scalar_loading"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P55_block_reduce_max_optimization",
+      "id": "P55",
+      "title": "P55: BlockReduceMax 替代 DataCopy slice (Block-level Reduction Optimization)",
+      "doc_path": "cards/P55_block_reduce_max_optimization.md",
+      "complexity": "L1",
+      "op_families": [
+        "attention",
+        "normalization"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "compute_bound",
+          "scalar_compute"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P67"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P56_datacopy_batch_output",
+      "id": "P56",
+      "title": "P56: DataCopy UB2GM 合并输出 (Batch DataCopy Output)",
+      "doc_path": "cards/P56_datacopy_batch_output.md",
+      "complexity": "L1",
+      "op_families": [
+        "pooling_gather"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "mte2_stall",
+          "mte3_stall"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P57_flashdecode_g_partition",
+      "id": "P57",
+      "title": "P57: FlashDecode G 分核归约 (FlashDecode G-Partition Reduction)",
+      "doc_path": "cards/P57_flashdecode_g_partition.md",
+      "complexity": "L1",
+      "op_families": [
+        "flash_attention"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "no_overlap"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P58_tnd_load_balance_partition",
+      "id": "P58",
+      "title": "P58: TND 负载均衡分核 (TND Load-Balanced Partition)",
+      "doc_path": "cards/P58_tnd_load_balance_partition.md",
+      "complexity": "L1",
+      "op_families": [
+        "flash_attention"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "tiling_imbalance"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P59_output_transpose_fusion",
+      "id": "P59",
+      "title": "P59: 输出 Transpose 融合 (Output Transpose Fusion)",
+      "doc_path": "cards/P59_output_transpose_fusion.md",
+      "complexity": "L1",
+      "op_families": [
+        "pooling_gather"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "mte2_stall",
+          "mte3_stall"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P5_pipeline_sync",
+      "id": "P5",
+      "title": "P5: 流水线同步优化 (Pipeline Sync)",
+      "doc_path": "cards/P5_pipeline_sync.md",
+      "complexity": "L0",
+      "op_families": [
+        "attention",
+        "flash_attention"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "scalar_compute",
+          "scalar_loading"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P1",
+        "P20",
+        "P29",
+        "P30"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P60_kv_nz_format_optimization",
+      "id": "P60",
+      "title": "P60: KV NZ 格式优化 (KV NZ Format Optimization)",
+      "doc_path": "cards/P60_kv_nz_format_optimization.md",
+      "complexity": "L1",
+      "op_families": [
+        "flash_attention",
+        "matmul"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "mte2_stall",
+          "undersize_transfer"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P14",
+        "P76"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P61_l2_cache_optimization",
+      "id": "P61",
+      "title": "P61: L2 Cache 优化 (L2 Cache Optimization)",
+      "doc_path": "cards/P61_l2_cache_optimization.md",
+      "complexity": "L1",
+      "op_families": [
+        "flash_attention"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "l2_cache_thrash"
+        ]
+      },
+      "conflicts_with": [
+        "P52"
+      ],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P63_iterate_async_interface",
+      "id": "P63",
+      "title": "P63: Iterate 异步接口避免 AIC/AIV 同步依赖 (Iterate Async Interface)",
+      "doc_path": "cards/P63_iterate_async_interface.md",
+      "complexity": "L1",
+      "op_families": [
+        "matmul"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "no_overlap"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P46",
+        "P47"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P64_gm_address_conflict_avoidance",
+      "id": "P64",
+      "title": "P64: 避免 GM 同地址访问冲突 (GM Address Conflict Avoidance)",
+      "doc_path": "cards/P64_gm_address_conflict_avoidance.md",
+      "complexity": "L1",
+      "op_families": [
+        "index_scatter"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "bus_contention"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P65_ub_bank_conflict_avoidance",
+      "id": "P65",
+      "title": "P65: UB Bank 冲突规避 (UB Bank Conflict Avoidance)",
+      "doc_path": "cards/P65_ub_bank_conflict_avoidance.md",
+      "complexity": "L2",
+      "op_families": [
+        "datapath"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "bus_contention"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P66_gm_512b_alignment",
+      "id": "P66",
+      "title": "P66: GM 地址 512B 对齐优化带宽 (GM 512B Alignment Bandwidth)",
+      "doc_path": "cards/P66_gm_512b_alignment.md",
+      "complexity": "L1",
+      "op_families": [
+        "datapath"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "mte2_stall",
+          "undersize_transfer"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P67_vector_counter_mode",
+      "id": "P67",
+      "title": "P67: Vector Counter 模式 (Vector Counter Mode)",
+      "doc_path": "cards/P67_vector_counter_mode.md",
+      "complexity": "L1",
+      "op_families": [
+        "broadcast_mask",
+        "elementwise"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "scalar_compute",
+          "scalar_loading"
+        ]
+      },
+      "conflicts_with": [
+        "P84"
+      ],
+      "synergizes_with": [
+        "P55",
+        "P68",
+        "P69"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P68_low_latency_reduction",
+      "id": "P68",
+      "title": "P68: 低延迟归约指令组合 (Low-Latency Reduction Instruction Combination)",
+      "doc_path": "cards/P68_low_latency_reduction.md",
+      "complexity": "L1",
+      "op_families": [
+        "attention",
+        "normalization"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "compute_bound"
+        ]
+      },
+      "conflicts_with": [
+        "P84"
+      ],
+      "synergizes_with": [
+        "P67",
+        "P69"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P69_ub_fused_vector_chain",
+      "id": "P69",
+      "title": "P69: UB 融合连续 Vector 计算 (UB Fused Vector Chain)",
+      "doc_path": "cards/P69_ub_fused_vector_chain.md",
+      "complexity": "L1",
+      "op_families": [
+        "elementwise",
+        "normalization"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "compute_bound"
+        ]
+      },
+      "conflicts_with": [
+        "P84"
+      ],
+      "synergizes_with": [
+        "P67",
+        "P68"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P70_fp_buffer_inline_quant",
+      "id": "P70",
+      "title": "P70: FP Buffer 随路量化 (FixPipe Buffer Inline Quantization)",
+      "doc_path": "cards/P70_fp_buffer_inline_quant.md",
+      "complexity": "L1",
+      "op_families": [
+        "matmul",
+        "quantization"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "mte2_stall",
+          "ub_memory_pressure"
+        ]
+      },
+      "conflicts_with": [
+        "P49"
+      ],
+      "synergizes_with": [
+        "P48"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P71_matmul_ibshare_l1",
+      "id": "P71",
+      "title": "P71: Matmul IBShare L1 共享矩阵 (Matmul IBShare L1 Sharing)",
+      "doc_path": "cards/P71_matmul_ibshare_l1.md",
+      "complexity": "L1",
+      "op_families": [
+        "matmul"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "l2_cache_thrash",
+          "mte2_stall"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P72"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P72_matmul_split_k",
+      "id": "P72",
+      "title": "P72: Matmul 多核切 K (Matmul Multi-Core Split-K)",
+      "doc_path": "cards/P72_matmul_split_k.md",
+      "complexity": "L1",
+      "op_families": [
+        "matmul"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "tiling_imbalance"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P71"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P73_cv_parallel_aic_aiv_ratio",
+      "id": "P73",
+      "title": "P73: CV 并行 AIC:AIV 比例与多 Workspace 流水 (CV Parallel AIC:AIV Ratio & Multi-Workspace Pipeline)",
+      "doc_path": "cards/P73_cv_parallel_aic_aiv_ratio.md",
+      "complexity": "L1",
+      "op_families": [
+        "cv_fusion",
+        "matmul",
+        "moe"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "tiling_imbalance"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P50",
+        "P51"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P74_selective_l2_cache_disable",
+      "id": "P74",
+      "title": "P74: L2 Cache 选择性禁用 (Selective L2 Cache Disable)",
+      "doc_path": "cards/P74_selective_l2_cache_disable.md",
+      "complexity": "L1",
+      "op_families": [
+        "datapath"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "l2_cache_thrash"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P75_dual_aiv_workload_split",
+      "id": "P75",
+      "title": "P75: 双 AIV M/S1 轴工作量分裂 (Dual AIV M/S1-Axis Workload Split)",
+      "doc_path": "cards/P75_dual_aiv_workload_split.md",
+      "complexity": "L1",
+      "op_families": [
+        "cv_fusion",
+        "moe"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "tiling_imbalance"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P76_v_template_kv_premerge",
+      "id": "P76",
+      "title": "P76: V_TEMPLATE KV 预合并 Workspace (V_TEMPLATE KV Pre-Merge Workspace)",
+      "doc_path": "cards/P76_v_template_kv_premerge.md",
+      "complexity": "L2",
+      "op_families": [
+        "flash_attention"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "mte2_stall",
+          "undersize_transfer"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P18",
+        "P60"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P77_l1_chunk_iterator_sparse_aggregatio",
+      "id": "P77",
+      "title": "P77: L1 Chunk Iterator 稀疏块自适应聚合 (L1 Chunk Iterator Sparse Block Adaptive Aggregation)",
+      "doc_path": "cards/P77_l1_chunk_iterator_sparse_aggregatio.md",
+      "complexity": "L1",
+      "op_families": [
+        "flash_attention"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "no_overlap"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P78_onchip_cache_matmul_acceleration",
+      "id": "P78",
+      "title": "P78: 片上缓存加速 Matmul (On-Chip Cache Matmul Acceleration)",
+      "doc_path": "cards/P78_onchip_cache_matmul_acceleration.md",
+      "complexity": "L1",
+      "op_families": [
+        "matmul"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "l2_cache_thrash"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P79_grad_cube23_fusion",
+      "id": "P79",
+      "title": "P79: Grad Cube2+Cube3 融合计算 (Grad Cube2+Cube3 Fusion for d=64)",
+      "doc_path": "cards/P79_grad_cube23_fusion.md",
+      "complexity": "L1",
+      "op_families": [
+        "matmul"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "compute_bound"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P7_data_alignment",
+      "id": "P7",
+      "title": "P7: 32B Alignment + DataCopyPad (数据对齐与填充)",
+      "doc_path": "cards/P7_data_alignment.md",
+      "complexity": "L0",
+      "op_families": [
+        "index_scatter",
+        "matmul"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "mte2_stall",
+          "undersize_transfer"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P80_sink_task_pipeline_injection",
+      "id": "P80",
+      "title": "P80: Sink Token 流水线注入与 S2 块跳过 (Sink Task Pipeline Injection and S2 Block Skip)",
+      "doc_path": "cards/P80_sink_task_pipeline_injection.md",
+      "complexity": "L2",
+      "op_families": [
+        "flash_attention"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "no_overlap",
+          "partial_overlap"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P14",
+        "P38"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P81_resident_ub_tbuf_reuse",
+      "id": "P81",
+      "title": "P81: Resident UB/TBuf Buffer Reuse (UB/TBuf 常驻 Buffer 复用)",
+      "doc_path": "cards/P81_resident_ub_tbuf_reuse.md",
+      "complexity": "L1",
+      "op_families": [
+        "attention",
+        "normalization",
+        "optimizer"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "ub_memory_pressure"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P83_l1_resident_reuse_partition",
+      "id": "P83",
+      "title": "P83: L1 Resident Reuse with Multi-Buffer Partitioning (L1 常驻复用与多 Buffer 分区)",
+      "doc_path": "cards/P83_l1_resident_reuse_partition.md",
+      "complexity": "L1",
+      "op_families": [
+        "matmul"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "partial_overlap"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P84_vector_compute_efficiency_patterns",
+      "id": "P84",
+      "title": "P84: Vector Compute Efficiency Patterns (UB 内 Vector 计算效率优化模式)",
+      "doc_path": "cards/P84_vector_compute_efficiency_patterns.md",
+      "complexity": "L2",
+      "op_families": [
+        "elementwise",
+        "normalization",
+        "optimizer"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "compute_bound",
+          "scalar_compute"
+        ]
+      },
+      "conflicts_with": [
+        "P67",
+        "P68",
+        "P69"
+      ],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P85_on_chip_buffer_zone_reuse",
+      "id": "P85",
+      "title": "P85: On-Chip Buffer Zone Reuse (片上 Buffer 分区与分时复用)",
+      "doc_path": "cards/P85_on_chip_buffer_zone_reuse.md",
+      "complexity": "L1",
+      "op_families": [
+        "special"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "ub_memory_pressure"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P86_matmul_api_transport_efficiency_tun",
+      "id": "P86",
+      "title": "P86: Matmul Internal Data-Path Efficiency Tuning (Matmul 高阶 API 内部数据通路效率调优)",
+      "doc_path": "cards/P86_matmul_api_transport_efficiency_tun.md",
+      "complexity": "L1",
+      "op_families": [
+        "matmul"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "mte2_stall",
+          "no_overlap",
+          "undersize_transfer"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P92",
+        "P93"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P87_manual_mmad_pipeline_timing_control",
+      "id": "P87",
+      "title": "P87: Manual Mmad Pipeline Timing Control (手动 Mmad 流水线时序控制)",
+      "doc_path": "cards/P87_manual_mmad_pipeline_timing_control.md",
+      "complexity": "L2",
+      "op_families": [
+        "matmul"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "mte2_stall",
+          "partial_overlap"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P29"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P88_multiphase_compute_phase_decomposit",
+      "id": "P88",
+      "title": "P88: Multi-Phase Compute Phase Decomposition (多阶段计算拆分与资源重分配)",
+      "doc_path": "cards/P88_multiphase_compute_phase_decomposit.md",
+      "complexity": "L2",
+      "op_families": [
+        "cv_fusion",
+        "moe",
+        "special"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "ub_memory_pressure"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P89_ub_api_temp_buffer_sharing",
+      "id": "P89",
+      "title": "P89: UB 高阶 API 临时 Buffer 共享复用 (High-Level API Temp Buffer Sharing)",
+      "doc_path": "cards/P89_ub_api_temp_buffer_sharing.md",
+      "complexity": "L1",
+      "op_families": [
+        "normalization",
+        "elementwise"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "ub_memory_pressure"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P85"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P8_ub_memory_mgmt",
+      "id": "P8",
+      "title": "P8: UB Memory Partitioning (UB内存分区管理)",
+      "doc_path": "cards/P8_ub_memory_mgmt.md",
+      "complexity": "L0",
+      "op_families": [
+        "datapath"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "bus_contention",
+          "mte3_stall",
+          "partial_overlap",
+          "ub_memory_pressure"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P1",
+        "P20",
+        "P34",
+        "P35"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P90_conditional_pipebarrier",
+      "id": "P90",
+      "title": "P90: 条件性 PipeBarrier 基于矩阵规模 (Conditional PipeBarrier by Matrix Size)",
+      "doc_path": "cards/P90_conditional_pipebarrier.md",
+      "complexity": "L1",
+      "op_families": [
+        "matmul",
+        "flash_attention"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "scalar_loading",
+          "partial_overlap"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P87"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P91_softmax_grad_precompute",
+      "id": "P91",
+      "title": "P91: Softmax 梯度预计算独立阶段 (Softmax Gradient Pre-Computation Phase)",
+      "doc_path": "cards/P91_softmax_grad_precompute.md",
+      "complexity": "L2",
+      "op_families": [
+        "flash_attention"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "compute_bound"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P88",
+        "P79"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P92_matmul_block_compute_ratio",
+      "id": "P92",
+      "title": "P92: Matmul 基本块计算访存比优化 (Matmul Base Block Compute-to-Memory Ratio)",
+      "doc_path": "cards/P92_matmul_block_compute_ratio.md",
+      "complexity": "L1",
+      "op_families": [
+        "matmul",
+        "cv_fusion"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "mte2_stall",
+          "compute_bound"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P46",
+        "P86",
+        "P93"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P93_matmul_k_stagger_access",
+      "id": "P93",
+      "title": "P93: Matmul K 轴错峰访问内存 (Matmul K-Axis Staggered Memory Access)",
+      "doc_path": "cards/P93_matmul_k_stagger_access.md",
+      "complexity": "L1",
+      "op_families": [
+        "matmul"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "mte2_stall",
+          "bus_contention"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [
+        "P46",
+        "P86",
+        "P92"
+      ],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    },
+    {
+      "source_key": "evolution-strategies#card/P9_deterministic_output",
+      "id": "P9",
+      "title": "P9: Deterministic Output via Workspace (确定性输出)",
+      "doc_path": "cards/P9_deterministic_output.md",
+      "complexity": "L0",
+      "op_families": [
+        "optimizer"
+      ],
+      "triggers": {
+        "bottleneck_labels": [
+          "tiling_imbalance"
+        ]
+      },
+      "conflicts_with": [],
+      "synergizes_with": [],
+      "requires": [],
+      "has_preconditions": true,
+      "has_playbook": true,
+      "quantified_gain": []
+    }
+  ],
+  "preconditions": [
+    {
+      "source_key": "evolution-strategies#preconditions/A1",
+      "id": "A1",
+      "doc_path": "preconditions/A1.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/A2",
+      "id": "A2",
+      "doc_path": "preconditions/A2.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/A3",
+      "id": "A3",
+      "doc_path": "preconditions/A3.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/A4",
+      "id": "A4",
+      "doc_path": "preconditions/A4.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/A5",
+      "id": "A5",
+      "doc_path": "preconditions/A5.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/A6",
+      "id": "A6",
+      "doc_path": "preconditions/A6.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/A7",
+      "id": "A7",
+      "doc_path": "preconditions/A7.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/A8",
+      "id": "A8",
+      "doc_path": "preconditions/A8.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/D1",
+      "id": "D1",
+      "doc_path": "preconditions/D1.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/D2",
+      "id": "D2",
+      "doc_path": "preconditions/D2.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/D3",
+      "id": "D3",
+      "doc_path": "preconditions/D3.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/D4",
+      "id": "D4",
+      "doc_path": "preconditions/D4.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/D5",
+      "id": "D5",
+      "doc_path": "preconditions/D5.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P1",
+      "id": "P1",
+      "doc_path": "preconditions/P1.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P10",
+      "id": "P10",
+      "doc_path": "preconditions/P10.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P11",
+      "id": "P11",
+      "doc_path": "preconditions/P11.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P12",
+      "id": "P12",
+      "doc_path": "preconditions/P12.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P14",
+      "id": "P14",
+      "doc_path": "preconditions/P14.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P16",
+      "id": "P16",
+      "doc_path": "preconditions/P16.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P17",
+      "id": "P17",
+      "doc_path": "preconditions/P17.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P18",
+      "id": "P18",
+      "doc_path": "preconditions/P18.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P19",
+      "id": "P19",
+      "doc_path": "preconditions/P19.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P2",
+      "id": "P2",
+      "doc_path": "preconditions/P2.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P20",
+      "id": "P20",
+      "doc_path": "preconditions/P20.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P21",
+      "id": "P21",
+      "doc_path": "preconditions/P21.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P22",
+      "id": "P22",
+      "doc_path": "preconditions/P22.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P24",
+      "id": "P24",
+      "doc_path": "preconditions/P24.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P25",
+      "id": "P25",
+      "doc_path": "preconditions/P25.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P26",
+      "id": "P26",
+      "doc_path": "preconditions/P26.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P28",
+      "id": "P28",
+      "doc_path": "preconditions/P28.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P29",
+      "id": "P29",
+      "doc_path": "preconditions/P29.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P3",
+      "id": "P3",
+      "doc_path": "preconditions/P3.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P30",
+      "id": "P30",
+      "doc_path": "preconditions/P30.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P32",
+      "id": "P32",
+      "doc_path": "preconditions/P32.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P33",
+      "id": "P33",
+      "doc_path": "preconditions/P33.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P34",
+      "id": "P34",
+      "doc_path": "preconditions/P34.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P35",
+      "id": "P35",
+      "doc_path": "preconditions/P35.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P37",
+      "id": "P37",
+      "doc_path": "preconditions/P37.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P38",
+      "id": "P38",
+      "doc_path": "preconditions/P38.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P4",
+      "id": "P4",
+      "doc_path": "preconditions/P4.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P40",
+      "id": "P40",
+      "doc_path": "preconditions/P40.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P41",
+      "id": "P41",
+      "doc_path": "preconditions/P41.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P43",
+      "id": "P43",
+      "doc_path": "preconditions/P43.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P44",
+      "id": "P44",
+      "doc_path": "preconditions/P44.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P45",
+      "id": "P45",
+      "doc_path": "preconditions/P45.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P46",
+      "id": "P46",
+      "doc_path": "preconditions/P46.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P47",
+      "id": "P47",
+      "doc_path": "preconditions/P47.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P48",
+      "id": "P48",
+      "doc_path": "preconditions/P48.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P49",
+      "id": "P49",
+      "doc_path": "preconditions/P49.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P5",
+      "id": "P5",
+      "doc_path": "preconditions/P5.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P50",
+      "id": "P50",
+      "doc_path": "preconditions/P50.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P51",
+      "id": "P51",
+      "doc_path": "preconditions/P51.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P52",
+      "id": "P52",
+      "doc_path": "preconditions/P52.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P53",
+      "id": "P53",
+      "doc_path": "preconditions/P53.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P54",
+      "id": "P54",
+      "doc_path": "preconditions/P54.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P55",
+      "id": "P55",
+      "doc_path": "preconditions/P55.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P56",
+      "id": "P56",
+      "doc_path": "preconditions/P56.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P57",
+      "id": "P57",
+      "doc_path": "preconditions/P57.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P58",
+      "id": "P58",
+      "doc_path": "preconditions/P58.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P59",
+      "id": "P59",
+      "doc_path": "preconditions/P59.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P60",
+      "id": "P60",
+      "doc_path": "preconditions/P60.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P61",
+      "id": "P61",
+      "doc_path": "preconditions/P61.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P63",
+      "id": "P63",
+      "doc_path": "preconditions/P63.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P64",
+      "id": "P64",
+      "doc_path": "preconditions/P64.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P65",
+      "id": "P65",
+      "doc_path": "preconditions/P65.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P66",
+      "id": "P66",
+      "doc_path": "preconditions/P66.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P67",
+      "id": "P67",
+      "doc_path": "preconditions/P67.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P68",
+      "id": "P68",
+      "doc_path": "preconditions/P68.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P69",
+      "id": "P69",
+      "doc_path": "preconditions/P69.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P7",
+      "id": "P7",
+      "doc_path": "preconditions/P7.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P70",
+      "id": "P70",
+      "doc_path": "preconditions/P70.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P71",
+      "id": "P71",
+      "doc_path": "preconditions/P71.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P72",
+      "id": "P72",
+      "doc_path": "preconditions/P72.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P73",
+      "id": "P73",
+      "doc_path": "preconditions/P73.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P74",
+      "id": "P74",
+      "doc_path": "preconditions/P74.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P75",
+      "id": "P75",
+      "doc_path": "preconditions/P75.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P76",
+      "id": "P76",
+      "doc_path": "preconditions/P76.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P77",
+      "id": "P77",
+      "doc_path": "preconditions/P77.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P78",
+      "id": "P78",
+      "doc_path": "preconditions/P78.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P79",
+      "id": "P79",
+      "doc_path": "preconditions/P79.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P8",
+      "id": "P8",
+      "doc_path": "preconditions/P8.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P80",
+      "id": "P80",
+      "doc_path": "preconditions/P80.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P81",
+      "id": "P81",
+      "doc_path": "preconditions/P81.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P83",
+      "id": "P83",
+      "doc_path": "preconditions/P83.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P84",
+      "id": "P84",
+      "doc_path": "preconditions/P84.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P85",
+      "id": "P85",
+      "doc_path": "preconditions/P85.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P86",
+      "id": "P86",
+      "doc_path": "preconditions/P86.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P87",
+      "id": "P87",
+      "doc_path": "preconditions/P87.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P88",
+      "id": "P88",
+      "doc_path": "preconditions/P88.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P89",
+      "id": "P89",
+      "doc_path": "preconditions/P89.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P9",
+      "id": "P9",
+      "doc_path": "preconditions/P9.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P90",
+      "id": "P90",
+      "doc_path": "preconditions/P90.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P91",
+      "id": "P91",
+      "doc_path": "preconditions/P91.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P92",
+      "id": "P92",
+      "doc_path": "preconditions/P92.yaml"
+    },
+    {
+      "source_key": "evolution-strategies#preconditions/P93",
+      "id": "P93",
+      "doc_path": "preconditions/P93.yaml"
+    }
+  ],
+  "playbooks": [
+    {
+      "source_key": "evolution-strategies#playbook/A1_fp32_intermediate",
+      "id": "A1",
+      "doc_path": "playbooks/A1_fp32_intermediate.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/A2_welford_algorithm",
+      "id": "A2",
+      "doc_path": "playbooks/A2_welford_algorithm.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/A3_rounding_mode",
+      "id": "A3",
+      "doc_path": "playbooks/A3_rounding_mode.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/A4_pipeline_barrier",
+      "id": "A4",
+      "doc_path": "playbooks/A4_pipeline_barrier.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/A5_softmax_stability",
+      "id": "A5",
+      "doc_path": "playbooks/A5_softmax_stability.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/A6_high_precision_rsqrt",
+      "id": "A6",
+      "doc_path": "playbooks/A6_high_precision_rsqrt.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/A7_index_boundary",
+      "id": "A7",
+      "doc_path": "playbooks/A7_index_boundary.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/A8_quant_precision",
+      "id": "A8",
+      "doc_path": "playbooks/A8_quant_precision.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/D1_mixed_precision",
+      "id": "D1",
+      "doc_path": "playbooks/D1_mixed_precision.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/D2_template_kernel",
+      "id": "D2",
+      "doc_path": "playbooks/D2_template_kernel.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/D3_tilingkey_dispatch",
+      "id": "D3",
+      "doc_path": "playbooks/D3_tilingkey_dispatch.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/D4_fp8_int4_conversion",
+      "id": "D4",
+      "doc_path": "playbooks/D4_fp8_int4_conversion.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/D5_bf16_special_handling",
+      "id": "D5",
+      "doc_path": "playbooks/D5_bf16_special_handling.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P10_vectorized_copy",
+      "id": "P10",
+      "doc_path": "playbooks/P10_vectorized_copy.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P11_tail_block_handling",
+      "id": "P11",
+      "doc_path": "playbooks/P11_tail_block_handling.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P12_broadcast_mask",
+      "id": "P12",
+      "doc_path": "playbooks/P12_broadcast_mask.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P14_cv_pipeline_preload",
+      "id": "P14",
+      "doc_path": "playbooks/P14_cv_pipeline_preload.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P16_cost_driven_core_partition",
+      "id": "P16",
+      "doc_path": "playbooks/P16_cost_driven_core_partition.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P17_cv_parallel_block_sizing",
+      "id": "P17",
+      "doc_path": "playbooks/P17_cv_parallel_block_sizing.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P18_l1_7buf_resident_partition",
+      "id": "P18",
+      "doc_path": "playbooks/P18_l1_7buf_resident_partition.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P19_custom_pingpong_double_buffer",
+      "id": "P19",
+      "doc_path": "playbooks/P19_custom_pingpong_double_buffer.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P1_double_buffering",
+      "id": "P1",
+      "doc_path": "playbooks/P1_double_buffering.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P20_triple_buffer_rotation",
+      "id": "P20",
+      "doc_path": "playbooks/P20_triple_buffer_rotation.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P21_matrix2x2_buffer_policy",
+      "id": "P21",
+      "doc_path": "playbooks/P21_matrix2x2_buffer_policy.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P22_tquebind_bidirectional_reuse",
+      "id": "P22",
+      "doc_path": "playbooks/P22_tquebind_bidirectional_reuse.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P24_nd2nz_format_copy",
+      "id": "P24",
+      "doc_path": "playbooks/P24_nd2nz_format_copy.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P25_datacopy_pad_alignment",
+      "id": "P25",
+      "doc_path": "playbooks/P25_datacopy_pad_alignment.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P26_stride_fused_transpose",
+      "id": "P26",
+      "doc_path": "playbooks/P26_stride_fused_transpose.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P28_hardevent_producer_consumer",
+      "id": "P28",
+      "doc_path": "playbooks/P28_hardevent_producer_consumer.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P29_crosscore_aic_aiv_sync",
+      "id": "P29",
+      "doc_path": "playbooks/P29_crosscore_aic_aiv_sync.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P2_adaptive_tiling",
+      "id": "P2",
+      "doc_path": "playbooks/P2_adaptive_tiling.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P30_dense_pipebarrier_vector",
+      "id": "P30",
+      "doc_path": "playbooks/P30_dense_pipebarrier_vector.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P32_scatter_block_stride",
+      "id": "P32",
+      "doc_path": "playbooks/P32_scatter_block_stride.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P33_gather_offset_table",
+      "id": "P33",
+      "doc_path": "playbooks/P33_gather_offset_table.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P34_weight_load_once_reuse",
+      "id": "P34",
+      "doc_path": "playbooks/P34_weight_load_once_reuse.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P35_tbuf_resident_accumulator",
+      "id": "P35",
+      "doc_path": "playbooks/P35_tbuf_resident_accumulator.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P37_grad_accumulator_cross_batch",
+      "id": "P37",
+      "doc_path": "playbooks/P37_grad_accumulator_cross_batch.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P38_softmax_state_resident",
+      "id": "P38",
+      "doc_path": "playbooks/P38_softmax_state_resident.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P3_small_d_optimization",
+      "id": "P3",
+      "doc_path": "playbooks/P3_small_d_optimization.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P40_workspace_double_buffer",
+      "id": "P40",
+      "doc_path": "playbooks/P40_workspace_double_buffer.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P41_gamma_scale_resident",
+      "id": "P41",
+      "doc_path": "playbooks/P41_gamma_scale_resident.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P43_grad_pingpong_deferred_scatter",
+      "id": "P43",
+      "doc_path": "playbooks/P43_grad_pingpong_deferred_scatter.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P44_transpose_buffer_resident",
+      "id": "P44",
+      "doc_path": "playbooks/P44_transpose_buffer_resident.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P45_topk_index_cache_iterator",
+      "id": "P45",
+      "doc_path": "playbooks/P45_topk_index_cache_iterator.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P46_matmulimpl_highlevel_api",
+      "id": "P46",
+      "doc_path": "playbooks/P46_matmulimpl_highlevel_api.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P47_diagonal_block_scheduling",
+      "id": "P47",
+      "doc_path": "playbooks/P47_diagonal_block_scheduling.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P48_multi_quant_dispatch",
+      "id": "P48",
+      "doc_path": "playbooks/P48_multi_quant_dispatch.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P49_hw_dequantization",
+      "id": "P49",
+      "doc_path": "playbooks/P49_hw_dequantization.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P4_load_balance",
+      "id": "P4",
+      "doc_path": "playbooks/P4_load_balance.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P50_swiglu_fusion",
+      "id": "P50",
+      "doc_path": "playbooks/P50_swiglu_fusion.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P51_dynamic_aic_aiv_ratio",
+      "id": "P51",
+      "doc_path": "playbooks/P51_dynamic_aic_aiv_ratio.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P52_l2_cache_hint",
+      "id": "P52",
+      "doc_path": "playbooks/P52_l2_cache_hint.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P53_l1_resident_reuse",
+      "id": "P53",
+      "doc_path": "playbooks/P53_l1_resident_reuse.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P54_launch_overhead_optimization",
+      "id": "P54",
+      "doc_path": "playbooks/P54_launch_overhead_optimization.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P55_block_reduce_max_optimization",
+      "id": "P55",
+      "doc_path": "playbooks/P55_block_reduce_max_optimization.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P56_datacopy_batch_output",
+      "id": "P56",
+      "doc_path": "playbooks/P56_datacopy_batch_output.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P57_flashdecode_g_partition",
+      "id": "P57",
+      "doc_path": "playbooks/P57_flashdecode_g_partition.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P58_tnd_load_balance_partition",
+      "id": "P58",
+      "doc_path": "playbooks/P58_tnd_load_balance_partition.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P59_output_transpose_fusion",
+      "id": "P59",
+      "doc_path": "playbooks/P59_output_transpose_fusion.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P5_pipeline_sync",
+      "id": "P5",
+      "doc_path": "playbooks/P5_pipeline_sync.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P60_kv_nz_format_optimization",
+      "id": "P60",
+      "doc_path": "playbooks/P60_kv_nz_format_optimization.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P61_l2_cache_optimization",
+      "id": "P61",
+      "doc_path": "playbooks/P61_l2_cache_optimization.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P63_iterate_async_interface",
+      "id": "P63",
+      "doc_path": "playbooks/P63_iterate_async_interface.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P64_gm_address_conflict_avoidance",
+      "id": "P64",
+      "doc_path": "playbooks/P64_gm_address_conflict_avoidance.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P65_ub_bank_conflict_avoidance",
+      "id": "P65",
+      "doc_path": "playbooks/P65_ub_bank_conflict_avoidance.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P66_gm_512b_alignment",
+      "id": "P66",
+      "doc_path": "playbooks/P66_gm_512b_alignment.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P67_vector_counter_mode",
+      "id": "P67",
+      "doc_path": "playbooks/P67_vector_counter_mode.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P68_low_latency_reduction",
+      "id": "P68",
+      "doc_path": "playbooks/P68_low_latency_reduction.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P69_ub_fused_vector_chain",
+      "id": "P69",
+      "doc_path": "playbooks/P69_ub_fused_vector_chain.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P70_fp_buffer_inline_quant",
+      "id": "P70",
+      "doc_path": "playbooks/P70_fp_buffer_inline_quant.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P71_matmul_ibshare_l1",
+      "id": "P71",
+      "doc_path": "playbooks/P71_matmul_ibshare_l1.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P72_matmul_split_k",
+      "id": "P72",
+      "doc_path": "playbooks/P72_matmul_split_k.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P73_cv_parallel_aic_aiv_ratio",
+      "id": "P73",
+      "doc_path": "playbooks/P73_cv_parallel_aic_aiv_ratio.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P74_selective_l2_cache_disable",
+      "id": "P74",
+      "doc_path": "playbooks/P74_selective_l2_cache_disable.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P75_dual_aiv_workload_split",
+      "id": "P75",
+      "doc_path": "playbooks/P75_dual_aiv_workload_split.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P76_v_template_kv_premerge",
+      "id": "P76",
+      "doc_path": "playbooks/P76_v_template_kv_premerge.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P77_l1_chunk_iterator_sparse_aggregation",
+      "id": "P77",
+      "doc_path": "playbooks/P77_l1_chunk_iterator_sparse_aggregation.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P78_onchip_cache_matmul_acceleration",
+      "id": "P78",
+      "doc_path": "playbooks/P78_onchip_cache_matmul_acceleration.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P79_grad_cube23_fusion",
+      "id": "P79",
+      "doc_path": "playbooks/P79_grad_cube23_fusion.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P7_data_alignment",
+      "id": "P7",
+      "doc_path": "playbooks/P7_data_alignment.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P80_sink_task_pipeline_injection",
+      "id": "P80",
+      "doc_path": "playbooks/P80_sink_task_pipeline_injection.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P81_resident_ub_tbuf_reuse",
+      "id": "P81",
+      "doc_path": "playbooks/P81_resident_ub_tbuf_reuse.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P83_l1_resident_reuse_partition",
+      "id": "P83",
+      "doc_path": "playbooks/P83_l1_resident_reuse_partition.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P84_vector_compute_efficiency_patterns",
+      "id": "P84",
+      "doc_path": "playbooks/P84_vector_compute_efficiency_patterns.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P85_on_chip_buffer_zone_reuse",
+      "id": "P85",
+      "doc_path": "playbooks/P85_on_chip_buffer_zone_reuse.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P86_matmul_api_transport_efficiency_tun",
+      "id": "P86",
+      "doc_path": "playbooks/P86_matmul_api_transport_efficiency_tun.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P87_manual_mmad_pipeline_timing_control",
+      "id": "P87",
+      "doc_path": "playbooks/P87_manual_mmad_pipeline_timing_control.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P88_multiphase_compute_phase_decomposit",
+      "id": "P88",
+      "doc_path": "playbooks/P88_multiphase_compute_phase_decomposit.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P89_ub_api_temp_buffer_sharing",
+      "id": "P89",
+      "doc_path": "playbooks/P89_ub_api_temp_buffer_sharing.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P8_ub_memory_partitioning",
+      "id": "P8",
+      "doc_path": "playbooks/P8_ub_memory_partitioning.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P90_conditional_pipebarrier",
+      "id": "P90",
+      "doc_path": "playbooks/P90_conditional_pipebarrier.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P91_softmax_grad_precompute",
+      "id": "P91",
+      "doc_path": "playbooks/P91_softmax_grad_precompute.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P92_matmul_block_compute_ratio",
+      "id": "P92",
+      "doc_path": "playbooks/P92_matmul_block_compute_ratio.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P93_matmul_k_stagger_access",
+      "id": "P93",
+      "doc_path": "playbooks/P93_matmul_k_stagger_access.md"
+    },
+    {
+      "source_key": "evolution-strategies#playbook/P9_deterministic_output",
+      "id": "P9",
+      "doc_path": "playbooks/P9_deterministic_output.md"
+    }
+  ],
+  "families": [
+    {
+      "source_key": "evolution-strategies#family/attention_guide",
+      "title": "Attention Guide",
+      "doc_path": "families/attention_guide.md"
+    },
+    {
+      "source_key": "evolution-strategies#family/elementwise_guide",
+      "title": "Elementwise Guide",
+      "doc_path": "families/elementwise_guide.md"
+    },
+    {
+      "source_key": "evolution-strategies#family/matmul_guide",
+      "title": "Matmul Guide",
+      "doc_path": "families/matmul_guide.md"
+    },
+    {
+      "source_key": "evolution-strategies#family/reduction_guide",
+      "title": "Reduction Guide",
+      "doc_path": "families/reduction_guide.md"
+    }
+  ],
+  "discovered": [
+    {
+      "source_key": "evolution-strategies#discovered/disc_X1",
+      "id": "X1",
+      "doc_path": "discovered/disc_X1.md"
+    }
+  ]
+}

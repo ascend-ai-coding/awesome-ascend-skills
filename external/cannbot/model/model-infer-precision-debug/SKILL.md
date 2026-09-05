@@ -5,8 +5,8 @@ description: 基于 PyTorch 框架的昇腾 NPU 模型推理精度问题诊断�
   和 Decode 精度表现不一致、出现 NaN/Inf、量化模式下精度异常放大等。
 original-name: model-infer-precision-debug
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-26'
-synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
+synced-date: '2026-09-05'
+synced-commit: a426ec91e1038f233066724d63235c719a46a10d
 license: UNKNOWN
 ---
 
@@ -16,6 +16,12 @@ license: UNKNOWN
 > 不覆盖运行时错误（crash、hang、OOM、算子约束违反等见 model-infer-runtime-debug）。
 
 按"症状分类 → 快速验证 → 分模块定位 → 逐层对比 → 陷阱修复"的分层策略排查精度问题。完整校验工具见 `references/fa_debug_utils.md`。
+
+> **部署模式适配**：诊断流程对框架部署 / 独立部署两模式均适用，差异仅在参数获取路径——框架部署从 `forward_metadata.{block_table, slot_mapping, actual_seq_lengths_*, is_prefill}` 取，独立部署从 Runner 自管的 ParallelContext / forward_metadata 实例取。`block_table` / `slot_mapping` 在框架部署下是 `Dict[attn_type → Tensor]`，attention 内按 `self.attn_type` 取出对应 tensor；独立部署 Runner 自管的形态是单 Tensor。
+>
+> **packed sequence 协议**（框架部署 modeling 强制要求）：`input_ids` / `position_ids` 是 `[TotalTokens]` 一维；`hidden_states` 全程保持 `[TotalTokens, hidden_size]` 二维（不要 reshape 成 `[B, S, H]`）；阶段分支统一用 `forward_metadata.is_prefill`。详见 `model-infer-kvcache` skill §3.1。
+>
+> **sparse_mode 写法（按路径分类）**：标准 LLM TND PA 路径 Prefill + Decode 统一 `sparse_mode=3` + causal mask；滑窗层 Prefill + Decode 统一 `sparse_mode=4` + band mask；MLA absorb 路径 Prefill `sparse_mode=3` / Decode `sparse_mode=0`+`mask=None`。详见 `model-infer-kvcache` skill §2.7。
 
 ## 重要原则
 
@@ -51,12 +57,12 @@ license: UNKNOWN
 
 | 症状 | 可能原因 | 优先排查方向 |
 |------|---------|-------------|
-| 输出全为重复 token 或乱码 | KVCache 写入位置错误 | slot_mapping / scatter_update_ 参数 |
+| 输出全为重复 token 或乱码 | KVCache 写入位置错误 | slot_mapping 构造 / 写入算子（PA 用 `npu_scatter_nd_update_`，BSH legacy 用 `scatter_update_`） |
 | 首个 token 正确，后续偏移 | Decode 阶段 kv_len 更新错误 | kv_len 生命周期 |
-| Prefill 正确，Decode 偏差大 | Decode FA 入参错误 | sparse_mode / actual_seq_lengths |
+| Prefill 正确，Decode 偏差大 | Decode FA 入参错位（按路径分类：MLA absorb Decode 应切 sparse_mode=0 / mask=None；标准 LLM TND PA 保持与 Prefill 同 sparse_mode=3） | sparse_mode 路径分类 / actual_seq_lengths_kv |
 | 输出含 NaN/Inf | 数值溢出 | scale 参数、dtype 不匹配 |
 | 精度逐层累积偏差 | FA 算子数值精度 | input_layout / NZ 格式 / 量化参数 |
-| 多 batch 部分样本错误 | batch 间缓存交叉污染 | block_table 构造 / kv_len_offset |
+| 多 batch 部分样本错误 | batch 间缓存交叉污染 | block_table / slot_mapping 构造 |
 | 量化模式下偏差显著放大 | 量化参数不匹配 | dequant_scale / antiquant_mode |
 
 ### 2.2 快速验证清单
@@ -64,20 +70,20 @@ license: UNKNOWN
 - [ ] 1. dtype 一致性：KVCache tensor 与模型计算 dtype 一致（BF16 / FP16）
 - [ ] 2. device 一致性：所有 tensor 均在 NPU 上，无意外的 CPU tensor
 - [ ] 3. block_table dtype：必须为 torch.int32
-- [ ] 4. sparse_mode 正确：Prefill=3（因果），Decode=0（dense）；sparse_mode=2 不推荐
-- [ ] 5. Prefill 和 Decode 的 FA 调用参数需分别配置（sparse_mode、atten_mask、actual_seq_lengths 等）
+- [ ] 4. sparse_mode 按路径正确：标准 LLM TND PA Prefill+Decode 统一 3；滑窗层统一 4；MLA absorb Prefill 3 / Decode 0（详见 `model-infer-kvcache` §2.7）
+- [ ] 5. Prefill 和 Decode 的 FA 调用参数按路径配置（atten_mask、actual_seq_lengths 等；阶段分支取自 `forward_metadata.is_prefill`）
 - [ ] 6. scale 参数：1.0 / sqrt(head_dim)，确认 head_dim 值正确
-- [ ] 7. num_heads / num_kv_heads：与模型配置一致，多卡时已按 rank 切分
+- [ ] 7. num_heads / num_kv_heads：与模型配置一致，多卡时已按 rank 切分（`num_kv_heads_per_rank = max(num_kv_heads // attn_tp_size, 1)`）
 - [ ] 8. kv_len 初始值：Prefill 后 kv_len 等于输入序列长度，非 0
-- [ ] 9. input_layout 与 tensor shape 匹配
-- [ ] 10. actual_seq_lengths 构造方式与 layout 匹配（TND 用 cumsum，BSH 用原值）
-- [ ] 11. atten_mask 与 sparse_mode 匹配（详见附录 F.1）；Decode 单 token 查询通常不需要 mask
+- [ ] 9. input_layout 与 tensor shape 匹配（标准 LLM TND PA 默认 TND；MLA absorb 用 TND_NTD）
+- [ ] 10. actual_seq_lengths 构造方式与 layout 匹配（TND 用 cumsum，BSH 用原值；框架部署对应 `forward_metadata.actual_seq_lengths_cu_q` / `actual_seq_lengths_kv`）
+- [ ] 11. atten_mask 与 sparse_mode 匹配（详见附录 F.1）；MLA absorb Decode 用 None
 - [ ] 12. FA v1 vs v2 参数名：未混用（详见附录 F.2）
-- [ ] 13. Decode 阶段未使用 sparse_mode=3
-- [ ] 14. PA 场景下 mask 最后一维 >= block_table 第二维 × block_size
-- [ ] 15. MLA rope 参数：query_rope/key_rope 同时传或同时不传；rope D=64，query D 仅支持 512/128
-- [ ] 16. inner_precise 行无效：Prefill + 自定义 mask 有全遮蔽行时需设为 2/3
-- [ ] 17. kv_len 层内只读：kv_len 在 attention/cache 内部未被修改（禁止层内递增，否则各层写入位置错位导致精度彻底损坏）
+- [ ] 13. PA 场景下 mask 最后一维 >= block_table 第二维 × block_size
+- [ ] 14. MLA rope 参数：query_rope/key_rope 同时传或同时不传；rope D=64，query D 仅支持 512/128
+- [ ] 15. inner_precise 行无效：Prefill + 自定义 mask 有全遮蔽行时需设为 2/3
+- [ ] 16. kv_len 层内只读：kv_len 在 attention/cache 内部未被修改（禁止层内递增，否则各层写入位置错位导致精度彻底损坏）
+- [ ] 17. hidden_states 全程保持 `[TotalTokens, hidden_size]` 二维形态，未被 reshape 成 `[B, S, H]`（变长 batch 不能简单 reshape）
 
 ---
 
@@ -101,24 +107,28 @@ license: UNKNOWN
 
 ### 3.2 Prefill 阶段精度排查
 
-**KVCache 写入验证**：在 `scatter_update_` 调用前后插桩，检查：
+**KVCache 写入验证**：在写入算子（PA 模式 `npu_scatter_nd_update_` / MLA 融合写入 `npu_kv_rmsnorm_rope_cache` / BSH legacy 骨架 `scatter_update_`）调用前后插桩，检查：
 1. 写入前缓存是否为零（首次 Prefill）
 2. 写入后缓存内容与 key_states 是否一致（阈值 1e-6）
-3. scatter_update_ 的 axis 参数与 layout 是否匹配（BSH → axis=1, TND → axis=0）
+3. PA 路径：cache / states 都需 view 为 `[total, num_kv_heads, head_dim]`；slot_mapping 取 `forward_metadata.slot_mapping[self.attn_type].view(-1, 1)`
+4. BSH legacy 路径：scatter_update_ 的 axis 与 layout 匹配（BSH → axis=1）
 
 **FA 入参验证**：打印并校验 Q/K/V shape、actual_seq_qlen/kvlen、sparse_mode、是否含 NaN/Inf
 
 ### 3.3 Decode 阶段精度排查
 
 **KVCache 写入验证**：
-1. 验证 slot_mapping 计算（连续缓存：`expected_slot = kv_len.view(-1,1) + kv_len_offset`；PA：通过 block_table 索引）
+1. 验证 slot_mapping 计算（独立部署连续缓存：`expected_slot = kv_len.view(-1,1) + kv_len_offset`；PA 模式：框架部署由 `prepare_slot_mapping()` 生成，独立部署 Runner 自管按 block_table 索引构造）
 2. 验证写入位置未越界
 3. 验证 kv_len 逐步递增正确
 
-**FA 入参验证**：
-1. sparse_mode 应为 0，actual_seq_qlen 每个值应为 1（MTP 除外）
-2. block_table dtype 必须为 int32
-3. KV cache 已写入区域无 NaN/Inf
+**FA 入参验证**（按路径分类）：
+1. 标准 LLM TND PA：sparse_mode=3 + causal mask（与 Prefill 一致）
+2. 滑窗层：sparse_mode=4 + band mask + `pre_tokens=sliding_window`
+3. MLA absorb Decode：sparse_mode=0 + `mask=None`
+4. actual_seq_qlen 每个值通常为 1（MTP 场景为 `next_n+1`）
+5. block_table dtype 必须为 int32
+6. KV cache 已写入区域无 NaN/Inf
 
 ### 3.4 分页注意力（PA）专项排查
 
@@ -159,18 +169,21 @@ license: UNKNOWN
 
 | 问题 | 根因 | 修复方案 |
 |------|------|---------|
-| 缓存写入位置偏移 | scatter_update_ 的 axis 与 layout 不匹配 | BSH → axis=1, TND → axis=0 |
-| 多 batch 缓存交叉写入 | kv_len_offset 未按 max_seq_len 对齐 | `kv_len_offset = arange(0, batch*max_seq_len, max_seq_len)` |
+| 缓存写入位置偏移（PA 模式） | `npu_scatter_nd_update_` 的 cache / states view 形态不一致或 slot_mapping 索引错误 | cache 和 states 都 view 为 `[total, num_kv_heads, head_dim]`；slot_mapping 取 `forward_metadata.slot_mapping[self.attn_type].view(-1, 1)` |
+| 缓存写入位置偏移（BSH legacy 骨架） | `scatter_update_` 的 axis 与 layout 不匹配 | BSH → axis=1 |
+| 多 batch 缓存交叉写入（独立部署）| kv_len_offset 未按 max_seq_len 对齐 | `kv_len_offset = arange(0, batch*max_seq_len, max_seq_len)` |
 | Prefill 后缓存部分为零 | kv_len 计算错误 | 检查 kv_len 是否等于实际有效序列长度（具体值视框架约定） |
 | NZ 格式下缓存异常 | cache_mode 设置错误 | PA 模式使用 `cache_mode="PA_NZ"` |
-| 融合写入算子结果不一致 | npu_kv_rmsnorm_rope_cache 参数不匹配 | 对齐 epsilon 和 RoPE 频率 |
+| 融合写入算子结果不一致 | npu_kv_rmsnorm_rope_cache 参数不匹配 | 对齐 epsilon（用 `kv_a_layernorm.variance_epsilon` 而非硬编码）和 RoPE 频率 |
 
 ### 5.2 FA 算子相关
 
 | 问题 | 根因 | 修复方案 |
 |------|------|---------|
-| Prefill 正常，Decode 偏差大 | Decode 使用了 sparse_mode=3 | Decode 设 `sparse_mode=0` |
-| actual_seq_lengths 错误 | TND 应用 cumsum，BSH 用原始值 | 参考 `model-infer-kvcache` skill 的数据流章节 |
+| MLA absorb Decode 偏差大 | Decode 仍用 sparse_mode=3 + causal mask | MLA absorb Decode 切 `sparse_mode=0` + `atten_mask=None` |
+| 标准 LLM Decode 偏差 | Decode 误改成 `sparse_mode=0` + `mask=None` | 标准 LLM TND PA 路径 Decode 保持与 Prefill 一致 `sparse_mode=3` + causal mask |
+| 滑窗层 Decode 偏差 | Decode 误改成 `sparse_mode=0` | 滑窗层 Prefill+Decode 统一 `sparse_mode=4` + band，配 `pre_tokens=sliding_window` / `next_tokens=0` |
+| actual_seq_lengths 错误 | TND 应用 cumsum，BSH 用原始值；框架部署字段名 `actual_seq_lengths_cu_q` vs `actual_seq_lengths_kv` | 参考 `model-infer-kvcache` skill §2.4 |
 | Decode 首步输出为零 | actual_seq_qlen 为 0 | Decode 时应为 1 或 cumsum([1,...]) |
 | MLA absorb 模式 key≠value | cache_nope 读写不一致 | FA 中 key 和 value 都传 cache_nope |
 | scale 参数错误 | FA v1 用 `scale`，v2 用 `softmax_scale` | 确认参数名与版本匹配 |
@@ -187,10 +200,10 @@ license: UNKNOWN
 
 | 问题 | 根因 | 修复方案 |
 |------|------|---------|
-| Prefill 不走 KVCache 写入 | 条件分支逻辑错误 | 确保 Prefill 也执行 scatter_update_ |
-| Decode 使用了 Prefill 的 FA 参数配置 | 未分别配置 | Prefill 和 Decode 分别配置 sparse_mode、atten_mask 等参数 |
-| 切换阶段时 kv_len 未更新 | Prefill 后未执行 kv_len += seq_len | 在 Prefill→Decode 切换时确保更新 |
-| Decode 传入了 atten_mask | sparse_mode=0 不需要 | Decode 设 `atten_mask=None` |
+| Prefill 不走 KVCache 写入 | 条件分支逻辑错误 | 确保 Prefill 也执行写入算子 |
+| Decode 使用了与路径不符的 FA 参数 | 阶段分支判断或路径分类错误 | 阶段分支取自 `forward_metadata.is_prefill`；按路径分类配 sparse_mode / atten_mask（标准 LLM TND PA 不分阶段统一配置；MLA absorb 才显式分支 Decode 切到 0+None） |
+| 切换阶段时 kv_len 未更新 | Prefill 后未执行 kv_len += seq_len | 在 Prefill→Decode 切换时由 Runner 层（独立部署）或 ExecutionEngine（框架部署）更新 |
+| MLA absorb Decode 误传 atten_mask | 切到 sparse_mode=0 后没把 mask 设 None | MLA absorb Decode 同时设 `sparse_mode=0` + `atten_mask=None` |
 
 ---
 
@@ -200,13 +213,13 @@ license: UNKNOWN
 
 ### F.1 atten_mask 与 sparse_mode 联合校验
 
-| sparse_mode | 含义 | atten_mask 要求 | 适用阶段 | 常见错误 |
+| sparse_mode | 含义 | atten_mask 要求 | 适用路径 | 常见错误 |
 |:-----------:|------|----------------|---------|---------|
-| 0 | defaultMask | 可选，通常 **None** | **Decode** | Decode 误传 mask |
+| 0 | defaultMask | 可选，通常 **None** | **MLA absorb Decode**（q_len=1） | 误把标准 LLM TND PA Decode 也切到此路径 |
 | 1 | allMask | **必传** `(Q_S, KV_S)` | 特殊 | 忘记传 mask |
 | 2 | leftUpCausal | **不推荐** | — | — |
-| 3 | rightDownCausal | **必传** `(2048, 2048)` 下三角 | **Prefill** | mask 不是下三角；Decode 误用 |
-| 4 | band（滑窗） | **必传** `(2048, 2048)` | Prefill / Decode | pre_tokens/next_tokens 错误 |
+| 3 | rightDownCausal | **必传** `(2048, 2048)` 下三角 | **标准 LLM TND PA（Prefill+Decode 统一）**、MLA absorb Prefill | mask 不是下三角；MLA absorb Decode 误用 |
+| 4 | band（滑窗） | **必传** `(2048, 2048)` | 滑窗层 Prefill+Decode 统一 | pre_tokens/next_tokens 错误；FA v1 + BSH + Q_S=1 Decode 路径 op 内部忽略 |
 
 ### F.2 FA v1 vs v2 关键参数名映射
 
@@ -220,13 +233,15 @@ license: UNKNOWN
 
 ### F.3 input_layout 与 tensor shape 匹配
 
-| layout | Q 维度 | K/V 维度 | N 轴含义 |
+| layout | Q 维度 | K/V 维度 | 适用场景 |
 |--------|--------|---------|---------|
-| BSH | 3D `[B, S, H*D]` | 3D `[B, S, H*D]` | 无独立 N 轴 |
-| BNSD | 4D `[B, N, S, D]` | 4D `[B, N, S, D]` | N = num_heads |
-| TND | 3D `[T, N, D]` | 3D `[T, N, D]` | N = num_heads，T = packed tokens |
+| **TND** ★ | 3D `[T, N, D]` | 3D `[T, N, D]` | **框架部署 PA 标准 LLM 默认推荐**，T = packed tokens |
+| **TND_NTD** ★ | 3D `[T, N, D]` | 3D `[N, T, D]` | **框架部署 PA + MLA absorb 默认推荐**，KV 是 NZ 格式 |
+| BSH | 3D `[B, S, H*D]` | 3D `[B, S, H*D]` | migrator 骨架 / 独立部署连续缓存（非 PA） |
+| BNSD | 4D `[B, N, S, D]` | 4D `[B, N, S, D]` | 非 PA，扩散模型 |
+| BSND_NBSD | 4D `[B, S, N, D]` | 4D `[N, B, S, D]` | KVP 长序列场景（普通 PA 模型走 TND/TND_NTD） |
 
-PA 模式下 KV 按 block_table 索引，shape 与非 PA 不同。
+> ★ 标注的 TND / TND_NTD 是框架部署默认推荐 layout（详见 `model-infer-kvcache` §2.7）。PA 模式下 KV 按 block_table 索引，物理存储 shape `[total_blocks, block_size, num_kv_heads, head_dim]`，FA 调用时 view 为 `[bn, bs, num_head*dim]`。
 
 ### F.4 actual_seq_lengths 构造
 

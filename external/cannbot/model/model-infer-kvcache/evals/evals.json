@@ -1,0 +1,214 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "KVCache 三种模式机制概述",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "昇腾 NPU 推理里 KVCache 有连续缓存、分页注意力（Paged Attention）、MLA 压缩三种模式。请分别说明每种模式怎么存 KV、机制上的区别，不用判断哪种最好。",
+      "expected_output": "回复应分别讲清三种模式的存储机制：连续缓存按序列连续存储；分页注意力用物理块存储、靠 block_table 映射；MLA 缓存压缩维度。三者机制区别说明即可，不要求给出选型结论",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-kvcache",
+          "description": "技能 model-infer-kvcache 被激活"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Paged Attention 的 block_table 与 slot_mapping 构造",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "分页注意力里 block_table 和 slot_mapping 分别怎么构造？slot_mapping 为什么每个 decode 步都要重算？",
+      "expected_output": "回复应说明 block_table 是逻辑块到物理块的映射、推理全程不变；slot_mapping 决定新 token 写入的物理位置，随 kv_len 变化每步重算",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "kv_len",
+          "description": "回复中提到了 kv_len"
+        },
+        {
+          "type": "contains",
+          "pattern": "block_table",
+          "description": "回复中提到了 block_table"
+        },
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-kvcache",
+          "description": "技能 model-infer-kvcache 被激活"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "MLA 压缩缓存省显存原理",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "MLA 压缩缓存为什么比完整 KV 省显存？absorb 路径会怎么影响 FA 算子的入参？",
+      "expected_output": "回复应说明 MLA 只缓存压缩维度，远小于完整 KV；absorb 把 V 投影吸收进 O 投影，key 和 value 传同一份压缩缓存",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "absorb",
+          "description": "回复中提到了 absorb"
+        },
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-kvcache",
+          "description": "技能 model-infer-kvcache 被激活"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "信息不足时主动确认",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "帮我给模型接入 KVCache。",
+      "expected_output": "回复应先确认必要信息再动手，而不是缺信息直接给改造代码",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-kvcache",
+          "description": "技能 model-infer-kvcache 被激活"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "正向看护-多 skill 环境下正确触发",
+      "config": {
+        "max_tokens": 150000,
+        "distractor_skills": [
+          "model-infer-fusion",
+          "model-infer-parallel-analysis",
+          "model-infer-graph-mode"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "我的模型 KV 缓存占显存太大，想做分页管理降低占用，该往哪个方向改？只说方向不用写代码。",
+      "expected_output": "回复应正确激活 model-infer-kvcache，给出分页注意力等缓存优化方向，即使存在融合算子、并行、图模式等相似 skill 也应选 KVCache 专项",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-kvcache",
+          "description": "技能 model-infer-kvcache 被激活"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "使用边界",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "我想优化训练阶段的显存占用，KVCache 这个 skill 能帮我吗？",
+      "expected_output": "回复应说明本 skill 仅覆盖推理阶段的 KVCache 优化，不适用于训练显存优化，应建议用户改用训练侧方案",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 7,
+      "title": "先判定部署模式再实施",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "一个模型已经注册到 cann-recipes-infer/executor/core/support_models.py，另一个只有自管推理循环的 runner_model.py。两者接 Paged KVCache 时由谁构造 block_table 和 slot_mapping？",
+      "expected_output": "回复应判定前者为框架部署，由 executor/core 的 KVCacheManager、BlockPool 和 cache_utils 动态构造；后者为独立部署，由 Runner 自行分配 cache 和 block_table、每步重算 slot_mapping 并构造 forward_metadata",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 8,
+      "title": "框架 Paged 模式保持 packed 协议",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "框架部署下 batch 内请求长度不同，我能把 packed hidden_states 直接 reshape 成 [B, S, H] 再跑 attention 吗？",
+      "expected_output": "回复应拒绝简单 reshape，说明 input_ids 和 position_ids 是 [TotalTokens] packed 一维，hidden_states 全程保持 [TotalTokens, hidden_size]，由 cumulative actual_seq_lengths 在 FA 中表达 batch 边界，并用 forward_metadata.is_prefill 区分阶段",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 9,
+      "title": "不同 Attention 路径的 sparse_mode",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "请分别给出标准 LLM TND Paged、滑窗层、MLA absorb 在 Prefill 和 Decode 时的 sparse_mode 与 mask 选择，并指出 mask 的 dtype/shape 约束。",
+      "expected_output": "回复应说明标准 LLM Prefill/Decode 均用 sparse_mode=3 加 [2048,2048] causal mask；滑窗层两阶段均用 4 加 band mask、pre_tokens=sliding_window、next_tokens=0；MLA absorb Prefill 用 3 加 causal mask、Decode 用 0 且 mask=None；mask 仅允许 bool/int8/uint8，模式 3/4 时 shape 固定 [2048,2048]",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 10,
+      "title": "FA v1 与 v2 参数名不可混用",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "把 npu_fused_infer_attention_score 从 v1 换到 v2 后代码不报错但精度崩了。我沿用了 scale、num_heads、actual_seq_lengths 和 actual_seq_lengths_kv，问题可能在哪？",
+      "expected_output": "回复应指出 v1/v2 参数名混用可能静默使用默认值；v2 应使用 softmax_scale、num_query_heads、actual_seq_qlen、actual_seq_kvlen，并核对 num_key_value_heads、layout、shape 和长度语义",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 11,
+      "title": "框架 CacheInfo 与按 attn_type 取映射",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "框架部署的混合 FullAttention/SlidingWindow 模型里，我把 forward_metadata.block_table 直接当 Tensor 传给所有层，并只返回了一个简单 cache shape。这样够吗？",
+      "expected_output": "回复应指出 block_table 和 slot_mapping 是按 attn_type 分组的 Dict，各层必须按 self.attn_type 取值；还需逐层声明 cache_entries，实现包含 block_size 和正确 layer_infos 的 ModelCacheInfo，混合层设置各自 attn_type，并验证 cache storage 注入、运行期寻址和释放复用链路",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "model-infer-kvcache"
+}

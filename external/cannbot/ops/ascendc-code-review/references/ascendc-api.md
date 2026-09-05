@@ -1,5 +1,20 @@
 # Ascend C API 最佳实践规范
 
+<适用>
+语言: C++
+侧别: All
+领域: true
+触发: AscendC::, pipe.InitBuffer, DataCopy, DataCopyPad, AllocTensor, FreeTensor, CrossCoreSetFlag, CrossCoreWaitFlag, GetValue, SetValue, aclnn, aclrt, aclop
+默认启用: true
+
+适用场景: Kernel 侧 AscendC API 最佳实践（API-1~API-12）+ 跨侧别日落（废弃）API/头文件检查（SUNSET-1/SUNSET-2）
+介绍: AscendC API 最佳实践规范，含 Kernel 侧 API 黑名单/对齐/配对规则，以及 CANN 日落（废弃）API/头文件的兼容性检查（aclrt*/aclnn*/acl.op.* 及 include/so）
+</适用>
+
+<检视负载>
+通用检视子 agent 检视条款容量上限: 5
+</检视负载>
+
 > **适用场景**：Kernel 侧（Device 侧）
 >
 > **Tiling 侧不适用**：Tiling 侧不使用 Ascend C API。
@@ -28,18 +43,22 @@
 
 ## 快速索引
 
-| 规范编号 | 规范名称 | 类别 | 严重级别 |
-|---------|---------|------|---------|
-| API-1 | 禁止使用 GlobalTensor::SetValue/GetValue | API黑名单 | 高 |
-| API-2 | 禁止使用 std:: 计算函数 | API黑名单 | 高 |
-| API-3 | DataCopy/DataCopyPad 对齐要求 | 数据搬运 | 高 |
-| API-4 | Compare API 256字节对齐要求 | 数据搬运 | 高 |
-| API-6 | AllocTensor/FreeTensor 必须配对使用 | 内存管理 | 高 |
-| API-7 | 禁止动态内存分配 | 内存管理 | 高 |
-| API-8 | repeatTimes 限制（≤255） | API限制 | 中 |
-| API-9 | Cast RoundMode 正确性 | 类型转换 | 中 |
-| API-10 | DataCopyParams vs DataCopyExtParams 单位差异 | 数据搬运 | 高 |
-| API-12 | CrossCoreSetFlag/WaitFlag 必须对称 | 核间同步 | 高 |
+> 文件级侧别为 `All`，但 API-1~API-12 仅对 Kernel 侧有意义，通过条例级 `[适用: Kernel]` 标记在 plan-design Step 4 侧别过滤时对 Tiling 侧跳过。SUNSET-1/SUNSET-2 跨侧别生效（`[适用: All]`）。
+
+| 规范编号 | 规范名称 | 类别 | 严重级别 | 适用范围 |
+|---------|---------|------|---------|---------|
+| API-1 | 禁止使用 GlobalTensor::SetValue/GetValue | API黑名单 | 高 | [适用: Kernel] |
+| API-2 | 禁止使用 std:: 计算函数 | API黑名单 | 高 | [适用: Kernel] |
+| API-3 | DataCopy/DataCopyPad 对齐要求 | 数据搬运 | 高 | [适用: Kernel] |
+| API-4 | Compare API 256字节对齐要求 | 数据搬运 | 高 | [适用: Kernel] |
+| API-6 | AllocTensor/FreeTensor 必须配对使用 | 内存管理 | 高 | [适用: Kernel] |
+| API-7 | 禁止动态内存分配 | 内存管理 | 高 | [适用: Kernel] |
+| API-8 | repeatTimes 限制（≤255） | API限制 | 中 | [适用: Kernel] |
+| API-9 | Cast RoundMode 正确性 | 类型转换 | 中 | [适用: Kernel] |
+| API-10 | DataCopyParams vs DataCopyExtParams 单位差异 | 数据搬运 | 高 | [适用: Kernel] |
+| API-12 | CrossCoreSetFlag/WaitFlag 必须对称 | 核间同步 | 高 | [适用: Kernel] |
+| SUNSET-1 | 禁止使用日落（废弃）API | API兼容性 | 高 | [适用: All] |
+| SUNSET-2 | 禁止引用日落头文件/库 | API兼容性 | 高 | [适用: All] |
 
 ---
 
@@ -433,6 +452,7 @@ ep.blockLen = actualColumnCount * sizeof(half);          // 字节
 ep.blockCount = dealRowCount;
 ep.srcStride = (totalColumns - actualColumnCount) / (32 / sizeof(half));  // 单位32字节块（src在VECIN）
 ep.dstStride = 0;
+ep.rsv = 0;
 DataCopyPad(dst, src, ep);
 
 // ✅ DataCopy + DataCopyParams：blockLen 单位是 32 字节块
@@ -552,3 +572,58 @@ grep -n "CrossCoreSetFlag\|CrossCoreWaitFlag" <cube_file> <vec_file>
 3. 检查是否有 `(loop - k) % N` 形式的 buffer 索引，确认 `loop < k` 时有保护分支
 4. 检查是否同时调用了 Matmul 高阶 API（如 `Matmul`、`MatmulSimple`）
 5. 统计同一 flagId 的 `CrossCoreSetFlag` 调用次数，确认不超过 15 次
+
+---
+
+## SUNSET-1: 禁止使用日落（废弃）API
+
+**严重级别**：高  **适用范围**：[适用: All]
+
+### 问题描述
+
+CANN 每版本废弃（日落）一批接口并提供替代，废弃接口在删除期限后无法编译。覆盖 Runtime API(C/Python) 的 `aclrt*`/`acl.op.*` 与算子库 `aclnn*`。清单随版本动态变化，由 `scripts/clause.get_sunset_api.py` 动态解析官方废弃文档生成。
+
+### 错误示例
+
+```cpp
+aclrtGetVersion(&version);          // ❌ 已废弃 → aclsysGetVersionStr
+aclnnGroupedMatmulV2(...);          // ❌ 删除期限 2027.3.30 → aclnnGroupedMatmulV5
+```
+
+### 正确示例
+
+```cpp
+aclsysGetVersionStr(versionStr);    // ✅ 替代接口
+aclnnGroupedMatmulV5(...);          // ✅ 最新版
+```
+
+### 检视策略 — 预研报告驱动（不走假设检验）
+
+确定性符号匹配，命中即违规，不收集证据分值。
+
+1. Read `{api_prestudy_path}` 的「## 日落 API」章节（api-prestudy Step 2.5 比对产出）。
+2. 无命中 → PASS。有命中 → Grep 命中行核实是否真使用（排除注释/字符串/死代码），且是日落符号本身而非 `V2`/`V3` 等替代品。真使用 → FAIL(HIGH) + 替代接口 + 删除期限；仅注释提及 → PASS + 清理提示。
+3. 预研报告无此章节 → fallback：`python3 {skill_base}/scripts/clause.get_sunset_api.py` 得清单（格式 `sym -> rep`，**只取箭头左侧的日落符号**，右侧是替代品勿混入），grep 代码 `acl(rt|nn)[A-Za-z0-9_]+` / `acl\.(op|rt)\.` 比对（注意词法边界，不误匹配替代品）。无法获取 → SUSPICIOUS + 标注。
+
+---
+
+## SUNSET-2: 禁止引用日落头文件/库
+
+**严重级别**：高  **适用范围**：[适用: All]
+
+### 问题描述
+
+CANN 同样日落头文件路径与链接库，废弃项在删除期限后不再存在导致编译/链接失败。典型：`op_proto/inc/*.h` → `op_graph/inc/${ops_project}_ops_proto.h`；`libopapi.so` → `libopapi_${ops_project}.so`（期限 2026.12.30）。
+
+### 错误示例
+
+```cpp
+#include "op_proto/inc/ops_proto.h"       // ❌ → op_graph/inc/${ops_project}_ops_proto.h
+target_link_libraries(... libopapi.so)    // ❌ → libopapi_${ops_project}.so
+```
+
+### 检视策略 — 预研报告驱动（不走假设检验）
+
+1. Read `{api_prestudy_path}`「## 日落 API」章节（含头文件/库命中）。
+2. 无命中 → PASS。有命中 → Grep 确认是真实 `#include`/链接配置（非注释），且是日落路径本身（`op_proto/inc` 日落，`op_graph/inc` 替代）。真引用 → FAIL(HIGH) + 替代 + 期限；仅注释 → PASS + 清理提示。
+3. 预研报告无此章节 → fallback：`clause.get_sunset_api.py` 得「算子库(头文件/库)」清单，grep `#include.*op_proto` / `libopapi\.so`。无法获取 → SUSPICIOUS。

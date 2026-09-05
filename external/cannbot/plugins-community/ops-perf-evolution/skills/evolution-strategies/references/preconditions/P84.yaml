@@ -1,0 +1,17 @@
+strategy_id: P84
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "Vector|vector|VEC|Add|Mul|Exp|计算"
+    min_count: 1
+    fail_msg: "未检测到 Vector 计算逻辑 → 无 Vector 效率优化空间，不适用 P84。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "repeat|mask|Mask|CalcMask|CalcRepeat"
+    min_count: 1
+    fail_msg: "未检测到 repeat/mask 计算逻辑 → 无 Counter 模式优化空间，不适用 P84。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "SetMaskCount|Counter|COUNTER|reduce"
+    min_count: 0
+    fail_msg: "已存在 Counter 模式或低延迟归约优化 → 可能冗余，优先验证现有策略效果。"

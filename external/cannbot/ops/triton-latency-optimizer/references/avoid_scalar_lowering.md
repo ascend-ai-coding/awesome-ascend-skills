@@ -181,3 +181,42 @@ for n_start in range(0, N, BLOCK_N):
 6. **UB 溢出时不要盲目缩小 BLOCK_N**
    - 如果编译报 `ub overflow`，优先检查是否构造了过大的中间索引张量（如 `col_major_idx`、额外的 `valid_mask` 等），通过寄存器内 reshape 消除这些张量来释放 UB。
    - 盲目把 `BLOCK_N` 从 2048 缩小到 512 会导致循环次数翻 4 倍，loop overhead 完全抵消 cumsum 向量加速的收益，甚至严重劣化。
+
+
+
+---
+
+## 来自 SKILL.md 的原始描述（优化点 6：避免向量API标量降级）
+
+**适用条件**：代码中存在可能被编译器降级为标量循环的向量操作，包括通用算术操作、比较操作、扩展乘法、累积操作（cumsum/cumprod）或归约操作（reduce）
+
+**典型代码特征**：
+```python
+# 特征 1：通用算术操作使用 i64，或者满足降级条件
+z = x + y  # x/y 为 i64
+z = x % y  # x/y 为 i32且执行取余计算
+
+# 特征 2：整数比较操作（非 i32 EQ/NE，或非浮点比较）
+mask = x < y  # i8/i16/i32/i64 的 LT/GT/LE/GE 比较
+
+# 特征 3：扩展乘法
+z = x * y  # 触发 vmulext，始终降级
+
+# 特征 4：cumsum/cumprod 在最后一个维度上操作
+x_cumsum = tl.cumsum(x_1d, axis=0)  # 一维张量，或 cumDim 是 lastDim
+
+# 特征 5：reduce 操作在特定条件下
+# i64 类型的 sum/prod/max/min
+# 整数类型的 argmax/argmin
+# 浮点类型 argmax/argmin 且 flatten 后维度 > 2
+```
+
+**判断逻辑**：
+- 检查通用算术操作（add/sub/mul/min/max/abs/shl/shr/interleave/deinterleave）：如果数据类型为 i64
+- 检查比较操作：如果数据类型为 i8/i16/i64（所有比较），或 i32 的 LT/GT/LE/GE → 涉及
+- 检查取余操作：如果数据类型是任何int类型 → 涉及
+- 检查扩展乘法（vmulext）：任何扩展乘法 → 涉及
+- 检查 cumsum/cumprod：如果累积维度是输入张量的最后一个维度（一维时 axis=0 即最后维度），或数据类型为 i64 → 涉及
+- 检查 reduce 操作：如果是 i64 类型的 sum/prod/max/min；整数类型的 argmax/argmin；浮点类型 argmax/argmin 且 flatten 后维度 > 2 → 涉及
+
+---

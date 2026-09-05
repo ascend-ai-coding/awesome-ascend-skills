@@ -1,0 +1,84 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+
+# Machine check（边界 case 的机器断言方式）—— 给定一个测试 case，机器如何判定算子结果是否合规
+#
+# 作用：
+#   spec.yaml 在 boundary_conditions[] 与 extreme_inputs[] 中列举了大量"特殊 case"
+#   （rank=0 标量、空 Tensor、参数越界、含 NaN、fp16 上溢 ...）。每条 case 必须配
+#   一个 machine_check —— 告诉机器"这个 case 跑出来要满足什么条件才算合规"。
+#   这样测试就能完全自动化，不需要人去看每个 case 的输出截图。
+#
+# 使用方法：
+#   每条 boundary/extreme case 形如：
+#     - case: "reduce 轴长度为 1"
+#       synthesize: {x.shape: "[1]", attr.dim: 0}
+#       machine_check:
+#         kind: equals       # 必须落在本文件登记的某条 kind
+#         value: 1.0         # 由 kind 的 required_fields 决定
+#   校验器（stage 2）逐条检查：kind 是否合法、required_fields 是否齐全、
+#   raises_error 的 error_type 是否在 error_code_enum 内。
+#
+# 何时选哪种 kind（按场景速查）：
+#   合法但退化的 case  —— equals / equals_tensor / returns_empty / equals_input / matches_oracle
+#   异常输入传播       —— produces_nan / nan_propagates / inf_clamps_to
+#   参数越界 / 不合法  —— raises_error
+#   语义不变量保持     —— matches_invariant（引用 math_semantics.invariants[].name）
+#   一般情况下能用 oracle 就用 matches_oracle —— 维护成本最低
+#
+# 维护：新增 kind 必须先登记到本文件，并在 schemas/op-spec.json 的
+#       machine_check.kind.enum 同步增加。
+
+schema_version: 1
+
+machine_check_kinds:
+  # 输出每个元素 == 给定标量；e.g. softmax([x]) → [1.0]；reduce_sum 全零输入 → 0
+  # value 类型：实数 / 复数（"a+bj" 字符串）/ 布尔 / 字符串枚举（"NaN" / "+inf"）
+  - kind: equals
+    required_fields: [value]   # 标量字面量；复数用 "<a>+<b>j" 字符串
+
+  # 输出整体 == 给定 tensor 字面量；e.g. one_hot(2, 5) → [0,0,1,0,0]
+  - kind: equals_tensor
+    required_fields: [value]   # tensor 字面量
+
+  # 输出 shape 含 0 维（空张量）；e.g. softmax(empty[0,4]) → empty 同 shape
+  - kind: returns_empty
+    required_fields: []
+
+  # 在指定范围内全是 NaN；e.g. softmax 对全 -inf 行 → 该行全 NaN（exp 全 0 → 0/0）
+  - kind: produces_nan
+    required_fields: [scope]
+    scope_examples: ["整张量", "整行", "整列", "<axis_index:int>"]
+
+  # NaN 沿指定 axis 传播；e.g. add 任一侧含 NaN → 该位置整行/整列出现 NaN
+  - kind: nan_propagates
+    required_fields: [along_axis]
+
+  # inf 输入被钳制到指定值；e.g. fp16 上溢 → +inf；某些算子内部钳制到 finite_max
+  - kind: inf_clamps_to
+    required_fields: [value]
+    value_enum: ["+inf", "-inf", finite_max, finite_min]
+
+  # 委托给 reference_oracle 计算真值，按 dtype 容差比对；最常用，oracle 可达时优先选
+  # e.g. matmul 标准 case → 用 torch.matmul 算参考输出比对
+  - kind: matches_oracle
+    required_fields: []
+
+  # 满足某条已声明的 invariant；用 name 引用 math_semantics.invariants[].name
+  # e.g. softmax fp16 上溢 case → matches_invariant: sum_to_one（验证语义未崩）
+  - kind: matches_invariant
+    required_fields: [name]
+
+  # 报错且错误语义类别匹配；e.g. matmul K 维不匹配 → shape_mismatch
+  # error_type 必须在 registries/error_code_enum.yaml 的语义类别枚举内
+  - kind: raises_error
+    required_fields: [error_type]
+
+  # 输出 == 输入；e.g. reduce_sum(rank=0 标量) → 标量自己；任何"对该 case 退化为恒等"
+  - kind: equals_input
+    required_fields: []

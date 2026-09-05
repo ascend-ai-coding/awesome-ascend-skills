@@ -17,7 +17,7 @@
 记录在调试过程中发现的文档不清晰或有歧义的地方。
 
 - [ ] **具体描述**：[哪个文档/哪部分不够清晰]
-  - 位置：[文档路径或章节，如 `asc-devkit/docs/api/context/ReduceMax.md` 第 X 行]
+  - 位置：[文档路径或章节，如 ReduceMax API 文档（find "$ASC_DEVKIT_DIR/docs/api/" -name "ReduceMax*.md"）]
   - 问题：[描述问题，如参数说明模糊、约束条件未明确、示例代码缺失]
 
 - [ ] **具体描述**：[补充其他不清晰的地方]
@@ -169,7 +169,7 @@
 
 ## 1. 文档描述不清晰的地方
 - **具体描述**：Exp API 的返回范围说明不明确
-  - 位置：`asc-devkit/docs/api/context/Exp.md`
+  - 位置：Exp API 文档（find "$ASC_DEVKIT_DIR/docs/api/" -name "Exp*.md"）
   - 问题：未说明 FP16 下 Exp 的溢出阈值
   - 改进建议：补充不同 dtype 下的有效输入范围表格
 

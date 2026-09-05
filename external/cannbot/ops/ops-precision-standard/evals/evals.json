@@ -1,0 +1,120 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "精度标准选择的决策流程",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "disabled": true,
+        "eval_mode": "text"
+      },
+      "prompt": "在 Ascend C 算子开发中，如何选择合适的精度标准？请说明决策树的判断流程。不需要执行任何工具调用。",
+      "expected_output": "回复应说明如何根据算子类型和数据类型选择合适的精度标准。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "FP16 浮点运算的精度验收标准",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "Ascend C FP16 浮点计算的精度验收标准是什么？atol 和 rtol 的参考值是多少？可以加载技能，不需要执行其他外部工具调用。",
+      "expected_output": "回复应说明 Ascend C FP16 浮点计算的精度验收标准，包括 atol 和 rtol 的参考值，以及验收判断公式。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "浮点混合容差需要通过率和最大误差双门槛",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "FP16 输出有 99.2% 元素满足 |actual-golden|≤atol+rtol×|golden|，但某个元素绝对误差为 0.5。能否仅凭 matched_ratio≥0.99 判通过？",
+      "expected_output": "回复应说明不能，只满足 matched_ratio 不够；FP16 的 rtol/atol 均为 2^-9，还必须满足 max_abs_error 不超过 max(1e-1,32×ULP)，因此 0.5 超过该硬上限，用例失败",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "非计算搬移算子要求二进制一致",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "一个只做数据搬移、不进行数值计算的 Ascend C 算子，输出与 CPU Golden 数值很接近但有少量 bit 不同。应该用 atol/rtol 放行吗？",
+      "expected_output": "回复应拒绝混合容差，非计算搬移/Cast 类按 bitwise match 验收，应使用 array_equal 或 bitwise_match 检查二进制一致，存在 bit 差异即失败",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "整数计算允许位宽不同但数值完全一致",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "整数算子 NPU 输出是 int8，Golden 是 int64，二进制表示不同但逐元素数值完全相等。按精度标准能通过吗？",
+      "expected_output": "回复应说明整数计算满足二进制一致或绝对误差为0任一条件即可通过；不同位宽导致 bitwise 不同，但数值差全为0时仍通过，不能使用浮点容差",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "量化算子按输出 dtype 选择标准",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "量化和反量化算子的精度标准是否相同？FP16→INT8 与 INT8→FP16 分别怎么验收？",
+      "expected_output": "回复应说明按输出 dtype 分流：FP16→INT8 的整型量化输出要求二进制一致或绝对误差0；INT8→FP16 的浮点反量化输出使用 FP16 混合容差及通过率/最大误差标准",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "随机数生成不能逐元素对 Golden",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "均匀随机数算子的每个输出都和 CPU 随机序列不同，能否直接判精度失败？正确的统计验收是什么？",
+      "expected_output": "回复应说明随机序列不做逐元素相等，应对目标分布执行 KS 检验，单次要求 p_value>alpha 且 alpha=0.01；批量建议 N=100，并比较实际通过率是否达到公式给出的约95.93%阈值",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "ops-precision-standard"
+}

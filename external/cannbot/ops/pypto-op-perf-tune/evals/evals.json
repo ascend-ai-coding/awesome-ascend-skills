@@ -1,0 +1,143 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "算子性能分析与调优全流程",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我有一个已实现并验证通过的 Add 算子，但它的性能不满足要求。当前执行时间约为 27000 us，我需要提升 5 倍的性能。请帮我进行性能分析和调优。算子文件在 custom/add/ 目录下。",
+      "expected_output": "回复应说明性能调优的完整流程：加载编排器驱动调优、环境检查与精度校验、性能数据采集、性能分析、逐步调优、生成调优报告。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "tune-orchestrator",
+          "description": "回复中提到了 tune-orchestrator"
+        },
+        {
+          "type": "contains",
+          "pattern": "精度校验",
+          "description": "回复中提到了 精度校验"
+        },
+        {
+          "type": "contains",
+          "pattern": "调优报告",
+          "description": "回复中提到了 调优报告"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "使用边界与前置门控条件",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "什么情况下不能开始性能调优？精度没有通过验证是否能进入调优步骤？pypto-op-perf-tune 和 pypto-op-develop 在职责上如何区分？",
+      "expected_output": "回复应说明 pypto-op-perf-tune 的使用边界和前置门控条件：\n- 绝对禁止在没有精度验证通过记录的情况下进入任何调优步骤\n- 精度是调优的前提，精度问题应使用 pypto-precision-debug 或 pypto-precision-compare 解决\n- 环境检查（S1_SETUP S1a）必须全部通过才能进入精度校验\n- 跳过环境检查直接进入精度校验是被禁止的\n- 首次精度失败不进行修复，可以换卡尝试多次失败后让用户确认\n- 调优修改导致精度失败：简单分析后不能解决则回退修改\n- 与 pypto-op-develop 的区分：develop 负责算子的编码实现和基本验证，perf-tune 负责已实现算子的性能优化\n- 本 skill 全程需要 NPU 环境\n- 必须通过编排器驱动流程，禁止手动跳过编排器直接调优",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "精度必须通过",
+          "description": "回复中提到了 精度必须通过"
+        },
+        {
+          "type": "contains",
+          "pattern": "环境检查",
+          "description": "回复中提到了 环境检查"
+        },
+        {
+          "type": "contains",
+          "pattern": "编排器",
+          "description": "回复中提到了 编排器"
+        },
+        {
+          "type": "contains",
+          "pattern": "NPU 环境",
+          "description": "回复中提到了 NPU 环境"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "性能目标不明确时禁止猜测",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "用户只说“尽量快”，没有给提升倍数或目标耗时。可以先调优到感觉差不多再停吗？",
+      "expected_output": "回复应先询问提升倍数或目标执行时间，基于基准算出明确目标值并设置终止条件；不能凭感觉开始。自动终止还包括核心利用率>80%且气泡率<10%、默认 12 小时时限，用户明确停止则手动终止。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "S1a 环境清单必须全部通过",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "npu-smi 正常，但 TILE_FWK_DEVICE_ID 未设置，PTO-ISA 也没有 DivAlgorithm。能否先跑精度校验，环境以后补？",
+      "expected_output": "回复应禁止放行：S1a 必须确认 torch_npu device_count>0、空闲卡并设置 TILE_FWK_DEVICE_ID、PTO-ISA DivAlgorithm 兼容、pypto 可导入、torch_npu 可用、算子文件存在且语法正确。清单全部通过后才能进入 S1b 精度校验。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "每轮单变量修改并重新验证精度",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "准备同时改 TileShape、unroll 和 stitch，测一次性能，如果变快就保留。这个迭代方式符合调优流程吗？",
+      "expected_output": "回复应拒绝一次叠加多项：ITER_MODIFY 每轮只改一个参数，随后真实上板运行用例，检查正常退出和 passed/success 且无 failed/error/timeout，记录时间与命令，再采集性能、对比基准并记录。精度失败经简单分析仍不能解决时立即回退该单项。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "配置搜索必须有先验且有界",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "TileShape 搜索空间很大，是否应该随机不断试直到找到最好值？",
+      "expected_output": "回复应采用受约束搜索：先查官方资料和 production kernel 先验，选约 10 个初始候选逐个实测，保留最优若干，再在最优附近做单参数局部变异；连续多个变异无提升即停止，精度失败、超时、OOM 或编译失败候选直接丢弃。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "阶段退出阈值与最终报告收尾",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "前端阶段连续 5 轮无提升，深度阶段连续 8 轮无提升，目标仍未达到。流程应如何推进和最终收尾？",
+      "expected_output": "回复应按退出条件结束相应 PHASE，每阶段生成 7 节交接摘要并通过独立 Task subagent 隔离后进入下一阶段；前端、泳道、核内配置级调优都收敛仍未达标时才可逐项做算法级优化。最终生成 tuning report、更新状态看板和成功/失败记录，并还原 debug_options。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "pypto-op-perf-tune"
+}

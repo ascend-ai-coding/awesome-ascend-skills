@@ -1,0 +1,139 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "端侧量化部署流程",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "想把 ASR 模型量化部署到 Kirin9030 端侧，整体按什么流程做？只讲方法，不用写代码。",
+      "expected_output": "回复应给出从量化标定到容器内 omg 离线转 omc、最终打包成端侧单 bin 的整体流程，权重量化为 W4A16",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "W4A16",
+          "description": "回复中提到了 W4A16"
+        },
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-harmony",
+          "description": "技能 model-infer-harmony 被激活"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "9030 平台铁律",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "在 Kirin9030 上做 4bit 量化转换，有哪些必须遵守的平台前提，否则会转换报错？只讲思路。",
+      "expected_output": "回复应说明两条铁律：omg 必须在 glibc 足够新的容器内跑（否则 MatMul 不支持），且 9030 的 W4 内核只支持 UINT4 不支持 INT4，需按无符号网格打包权重",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "UINT4",
+          "description": "回复中提到了 UINT4"
+        },
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-harmony",
+          "description": "技能 model-infer-harmony 被激活"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "量化转换报错归因",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "omg 转换时报 CompressInt4ToInt8 Value -1 out of range [0,15]，往哪个方向排查？只讲方向。",
+      "expected_output": "回复应说明根因是权重未落到无符号 4bit 网格、含负值，应先用落网格的量化权重导出 ONNX 再转换，并确认按 UINT4 打包",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "UINT4",
+          "description": "回复中提到了 UINT4"
+        },
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-harmony",
+          "description": "技能 model-infer-harmony 被激活"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "信息不足时主动确认",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "帮我把模型量化部署到端侧。",
+      "expected_output": "回复应先确认必要信息再动手，而不是缺信息直接量化",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-harmony",
+          "description": "技能 model-infer-harmony 被激活"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "正向看护-多 skill 环境下正确触发",
+      "config": {
+        "max_tokens": 150000,
+        "distractor_skills": [
+          "model-infer-quantization",
+          "model-infer-kvcache",
+          "model-infer-fusion"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "要把 ASR encoder 量化成 4bit 在 Kirin9030 端侧跑，omg 转 omc 这条怎么入手？只说方向。",
+      "expected_output": "回复应正确激活 model-infer-harmony，给出端侧 W4A16 量化与 omg 离线转换方向，即使存在通用量化、KVCache、融合等相似 skill 也应选端侧鸿蒙专项",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "omg",
+          "description": "回复中提到了 omg"
+        },
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-harmony",
+          "description": "技能 model-infer-harmony 被激活"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "使用边界",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "我想在昇腾服务器上用 compressed-tensors 给 LLM 做 W8A8 量化，这个端侧鸿蒙 skill 适用吗？",
+      "expected_output": "回复应说明本 skill 只覆盖 Kirin9030 端侧 ASR 的 W4A16 量化与 omg/打包流程，服务器侧 compressed-tensors 量化应改用通用量化 skill",
+      "files": [],
+      "expectations": []
+    }
+  ],
+  "skill_name": "model-infer-harmony"
+}

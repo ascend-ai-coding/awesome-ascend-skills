@@ -1,0 +1,148 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "代码格式检查与修复流程",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请介绍 tilelang-review 技能的核心工作流：代码格式检查和修复的顺序是什么？检查和修复为什么要分离？需要用到哪些工具？不需要执行任何工具调用。",
+      "expected_output": "回复应说明代码格式检查和修复的工作流程：先运行检查工具生成报告，再询问用户是否执行修复，只有用户确认后才进行修复。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "ruff",
+          "description": "回复中提到了 ruff"
+        },
+        {
+          "type": "contains",
+          "pattern": "clang-format",
+          "description": "回复中提到了 clang-format"
+        },
+        {
+          "type": "contains",
+          "pattern": "check-python.sh",
+          "description": "回复中提到了 check-python.sh"
+        },
+        {
+          "type": "contains",
+          "pattern": "AskUserQuestion",
+          "description": "回复中提到了 AskUserQuestion"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "检查和修复分离原则",
+      "config": {
+        "max_tokens": 80000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "代码格式检查的核心原则是什么？为什么检查阶段不能自动修复？",
+      "expected_output": "回复应说明核心原则是\"检查和修复分离\"：检查阶段只运行检查脚本生成报告，不修改任何文件。修复前必须用醒目方式询问用户，经用户明确同意后才执行修复。这是为了防止未授权的代码修改，保证一致性，让用户了解所有问题后再决定是否修复。AskUserQuestion 工具的使用必须严格遵循固定格式，不能私自添加额外选项。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "检查和修复分离",
+          "description": "回复中提到了 检查和修复分离"
+        },
+        {
+          "type": "contains",
+          "pattern": "必须等待用户确认",
+          "description": "回复中提到了 必须等待用户确认"
+        },
+        {
+          "type": "contains",
+          "pattern": "修复阶段",
+          "description": "回复中提到了 修复阶段"
+        },
+        {
+          "type": "contains",
+          "pattern": "检查阶段",
+          "description": "回复中提到了 检查阶段"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "任何检查前先确定范围",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "用户只说“帮我 lint”，还没指定范围。能否直接扫描全仓？修改文件和全部文件分别怎样传参？",
+      "expected_output": "回复应先询问仅修改文件或全部文件，推荐仅修改文件。仅修改文件通过 git status --porcelain 获取已修改、暂存和未跟踪文件，脚本不带 --all；全部文件才传 --all。未确认前不能默认全仓扫描。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "缺少格式工具可安装但仍不得自动修复",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "ruff 和 clang-format 都没安装。自动安装工具是否也授权安装后立即格式化代码？",
+      "expected_output": "回复应说明可以按技能自动安装缺失的 ruff/clang-format，然后仅运行 check-python.sh/check-cpp.sh 生成 JSON 结果和报告；安装工具不等于授权改代码，仍需单独醒目询问用户是否修复。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "修复确认必须保持固定二选一",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "格式问题同时含 Python 和 C++，修复确认时能否提供“只修 Python”“只修 C++”两个额外选项？",
+      "expected_output": "回复应严格只问“是否进行代码格式修复？”，提供是/同意/Y执行自动修复与否/拒绝/N跳过修复两个选项，不私加语言分支。若用户要单独修某语言，可选择否后再明确执行对应 fix 脚本。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "无变更或工具失败也必须生成真实报告",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "仅修改文件模式没有检测到 Python/C++ 变更，是否可以直接结束而不写报告？",
+      "expected_output": "回复应说明所有场景都必须生成 .agents/reports/format-report-*.md，包括无变更、无问题和工具安装失败；结束前实际检查报告存在，若未生成要补写对应事实，不能输出虚假路径。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "修复沿用检查范围并追加验证证据",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "用户同意修复，之前检查范围是全部文件。修复后报告需要怎样更新？",
+      "expected_output": "回复应给 fix-python.sh --all 和 fix-cpp.sh --all，保持与检查阶段相同范围；随后重跑 lint/format check，向原报告追加逐文件修复前后、命令与验证结果的“修复结果”章节，而不是覆盖初始问题报告。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "tilelang-review"
+}

@@ -1,0 +1,30 @@
+strategy_id: P70
+description: FixPipe Buffer 随路量化适用性检查 — 算子包含矩阵乘后量化，当前经 CO1→workspace→UB 路径，未用 Fixpipe Buffer 一步到位
+checks:
+  - id: has_quant_after_matmul
+    type: grep_count
+    pattern: "Fixpipe|CO1|workspace|quant|Quant|Cast.*量化"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无矩阵乘后量化 → P70 不适用"
+
+  - id: has_roundtrip_path
+    type: grep_count
+    pattern: "CO1.*workspace|workspace.*UB|CopyOut.*CopyIn|Fixpipe.*DataCopy"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子已是一步到位 → P70 收益低"
+
+  - id: no_fixpipe_quant_yet
+    type: grep_count
+    pattern: "C2PIPE2GM|Fixpipe.*quant|QuantMode|VQF322B8|nz2ndEn"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已使用 Fixpipe Buffer 量化 → P70 已应用"
+
+  - id: not_pure_validation
+    type: grep_count
+    pattern: "OP_CHECK|shape.*check|dim.*check|validation"
+    files: [kernel, header]
+    expected: "<= 3"
+    fail_msg: "纯 Host 侧 shape 校验 → P70 解决的是 Fixpipe 量化通路"

@@ -1,0 +1,460 @@
+/**
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
+
+/*!
+ * \file softmax_v2_tiling.h
+ * \brief SoftmaxV2 六个模板的 host 侧 tiling 计算（六个独立入口，无统一 selector）。
+ *
+ * 输入为已经融合后的形状 (a1, r, a0)（softmax 沿 r 轴），以及平台参数。
+ * 每个函数填充对应的 packed TilingData，并返回需要的 blockDim（usedCoreNums）。
+ *
+ * 六个入口互相独立，不返回 TilingKey，不使用模板编号：
+ *   - TilingArSmallR    → SoftmaxV2ArSmallRTilingData    → dav310/softmax_v2_ar_small_r.h
+ *   - TilingArFullLoad   → SoftmaxV2ARTilingData          → dav310/softmax_v2_ar_full_load.h
+ *   - TilingArRecompute  → SoftmaxV2ArRecomputeTilingData → dav310/softmax_v2_ar_recompute.h
+ *   - TilingAraFullLoad  → SoftmaxV2ARATilingData         → dav310/softmax_v2_ara_full_load.h
+ *   - TilingAraRecompute → SoftmaxV2ARARecomputeTilingData→ dav310/softmax_v2_ara_recompute.h
+ *   - TilingAraOnline    → SoftmaxV2ARAOnlineTilingData   → dav310/softmax_v2_ara_online.h
+ */
+
+#ifndef SOFTMAX_V2_TILING_H
+#define SOFTMAX_V2_TILING_H
+
+#include <cstdint>
+#include <cstring>
+#include <algorithm>
+#include "softmax_v2_tiling_data.h"
+
+namespace softmax_tiling {
+
+// 平台参数（dav-3510 / Ascend950PR）：VRegSize=256B 为 constexpr。
+struct PlatformParam {
+    int64_t ubSize;          // 单核 UB 可用字节数（运行时查询）
+    int64_t numBlocks;       // AIV 核数（运行时查询）
+    int64_t blockSize = 32;  // UB block 字节
+    int64_t vlFp32 = 64;     // 256 / sizeof(float)
+    int64_t vlFp16 = 128;    // 256 / sizeof(half)
+};
+
+// 融合后的 case 形状（softmax 沿 r 轴），dtypeCode: 0=FP32,1=FP16,2=BF16。
+struct CaseShape {
+    int64_t a1;
+    int64_t r;
+    int64_t a0;
+    int dtypeCode;
+};
+
+inline int64_t DtypeSize(int dtypeCode) { return dtypeCode == 0 ? 4 : 2; }
+inline bool IsFloat(int dtypeCode) { return dtypeCode == 0; }
+
+inline int64_t CeilDiv(int64_t a, int64_t b) { return (a + b - 1) / b; }
+inline int64_t FloorDiv(int64_t a, int64_t b) { return a / b; }
+inline int64_t CeilAlign(int64_t a, int64_t b) { return CeilDiv(a, b) * b; }
+
+inline int64_t Gcd(int64_t a, int64_t b)
+{
+    a = a < 0 ? -a : a;
+    b = b < 0 ? -b : b;
+    while (b != 0) {
+        int64_t t = b;
+        b = a % b;
+        a = t;
+    }
+    return a;
+}
+inline int64_t Lcm(int64_t a, int64_t b)
+{
+    int64_t g = Gcd(a, b);
+    return (a / g) * b;
+}
+
+inline int64_t FindNearestPower2(int64_t value)
+{
+    if (value <= 1) return 0;
+    if (value <= 2) return 1;
+    if (value <= 4) return 2;
+    int64_t num = value - 1;
+    int64_t pow = 63 - __builtin_clzl(static_cast<uint64_t>(num));
+    return (1L << pow);
+}
+
+inline int64_t GetCacheID(int64_t idx)
+{
+    return __builtin_popcountll(static_cast<uint64_t>(idx ^ (idx + 1))) - 1;
+}
+
+// ---------------------------------------------------------------------------
+// TilingArSmallR — 对应 SoftmaxV2ArSmallRTilingData
+//
+// 输入：CaseShape (a1, r, a0=1), PlatformParam
+// 适用条件：2D [A1, R]，R 极小（FP32≤16 / FP16≤32）
+// 输出：填充 SoftmaxV2ArSmallRTilingData，返回 usedCoreNums
+// ---------------------------------------------------------------------------
+inline int64_t TilingArSmallR(const CaseShape& s, const PlatformParam& p, SoftmaxV2ArSmallRTilingData& td)
+{
+    std::memset(&td, 0, sizeof(td));
+    const int64_t DATA_BLOCK_COUNT = 16;
+    const int64_t FLOAT32_BYTES = 4;
+    const int64_t DOUBLE_BUFFER = 2;
+    int64_t xDtypeSize = DtypeSize(s.dtypeCode);
+    int64_t yDtypeSize = xDtypeSize;
+
+    int64_t a0New = s.a1;  // 转置成 (r, a1)
+    int64_t a0TileBase = p.vlFp32;
+    int64_t rTileBase = IsFloat(s.dtypeCode) ? DATA_BLOCK_COUNT / 2 : DATA_BLOCK_COUNT;
+    int64_t rAligned = CeilDiv(s.r, rTileBase) * rTileBase;
+
+    int64_t rFactor = rAligned * (xDtypeSize * DOUBLE_BUFFER + yDtypeSize * DOUBLE_BUFFER + FLOAT32_BYTES * DOUBLE_BUFFER);
+    int64_t a0TileNumMax = p.ubSize / (a0TileBase * (rFactor + FLOAT32_BYTES));
+
+    int64_t a0TileNumTmp = CeilDiv(a0New, a0TileBase);
+    int64_t a0TileNum = a0TileNumMax < a0TileNumTmp ? a0TileNumMax : a0TileNumTmp;
+    int64_t tileA0Len = a0TileNum * a0TileBase;
+    int64_t a0Outer = CeilDiv(a0New, tileA0Len);
+    int64_t tileA0Tail = a0New - tileA0Len * (a0Outer - 1);
+
+    int64_t tilesPerCore = CeilDiv(a0Outer, p.numBlocks);
+    int64_t usedCoreNums = CeilDiv(a0Outer, tilesPerCore);
+
+    td.totalTiles = a0Outer;
+    td.tilesPerCore = tilesPerCore;
+    td.totalRLen = s.r;
+    td.totalA0Len = a0New;
+    td.tileA0Len = tileA0Len;
+    td.tileA0Tail = tileA0Tail;
+    td.rTileBase = rTileBase;
+    td.rAligned = rAligned;
+    return usedCoreNums;
+}
+
+// ---------------------------------------------------------------------------
+// TilingArFullLoad — 对应 SoftmaxV2ARTilingData
+//
+// 输入：CaseShape (a1, r, a0=1), PlatformParam
+// 适用条件：2D [A1, R]，R 可整段载入 UB
+// 输出：填充 SoftmaxV2ARTilingData，返回 usedCoreNums
+// ---------------------------------------------------------------------------
+inline int64_t TilingArFullLoad(const CaseShape& s, const PlatformParam& p, SoftmaxV2ARTilingData& td)
+{
+    std::memset(&td, 0, sizeof(td));
+    const int64_t FLOAT32_BYTES = 4;
+    const int64_t DOUBLE_BUFFER = 2;
+    const int64_t UB_RESERVED_BYTE = 1024;
+    const int64_t BINARY_TMP_LOCAL_SHAPE = 512;
+    int64_t xDtypeSize = DtypeSize(s.dtypeCode);
+    int64_t yDtypeSize = xDtypeSize;
+
+    int64_t rAligned = CeilAlign(s.r, p.blockSize / xDtypeSize);
+    int64_t ubFactor = (p.ubSize - UB_RESERVED_BYTE - BINARY_TMP_LOCAL_SHAPE) /
+                       (rAligned * FLOAT32_BYTES + DOUBLE_BUFFER * rAligned * xDtypeSize +
+                        DOUBLE_BUFFER * rAligned * yDtypeSize);
+    int64_t rLoopCount = CeilDiv(rAligned, p.vlFp32);
+    int64_t aBlockFactor = CeilDiv(s.a1, p.numBlocks);
+    int64_t usedCoreNums = CeilDiv(s.a1, aBlockFactor);
+    ubFactor = ubFactor < aBlockFactor ? ubFactor : aBlockFactor;
+
+    td.a = s.a1;
+    td.r = s.r;
+    td.rAligned = rAligned;
+    td.aBlockFactor = aBlockFactor;
+    td.rLoopCount = rLoopCount;
+    td.ubFactor = ubFactor;
+    return usedCoreNums;
+}
+
+// ---------------------------------------------------------------------------
+// TilingArRecompute — 对应 SoftmaxV2ArRecomputeTilingData
+//
+// 输入：CaseShape (a1, r, a0=1), PlatformParam
+// 适用条件：2D [A1, R]，R 超出 UB
+// 输出：填充 SoftmaxV2ArRecomputeTilingData，返回 usedCoreNums
+// ---------------------------------------------------------------------------
+inline int64_t TilingArRecompute(const CaseShape& s, const PlatformParam& p, SoftmaxV2ArRecomputeTilingData& td)
+{
+    std::memset(&td, 0, sizeof(td));
+    const int64_t AR_RECOMPUTE_MAX_BUFFER_BTYES = 32;
+    const int64_t AR_RECOMPUTE_SUM_BUFFER_BTYES = 32;
+    const int64_t AR_RECOMPUTE_BINARY_CACHE_BTYES = 2048;
+    const int64_t TRIPLE_BUFFER = 3;
+    const int64_t DOUBLE_BUFFER = 2;
+    int64_t xDtypeSize = DtypeSize(s.dtypeCode);
+    int64_t yDtypeSize = xDtypeSize;
+
+    int64_t ubFlexible = p.ubSize - AR_RECOMPUTE_MAX_BUFFER_BTYES - AR_RECOMPUTE_SUM_BUFFER_BTYES -
+                         AR_RECOMPUTE_BINARY_CACHE_BTYES;
+    int64_t baseFactor = xDtypeSize * TRIPLE_BUFFER + yDtypeSize * DOUBLE_BUFFER + 4;
+
+    int64_t aPerCore = CeilDiv(s.a1, p.numBlocks);
+    int64_t usedCoreNums = CeilDiv(s.a1, aPerCore);
+
+    int64_t ubFactorTmp = ubFlexible / baseFactor;
+    int64_t lcm = Lcm(p.blockSize, Lcm(p.blockSize / xDtypeSize, p.blockSize / yDtypeSize));
+    int64_t ubFactor = std::min<int64_t>(s.r, (ubFactorTmp / lcm) * lcm);
+    int64_t aLoopCountCeil = CeilDiv(s.r, ubFactor);
+    int64_t aLoopCountFloor = FloorDiv(s.r, ubFactor);
+    int64_t ubFactorTail = s.r - ubFactor * aLoopCountFloor;
+
+    int64_t basicBlockLoop = FindNearestPower2(aLoopCountCeil);
+    int64_t mainFoldCount = aLoopCountFloor - basicBlockLoop;
+
+    td.a = s.a1;
+    td.r = s.r;
+    td.ubFactor = ubFactor;
+    td.ubFactorTail = ubFactorTail;
+    td.aBlockFactor = aPerCore;
+    td.aLoopCountCeil = aLoopCountCeil;
+    td.basicBlockLoop = basicBlockLoop;
+    td.mainFoldCount = mainFoldCount;
+    return usedCoreNums;
+}
+
+// ---------------------------------------------------------------------------
+// TilingAraFullLoad — 对应 SoftmaxV2ARATilingData
+//
+// 输入：CaseShape (a1, r, a0), PlatformParam
+// 适用条件：3D [A1, R, A0]，R×A0_tile 可载入 UB
+// 输出：填充 SoftmaxV2ARATilingData，返回 usedCoreNums
+// ---------------------------------------------------------------------------
+inline int64_t TilingAraFullLoad(const CaseShape& s, const PlatformParam& p, SoftmaxV2ARATilingData& td)
+{
+    std::memset(&td, 0, sizeof(td));
+    const int64_t FLOAT32_BYTES = 4;
+    const int64_t DOUBLE_BUFFER = 2;
+    const int64_t CONST_EIGHT = 8;
+    int64_t xDtypeSize = DtypeSize(s.dtypeCode);
+
+    int64_t a0TileBase = IsFloat(s.dtypeCode) ? p.vlFp32 : p.vlFp16;
+    int64_t factorMax = p.ubSize /
+                        ((xDtypeSize * DOUBLE_BUFFER + FLOAT32_BYTES * DOUBLE_BUFFER + FLOAT32_BYTES) * s.r +
+                         FLOAT32_BYTES + FLOAT32_BYTES) /
+                        a0TileBase;
+
+    int64_t a0FactorMax = CeilDiv(s.a0, a0TileBase);
+    int64_t totalTilesMax = s.a1 * a0FactorMax;
+    int64_t a0InnerMax = CeilDiv(totalTilesMax, p.numBlocks);
+    int64_t a0Inner = a0InnerMax < factorMax ? a0InnerMax : factorMax;
+    a0Inner = a0Inner < a0FactorMax ? a0Inner : a0FactorMax;
+
+    int64_t tileA0Len = a0Inner * a0TileBase;
+    int64_t a0Outer = CeilDiv(s.a0, tileA0Len);
+    int64_t tileA0Tail = s.a0 - tileA0Len * (a0Outer - 1);
+    int64_t a1Inner = 1;
+
+    int64_t totalTiles = s.a1 * a0Outer;
+    int64_t tilesPerCore = CeilDiv(totalTiles, p.numBlocks);
+    int64_t usedCoreNums = CeilDiv(totalTiles, tilesPerCore);
+
+    td.totalTiles = totalTiles;
+    td.tilesPerCore = tilesPerCore;
+    td.usedCoreNums = usedCoreNums;
+    td.totalA1Len = s.a1;
+    td.totalRLen = s.r;
+    td.totalA0Len = s.a0;
+    td.a1Outer = s.a1;
+    td.a0Outer = a0Outer;
+    td.tileA1Len = a1Inner;
+    td.tileA1Tail = s.a1;
+    td.tileA0Len = tileA0Len;
+    td.tileA0Tail = tileA0Tail;
+
+    if (s.r <= CONST_EIGHT) {
+        return usedCoreNums;
+    }
+
+    // BinaryAddTiling
+    int64_t binaryAddQuotient = (1L << (63 - __builtin_clzl(static_cast<uint64_t>(s.r - 1))));
+    int64_t binaryAddNum = binaryAddQuotient / CONST_EIGHT;
+    int64_t binaryAddK = 0;
+    int64_t binaryAddLast = 0;
+    int64_t curBinaryAddNum = 1;
+    while (curBinaryAddNum < binaryAddNum) {
+        binaryAddK++;
+        curBinaryAddNum *= 4;
+    }
+    if (curBinaryAddNum == binaryAddNum * 2) {
+        binaryAddK -= 1;
+        binaryAddLast = 1;
+    }
+
+    uint16_t remainderLoopCount = (uint16_t)((s.r - binaryAddQuotient + CONST_EIGHT - 1) / CONST_EIGHT);
+    uint16_t quotientLoopCount = (uint16_t)((binaryAddQuotient / CONST_EIGHT) - remainderLoopCount);
+    uint32_t remainderOffset = (uint32_t)(binaryAddQuotient * tileA0Len);
+    uint32_t baseLineOffset = (uint32_t)(CONST_EIGHT * tileA0Len);
+    uint16_t binaryAddInnerLoop = (uint16_t)(binaryAddQuotient / CONST_EIGHT);
+    uint32_t validNumInXUb = (uint32_t)(s.r * tileA0Len);
+    uint16_t remainderTailCount = (uint16_t)((s.r - binaryAddQuotient) - (int64_t)(remainderLoopCount - 1) * CONST_EIGHT);
+    uint32_t quotientTailOffset = (uint32_t)((int64_t)(remainderLoopCount - 1) * baseLineOffset);
+    uint32_t remainderTailOffset = quotientTailOffset + remainderOffset;
+    auto pick = [&](uint16_t row, int64_t off) -> uint32_t {
+        return (row > remainderTailCount) ? validNumInXUb : (uint32_t)(remainderTailOffset + off * tileA0Len);
+    };
+
+    td.binaryAddK = (uint16_t)binaryAddK;
+    td.binaryAddLast = (uint16_t)binaryAddLast;
+    td.binaryAddInnerLoop = binaryAddInnerLoop;
+    td.remainderLoopCount = remainderLoopCount;
+    td.quotientLoopCount = quotientLoopCount;
+    td.remainderTailCount = remainderTailCount;
+    td.remainderOffset = remainderOffset;
+    td.baseLineOffset = baseLineOffset;
+    td.validNumInXUb = validNumInXUb;
+    td.quotientTailOffset = quotientTailOffset;
+    td.remainderTailOffset = remainderTailOffset;
+    td.remainderTailOffset0 = pick(0, 0);
+    td.remainderTailOffset1 = pick(1, 1);
+    td.remainderTailOffset2 = pick(2, 2);
+    td.remainderTailOffset3 = pick(3, 3);
+    td.remainderTailOffset4 = pick(4, 4);
+    td.remainderTailOffset5 = pick(5, 5);
+    td.remainderTailOffset6 = pick(6, 6);
+    td.remainderTailOffset7 = pick(7, 7);
+    return usedCoreNums;
+}
+
+// ---------------------------------------------------------------------------
+// TilingAraRecompute — 对应 SoftmaxV2ARARecomputeTilingData
+//
+// 输入：CaseShape (a1, r, a0), PlatformParam
+// 适用条件：3D [A1, R, A0]，R 超出 UB
+// 输出：填充 SoftmaxV2ARARecomputeTilingData，返回 usedCoreNums
+// ---------------------------------------------------------------------------
+inline int64_t TilingAraRecompute(const CaseShape& s, const PlatformParam& p, SoftmaxV2ARARecomputeTilingData& td)
+{
+    std::memset(&td, 0, sizeof(td));
+    const int64_t FLOAT32_BYTES = 4;
+    const int64_t DOUBLE_BUFFER = 2;
+    const int64_t FP32_BLOCK_ALIGN_NUM = 8;
+    const int64_t FP16_BLOCK_ALIGN_NUM = 16;
+    const int64_t DEFAULT_BIN_ADD_R_FACTOR = 128;
+    const int64_t UB_COMPUTE_FACTOR = 11;
+    int64_t xDtypeSize = DtypeSize(s.dtypeCode);
+
+    // ComputeBinaryAddParams
+    int64_t binAddRFactor = DEFAULT_BIN_ADD_R_FACTOR;
+    int64_t binAddRLoop = s.r / binAddRFactor;
+    int64_t binAddRTotalLoop = CeilDiv(s.r, binAddRFactor);
+    int64_t binAddRTail = s.r - (binAddRTotalLoop - 1) * binAddRFactor;
+    int64_t binAddBasicBlockLoop =
+        binAddRTotalLoop > 1 ? (1L << (63 - __builtin_clzl(static_cast<uint64_t>(binAddRTotalLoop - 1)))) : 0;
+    int64_t mainFoldCount = binAddRLoop - binAddBasicBlockLoop;
+    int64_t binAddCacheBufferCount;
+    int64_t binAddResultCacheID;
+    if (binAddBasicBlockLoop == 0) {
+        binAddCacheBufferCount = 1;
+        binAddResultCacheID = 0;
+    } else {
+        binAddCacheBufferCount = 64 - __builtin_clzl(static_cast<uint64_t>(binAddBasicBlockLoop));
+        binAddResultCacheID = GetCacheID(binAddBasicBlockLoop - 1);
+    }
+
+    int64_t a0TileBase = IsFloat(s.dtypeCode) ? FP32_BLOCK_ALIGN_NUM : FP16_BLOCK_ALIGN_NUM;
+    int64_t factorMax = p.ubSize / a0TileBase /
+                        (binAddRFactor * DOUBLE_BUFFER * (FLOAT32_BYTES + xDtypeSize) +
+                         FLOAT32_BYTES * (UB_COMPUTE_FACTOR + binAddCacheBufferCount));
+
+    int64_t a0FactorMax = CeilDiv(s.a0, a0TileBase);
+    int64_t totalTilesMax = s.a1 * a0FactorMax;
+    int64_t a0InnerMax = CeilDiv(totalTilesMax, p.numBlocks);
+    int64_t a0Inner = a0InnerMax < factorMax ? a0InnerMax : factorMax;
+    a0Inner = a0Inner < a0FactorMax ? a0Inner : a0FactorMax;
+
+    int64_t tileA0Len = a0Inner * a0TileBase;
+    int64_t a0Outer = CeilDiv(s.a0, tileA0Len);
+    int64_t tileA0Tail = s.a0 - tileA0Len * (a0Outer - 1);
+
+    int64_t totalTiles = s.a1 * a0Outer;
+    int64_t tilesPerCore = CeilDiv(totalTiles, p.numBlocks);
+    int64_t usedCoreNums = CeilDiv(totalTiles, tilesPerCore);
+
+    td.totalRLen = s.r;
+    td.totalA0Len = s.a0;
+    td.totalTiles = totalTiles;
+    td.tilesPerCore = tilesPerCore;
+    td.usedCoreNums = usedCoreNums;
+    td.tileA0Outer = a0Outer;
+    td.tileA0Len = tileA0Len;
+    td.tileA0Tail = tileA0Tail;
+    td.binAddRFactor = binAddRFactor;
+    td.binAddRLoop = binAddRLoop;
+    td.binAddRTotalLoop = binAddRTotalLoop;
+    td.binAddRTail = binAddRTail;
+    td.binAddBasicBlockLoop = binAddBasicBlockLoop;
+    td.binAddMainFoldCount = mainFoldCount;
+    td.binAddCacheBufferCount = binAddCacheBufferCount;
+    td.binAddResultCacheID = binAddResultCacheID;
+    return usedCoreNums;
+}
+
+// ---------------------------------------------------------------------------
+// TilingAraOnline — 对应 SoftmaxV2ARAOnlineTilingData
+//
+// 输入：CaseShape (a1, r, a0), PlatformParam
+// 适用条件：3D [A1, R, A0]，沿 R 分 chunk 在线更新 running max / running sum
+// 输出：填充 SoftmaxV2ARAOnlineTilingData，返回 usedCoreNums
+// ---------------------------------------------------------------------------
+inline int64_t TilingAraOnline(const CaseShape& s, const PlatformParam& p, SoftmaxV2ARAOnlineTilingData& td)
+{
+    std::memset(&td, 0, sizeof(td));
+    const int64_t FLOAT32_BYTES = 4;
+    const int64_t DOUBLE_BUFFER = 2;
+    const int64_t FP32_BLOCK_ALIGN_NUM = 8;
+    const int64_t FP16_BLOCK_ALIGN_NUM = 16;
+    const int64_t DEFAULT_R_CHUNK_FACTOR = 128;
+    int64_t xDtypeSize = DtypeSize(s.dtypeCode);
+
+    int64_t rChunkFactor = DEFAULT_R_CHUNK_FACTOR;
+    if (rChunkFactor > s.r) {
+        rChunkFactor = s.r;
+    }
+    int64_t rChunkTotalLoop = CeilDiv(s.r, rChunkFactor);
+    int64_t rChunkTail = s.r - (rChunkTotalLoop - 1) * rChunkFactor;
+
+    int64_t a0TileBase = IsFloat(s.dtypeCode) ? FP32_BLOCK_ALIGN_NUM : FP16_BLOCK_ALIGN_NUM;
+    int64_t bytesPerA0Col = DOUBLE_BUFFER * rChunkFactor * xDtypeSize +
+                            DOUBLE_BUFFER * rChunkFactor * FLOAT32_BYTES + FLOAT32_BYTES + FLOAT32_BYTES;
+    int64_t factorMax = p.ubSize / a0TileBase / bytesPerA0Col;
+    if (factorMax < 1) {
+        factorMax = 1;
+    }
+
+    int64_t a0FactorMax = CeilDiv(s.a0, a0TileBase);
+    int64_t totalTilesMax = s.a1 * a0FactorMax;
+    int64_t a0InnerMax = CeilDiv(totalTilesMax, p.numBlocks);
+    int64_t a0Inner = a0InnerMax < factorMax ? a0InnerMax : factorMax;
+    a0Inner = a0Inner < a0FactorMax ? a0Inner : a0FactorMax;
+    if (a0Inner < 1) {
+        a0Inner = 1;
+    }
+
+    int64_t tileA0Len = a0Inner * a0TileBase;
+    int64_t a0Outer = CeilDiv(s.a0, tileA0Len);
+    int64_t tileA0Tail = s.a0 - tileA0Len * (a0Outer - 1);
+
+    int64_t totalTiles = s.a1 * a0Outer;
+    int64_t tilesPerCore = CeilDiv(totalTiles, p.numBlocks);
+    int64_t usedCoreNums = CeilDiv(totalTiles, tilesPerCore);
+
+    td.totalRLen = s.r;
+    td.totalA0Len = s.a0;
+    td.totalTiles = totalTiles;
+    td.tilesPerCore = tilesPerCore;
+    td.usedCoreNums = usedCoreNums;
+    td.tileA0Outer = a0Outer;
+    td.tileA0Len = tileA0Len;
+    td.tileA0Tail = tileA0Tail;
+    td.rChunkFactor = rChunkFactor;
+    td.rChunkTotalLoop = rChunkTotalLoop;
+    td.rChunkTail = rChunkTail;
+    return usedCoreNums;
+}
+
+}  // namespace softmax_tiling
+
+#endif  // SOFTMAX_V2_TILING_H

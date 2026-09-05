@@ -392,8 +392,8 @@ AscendC::Cast<half, float>(dst, src0Fp32, AscendC::RoundMode::CAST_ROUND, count)
 
 ## 参考资料
 
-- [BinaryRepeatParams 结构体](../../../asc-devkit/docs/api/context/BinaryRepeatParams.md)
-- [Adds API](../../../asc-devkit/docs/api/context/Adds.md)
-- [Muls API](../../../asc-devkit/docs/api/context/Muls.md)
-- [Sub API](../../../asc-devkit/docs/api/context/Sub.md)
-- [Div API](../../../asc-devkit/docs/api/context/Div.md)
+- BinaryRepeatParams 结构体：通过 `/ascendc-docs-search` skill 查阅 `BinaryRepeatParams` API 文档
+- Adds API：通过 `/ascendc-docs-search` skill 查阅 `Adds` API 文档
+- Muls API：通过 `/ascendc-docs-search` skill 查阅 `Muls` API 文档
+- Sub API：通过 `/ascendc-docs-search` skill 查阅 `Sub` API 文档
+- Div API：通过 `/ascendc-docs-search` skill 查阅 `Div` API 文档

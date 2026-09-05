@@ -1,0 +1,75 @@
+# classify_config.yaml.example
+#
+# 复制本文件到 Handler 统一配置目录并按实际仓库改写：
+#     mkdir -p .cannbot/gitcode-issue-handler/config
+#     cp classify_config.yaml.example \
+#       .cannbot/gitcode-issue-handler/config/classify_config.yaml
+#
+# classify_config.yaml 包含仓库特定信息，通常不进 git；
+# Handler 会把整个 .cannbot/gitcode-issue-handler/ 加入 .git/info/exclude。
+
+# GitCode 仓库标识（owner/repo 形式）
+repo: cann/ops-math
+
+# GitCode API v5 基础地址；自托管可改成自己的 host
+gitcode_api: https://api.gitcode.com/api/v5
+
+# 增量状态文件路径：仅在获取输入没有 filters.since 时生效；显式
+# fetch_issues.py --since 窗口优先，避免对同批数据再次过滤。
+# 路径相对于运行 classify_issues.py 时的工作目录。
+last_check_file: .cannbot/gitcode-issue-handler/data/last_check.json
+
+# 评论与原生 PR 关联的断点缓存。Issue/PR 更新后缓存会自动失效。
+cache_dir: .cannbot/gitcode-issue-handler/cache/issues
+
+# 中文报告输出路径。每次运行会覆盖。
+report_file: .cannbot/gitcode-issue-handler/reports/classification.txt
+
+# PR 列表按 updated_at 倒序读取；达到增量时间窗口后提前停止。
+# 这是安全上限，不代表每次都会请求这么多页。
+pr_fetch_pages: 5
+
+# PR 标题/正文中的 #N 和 /issues/N 先在本地解析，不消耗额外 API。
+# ambiguous 仅对正文/标题/分支出现目标 Issue 裸编号的歧义 PR 调原生接口；
+# 如需旧版穷举行为，可改为 all 或使用 --full-pr-linkage-scan。
+pr_linkage_scan_mode: ambiguous
+pr_linkage_api_budget: 3
+
+# 首次回复明确要求提出者补充信息，或首响后已验证转交责任人但尚未解决时，将自定义状态
+# 切到“挂起”并写入标明等待对象的 watchlist。批量获取会合并常规 open 列表、全状态
+# updated_at 增量和 watchlist 定点刷新；提出者或责任人新回复后恢复“进行中”（提出者在
+# 核心 state 已关闭的 Issue 回复时一并 reopen）。等待责任人不能进入静默自动关闭。
+follow_up:
+  state_file: .cannbot/gitcode-issue-handler/data/followup-watch.json
+  waiting_status: 挂起
+  active_status: 进行中
+  lookback_days: 30
+  fetch_pages: 10
+  poll_hours: 24
+  stale_hours: 48
+
+# 已答复咨询类 Issue 的自动闭环配置。
+# auto_close_stale_issues.py 默认 dry-run；显式传 --apply 才会评论和关闭。
+auto_close:
+  inactive_hours: 48
+  question_labels:
+    - question
+    - 问题咨询
+    - 咨询
+  question_title_markers:
+    - "[Question|"
+    - "[Question]"
+    - 问题咨询
+    - 咨询
+    - 请问
+  comment: 您好，当前问题已经解决，我们计划关闭此issue，后续您如果还有疑问，欢迎重新给我们提issue，我们会继续提供问题支撑
+
+  # PR 扫描必须完整，脚本才会执行关闭；可按仓库规模提高这两个值。
+  pr_fetch_pages: 5
+  pr_linkage_api_budget: 10
+
+# 自动指派评论需要 GITCODE_TOKEN，并且主流程已有分析后统一执行确认产生的有效
+# approved_batch 授权后显式传
+# --authorization-mode approved_batch。Token 单独存在时分类器仍保持 dry-run。
+# Token **不**写在这里。
+# export GITCODE_TOKEN=<your-token>

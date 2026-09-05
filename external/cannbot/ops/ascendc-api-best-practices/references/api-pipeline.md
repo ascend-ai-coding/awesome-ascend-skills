@@ -8,7 +8,7 @@ MTE 与 Vector 同步的核心机制。
 
 1. [核心问题](#核心问题)
 2. [解决方案](#解决方案)
-3. [两种方案对比](#两种方案对比)
+3. [三种方案对比](#三种方案对比)
 4. [完整流水线模板](#完整流水线模板)
 5. [调试技巧](#调试技巧)
 
@@ -71,31 +71,47 @@ outQueueY.FreeTensor(yOut);
 ### 方案二：PipeBarrier 手动同步
 
 ```cpp
-// ✅ 可用：使用 PipeBarrier 同步
+// ✅ 可用：PipeBarrier 手动同步（替代队列同步）
 AscendC::LocalTensor<float> xLocal = inQueueX.AllocTensor<float>();
 AscendC::LocalTensor<float> yLocal = outQueueY.AllocTensor<float>();
 
 AscendC::DataCopyPad(xLocal, xGm[gmOffset], copyInParams, padParams);
-AscendC::PipeBarrier<PIPE_ALL>();          // 等待 MTE2 完成
+AscendC::PipeBarrier<PIPE_MTE2>();  // 等待 MTE2（GM→UB）完成
 
 AscendC::Adds<float>(yLocal, xLocal, 1.0f, count);
+AscendC::PipeBarrier<PIPE_V>();     // 等待 Vector 完成
 
 AscendC::DataCopyPad(yGm[gmOffset], yLocal, copyOutParams);
-AscendC::PipeBarrier<PIPE_ALL>();          // 等待 MTE3 完成
+AscendC::PipeBarrier<PIPE_MTE3>();  // 等待 MTE3（UB→GM）完成
 ```
-
-**缺点**：性能开销大（全流水线停顿），不推荐用于高性能场景
 
 ---
 
-## 两种方案对比
+## 三种方案对比
 
-| 特性 | EnQue/DeQue | PipeBarrier |
-|-----|-------------|-------------|
-| 同步粒度 | buffer 级别 | 全流水线 |
-| 性能 | 高（支持并行） | 低（串行等待） |
-| 代码复杂度 | 需要队列管理 | 简单直接 |
-| 推荐程度 | ⭐⭐⭐⭐⭐ | ⭐⭐（仅调试用） |
+| 特性 | EnQue/DeQue | SetFlag/WaitFlag（HardEvent 事件式） | PipeBarrier |
+|-----|-------------|--------------------------------------|-------------|
+| 同步粒度 | buffer 级别 | pipe 对级别（如 MTE2→V、V→MTE3） | 单 pipe 或全 pipe 栅栏 |
+| 性能 | 高（支持并行） | 高（精细配对，开销最小） | `PipeBarrier<PIPE_V>` 等单 pipe 栅栏廉价；`PipeBarrier<PIPE_ALL>` 全流水线停顿，仅调试用 |
+| 代码复杂度 | 需要队列管理 | 需手动管理 eventID 配对/复用 | 简单直接 |
+| 适用 | TPipe/TQue 管理的标准搬运流水 | 手动 UB 管理、精细 pipe 间流水编排 | 防御性顺序依赖（如 V 内 Cast→Add）、调试定位 |
+
+> 三条路径不是二选一：TQue 场景用 EnQue/DeQue；手动 UB（无 TPipe）场景用 SetFlag/WaitFlag 事件流水；单 pipe 内的顺序依赖用细粒度 PipeBarrier 防御。
+
+### 事件式流水（SetFlag/WaitFlag HardEvent）要点
+
+```cpp
+// 核内 pipe 间事件同步：DataCopy(MTE2) 与 Cast/Add(V) 跨 pipe 重叠
+AscendC::SetFlag<AscendC::HardEvent::MTE2_V>(eventId);   // 标记 MTE2 搬运完成
+AscendC::WaitFlag<AscendC::HardEvent::MTE2_V>(eventId);  // V 侧等待后消费
+```
+
+使用纪律：
+
+1. **Set/Wait 必须同 eventID 配对**，且**在同一迭代内配对**——跨迭代 Set-Set 无中间 Wait 在 950 实测挂死（`aclError:507014`）。**循环结束后必须消费残留事件**：最后一次/几次 Set 无对应 Wait 时需补 Wait；注意按实际 Set 次数守卫（如 pingpong 双 eventID 时，第二个 eventID 仅在迭代数 ≥ 2 时才被 Set 过，不可无条件 Wait——Wait 多于 Set 同样是未定义行为）
+2. **eventID 是有限共享资源**（TQue 与手动 SetFlag/WaitFlag 共用配额，典型 8 个/核）——手动事件与 TQue 混用时预算要合并计算
+3. V 内部的顺序依赖（Cast→Add）优先用 `PipeBarrier<PIPE_V>` 防御，省去 V→V 的 eventID 开销
+4. **跨 pipe 依赖必须用事件同步**：`PipeBarrier<PIPE_X>` 只保证同一 pipe 内的顺序，不保证跨 pipe 可见性——如 V 侧 Cast 写完的数据要经 MTE3 搬出时，必须 `SetFlag/WaitFlag<V_MTE3>`，仅 `PipeBarrier<PIPE_V>` 不足（生产踩坑：跨 pipe 缺事件同步导致搬出读到未写完的数据）
 
 ### EnQue/DeQue 的双重作用
 
@@ -186,5 +202,5 @@ Compute(x);
 |-----|---------|
 | AllocTensor 后数据就可用 | AllocTensor 只分配内存，不等待搬运 |
 | DataCopy 是同步的 | DataCopy 是异步 DMA，立即返回 |
-| 不用 EnQue/DeQue 也能正常工作 | 必须用 EnQue/DeQue 或 PipeBarrier 同步 |
-| PipeBarrier 性能好 | PipeBarrier 是全流水线停顿，性能差 |
+| 不用 EnQue/DeQue 也能正常工作 | 必须用 EnQue/DeQue、SetFlag/WaitFlag 或 PipeBarrier 之一同步 |
+| PipeBarrier 性能好 | **仅 `PipeBarrier<PIPE_ALL>` 是全流水线停顿**（性能差，仅临时调试用，定位后应移除）；`PipeBarrier<PIPE_V>` 等单 pipe 栅栏是廉价且必要的顺序依赖手段 |

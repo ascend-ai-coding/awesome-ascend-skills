@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{OP_NAME}} 进化优化报告</title>
+<style>
+:root {
+    --bg: #0d1117;
+    --card: #161b22;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --text-muted: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --red: #f85149;
+    --orange: #d29922;
+    --purple: #bc8cff;
+    --cyan: #56d4dd;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 2rem;
+}
+.container { max-width: 1280px; margin: 0 auto; }
+h1 { color: #fff; font-size: 1.8rem; margin-bottom: 0.5rem; }
+h2 { color: var(--accent); font-size: 1.3rem; margin: 2.5rem 0 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+h3 { color: var(--purple); font-size: 1.1rem; margin: 1.5rem 0 0.8rem; }
+.subtitle { color: var(--text-muted); margin-bottom: 2rem; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; }
+.metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+.metric { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 1.2rem; text-align: center; }
+.metric-value { font-size: 2rem; font-weight: bold; color: var(--green); }
+.metric-value.baseline { color: var(--text-muted); }
+.metric-value.highlight { color: var(--green); }
+.metric-label { color: var(--text-muted); font-size: 0.85rem; margin-top: 0.3rem; }
+table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.85rem; }
+th, td { padding: 0.55rem 0.7rem; text-align: left; border-bottom: 1px solid var(--border); }
+th { color: var(--accent); font-weight: 600; background: rgba(88,166,255,0.05); position: sticky; top: 0; }
+tr:hover { background: rgba(88,166,255,0.03); }
+tr.best { background: rgba(63,185,80,0.12); }
+tr.best td { color: var(--green); font-weight: 600; }
+tr.invalid { opacity: 0.45; }
+.badge { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 12px; font-size: 0.72rem; font-weight: 600; }
+.badge-pass { background: rgba(63,185,80,0.15); color: var(--green); }
+.badge-fail { background: rgba(248,81,73,0.15); color: var(--red); }
+.badge-warn { background: rgba(210,153,34,0.15); color: var(--orange); }
+.badge-skip { background: rgba(139,148,158,0.15); color: var(--text-muted); }
+.badge-best { background: rgba(63,185,80,0.25); color: var(--green); border: 1px solid var(--green); }
+pre { background: #0d1117; border: 1px solid var(--border); border-radius: 6px; padding: 1rem; overflow-x: auto; font-size: 0.82rem; line-height: 1.5; position: relative; }
+code { font-family: 'JetBrains Mono', 'Fira Code', monospace; }
+.diff-add { color: var(--green); }
+.diff-del { color: var(--red); }
+.diff-hunk { color: var(--purple); }
+.chart-container { position: relative; height: 320px; margin: 1rem 0; }
+canvas { width: 100% !important; }
+.tag { display: inline-block; background: rgba(188,140,255,0.15); color: var(--purple); padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.78rem; margin-right: 0.4rem; }
+.tag-strategy { background: rgba(88,166,255,0.15); color: var(--accent); }
+.tag-node { background: rgba(86,212,221,0.15); color: var(--cyan); }
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+@media (max-width: 768px) { .two-col { grid-template-columns: 1fr; } }
+.copy-wrapper { position: relative; }
+.copy-btn { position: absolute; top: 8px; right: 8px; background: var(--border); border: 1px solid var(--text-muted); color: var(--text); padding: 4px 10px; border-radius: 4px; font-size: 0.72rem; cursor: pointer; transition: all 0.2s; z-index: 10; }
+.copy-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+.copy-btn.copied { background: var(--green); border-color: var(--green); color: #fff; }
+.vid { font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--cyan); font-weight: 600; }
+.sid { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--purple); }
+/* Vertical Tree */
+.vtree-container { overflow-x: auto; padding: 1rem 0; }
+.vtree { display: flex; flex-direction: column; align-items: center; min-width: 900px; }
+.vtree-level { display: flex; justify-content: center; gap: 0.6rem; flex-wrap: nowrap; }
+.vtree-connectors { width: 100%; height: 40px; }
+.vtree-svg { width: 100%; height: 40px; }
+.vline-best { stroke: var(--green); stroke-width: 2.5; }
+.vline-other { stroke: var(--border); stroke-width: 1.5; stroke-dasharray: 4 2; }
+.vtree-node {
+    min-width: 120px; max-width: 155px; padding: 0.6rem 0.7rem; border-radius: 8px;
+    text-align: center; font-size: 0.78rem; transition: transform 0.2s, box-shadow 0.2s; flex-shrink: 0;
+}
+.vtree-node:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+.vtree-node.node-best-path { background: rgba(63,185,80,0.12); border: 2px solid var(--green); }
+.vtree-node.node-best-leaf { background: rgba(63,185,80,0.25); border: 2px solid var(--green); box-shadow: 0 0 12px rgba(63,185,80,0.3); }
+.vtree-node.node-root { background: rgba(88,166,255,0.15); border: 2px solid var(--accent); }
+.vtree-node.node-minor { background: rgba(139,148,158,0.08); border: 1px solid var(--border); }
+.vtree-node.node-regress { background: rgba(248,81,73,0.08); border: 1px solid rgba(248,81,73,0.4); }
+.vtree-node.node-invalid { background: rgba(139,148,158,0.05); border: 1px dashed var(--border); opacity: 0.6; }
+.vnode-title { font-weight: 700; font-size: 0.82rem; color: #fff; margin-bottom: 0.2rem; font-family: 'JetBrains Mono', monospace; }
+.vnode-strategy { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: var(--purple); margin-bottom: 0.15rem; }
+.vnode-desc { font-size: 0.72rem; color: var(--text-muted); margin-bottom: 0.2rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vnode-perf { font-size: 0.7rem; color: var(--text-muted); }
+.vnode-speedup { font-size: 0.82rem; font-weight: 700; color: var(--text); margin-top: 0.15rem; }
+.vnode-speedup.good { color: var(--green); }
+.vnode-speedup.bad { color: var(--red); }
+.vnode-speedup.best { color: var(--green); font-size: 0.9rem; text-shadow: 0 0 8px rgba(63,185,80,0.5); }
+<!-- PLACEHOLDER_STYLE_CONTINUE -->
+</style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="container">
+
+<h1>${OP_NAME} 进化优化报告</h1>
+<p class="subtitle">${SUBTITLE} ${MODEL_INFO}</p>
+
+<!-- Key Metrics -->
+<div class="metrics">
+    <div class="metric">
+        <div class="metric-value baseline">${BASELINE_TIME} us</div>
+        <div class="metric-label">基线耗时</div>
+    </div>
+    <div class="metric">
+        <div class="metric-value highlight">${BEST_TIME} us</div>
+        <div class="metric-label">最优耗时</div>
+    </div>
+    <div class="metric">
+        <div class="metric-value highlight">${SPEEDUP}x</div>
+        <div class="metric-label">加速比</div>
+    </div>
+    <div class="metric">
+        <div class="metric-value highlight">${TIME_REDUCTION}%</div>
+        <div class="metric-label">耗时变化</div>
+    </div>
+</div>
+
+<!-- Test Case & Hardware -->
+<div class="two-col">
+<div class="card">
+<h3 style="margin-top:0">测试用例</h3>
+<table>
+<tr><th>参数</th><th>值</th><th>参数</th><th>值</th></tr>
+${TEST_CASE_ROWS}
+</table>
+</div>
+<div class="card">
+<h3 style="margin-top:0">硬件环境</h3>
+<table>
+<tr><th>项目</th><th>规格</th></tr>
+${HARDWARE_ROWS}
+</table>
+</div>
+</div>
+
+<!-- Evolution Chart -->
+<h2>进化轨迹</h2>
+<div class="card">
+<div class="chart-container">
+    <canvas id="evolutionChart"></canvas>
+</div>
+</div>
+
+<!-- Full Evolution Table -->
+<h2>完整进化轨迹</h2>
+<div class="card" style="overflow-x:auto; max-height:600px; overflow-y:auto;">
+<table>
+<tr><th>变体编号</th><th>世界模型节点</th><th>策略组合</th><th>优化方案</th><th>耗时(us)</th><th>加速比</th><th>状态</th></tr>
+${EVOLUTION_TABLE_ROWS}
+</table>
+<p style="color:var(--text-muted);font-size:0.8rem;margin-top:0.8rem;">
+${STRATEGY_LEGEND}
+</p>
+</div>
+
+<!-- BODY_PART2 -->
+
+<!-- Best Strategy Analysis -->
+${BEST_STRATEGY_SECTION}
+
+<!-- Code Diffs -->
+<h2>代码修改详情</h2>
+${CODE_DIFF_SECTIONS}
+
+<!-- World Model Decision Tree -->
+<h2>世界模型决策树</h2>
+<div class="card" style="overflow-x:auto;">
+<p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem;">
+${TREE_SUMMARY}
+</p>
+<div class="vtree-container">
+<div class="vtree">
+${DECISION_TREE_HTML}
+</div>
+</div>
+</div>
+
+<!-- Failure Analysis (optional) -->
+${FAILURE_ANALYSIS_SECTION}
+
+<!-- Resource Statistics -->
+${RESOURCE_STATS_SECTION}
+
+<!-- Apply Best Variant -->
+<h2>应用最优变体</h2>
+<div class="card">
+<p style="color:var(--text-muted);font-size:0.88rem;margin-bottom:1rem;">
+将以下命令复制到终端执行，即可将最优变体的修改应用到源码仓库：
+</p>
+<div class="copy-wrapper">
+<button class="copy-btn" onclick="copyCode(this,'apply-cmd')">复制</button>
+<pre><code id="apply-cmd">${APPLY_CMD}</code></pre>
+</div>
+</div>
+
+<!-- Scripts -->
+<script>
+function copyCode(btn, targetId) {
+    const code = document.getElementById(targetId).textContent;
+    navigator.clipboard.writeText(code).then(() => {
+        btn.textContent = '已复制';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = '复制'; btn.classList.remove('copied'); }, 2000);
+    });
+}
+// Dynamic tree connectors (multi-parent support)
+function drawTreeConnectors() {
+    const vtree = document.querySelector('.vtree');
+    if (!vtree) return;
+    const levels = vtree.querySelectorAll('.vtree-level');
+    const connectors = vtree.querySelectorAll('.vtree-connectors');
+    connectors.forEach(conn => {
+        const svg = conn.querySelector('svg');
+        const pLevel = parseInt(conn.dataset.parentLevel);
+        const parentLevelEl = levels[pLevel];
+        const childLevelEl = conn.nextElementSibling;
+        if (!parentLevelEl || !childLevelEl) return;
+        const parentNodes = parentLevelEl.querySelectorAll('.vtree-node');
+        const childNodes = childLevelEl.querySelectorAll('.vtree-node');
+        if (childNodes.length === 0) return;
+        const cRect = vtree.getBoundingClientRect();
+        const svgW = (svg.getBoundingClientRect().width) || vtree.offsetWidth;
+        svg.setAttribute('viewBox', '0 0 ' + svgW + ' 40');
+        svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+        svg.style.width = '100%'; svg.style.height = '40px';
+        svg.innerHTML = '';
+        let connections;
+        try { connections = JSON.parse(conn.dataset.connections); } catch(e) { return; }
+        connections.forEach(c => {
+            const pNode = parentNodes[c.pi];
+            if (!pNode) return;
+            const pRect = pNode.getBoundingClientRect();
+            const pCx = pRect.left + pRect.width / 2 - cRect.left;
+            c.ci.forEach(ci => {
+                const child = childNodes[ci];
+                if (!child) return;
+                const chRect = child.getBoundingClientRect();
+                const chCx = chRect.left + chRect.width / 2 - cRect.left;
+                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line.setAttribute('x1', pCx); line.setAttribute('y1', 0);
+                line.setAttribute('x2', chCx); line.setAttribute('y2', 40);
+                line.setAttribute('class', ci === c.bi ? 'vline-best' : 'vline-other');
+                svg.appendChild(line);
+            });
+        });
+    });
+}
+window.addEventListener('load', drawTreeConnectors);
+window.addEventListener('resize', drawTreeConnectors);
+</script>
+<script>
+${CHART_INIT_SCRIPT}
+</script>
+
+</div>
+</body>
+</html>

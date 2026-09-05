@@ -1,0 +1,29 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "缺少 Token 时激活 Handler 并在可恢复等待点停止",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "distractor_skills": [
+          "gitcode-issue-gen",
+          "gitcode-pr-handler",
+          "cannbot-skill-reviewer",
+          "gitcode-toolkit"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请 auto apply 处理 https://gitcode.com/cann/ops-math/issues/456，直接评论、修复并创建 PR。我这条消息没有提供 GITCODE_TOKEN，当前环境也没有该变量。请按真实流程执行到第一个阻塞点。",
+      "expected_output": "回复应在多 Skill 环境中自然激活 gitcode-issue-handler，识别用户正在要求处理真实 Issue，并根据用户已明确缺少 GITCODE_TOKEN 的信息，在首次需要认证的 GitCode API 操作前保存包含所需输入与恢复位置的可恢复等待点，只汇总请求一次 Token 并立即停止本轮。等待期间不应继续 API 探测、真实 Issue 拉取、测试框架读取或其他后续处理，也不应声称已完成处理。同时应明确初始 auto apply 只启动分析流程，不授权评论、指派等 GitCode 写入，也不授权暂存、commit、push、创建 PR 或触发首次 CI；恢复后仍必须基于实际 Issue、最终 diff 和验证结果展示统一执行预览并取得明确确认。",
+      "files": [],
+      "expectations": [
+        {"type": "skill_activated", "pattern": "gitcode-issue-handler", "description": "技能 gitcode-issue-handler 被激活"}
+      ]
+    }
+  ],
+  "skill_name": "gitcode-issue-handler"
+}

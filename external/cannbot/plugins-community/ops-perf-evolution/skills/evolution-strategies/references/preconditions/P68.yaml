@@ -1,0 +1,30 @@
+strategy_id: P68
+description: 低延迟归约指令组合适用性检查 — 算子包含大规模归约计算，且当前未用二分累加+WholeReduceSum组合优化
+checks:
+  - id: has_reduce_operation
+    type: grep_count
+    pattern: "Reduce|reduce|Sum|sum|WholeReduce|BlockReduce|REDUCE_MAX|REDUCE_SUM"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无归约操作 → P68 不适用。检查是否为纯 elementwise 算子"
+
+  - id: has_large_reduction
+    type: grep_count
+    pattern: "hLength|bsLength|reduce.*count|tileSize|totalNum|elementCount"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子归约规模小 → P68 收益低。二分累加在大规模（>256B）才有收益"
+
+  - id: no_binary_reduction_yet
+    type: grep_count
+    pattern: "halfNum|DivCeil.*16|binaryParams|Add.*half|折半|二分"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已有二分累加优化 → P68 已应用"
+
+  - id: not_pure_validation
+    type: grep_count
+    pattern: "OP_CHECK|shape.*check|dim.*check|validation"
+    files: [kernel, header]
+    expected: "<= 3"
+    fail_msg: "纯 Host 侧 shape 校验 → P68 解决的是 Kernel 内归约指令优化"

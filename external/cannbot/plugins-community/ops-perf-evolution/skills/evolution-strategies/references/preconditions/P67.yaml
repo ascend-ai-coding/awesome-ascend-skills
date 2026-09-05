@@ -1,0 +1,31 @@
+strategy_id: P67
+description: Vector Counter 模式的适用性检查 — 必须有 Normal-mode Vector 调用 + 手算 repeat 证据 + 尚未用过 Counter
+
+checks:
+  - id: has_vector_compute
+    type: grep_count
+    pattern: "\\b(Add|Sub|Mul|Div|Cast|Exp|Log|Sqrt|Rsqrt|Abs|Max|Min|Compare|Select)\\b"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子无 Vector 计算指令（可能是 pure matmul 或 pure DMA 算子）→ P67 Counter 模式无改造对象。换 P46 Matmul 基础优化或 P1 双缓冲"
+
+  - id: has_manual_repeat_or_tail
+    type: grep_count
+    pattern: "repeatTimes?\\s*=\\s*\\w+\\s*/|%\\s*(ONE_REPEAT|FULL_MASK|MASK_NUM|FP_ONE_BLOCK)|tailSize\\s*="
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子无手算 repeatTimes / 主尾块分支证据 → Counter 模式的核心优化目标（消除 scalar 分支）不存在，收益退化。考虑其他 scalar 优化策略（P5 细粒度同步 / P54 launch 开销）"
+
+  - id: no_existing_counter_mode
+    type: grep_count
+    pattern: "SetMaskCount\\s*\\(\\s*\\)"
+    files: [kernel, header]
+    expected: "== 0"
+    fail_msg: "算子已使用 SetMaskCount → Counter 模式已应用，P67 主要价值已发挥。若仍需进一步优化 scalar，考虑 P68 低延迟归约或 P69 UB 融合向量链"
+
+  - id: no_only_reduce_apis
+    type: grep_count
+    pattern: "\\b(Add|Sub|Mul|Div|Cast)\\b"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子仅使用 BlockReduce/PairReduce/WholeReduce 等不支持 Counter 模式的归约 API → P67 不适用。换 P55 BlockReduceMax 切换或 P68 低延迟归约"

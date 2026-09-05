@@ -1,0 +1,31 @@
+strategy_id: D4
+description: FP8/INT4 量化输出类型适用性检查 — 算子涉及低比特量化输出（FP8/INT4），且当前未支持多 rounding mode
+
+checks:
+  - id: has_fp8_or_int4
+    type: grep_count
+    pattern: "FP8|fp8|INT4|int4|FLOAT8|E4M3|E5M2|HIFLOAT8|DT_INT4|DT_FLOAT8"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子无 FP8/INT4 相关类型 → D4 不适用。检查是否仅为 INT8/FP16 量化"
+
+  - id: has_cast_operation
+    type: grep_count
+    pattern: "Cast|cast|RoundMode|ROUND|RINT|FLOOR|TRUNC|CEIL"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无 Cast 操作 → D4 收益低。检查是否已有量化链路"
+
+  - id: no_multi_roundmode_yet
+    type: grep_count
+    pattern: "MODE_RINT|MODE_ROUND|MODE_FLOOR|MODE_TRUNC|MODE_CEIL|switch.*round"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已支持多 rounding mode → D4 已应用"
+
+  - id: not_pure_validation
+    type: grep_count
+    pattern: "OP_CHECK|shape.*check|dim.*check|validation"
+    files: [kernel, header]
+    expected: "<= 3"
+    fail_msg: "纯 Host 侧 shape 校验 → D4 解决的是 Kernel 内量化类型转换，非 Host 校验"

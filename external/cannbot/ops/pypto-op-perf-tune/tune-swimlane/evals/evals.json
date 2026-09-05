@@ -1,0 +1,102 @@
+{
+  "skill_name": "tune-swimlane",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "泳道图分析深度调优流程",
+      "config": {
+        "max_tokens": 120000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 150000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "请介绍 PyPTO 算子深度性能调优（泳道图分析）的完整流程。",
+      "expected_output": "回复应覆盖四个调优维度：Stitch 调优（stitch_function_max_num 配置）、TileShape 深度调优（Matmul TileShape 决策树）、合图调优、调度策略调优。说明前置条件（前端调优已完成、精度验证已通过），以及每轮调优需要重新采集性能数据。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "Stitch" },
+        { "type": "contains", "pattern": "TileShape" },
+        { "type": "contains", "pattern": "泳道" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Stitch 调优策略",
+      "config": {
+        "max_tokens": 120000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 150000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "PyPTO 算子中 Stitch 调优是什么？如何配置 stitch_function_max_num？",
+      "expected_output": "回复应说明 Stitch 调优的概念（根函数调度合并），stitch_function_max_num 参数的作用和配置方法，不同取值对性能的影响，以及如何根据泳道图分析结果确定最优的 Stitch 配置。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "stitch_function_max_num" },
+        { "type": "contains", "pattern": "调度" },
+        { "type": "contains", "pattern": "合并" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "TileShape 深度调优决策",
+      "config": {
+        "max_tokens": 120000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 150000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "泳道图分析后如何根据 M/N/K 尺寸调整 Matmul 的 TileShape？",
+      "expected_output": "回复应说明 Matmul TileShape 深度调优的决策路线：根据 M/N/K 尺寸判断 compute-bound 还是 memory-bound，对应的 TileShape 调整策略（计算密集型侧重提高计算密度、访存密集型侧重减少数据搬运），以及 split-k 策略和冗余加载消除方法。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "compute-bound" },
+        { "type": "contains", "pattern": "memory-bound" },
+        { "type": "contains", "pattern": "split-k" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "信息不足场景：追问调优基础",
+      "config": {
+        "max_tokens": 80000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 100000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "帮我做 PyPTO 算子深度性能调优。",
+      "expected_output": "回复应确认前置条件是否满足：是否已完成前端调优、精度验证是否已通过、是否有最新采集的泳道图性能数据。主动询问算子的 M/N/K 尺寸和当前的性能瓶颈表现。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "前端调优" },
+        { "type": "contains", "pattern": "精度验证" },
+        { "type": "contains", "pattern": "泳道" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "正向看护：区分深度调优与前端调优",
+      "config": {
+        "max_tokens": 120000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 150000
+        },
+        "ascend_platforms": ["A2"],
+        "distractor_skills": ["tune-frontend", "tune-incore", "perf-analyzer", "tune-orchestrator"]
+      },
+      "prompt": "我的 PyPTO 算子前端调优已经做完了，接下来需要用泳道图做深度调优，怎么做？",
+      "expected_output": "回复应聚焦泳道图深度调优的四个维度：Stitch 调优配置、TileShape 深度调优决策树、合图调优策略、调度策略优化。说明需要基于泳道图数据进行分析，区别于前端调优的代码级优化。",
+      "files": [],
+      "expectations": [
+        { "type": "skill_activated", "pattern": "tune-swimlane" },
+        { "type": "contains", "pattern": "Stitch" },
+        { "type": "contains", "pattern": "泳道" }
+      ]
+    }
+  ]
+}

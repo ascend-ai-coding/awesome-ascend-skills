@@ -1,0 +1,128 @@
+{
+  "skill_name": "pypto-general-debug",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "路由 opaque 卡死失败",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "disabled": false
+      },
+      "prompt": "PyPTO kernel 跑起来卡住了，报错也不清晰，怎么排查？",
+      "expected_output": "应先路由症状：通过 references/DEBUG_GUIDEBOOK.md 的 situation → leaf 映射表定位到唯一叶子参考文件，不读所有 references；按 Failure History 记录假设/改动位置/结果/下一步；仍卡住时走 op-by-op check protocol——用 pypto-op-review 的 scripts/extract_pypto_calls.py 枚举 pypto 调用点，逐行对照文档核 dtype/shape/tile 配置/write-back。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "调试过程的 Failure History 记录要求",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ]
+      },
+      "prompt": "PyPTO kernel 调试过程中，每次尝试后需要记录哪些信息？",
+      "expected_output": "每轮迭代必须记录假设、确切的改动位置、结果、下一步行动、是否发生回滚，这是强制要求；记录在 custom/<op>/MEMORY.md 的 Development & debug log 段，保证交接安全。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "禁止随意注释内核代码定位问题",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ]
+      },
+      "prompt": "PyPTO kernel 结果不对，我可以先注释掉一半代码看看能不能定位问题吗？",
+      "expected_output": "不要注释掉半个文件：禁用单个 @jit 内任意 pypto 行通常会使图失效或隐藏真实 bug；应优先模块级 stub 缩小活区，或在一个模块内插入检查点做二分定位，用 numbered list 定位首个分歧调用点，并把过程和假设记入 memory。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 4,
+      "title": "重复编译错误先回查内核骨架",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "同一个 PyPTO kernel 连续出现编译错误，已经改了几处 API 参数仍不通过。下一步优先做什么？",
+      "expected_output": "回复应先停止零散改参数，重新对照 skeleton 检查 JIT 结构、接口、shape 和 dtype；每轮记录假设、确切改动、结果、下一步和回滚。重复三次同类失败后应重新审视模块边界或架构。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "重复运行时错误的固定诊断顺序",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "PyPTO kernel 反复运行时报错，错误日志已经保存。应该先随机替换 API，还是走什么诊断顺序？",
+      "expected_output": "回复应要求先调用 diagnose_error(error_log=..., kernel_code=...)；若无匹配再按 references/error-codes.md 排查。仍属 opaque PyPTO 错误时才用 extract_pypto_calls.py 枚举调用并逐行对照文档，而不是随机改 API。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "精度错误先排除输出未写回",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "PyPTO 图能运行但输出完全不对，准备直接进入数值二分。按通用调试策略，第一项先检查什么？",
+      "expected_output": "回复应先排除 write-back bug，确认每个声明输出都通过 pypto.assemble(..., name) 或 name[:] = ... 实际写回；确认写回无误后，再用 pypto-precision-compare 的对齐 checkpoint 做二分定位首个分歧。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "调试路由一次只加载一个子技能",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "为了提高效率，能否在 PyPTO 调试开始时同时预加载 precision-debug、precision-compare 和所有参考文件？",
+      "expected_output": "回复应拒绝预加载：先用 DEBUG_GUIDEBOOK 选择唯一叶子文件；路由子技能时从上到下匹配，一次只加载一个，出现新失败类别时先卸载当前子技能。精度 mismatch 先 precision-debug，仍失败或未定位首个分歧时才 precision-compare。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 8,
+      "title": "TileShape 与存储超限仍由通用调试路由",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "报错提示 set_cube_tile_shapes 校验失败且 L1 exceeded。应该寻找独立 tile-shape 技能，还是由 pypto-general-debug 处理？",
+      "expected_output": "回复应说明该类 L0A/L0B/L0C/L1 超限、对齐、缺失 tile shape、enable_split_k 或 set_cube_tile_shapes 校验错误都由 pypto-general-debug 统一处理；先通过 DEBUG_GUIDEBOOK 路由到 tile-shape 叶子参考，不另找独立技能。",
+      "expectations": [],
+      "files": []
+    }
+  ]
+}

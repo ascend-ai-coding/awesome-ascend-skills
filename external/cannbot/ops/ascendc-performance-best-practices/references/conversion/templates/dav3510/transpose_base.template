@@ -1,0 +1,81 @@
+/**
+ * Copyright (c) 2025 Huawei Technologies Co., Ltd.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
+
+/*!
+ * \file transpose_base.h
+ * \brief transpose_base
+ */
+
+#ifndef TRANSPOSE_BASE_H
+#define TRANSPOSE_BASE_H
+
+#include "kernel_operator.h"
+#include "op_kernel/platform_util.h"
+#include "op_kernel/math_util.h"
+#include "../transpose_tiling_data.h"
+
+namespace Transpose {
+using namespace AscendC;
+
+constexpr int64_t TRANSPOSE_MAX_AXIS_NUM = 8;
+constexpr int64_t NDDMA_MAX_DIM_NUM = 5;
+constexpr int64_t BLOCK_SIZE_BYTE = 32;
+constexpr int64_t DIM_TWO = 2;
+constexpr int64_t DIM_THREE = 3;
+constexpr int64_t DIM_FOUR = 4;
+constexpr int64_t DIM_FIVE = 5;
+constexpr int64_t DIM_SIX = 6;
+constexpr int64_t DIM_SEVEN = 7;
+constexpr int64_t DIM_EIGHT = 8;
+constexpr MultiCopyConfig config = {false, 0, 0, false};
+constexpr int64_t TWO = 2;
+constexpr int64_t BUFFER_NUM = 2;
+
+template <typename T>
+class TransposeBase {
+public:
+    __aicore__ inline TransposeBase(){};
+
+protected:
+    template <typename T1>
+    __aicore__ inline void reverseArray(T1 array[])
+    {
+        for (uint8_t i = 0; i < NDDMA_MAX_DIM_NUM / 2; i++) {
+            uint32_t temp = array[i];
+            array[i] = array[NDDMA_MAX_DIM_NUM - 1 - i];
+            array[NDDMA_MAX_DIM_NUM - 1 - i] = temp;
+        }
+    };
+};
+
+// Compute this core's processing range from multicore tiling params.
+// Returns false when this core has no work (blockIdx >= realCoreNum).
+__aicore__ inline bool ParseMultiCoreRange(int64_t blockIdx, int64_t realCoreNum, int64_t blkFactor,
+                                           int64_t blkTailFactor, int64_t& blkProcessNum, int64_t& blkProcessIdxStart,
+                                           int64_t& blkProcessIdxEnd)
+{
+    if (blockIdx >= realCoreNum) {
+        return false;
+    }
+    blkProcessNum = blkFactor;
+    blkProcessIdxStart = blockIdx * blkFactor;
+    if (blockIdx < blkTailFactor) {
+        blkProcessNum += 1;
+        blkProcessIdxStart += blockIdx;
+    } else {
+        blkProcessIdxStart += blkTailFactor;
+    }
+    blkProcessIdxEnd = blkProcessIdxStart + blkProcessNum;
+    return true;
+}
+
+} // namespace Transpose
+
+#endif // TRANSPOSE_BASE_H

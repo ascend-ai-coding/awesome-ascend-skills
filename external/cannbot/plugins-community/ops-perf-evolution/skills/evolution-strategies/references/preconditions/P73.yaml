@@ -1,0 +1,30 @@
+strategy_id: P73
+description: CV 并行 AIC:AIV 比例与多 Workspace 流水适用性检查 — 算子为 Cube+Vector 融合且 Vector 是瓶颈，当前未调比例和扩展 workspace
+checks:
+  - id: has_cv_fusion
+    type: grep_count
+    pattern: "Cube.*Vector|Vector.*Cube|CV|cv|MIX|mix|GroupedMatmul"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子非 Cube+Vector 融合 → P73 不适用"
+
+  - id: has_vector_bottleneck
+    type: grep_count
+    pattern: "Vector|vector|vec|后处理|postprocess|激活函数|activation"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子 Vector 非瓶颈 → P73 收益低"
+
+  - id: no_ratio_workspace_yet
+    type: grep_count
+    pattern: "aicAivRatio.*1.*2|4.*workspace|multi.*workspace|double.*buffer.*vector"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已调比例或扩 workspace → P73 已应用"
+
+  - id: not_pure_validation
+    type: grep_count
+    pattern: "OP_CHECK|shape.*check|dim.*check|validation"
+    files: [kernel, header]
+    expected: "<= 3"
+    fail_msg: "纯 Host 侧 shape 校验 → P73 解决的是 CV 流水优化"

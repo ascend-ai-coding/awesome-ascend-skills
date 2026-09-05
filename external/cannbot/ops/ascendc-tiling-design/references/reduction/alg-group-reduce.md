@@ -44,7 +44,7 @@ void GroupReducePhase1() {
 
     // 写 partial 到 workspace
     int wsOffset = blockIdx * SLOT_STRIDE;  // 64B 对齐防 bank conflict
-    DataCopyPad(workspaceGm[wsOffset], partialBuf, {1, outSize * sizeof(float), 0, 0});
+    DataCopyPad(workspaceGm[wsOffset], partialBuf, {1, outSize * sizeof(float), 0, 0, 0});
 }
 ```
 

@@ -6,7 +6,7 @@ description: 当用户希望你像第一次接触项目的人一样，真实按�
   start 为什么带不动新人”，也应触发。不要用于纯翻译、润色、摘要、风格对比、治理项检查，或只想直接修环境/修单个报错而不做完整文档体验审查的请求。
 original-name: document-ux-review
 synced-from: https://github.com/kali20gakki/mindstudio-skills
-synced-date: '2026-05-26'
+synced-date: '2026-09-05'
 synced-commit: f6695da3cfa864a100db5a94f594b638aeff6389
 license: UNKNOWN
 ---

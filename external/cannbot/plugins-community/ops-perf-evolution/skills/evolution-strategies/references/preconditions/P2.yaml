@@ -1,0 +1,24 @@
+strategy_id: P2
+description: Adaptive Tiling 适用性检查 — 必须有 tiling 代码 + 算子有 UB 占用瓶颈或 tile 不均场景
+
+checks:
+  - id: has_tiling_code
+    type: grep_count
+    pattern: "Tiling\\(|GetTilingData|TilingData|tile_size|tileSize|ubFactor"
+    files: [host, kernel]
+    expected: ">= 1"
+    fail_msg: "算子无 tiling 相关代码 → Adaptive Tiling 无从下手。极少数无需 tiling 的算子（如 pure copy）不适用 P2"
+
+  - id: has_block_dim
+    type: grep_count
+    pattern: "BLOCK_DIM|GetBlockNum|blockDim|usedCoreNum"
+    files: [host, kernel]
+    expected: ">= 1"
+    fail_msg: "未发现多核切分代码 → Adaptive Tiling 自适应分块前提缺失"
+
+  - id: tiling_not_hardcoded_only
+    type: grep_count
+    pattern: "constexpr\\s+(?:uint32_t|int32_t)\\s+\\w*[Tt]ile\\w*\\s*=\\s*\\d+"
+    files: [kernel, header]
+    expected: "<= 5"
+    fail_msg: "Kernel 含 6+ 个 constexpr hardcode tile 常量 → 已有静态 tiling 设计，先评估是否真的需要做成自适应（手动 tiling 常常已经最优）"

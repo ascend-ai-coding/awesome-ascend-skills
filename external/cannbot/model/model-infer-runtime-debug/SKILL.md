@@ -6,14 +6,20 @@ description: 基于 PyTorch 框架的昇腾 NPU 模型推理运行时错误诊�
   crash、模型加载成功但 forward 失败、分布式推理某些 rank 挂死等。
 original-name: model-infer-runtime-debug
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-26'
-synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
+synced-date: '2026-09-05'
+synced-commit: a426ec91e1038f233066724d63235c719a46a10d
 license: UNKNOWN
 ---
 
 # NPU 推理运行时错误诊断与修复
 
 核心理念：**先定位再修复**。不覆盖精度问题，精度调优见 model-infer-precision-debug。 —— 通过二分法逐步缩小故障范围，避免在错误方向浪费时间。
+
+> **部署模式适配**：诊断流程对框架部署 / 独立部署两模式均适用，差异点：
+> - **启动协议**：框架部署走 `cann-recipes-infer/executor/scripts/function.sh::launch` 多卡 fork python；独立部署走 `torchrun --nproc_per_node=N infer.py`。卡住 / crash 时先确认进程模型对应。
+> - **通信组管理**：框架部署由 `executor.core.config.comm_manager.CommManager` 一次性建组，模型类用 `comm_manager.get_group(name)`；独立部署 Runner 内 inline `ParallelContext`，对外接口对齐 `get_group(name)` / `get_group_name(name)` / `get_rank(name)`。HCCL 错误诊断时确认是哪条路径。
+> - **KV cache 接入**：框架部署由 `cann-recipes-infer/executor/core/kv_cache/` 自动管理 `cache_entries` / `block_table[attn_type]` / `slot_mapping[attn_type]`；独立部署 Runner 自管 KV tensor + `block_table` + `slot_mapping`。详见 model-infer-kvcache。
+> - **权重加载**：框架部署 `enable_online_split_weight: True` 由 ParallelLinear.weight_loader 自动按 rank 切；独立部署 Runner 自管或调 `executor.model_loader.weight_utils.default_weight_loader`。
 
 ---
 
@@ -77,7 +83,7 @@ npu-smi info
 **含义**：某个 NPU 算子在设备上执行时超时未返回。这是最常见也最难排查的错误，因为报错的位置（synchronize 调用处）通常不是出错的位置（某个具体算子）。
 
 **常见根因**：
-- 算子入参违反硬件约束（如 MC2 要求 ep_world_size >= 16，见「常见算子约束」）
+- 算子入参违反硬件约束（如 A2 上 MC2 要求 `experts_per_rank <= 24`，见「常见算子约束」）
 - 算子 shape 超出硬件限制（如单次 matmul 的 M/N/K 维度超限）
 - 死锁：部分 rank 走了不同的通信路径，导致集合通信永远等不齐
 - 内存越界：slot_mapping/block_table 索引超出 KV cache 分配范围
@@ -89,9 +95,11 @@ npu-smi info
 **含义**：分布式通信操作超时或失败。
 
 **常见根因**：
-- 各 rank 进入通信操作的顺序/次数不一致（代码分支导致部分 rank 跳过某次通信）
-- 通信组创建时参数错误（group_stride、group_num 不匹配 world_size）
+- 各 rank 进入通信操作的顺序/次数不一致（代码分支导致部分 rank 跳过某次通信，常见于 modeling forward 内有 `if forward_metadata.is_prefill` 等分支）
+- 通信组创建时参数错误：框架部署核查 `CommManager.initialize()` 的 group_stride / group_num；独立部署核查 `ParallelContext.build_parallel_context()` 内 `init_comm_group` 调用参数
+- MoE EP 场景缺 `moe_ep_group_name`：dispatch_v2 / combine_v2 算子要求 HCCL group name，框架部署用 `comm_manager.get_group_name("moe_ep_group")`；独立部署用 `parallel_ctx.get_group_name("moe_ep_group")`
 - 网络问题（跨节点时 HCCL_IF_IP 配置错误）
+- HCCL_BUFFSIZE 不足（大 batch / 大 hidden_size 的 dispatch/combine 失败）—— 调高至 512MB 试试
 - 某些 rank 已经 crash 但其他 rank 还在等它参与通信
 
 ### C. OOM（显存不足）
@@ -104,6 +112,7 @@ npu-smi info
 - 模型参数/KV cache/activation 总和超过单卡显存
 - 中间 tensor 未及时释放（常见于 MoE EP all-to-all 中间 buffer）
 - batch_size 或 seq_len 超出预期
+- migrator 阶段单卡 OOM：编排层会标记"需多卡"，并行化（parallel-impl skill）后再补采基线，不是必修问题
 
 ### D. Shape 不匹配
 
@@ -112,9 +121,12 @@ npu-smi info
 **含义**：tensor 维度不对。
 
 **常见根因**：
-- TP 切分后维度未正确除以 tp_size
-- EP 切分后每卡专家数计算错误
-- Prefill/Decode 分支传入了错误 shape 的 tensor
+- TP 切分后维度未正确除以 tp_size：核对 ParallelLinear 的 `tp_size` / `tp_rank`（标准用 `comm_manager.get_rank("attn_tp_group")` / `parallel_ctx.get_rank("attn_tp_group")` 等取，避免硬编码）
+- KV cache 的 `num_head` 字段：必须用 `num_kv_heads_per_rank = max(num_kv_heads // attn_tp_size, 1)`，与 parallel-impl skill `attn_tp_size` 改动联动
+- EP 切分后每卡专家数计算错误：检查 `experts_per_rank = num_experts // ep_size`
+- Prefill/Decode 分支传入了错误 shape 的 tensor（阶段分支统一用 `forward_metadata.is_prefill`）
+- packed sequence 协议错误：modeling 内 `hidden_states` 被 reshape 成 `[B, S, H]`（变长 batch 不能简单 reshape，应保持 `[TotalTokens, hidden_size]` 二维，详见 model-infer-kvcache §3.1）
+- 多 attn_type 混合模型：误把 `block_table` 当 plain Tensor 传给 FA，应该取 `block_table[self.attn_type]`（dict 索引）
 
 ### E. 算子约束违反
 
@@ -191,7 +203,7 @@ torch.npu.synchronize(); logging.info("  MoE passed")
 
 | 算子 | 约束 | 违反表现 | 解决方案 |
 |------|------|---------|---------|
-| `npu_moe_distribute_dispatch_v2` (MC2) | Atlas A2: `ep_world_size` 须为 {16,32,64,128,256}（fullmesh）或 {16,32,64}（hierarchy） | aicore timeout，Decode 阶段挂死 | EP<16 时回退到 double_routing 路径（npu_moe_init_routing_v2 + manual all_to_all） |
+| `npu_moe_distribute_dispatch_v2` (MC2) | A2: `experts_per_rank = moe_expert_num // (ep_world_size - shared_expert_rank_num) <= 24`；A3 无此 24 限制 | aicore timeout，Decode 阶段挂死 | `experts_per_rank > 24` 时回退到 double_routing 路径（npu_moe_init_routing_v2 + manual all_to_all） |
 | `npu_moe_distribute_combine_v2` (MC2) | 同上 | 同上 | 同上 |
 | `npu_moe_init_routing_v2` | 无 EP 最小限制，但 `moe_chunk_max_len` 为 0 可能导致空 tensor | SIGABRT 或 shape error | 设置合理的 moe_chunk_max_len（如 1024） |
 | `npu_moe_gating_top_k` | `k` 不能超过专家总数 | 静默错误输出或 crash | 检查 reduced model 的 moe_topk 是否已调整 |
@@ -201,9 +213,11 @@ torch.npu.synchronize(); logging.info("  MoE passed")
 | 约束 | 说明 |
 |------|------|
 | `head_num` 须匹配实际 Q heads | MLA 模型中 head_num = num_attention_heads，不是 kv_heads |
-| Prefill `sparse_mode=3` 需配合 `atten_mask` | mask shape 须为 `[1, 1, max_s, max_s]`，不能省略 |
-| `input_layout` 按 API 和阶段区分 | `npu_fusion_attention` 用 BSH/SBH/BSND/BNSD/TND；`npu_fused_infer_attention_score` 用复合 layout 如 TND_NTD、BSND_NBSD，以实际 API 签名为准 |
-| Decode PA 模式下 `block_table` | shape `[batch, max_blocks]`，值不能超出 cache 分配的 block 数 |
+| `sparse_mode` + `atten_mask` 按路径分类 | 标准 LLM TND PA 路径 Prefill+Decode 统一 sparse_mode=3 + causal mask；滑窗层统一 sparse_mode=4 + band；MLA absorb Prefill 3 / Decode 0+None。详见 model-infer-kvcache §2.7 |
+| atten_mask shape | `sparse_mode=3/4` 时固定 `[2048, 2048]` bool（用 `executor.utils.common_utils.get_init_attn_mask(2048, device)` 构造） |
+| `input_layout` 按 API 和阶段区分 | `npu_fusion_attention` 用 BSH/SBH/BSND/BNSD/TND；`npu_fused_infer_attention_score` 用复合 layout 如 TND_NTD（PA + MLA 默认推荐）、BSND_NBSD（KVP 场景），以实际 API 签名为准 |
+| Decode PA 模式下 `block_table` | shape `[batch, max_blocks]`，值不能超出 cache 分配的 block 数；框架部署是 `Dict[attn_type → Tensor]`，attention 内取 `block_table[self.attn_type]` |
+| FA v1 + BSH + Q_S=1 Decode 算子级限制 | op 内部忽略 `sparse_mode` / `pre_tokens`（实测 sparse_mode 0 vs 4 等价）；滑窗模型长序列正确性靠模型层 actual_seq_lengths_kv 截断 |
 | NZ 格式 cache | 需要 `torch_npu.npu_format_cast` 转换，且 hidden_dim 须为 16 的整数倍 |
 
 > `actual_seq_lengths` 相关参数以"当前调用算子的签名与官方 API 文档"为准，不跨算子套用规则：
@@ -229,14 +243,15 @@ torch.npu.synchronize(); logging.info("  MoE passed")
 当某个高性能算子在当前硬件/配置下不可用时，回退到功能等价但限制更少的替代算子。
 
 ```python
-# 示例：MC2 MoE 算子 EP<16 时回退到 double_routing
+# 示例：A2 上 experts_per_rank > 24 时 MC2 算子不可用，回退到 double_routing
 def forward(self, hidden_states, is_prefill):
     topk_indices, topk_weights, _ = self.router(hidden_states)
     if is_prefill:
         return self.moe_infer_double_routing(hidden_states, topk_indices, topk_weights)
     else:
-        if self.moe_ep_size < 16:
-            # MC2 requires ep_world_size >= 16 on A2; fall back to double_routing
+        experts_per_rank = self.num_experts // (self.moe_ep_size - self.shared_expert_rank_num)
+        if experts_per_rank > 24:
+            # A2 MC2 dispatch_v2/combine_v2 requires experts_per_rank <= 24; fall back
             return self.moe_infer_double_routing(hidden_states, topk_indices, topk_weights)
         return self.moe_infer_dispatch_combine(hidden_states, topk_indices, topk_weights)
 ```
@@ -298,6 +313,8 @@ is_prefill = bool(is_prefill_tensor.item())
 
 多卡部署引入了一类单卡不存在的问题：权重加载切分、vocab 对齐、部分 rank 崩溃、config 兼容性。共同特点：**部分 rank 成功、部分 rank 失败**，错误出现在权重加载阶段而非 forward 阶段。
 
+> **启动协议区分**：框架部署用 `cann-recipes-infer/executor/scripts/function.sh::launch` 多卡 fork python（每个 rank 单独起进程，通过 `LOCAL_RANK` / `RANK_ID` 环境变量区分）；独立部署用 `torchrun --nproc_per_node=N infer.py`（torchrun 自动注入 RANK / WORLD_SIZE / LOCAL_RANK / MASTER_ADDR / MASTER_PORT）。卡 / crash 时先确认对应启动方式的进程模型。
+
 ### 权重加载 TP 切分越界
 
 **典型错误**：
@@ -309,22 +326,22 @@ RuntimeError: start (105984) + length (35328) exceeds dimension size (131125)
 ValueError: 131125 is not divisible by 8
 ```
 
-**根因**：ColumnParallelLinear / VocabParallelEmbedding 将权重沿 output 维度切分为 tp_size 份。如果 checkpoint 的实际维度不等于模型参数的维度，或者不能被 tp_size 整除，高位 rank 的 `narrow()` 操作就会越界。
+**根因**：ColumnParallelLinear / VocabParallelEmbedding 将权重沿 output 维度切分为对应 `*_tp_size` 份。如果 checkpoint 的实际维度不等于模型参数的维度，或者不能被对应 `*_tp_size` 整除，高位 rank 的 `narrow()` 操作就会越界。
 
 **常见场景**：
 
 | 场景 | 说明 | 修复 |
 |------|------|------|
 | **多模态模型文本推理** | `embed_tokens` 用 full vocab (282624) 但 `lm_head` 用 text+special (131125)，两者维度不同 | lm_head 单独使用 `text_vocab_plus_multimodal_special_token_size` |
-| **vocab 不整除 tp_size** | 131125 % 8 ≠ 0 | 向上 pad 到最近的 tp_size 倍数：`padded = ((raw + tp - 1) // tp) * tp` |
+| **vocab 不整除 lmhead_tp_size** | 131125 % 8 ≠ 0 | 向上 pad 到最近的 `lmhead_tp_size` 倍数：`padded = ((raw + lm_tp - 1) // lm_tp) * lm_tp` |
 | **padded 参数 vs 原始 checkpoint** | 模型参数 131128（padded）但 checkpoint 权重只有 131125 | 加载时先 pad checkpoint weight 再传给 weight_loader |
 
 **修复模板（vocab pad + weight pad）**：
 
 ```python
-# 1. 创建 lm_head 时 pad vocab size
+# 1. 创建 lm_head 时 pad vocab size，注意切分用的 lmhead_tp_size 与 attn_tp_size 可能不同
 lm_head_raw = getattr(config, "text_vocab_plus_multimodal_special_token_size", config.vocab_size)
-self.lm_head_vocab_size = ((lm_head_raw + tp_size - 1) // tp_size) * tp_size
+self.lm_head_vocab_size = ((lm_head_raw + lmhead_tp_size - 1) // lmhead_tp_size) * lmhead_tp_size
 
 # 2. 加载权重时 pad checkpoint tensor
 if "lm_head" in name and loaded_weight.shape[0] < self.lm_head_vocab_size:
@@ -379,10 +396,12 @@ grep "Loading weights took" logs/log_*.log
 
 - [ ] **embed_tokens 维度**：checkpoint 里 embed_tokens.weight.shape[0] 和 config.vocab_size 一致
 - [ ] **lm_head 维度**：checkpoint 里 lm_head.weight.shape[0] 可能小于 embed_tokens（多模态模型常见）
-- [ ] **vocab 整除 tp_size**：lm_head 和 embed_tokens 的 output_size 都能被各自的 tp_size 整除（不能则 pad）
+- [ ] **vocab 整除对应 *_tp_size**：lm_head 和 embed_tokens 的 output_size 都能被各自 `lmhead_tp_size` / `embed_tp_size` 整除（不能则 pad）
+- [ ] **per-rank head 数**：attn_tp_size 改动后，`num_kv_heads_per_rank = max(num_kv_heads // attn_tp_size, 1)`，cache_entries.num_head 字段同步更新
 - [ ] **ignore 规则覆盖**：`_keys_to_ignore_on_load_unexpected` 包含所有不需要的权重前缀（ngram、visual、audio、mtp 等）
 - [ ] **config 字段完整**：`rope_parameters`、`num_layers`、`zero_expert_num` 等代码必需字段在 config.json 中有或有 default
-- [ ] **模型路径绝对路径**：executor 框架中相对路径可能在不同 rank 的 cwd 下解析不同
+- [ ] **模型路径绝对路径**：相对路径可能在不同 rank 的 cwd 下解析不同
+- [ ] **enable_online_split_weight 与 weight_loader 实现**：YAML 设 True 时 ParallelLinear / FusedMoEGMM 的 weight_loader 必须正确处理 tp_rank / ep_rank 切分
 
 ---
 

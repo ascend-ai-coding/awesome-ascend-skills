@@ -1,0 +1,163 @@
+{
+  "skill_name": "pypto-memory-template",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "Stage 5 初始化 MEMORY.md",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "disabled": false
+      },
+      "prompt": "在 Stage 5 开始实现一个 PyPTO 算子时，第一步该做什么？",
+      "expected_output": "第一步是把 pypto-memory-template 的 MEMORY.template.md 复制为 custom/<operator_name>/MEMORY.md：从 SPEC.md + API_REPORT.md 填充 Task summary 与 API map，从 DESIGN.md + module_interfaces.yaml 填充模块分解与契约；此后每轮更新 active_module、modules_pypto_verified、current_staged_file、next_mandatory_step 等机器可读字段。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "MEMORY.md 的读写边界",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "disabled": false
+      },
+      "prompt": "Stage 1-4 的 agent（planner / mathematician / architect / designer）需要读写 MEMORY.md 吗？",
+      "expected_output": "不需要。Stage 1-4 的交付物分别放在 SPEC.md、<op>_golden.py、DESIGN.md、module_interfaces.yaml；MEMORY.md 在 Stage 5 开始时由 coder 创建，归 Stage 5 coder 及下游 agent（verifier/debugger/optimizer）所有。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "MEMORY.md 每轮必须更新的字段",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ]
+      },
+      "prompt": "进入实现阶段后，每轮迭代我都需要更新 MEMORY.md 里的哪些字段？",
+      "expected_output": "每轮必须更新 active_module、modules_pypto_verified、current_staged_file、next_mandatory_step 等机器可读字段以及 Agent status；这些字段是下游 agent 判断当前进度和下一步的依据。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 4,
+      "title": "调试阶段向 MEMORY.md 追加日志",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ]
+      },
+      "prompt": "我在调试 PyPTO kernel，extract_pypto_calls.py 的输出应该记录到哪里？",
+      "expected_output": "将 extract_pypto_calls.py 的输出粘贴进 MEMORY.md 的 Development & debug log 段；每次错误或修复后都追加日志，记录假设、改动与结果，保证调试过程可追溯。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 5,
+      "title": "MEMORY.md 模板文件的获取位置",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ]
+      },
+      "prompt": "我需要创建算子的 MEMORY.md，模板文件在哪里？",
+      "expected_output": "模板在 pypto-memory-template 的 templates/MEMORY.template.md，复制到 custom/<op>/MEMORY.md 后按模板各节填充（Agent status、Task summary、模块分解、契约、调试日志等）。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 6,
+      "title": "每个模块边界通过后追加验证日志",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "Stage 5 的模块 M2 刚通过边界验证。MEMORY.md 只更新 active_module 是否足够？",
+      "expected_output": "回复应说明不够：除每轮更新 Agent status 与 active_module 等机器字段外，还必须在 Per-module verification log 追加 M2 的边界检查结果，并更新 Staged module files table 和 modules_pypto_verified，使交接者能确认已通过的模块。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "编码前必须完成 Experience Preflight",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "Coder 已复制 MEMORY.template.md，能否立刻写第一个 staged module？还有哪些编码前的必填节？",
+      "expected_output": "回复应要求先从上游交付物填充任务摘要、API map、模块分解与理由、模块契约、设计格式合规等，并由 coder 在编码前完成 Experience Preflight 和 DEBUG_GUIDEBOOK.md §9 pre-write checklist；不能只复制空模板就开始编码。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 8,
+      "title": "模块分解与契约必须镜像权威设计",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "MEMORY.md 里的 module decomposition 和 module contracts 能否由 coder 根据实现方便重新设计？",
+      "expected_output": "回复应说明 Stage 5 初始化时模块分解与理由必须镜像 DESIGN.md，模块契约必须镜像 module_interfaces.yaml；MEMORY.md 是进度与交接记录，不是另建一套设计真值，若要变更应先走权威设计/契约更新流程。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 9,
+      "title": "清理阶段交叉核对 Golden 函数清单",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "所有 staged module 已合并，准备清理收尾。MEMORY.md 中 Golden function inventory 还需要处理吗？",
+      "expected_output": "回复应在 cleanup 阶段对 Golden function inventory 做最终交叉核对，确认实现、模块验证和 golden 对应关系一致；该清单在 Stage 5 编码时创建、每个 Phase 更新，不能在收尾时跳过。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 10,
+      "title": "调试记录必须包含可复现证据链",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "调试时只在 MEMORY.md 写“已修复精度问题”是否满足模板要求？",
+      "expected_output": "回复应说明不满足：Development & debug log 要在每次错误或修复后追加可追溯记录，包括 extract_pypto_calls.py 输出或其路径、假设、具体改动、验证结果与下一步；仅写最终结论无法支持交接和复现。",
+      "expectations": [],
+      "files": []
+    }
+  ]
+}

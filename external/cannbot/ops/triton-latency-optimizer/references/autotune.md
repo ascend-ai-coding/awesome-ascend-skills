@@ -785,4 +785,35 @@ export TRITON_PRINT_AUTOTUNING=1
 
 **限制：** 进阶用法仅支持 Vector 类算子，不支持 Cube 类算子。
 
-**优先级：** 自动 autotune > 半自动 autotune (hints) > 自定义 autotune
+**优先级：** 自定义 autotune > 半自动 autotune (hints) > 自定义 autotune
+
+
+
+---
+
+## 来自 SKILL.md 的原始描述（优化点 13：Autotune 自动调优）
+
+**适用条件**：代码中存在一个或者多个可调参数（例如BLOCK_SIZE、BLOCK_M等），且这些参数未经过充分调优，考虑到其他优化点可能引入可调超参数，最后再优化该优化点
+
+**典型代码特征**：
+```python
+# 未使用 autotune，手动指定固定参数
+@triton.jit
+def kernel(..., BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr):
+    ...
+
+# 调用时固定参数
+kernel[grid](..., BLOCK_M=128, BLOCK_N=128)
+```
+
+**判断逻辑**：
+- 检查是否已使用 `@triton.autotune` 装饰器
+- 检查是否存在多个可调的 `tl.constexpr` 参数
+- 如果未使用 autotune 且存在可调参数 → 涉及
+- 如果已使用 autotune → 不涉及，跳过
+
+**命中条件**：代码中存在多个可调参数，且未使用 autotune
+
+**参考文档**：`references/autotune.md`
+
+---

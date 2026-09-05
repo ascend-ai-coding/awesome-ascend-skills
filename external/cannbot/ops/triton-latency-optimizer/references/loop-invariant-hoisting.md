@@ -203,4 +203,38 @@ for c in range(C):
         w = tl.load(weight_ptr + c)
     for s in range(S):
         ...
+
+---
+
+## 来自 SKILL.md 的原始描述（优化点 10：循环不变量外提）
+
+**适用条件**：代码中存在嵌套循环，且内层循环中有只依赖外层变量的 `tl.load`
+
+**典型代码特征**：
+```python
+# 问题代码：内层循环重复加载相同值
+for outer_idx in range(outer_size):
+    for inner_idx in range(inner_size):
+        param_idx = outer_idx  # 只依赖外层变量
+        val = tl.load(param_ptr + param_idx)  # 重复加载相同值
+        ...
+
+# 或者通过整除映射到更粗粒度
+for block in range(num_blocks):
+    offsets = block * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+    channel = offsets // spatial_size
+    w = tl.load(weight_ptr + channel)  # 相同 channel 重复加载
 ```
+
+**判断逻辑**：
+- 检查是否存在嵌套循环结构
+- 检查内层循环中是否有 `tl.load(param_ptr + index_expr)`
+- 检查 `index_expr` 是否只依赖外层循环变量，不依赖内层循环变量
+- 如果存在且内层循环次数 >> 外层循环次数 → 涉及
+- 如果没有嵌套循环，或所有 load 都依赖内层变量 → 不涉及，跳过
+
+**命中条件**：代码中存在嵌套循环，且内层循环中有只依赖外层变量的 `tl.load`
+
+**参考文档**：`references/loop-invariant-hoisting.md`
+
+---

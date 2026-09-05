@@ -1,0 +1,17 @@
+strategy_id: P75
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "Cube.*Vector|Vector.*Cube|CV|MIX"
+    min_count: 1
+    fail_msg: "未检测到 Cube+Vector 融合模式 → 无 AIV 分裂需求，不适用 P75。检查 P51 或 P73。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "GetBlockIdx|GetBlockNum|BLOCK_DIM|coreNum"
+    min_count: 1
+    fail_msg: "未检测到多核分块逻辑 → 无 AIV 分裂空间，不适用 P75。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "vecStart|vecDeal|aivIdx|aivNum"
+    min_count: 0
+    fail_msg: "已存在 AIV 分裂逻辑 → 可能冗余，优先验证现有策略效果。"

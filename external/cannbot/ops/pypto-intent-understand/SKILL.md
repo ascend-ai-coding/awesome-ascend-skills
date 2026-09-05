@@ -4,8 +4,8 @@ description: PyPTO 算子需求意图理解。将用户的自然语言算子描�
   sinh 算子'、'实现 GELU'、'参考 PyTorch 的 F.scaled_dot_product_attention'、'根据论文实现算子'、'创建自定义算子'
 original-name: pypto-intent-understand
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-26'
-synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
+synced-date: '2026-09-05'
+synced-commit: a426ec91e1038f233066724d63235c719a46a10d
 license: UNKNOWN
 ---
 
@@ -441,6 +441,8 @@ Algorithm: Flash Attention (Forward)
 ### SPEC.md 模板
 
 模板文件位于: [templates/spec-template.md](templates/spec-template.md)
+
+**生成方式（先复制模板再改）**：先用 `cp templates/spec-template.md <目标>/SPEC.md` 复制模板，再用 `Edit` 逐项替换占位符；不要自由 `Write` 重写，以免漏掉门禁要求的中文章节标题（数学公式 / 输入输出规格 / 精度要求）。
 
 使用时需替换以下占位符:
 - `{operator_name}` — 算子名称

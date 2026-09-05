@@ -1,0 +1,30 @@
+strategy_id: P51
+description: 动态 AIC/AIV 核配比适用性检查 — 算子为 MIX 场景且 K 维可变，当前未根据 K 动态调整 AIC:AIV 比例
+checks:
+  - id: has_mix_scene
+    type: grep_count
+    pattern: "MIX|mix|AIC|AIV|aic|aiv|KERNEL_TYPE_MIX"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子非 MIX 场景 → P51 不适用"
+
+  - id: has_variable_k
+    type: grep_count
+    pattern: "k|K|DOUBLE_VECTOR|threshold|headDim"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子 K 维固定 → P51 收益低"
+
+  - id: no_dynamic_ratio_yet
+    type: grep_count
+    pattern: "aicAivRatio|AIC_AIV_RATIO|1:2|1:1|IsAivAicRatio"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已有动态核配比 → P51 已应用"
+
+  - id: not_pure_validation
+    type: grep_count
+    pattern: "OP_CHECK|shape.*check|dim.*check|validation"
+    files: [kernel, header]
+    expected: "<= 3"
+    fail_msg: "纯 Host 侧 shape 校验 → P51 解决的是核配比调度"

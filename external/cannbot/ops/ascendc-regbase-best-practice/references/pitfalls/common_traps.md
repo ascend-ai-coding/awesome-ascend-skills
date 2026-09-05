@@ -38,6 +38,13 @@ topic_type: pitfall
 - mask 使用对齐长度而不是有效长度。
 - compare mask 和 store mask 混用但语义不同。
 - padding 值进入数学结果。
+- `UpdateMask<T>(remaining)` 通过引用推进 `remaining`；随后手工递减同一变量会
+  double-decrement，导致跳过 slice 或 tail。
+- 使用 `UpdateMask<T>(active)` 时，`active` 也可能被更新；索引和
+  `remaining` 必须基于调用前保存的 `step` 或独立的循环索引，不能读取更新后的
+  局部值来推导下一次偏移。
+- 一个进度变量只能有一个推进者；先查当前 SDK 的 `UpdateMask` header，再确定
+  由 API 或外层循环负责推进。
 
 ## 4. dtype / precision 陷阱
 

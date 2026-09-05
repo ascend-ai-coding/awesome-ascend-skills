@@ -1,0 +1,163 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "基于设计方案实现 Add 算子",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我需要实现一个 Add 算子，开发一个完整的 PyPTO 算子。算子规格如下：\n\n算子名称：Add\n数学公式：z = x + y（逐元素加法）\n输入：x fp16 [1024, 4096], y fp16 [1024, 4096]\n输出：z fp16 [1024, 4096]\n设计方案摘要：\n- API 映射：使用 pypto.add 实现逐元素加法\n- 数据类型：fp16\n- Tiling 策略：Vector 类型，使用 set_vec_tile_shapes\n- 验证方案：使用 add_golden 作为精度基准\n\n请生成完整的算子实现，包含所有必要的文件。",
+      "expected_output": "回复应调用 pypto-op-develop skill，按开发阶段完成算子实现。应覆盖以下要点：\n- 阶段一：检查环境（CANN、pto-isa 源码、device_id 设置）\n- 阶段二：并行读取参考文件（execution-constraints.md 及各模板文件）\n- 输出 4 个文件：\n  - add_impl.py：使用 @pypto.frontend.jit 装饰器，包含 add_wrapper() 函数，调用 pypto.add 或等价操作，完成输出写回\n  - test_cases.json：包含 op_name、source、test_cases 列表（含输入输出 shape/dtype）\n  - test_add.py：遍历读取 test_cases.json，导入 add_golden 和 add_wrapper，使用 assert_allclose 精度对比，含 [PRECISION_PASS]/[PRECISION_FAIL] 标记\n  - README.md：面向调用方，含接口说明、使用示例、约束条件\n- 阶段三：测试验证，运行 python3 test_add.py\n- 输出执行约束适用项列表",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "add_impl.py",
+          "description": "回复中提到了 add_impl.py"
+        },
+        {
+          "type": "contains",
+          "pattern": "test_add.py",
+          "description": "回复中提到了 test_add.py"
+        },
+        {
+          "type": "contains",
+          "pattern": "test_cases.json",
+          "description": "回复中提到了 test_cases.json"
+        },
+        {
+          "type": "contains",
+          "pattern": "README.md",
+          "description": "回复中提到了 README.md"
+        },
+        {
+          "type": "contains",
+          "pattern": "pypto.frontend.jit",
+          "description": "回复中提到了 pypto.frontend.jit"
+        },
+        {
+          "type": "contains",
+          "pattern": "assert_allclose",
+          "description": "回复中提到了 assert_allclose"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "前置输入条件与使用边界",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "pypto-op-develop 启动前需要准备哪些输入材料？如果缺少需求规格、设计方案或 golden 参考实现会怎样？它和 pypto-golden-generate 以及 pypto-op-design 的职责如何划分？",
+      "expected_output": "回复应说明 pypto-op-develop 的前置条件和职责边界：\n- 需要三类输入材料：\n  - 需求规格信息：算子名称、数学公式、输入输出规格（shape/dtype）、支持数据类型、精度要求、服务器类型\n  - 设计方案信息：API 映射设计、数据规格设计、Tiling 策略、Loop 结构设计、验证方案、性能指标\n  - 参考实现信息：golden 函数名 {op}_golden()、参数签名、输出形式\n- 信息不足时逐步提问补充，不会在信息不全时开始编码\n- 输出 4 个文件：{op}_impl.py、test_cases.json、test_{op}.py、README.md\n- golden / impl / test 必须职责分离，禁止混写\n- 与 pypto-op-design 的区分：design 负责设计方案（DESIGN.md），develop 负责编码实现\n- 与 pypto-golden-generate 的区分：golden-generate 负责纯 torch 参考实现，develop 使用 golden 进行验证但不生成 golden\n- 实现前必须逐项核对 references/execution-constraints.md 的约束清单",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "需求规格",
+          "description": "回复中提到了 需求规格"
+        },
+        {
+          "type": "contains",
+          "pattern": "设计方案",
+          "description": "回复中提到了 设计方案"
+        },
+        {
+          "type": "contains",
+          "pattern": "golden 参考实现",
+          "description": "回复中提到了 golden 参考实现"
+        },
+        {
+          "type": "contains",
+          "pattern": "职责分离",
+          "description": "回复中提到了 职责分离"
+        },
+        {
+          "type": "contains",
+          "pattern": "execution-constraints",
+          "description": "回复中提到了 execution-constraints"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Per-Phase 调度一次只生成一个 impl",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "orchestrator 当前 active_module=M2。Coder 这次是否应该顺便生成 M3、test 文件和 README？",
+      "expected_output": "回复应说明 Per-Phase M2 调度只生成 custom/<op>/modules/<op>_module2_impl.py，完成后立即停止；禁止提前生成 M3、一次生成多个 impl 或生成 test。README 只在 cleanup 生成，测试文件由 verifier 负责。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "Cleanup 只整合最终实现与 README",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "所有模块已通过 verifier，进入 cleanup。Coder 应基于哪个文件生成哪些产物，还要不要生成 test_<op>.py？",
+      "expected_output": "回复应基于最后一个累积模块实现清理为 custom/<op>/<op>_impl.py，移除阶段调试代码和多余 import、检查 Layer A-L 完整性，并生成中文 README.md。Coder 不生成 test_<op>.py 或 test_cases.json，那是 verifier 的职责。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "Layer H 到 K 的职责不能混写",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "说明 PyPTO 实现 Layer H、I、J、K 的职责。能否在 host wrapper 用 Python for 多次调用 JIT 来处理 chunk？",
+      "expected_output": "回复应说明 H 是单一职责 PyPTO 子内核并在本地设 tile；I 承载 pypto.loop 的 kernel 实现；J 是纯类型签名与 runtime_options 的 @jit 入口并委托 I；K 只做 layout、预分配输出、单次调用 JIT、reshape 还原。禁止 K 用 Python for 驱动多次 kernel，chunk 循环应放进 I。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "Tile 参数和 unroll_list 的阶段边界",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "为了适配运行时 B，想把 set_vec_tile_shapes(B,64) 写成动态值，并在 Stage 5 把 unroll_list 扩成 [16,8,4,2,1]。是否可行？",
+      "expected_output": "回复应拒绝：tile shape 参数必须是 Python int 字面量或可解析为字面量的赋值，不能来自 kernel 参数、tensor.shape 或 SymbolicScalar。Stage 6 前 unroll_list 只能采用 DESIGN.md 的单值，默认 [1]；多值展开只能到 Stage 7 优化，否则会造成编译路径爆炸。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "Host 输出预分配与显式写回",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "Layer K 用 pypto.zeros(..., device=x.device) 创建输出，JIT 内最后写 output=result。为什么会失败，正确模式是什么？",
+      "expected_output": "回复应说明 Layer K 是 host 上下文，必须用 torch.empty/zeros 等预分配 output，并显式指定 dtype 和 device 后传给 JIT；pypto creation API 只用于 JIT 图内。JIT 内 output=result 只是重绑定，必须用 output[:]=...、output.move(...) 或 pypto.assemble(...,output) 显式写回。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "pypto-op-develop"
+}
