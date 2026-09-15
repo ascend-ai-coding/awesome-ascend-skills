@@ -1,0 +1,148 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "TileLang Ascend API 核心用法",
+      "config": {
+        "max_tokens": 80000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "在 TileLang-Ascend 中，如何分配片上存储并在不同层级之间搬运数据？请介绍主要的 API 及其用途。",
+      "expected_output": "回复应介绍 TileLang 的内存分配 API（T.alloc_shared、T.alloc_fragment、T.alloc_var 等 Developer 模式 API，以及 T.alloc_ub、T.alloc_L1、T.alloc_L0A/L0B/L0C 等 Expert 模式 API）和数据搬运 API（T.copy），说明 GM/L1/UB/L0 之间的搬运路径与各 API 的适用场景。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "T.alloc_shared",
+          "description": "回复中提到了 T.alloc_shared"
+        },
+        {
+          "type": "contains",
+          "pattern": "T.alloc_fragment",
+          "description": "回复中提到了 T.alloc_fragment"
+        },
+        {
+          "type": "contains",
+          "pattern": "T.copy",
+          "description": "回复中提到了 T.copy"
+        },
+        {
+          "type": "contains",
+          "pattern": "T.alloc_ub",
+          "description": "回复中提到了 T.alloc_ub"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "API 使用边界与模式区分",
+      "config": {
+        "max_tokens": 80000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我想写一个 TileLang kernel，什么时候用 T.alloc_shared/T.alloc_fragment，什么时候用 T.alloc_L1/T.alloc_ub，这两种模式有什么区别？",
+      "expected_output": "回复应说明 Developer 模式（T.alloc_shared、T.alloc_fragment）由编译器自动管理存储层级，适合大多数算子开发；Expert 模式（T.alloc_L1、T.alloc_ub、T.alloc_L0A/L0B/L0C）需要显式指定存储层级，适合极致性能优化。还应说明同步策略的区别：Developer 模式自动同步，Expert 模式需手动 T.barrier_all、T.set_flag/T.wait_flag。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "Developer",
+          "description": "回复中提到了 Developer"
+        },
+        {
+          "type": "contains",
+          "pattern": "Expert",
+          "description": "回复中提到了 Expert"
+        },
+        {
+          "type": "contains",
+          "pattern": "T.alloc_L1",
+          "description": "回复中提到了 T.alloc_L1"
+        },
+        {
+          "type": "contains",
+          "pattern": "T.barrier_all",
+          "description": "回复中提到了 T.barrier_all"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "多核原子累加前必须清零 GM",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "多个 block 要把局部结果累加到同一个 GM 输出，应该用什么 API？输出 buffer 可以保持未初始化吗？",
+      "expected_output": "回复应使用 T.tile.atomic_add(dst_gm, src_local) 将 local/UB 结果原子累加到 GM；调用前必须显式把 GM 目标 buffer 清零，否则旧值会参与累加。该 API 解决并发累加，不替代输出初始化。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "动态 shape 使用专用符号声明",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "TileLang Ascend kernel 的 K 维运行时变化，应怎样声明动态 shape，而不是把普通 Python 变量塞进 Tensor shape？",
+      "expected_output": "回复应使用 TileLang 动态符号 API，例如 T.dyn['K'] 或 T.dynamic('K','int32')，并在 kernel 的 shape/循环与搬运中保持该符号契约；不能把未受 DSL 管理的普通运行时 Python 值当成编译期 shape。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "流水线与持久化调度职责区分",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "T.Pipelined 和 T.Persistent 分别解决什么问题？可以把它们都解释为普通循环展开吗？",
+      "expected_output": "回复应区分：T.Pipelined(range,num_stages=N) 用于计算与搬运的多阶段流水并行；T.Persistent(domain,wave_size,index) 用于持久化、缓存友好的任务调度和多核负载均衡。两者都不是 T.unroll 的同义词。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "CV 融合依赖 pass 与索引一致性",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "设计 CV 融合算子时，只打开 TL_ASCEND_AUTO_CV_COMBINE 就一定正确吗？还需关注哪些配套点？",
+      "expected_output": "回复应说明 CV 融合还要保证 workspace 生产/消费索引一致、vid 并行划分正确，并按路线配置自动 CV 同步如 TL_ASCEND_AUTO_CV_SYNC；Expert 手动路径则需明确核间/核内同步。不能只开一个 pass 就宣称正确。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "设备端打印与 Tensor 转储用途不同",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "调试 TileLang kernel 时，T.printf 和 T.dump_tensor 分别适合看什么？",
+      "expected_output": "回复应说明 T.printf(fmt,*args) 适合设备端输出标量、索引和控制流状态；T.dump_tensor(tensor,desc,size,shape_info) 用于转储一段 tensor 数据及形状信息。需要查看生成 kernel 源码时另用 get_kernel_source()，三者证据类型不同。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "tilelang-api-best-practices"
+}

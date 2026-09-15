@@ -1,0 +1,17 @@
+strategy_id: P53
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "Cube|Matmul|matmul|FlashAttention|IFA"
+    min_count: 1
+    fail_msg: "未检测到 Cube/Matmul 密集型算子 → 不适用 P53。检查 P20 或 P22。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "L1|l1|CubeInBuffer|AllocTensor|GetBuffer"
+    min_count: 1
+    fail_msg: "未检测到 L1 Buffer 使用 → 无 L1 常驻空间，不适用 P53。检查 P78 或 P83。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "for.*nloops|nloops|loop.*N|CopyQ"
+    min_count: 1
+    fail_msg: "未检测到 N 方向迭代或 Q 搬运逻辑 → 无跨迭代复用场景，不适用 P53。"

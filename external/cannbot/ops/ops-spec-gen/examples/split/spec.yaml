@@ -1,0 +1,160 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+
+# ============================================================
+# split — L0 数学约束 spec
+# 教学点：VariableOutput + output_count_determined_by=attribute
+#         （属性决定多输出：split_size 决定输出个数与 shape，区别于 nonzero 这类"数据决定输出个数"）
+#         + list[int64] 属性（split_size）注入 formula/shape_rule 沙箱
+#         v1: dim=0 连续切分，固定 2 段输出（y0/y1）
+# ============================================================
+schema_version: 1
+
+op:
+  name: split
+  version: "1.0"
+  description: "Split x along dim by split_size array (v1: dim=0, 2 outputs)"
+  category: VariableOutput
+  paradigms: [VariableOutput]
+  output_count_determined_by: attribute   # 关键：输出个数由属性决定，豁免 data_dependent_shape 与 nonzero 类 boundary
+  lifecycle: stable
+  error_codes:
+    - null_input
+    - attribute_value_out_of_range
+  platform_constraints:
+    supported_chips: [Ascend910B]
+    requires_hccl: false
+
+inputs:
+  - name: x
+    role: tensor
+    dtype_set: [float16, float32]
+    rank_range: [1, 8]
+    layout: ND
+    shape:
+      symbolic: [4, 8]
+    contiguous: optional
+
+attributes:
+  - name: dim
+    type: int64
+    default: 0
+    semantics: "切分轴；v1 仅支持 dim=0（连续切分）"
+    machine_constraint:
+      kind: int_in_range_relative_to_rank
+      target: x
+      lower_inclusive: "-rank(x)"
+      upper_exclusive: "rank(x)"
+  - name: split_size
+    type: list[int64]
+    default: [2, 2]
+    semantics: "各段大小数组，Σ == x.shape[dim]；v1 固定 2 段"
+    machine_constraint:
+      kind: list_of_int_in_range
+      target: x
+      lower_inclusive: 1
+
+outputs:
+  - name: y0
+    shape_rule_kind: numpy_expr
+    shape_rule: |
+      y0.shape = list(x.shape); y0.shape[dim] = split_size[0]
+    dtype_rule_kind: numpy_expr
+    dtype_rule: |
+      y0.dtype = x.dtype
+    layout: ND
+    aliasing: none
+  - name: y1
+    shape_rule_kind: numpy_expr
+    shape_rule: |
+      y1.shape = list(x.shape); y1.shape[dim] = x.shape[dim] - split_size[0]
+    dtype_rule_kind: numpy_expr
+    dtype_rule: |
+      y1.dtype = x.dtype
+    layout: ND
+    aliasing: none
+
+shape_constraints:
+  symbols: {}
+  global_constraints:
+    - "rank(x) <= 8"
+    - "sum(split_size) == x.shape[dim]"
+
+dtype_policy:
+  promotion: same_as_first_input
+  supported_combinations:
+    - {inputs: {x: float16}, outputs: {y0: float16, y1: float16}}
+    - {inputs: {x: float32}, outputs: {y0: float32, y1: float32}}
+
+broadcast:
+  kind: none
+
+math_semantics:
+  formula_kind: numpy_expr
+  formula: |
+    # dim=0 连续切分；split_size（list）注入沙箱后按下标取值
+    s0 = int(split_size[0])
+    y0 = x[:s0]
+    y1 = x[s0:]
+
+  reference_oracle:
+    framework: torch
+    api: torch.split
+    kwargs: {split_size_or_sections: "${attr.split_size}", dim: "${attr.dim}"}
+    available_for_dtype: [float16, float32]
+    absent: false
+
+  invariants: []
+
+numerical_stability:
+  required: false
+  techniques: []
+  affects_invariants: false
+
+numerical_tolerance:
+  source: "ops-precision-standard/float_compute_community.md"
+  per_dtype:
+    float32: {rtol: 0.0e+0, atol: 0.0e+0, metric: bitwise_equal}
+    float16: {rtol: 0.0e+0, atol: 0.0e+0, metric: bitwise_equal}
+
+boundary_conditions:
+  - case: "等分切分"
+    tags: [equal_split]
+    synthesize: {x.shape: "[4, 8]", attr.dim: 0, attr.split_size: "[2,2]"}
+    machine_check: {kind: matches_oracle}
+  - case: "不等分切分"
+    tags: [unequal_split]
+    synthesize: {x.shape: "[4, 8]", attr.dim: 0, attr.split_size: "[1,3]"}
+    machine_check: {kind: matches_oracle}
+  - case: "dim 越界"
+    synthesize: {x.shape: "[2, 3]", attr.dim: 5, attr.split_size: "[1,1]"}
+    machine_check: {kind: raises_error, error_type: attribute_value_out_of_range}
+  - case: "Σ split_size ≠ shape[dim]"
+    synthesize: {x.shape: "[4, 8]", attr.dim: 0, attr.split_size: "[1,1]"}
+    machine_check: {kind: raises_error, error_type: attribute_value_out_of_range}
+
+extreme_inputs:
+  - case: "含 NaN 输入"
+    synthesize:
+      shapes: {x: "[4, 8]"}
+      attrs: {dim: 0, split_size: "[2,2]"}
+      patterns:
+        - {pattern: inject_nan_one_element, target: x}
+    machine_check: {kind: matches_oracle}
+  - case: "含 inf 输入"
+    synthesize:
+      shapes: {x: "[4, 8]"}
+      attrs: {dim: 0, split_size: "[2,2]"}
+      patterns:
+        - {pattern: single_pos_inf, target: x}
+    machine_check: {kind: matches_oracle}
+
+determinism:
+  required: true
+  accumulation_order: stable_in_axis
+  bitwise_reproducible: true

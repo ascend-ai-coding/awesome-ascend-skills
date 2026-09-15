@@ -1,0 +1,30 @@
+strategy_id: P77
+description: L1 Chunk Iterator 稀疏块聚合适用性检查 — 算子为 Sparse Attention 且 sparse block 不连续，当前未做 L1 chunk 动态聚合
+checks:
+  - id: has_sparse_attention
+    type: grep_count
+    pattern: "sparse|Sparse|SparseAttention|sparseBlock|block.*sparse|SparseBlock"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子非 Sparse Attention → P77 不适用"
+
+  - id: has_l1_buffer
+    type: grep_count
+    pattern: "L1|l1Tensor|l1Buffer|LoadData|l1BufferCapacity|l1.*buffer"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无 L1 buffer 使用 → P77 收益低。需要 L1 搬运场景"
+
+  - id: no_chunk_iterator_yet
+    type: grep_count
+    pattern: "L1ChunkIterator|chunk.*iterator|ChunkIterator|Advance|chunkStart|chunkEnd"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已有 L1 Chunk Iterator → P77 已应用"
+
+  - id: not_pure_validation
+    type: grep_count
+    pattern: "OP_CHECK|shape.*check|dim.*check|validation"
+    files: [kernel, header]
+    expected: "<= 3"
+    fail_msg: "纯 Host 侧 shape 校验 → P77 解决的是 L1 buffer 聚合策略"

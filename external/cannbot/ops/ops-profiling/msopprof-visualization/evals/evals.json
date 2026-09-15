@@ -1,0 +1,45 @@
+{
+  "skill_name": "msopprof-visualization",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "我有一个算子工程，请采集完整的 msOpProf 数据并生成中文 HTML 可视化报告。",
+      "expected_output": "应使用统一 pipeline，先执行 BasicInfo 预检，再按最小非重复计划采集，最后交付 HTML 和 report_index.json。",
+      "expectations": [
+        {"type": "contains", "pattern": "run_pipeline.py"},
+        {"type": "contains", "pattern": "preflight"},
+        {"type": "contains", "pattern": "report_index.json"}
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "我已经有 collection_manifest.json，只重新生成 Roofline、Timeline 和 Cache，不要重新采集。",
+      "expected_output": "应选择 visualize 模式，重复传入三个 feature，且不得执行新的 msprof replay。",
+      "expectations": [
+        {"type": "contains", "pattern": "--mode visualize"},
+        {"type": "contains", "pattern": "--feature roofline"},
+        {"type": "contains", "pattern": "--feature timeline"},
+        {"type": "contains", "pattern": "--feature cache"}
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "数据里没有 memory_info.json，请直接用 MemoryDetail 计数画片上内存分配图。",
+      "expected_output": "必须拒绝伪造 allocation 地址、lifetime 和 bank 数据，并输出不可用诊断。",
+      "expectations": [
+        {"type": "contains", "pattern": "memory_info.json"},
+        {"type": "contains", "pattern": "不可用"}
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "请用已有采集数据生成包含全部模块的报告，即使某些模块没有数据也要说明原因。",
+      "expected_output": "应显式请求全部九个页面并使用 unavailable-policy explain。",
+      "expectations": [
+        {"type": "contains", "pattern": "--unavailable-policy explain"},
+        {"type": "contains", "pattern": "--feature onchip-memory"},
+        {"type": "contains", "pattern": "--feature instruction-timeline"}
+      ]
+    }
+  ]
+}

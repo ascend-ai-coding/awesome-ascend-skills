@@ -1,0 +1,129 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "kernel 性能数据的拆解流程",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "我有一份 NPU profiling 的 kernel_details.csv，想按模型结构拆出每层 attn/ffn/moe 的耗时分布、找出抖动的 layer，整体怎么做？只讲方法。",
+      "expected_output": "回复应说明按用户描述的模型结构把 kernel 序列切成 component 实例、再按 cluster 规则把算子分桶，统计每类计算的 wall/bubble 中位数与抖动、定位异常 layer，最终产出单页 HTML 报告；产物只落 run_dir，不修改用户原始文件。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "component",
+          "description": "回复中提到了 component"
+        },
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-perf-breakdown",
+          "description": "技能 model-infer-perf-breakdown 被激活"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "历史产物的分档复用",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "同一个模型我前后跑了两版 prof，第二次拆解还要从头再来一遍吗？只讲思路。",
+      "expected_output": "回复应说明支持按改动幅度分小改/中改/大改三档复用历史产物：kernel 集合基本不变走小改直接复用，中改增量补、大改才重走全流程，避免每次从零拆解。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-perf-breakdown",
+          "description": "技能 model-infer-perf-breakdown 被激活"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "前置物料缺失必须停止",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "我只有 kernel_details.csv，没有 trace_view.json，也拿不到 modeling 脚本。目录里还有多个 phase 和 device，你先默认挑第一个开始拆吧。",
+      "expected_output": "回复应停止解析，说明 kernel CSV、trace、模型脚本、run_dir、phase 和 rank/device 都是 Step 1 前硬约束；多组合时必须列出选项由用户确认，不能默认选第一个，也不能在缺模型脚本时跳过 stream sample ack",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "Stream Sample 与 Warning 必须逐项确认",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "structure_spec 里有 mla、moe、mtp 三类 component。我只确认 mla 的一段主流 sample，其他让脚本猜，并对 hard warnings 自动加 --accept-warnings，可以吗？",
+      "expected_output": "回复应拒绝，要求 expected_components 中每类都有 stream_samples 且恰好一个 primary，auxiliary 按语义归属并经用户 ack；detect_structure 的 hard/ambiguous warnings 必须逐条复读，由用户选择接受或回 0a/0b 修改后才能放行",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "Compute Unmatched 超阈值不可静默放行",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "render 后 compute-core unmatched 达到 18%，主要是一大段矩阵和向量算子。我能直接加 --accept-unmatched 生成报告吗？",
+      "expected_output": "回复应拒绝静默放行大段 compute unmatched，要求回 Phase 0a/0b 补 component/sample 或细化 cluster 规则；只有确认剩余是通信、采样、embedding、IO 等非关注项时才可显式接受，并在报告中保留 unmatched 证据",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "切片必须完整覆盖且无重无漏",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "HTML 已经生成，Step 4 是否可以省略？component 之间的 gap 和 unmatched op 不保存也没关系吧？",
+      "expected_output": "回复应说明 Step 4 是必跑交付项，必须按 op_indices 为每个 component 和每段 unmatched/gap 生成 kernels.csv、trace_view.json 与 manifest，整体严格覆盖 [0,N-1] 且无重无漏；draft 与 raw_ops 不一致应直接中止",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "理论性能步骤默认可跳过",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "外部 operator-theoretical-perf 不可用，是否会阻塞性能拆解报告？多流情况下没有填写流语义，能否随便挑一条流算 theory median？",
+      "expected_output": "回复应说明理论性能注入默认可选，不可用时 theory median 留空且不阻塞；若启用且同一 sub-item 有多流，必须记录 theory_stream_decisions 的语义说明，覆盖接近时还需明确 selected_stream，不能任意挑流",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "model-infer-perf-breakdown"
+}

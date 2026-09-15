@@ -1,0 +1,132 @@
+{
+  "skill_name": "pypto-op-review",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "custom 算子目录结构检查要点",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "disabled": false
+      },
+      "prompt": "检查 custom/myop/ 目录下的算子文件是否合格，重点看哪些结构要求？",
+      "expected_output": "按 layout/structure 要求逐项核对：三件套（custom/myop/test_myop.py 与 impl、golden 并存）；所有测试断言走 assert_allclose 或 detailed_tensor_compare，不用手写容差循环；阶段化命名（*_module<k>_impl.py + *_golden.py + test_*）；host wrapper 不用 Python for-range 驱动 kernel；JIT 内迭代只用 pypto.loop / pypto.loop_unroll / range，无 while 或非 range for；pypto.view 的 shape/offsets/valid_shape 秩一致；set_cube_tile_shapes 每个 m/k/n 传 [L0, L1] 且 0<L0<=L1、L1%L0==0。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "枚举 kernel 中的 pypto 调用点",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "disabled": false
+      },
+      "prompt": "kernel 文件调式卡住了，我想逐个排查 pypto.* 调用点，怎么列出所有调用？",
+      "expected_output": "运行 scripts/extract_pypto_calls.py custom/<operator_name>/<kernel_file>.py，输出按行号编号、形如 <行号>+<调用形态> 的有序 pypto 调用列表，作为 op-by-op 调试时\"下一个 pypto op 是什么\"的事实来源；需要机器可读或贴入 memory 时加 --json。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "tile 参数与动态轴迭代约束",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ]
+      },
+      "prompt": "按 pypto-op-review 的布局/结构要求检查 custom 下的 kernel：tile 参数用表达式计算出来，还有循环里用了动态轴，这样合规吗？",
+      "expected_output": "不合规。tile 参数必须是编译期整型字面量而非计算表达式；内核内迭代动态轴必须用 pypto.loop，不能用 Python 级循环；JIT 内迭代只允许 pypto.loop / pypto.loop_unroll / range，无 while 或非 range for。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 4,
+      "title": "审查时按结构要求逐项核对",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ]
+      },
+      "prompt": "我 review custom/myop/ 目录，应该按什么顺序检查结构要求？",
+      "expected_output": "按 layout/structure 要求逐项核对：三件套是否并存、断言是否走比较助手、阶段化命名、host wrapper 是否用 Python for 驱动 kernel、pypto.view 形状秩一致、set_cube_tile_shapes 的 m/k/n 是否传 [L0,L1] 且 0 小于 L0 小于等于 L1、L1 取模 L0 为 0；任何一项违规都应在修复后再认定完成。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 5,
+      "title": "view 的三组秩必须一致",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "review 时发现 pypto.view 的 shape 是 3 维、offsets 是 2 维、valid_shape 是 3 维。只要元素总数对得上可以接受吗？",
+      "expected_output": "回复应判为结构缺陷：pypto.view 不是 reshape，shape、offsets、valid_shape 的 rank 必须一致；元素总数相等不能替代秩契约。应修正 view 调用后再认定文件完成，不能在测试或 MEMORY 中绕过。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "Cube tile 每轴必须满足层级整除关系",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "set_cube_tile_shapes 的 m=[64,96]、k=[32,128]、n=[64,128]，是否通过结构 review？",
+      "expected_output": "回复应判定不通过：m/k/n 每轴都要传 [L0,L1]，满足 0<L0≤L1 且 L1%L0==0；m 的 96%64 不为 0，因此必须改为合法的层级 tile。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "测试比较禁止手写容差循环",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "test_myop.py 自己遍历 tensor 元素并判断 abs(diff)<tol，没有用项目比较助手。数值结果目前通过，能否接受？",
+      "expected_output": "回复应判为不合格：每个测试断言必须统一通过 assert_allclose 或 detailed_tensor_compare，禁止手写容差循环。即使当前样本通过也应先改为标准比较助手，再完成 review。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 8,
+      "title": "调用提取器只提供有序事实清单",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "extract_pypto_calls.py 输出了所有调用点，是否等于 kernel 已通过 API 合规 review？",
+      "expected_output": "回复应说明不等于：脚本只按行号列出 pypto.* 调用形态，--json 仅改变输出格式，用作 op-by-op 调试的事实清单；仍需逐项核对 API 文档和布局结构要求，脚本不会自动证明 dtype、shape、tile 或 write-back 合规。",
+      "expectations": [],
+      "files": []
+    }
+  ]
+}

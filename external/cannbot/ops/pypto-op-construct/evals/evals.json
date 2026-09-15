@@ -1,0 +1,164 @@
+{
+  "skill_name": "pypto-op-construct",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "L0 路径的模块分解处理",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "disabled": false
+      },
+      "prompt": "DESIGN.md §0.3 里 module_count=1，模块分解该怎么做？",
+      "expected_output": "先过 Decomposition Gate：从 DESIGN.md §0.3 读取 module_count。module_count=1 走 L0 路径——跳过 Module Boundary Rules 与 Module Construction，在 DESIGN.md §0 记录 single-module 声明（decomposition_level: L0, module_count: 1，分解表 1 行 M1 覆盖整个 kernel），跳过 staged 文件链，直接进入 pypto-op-develop 产出单个 custom/<op>/<op>_impl.py，验证走 pypto-op-verify 的 L0 路径。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "R2 重算子规则",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "disabled": false
+      },
+      "prompt": "某个模块分解出来没有任何重算子，只有逐元素操作，这样有问题吗？",
+      "expected_output": "有问题，违反 R2：每个模块必须包含至少 1 个 heavy op（pypto.matmul、跨 tile reduce、scan/循环携带状态、跨 tile 的 outer product），零重算子的模块过薄，应与其相邻模块合并；同时参考 R3 轻算子合并到最近的重模块。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "模块契约与冻结规则",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "disabled": false
+      },
+      "prompt": "模块分解通过后，写代码前要为每个模块准备什么？模块验证通过后怎么处理？",
+      "expected_output": "写代码前先用 pypto-docs-search 查每个 API 的 pypto-<op>.md 取精确签名与约束，为每个模块定义契约（name/purpose、输入输出 shapes/dtypes、invariants、语义前后继、是否含循环携带状态/归约/对齐敏感张量、所用 PyPTO API）；验证通过后将模块冻结，后续失败不修改已冻结模块，先检查最早未冻结的失败边界。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 4,
+      "title": "L1 路径的模块边界遵循 DESIGN.md",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ]
+      },
+      "prompt": "module_count 大于 1 时，模块边界怎么确定？能自己新加切分点吗？",
+      "expected_output": "module_count 大于等于 2 走 L1 路径，模块边界必须采用 DESIGN.md §0.5 预先确定的 module_count-1 个数据流切分点，不得新增边界；若切分点不适合，返回编排器请架构师修订 DESIGN.md §0.5，而不是自己发明边界。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 5,
+      "title": "模块验证失败的处理顺序",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ]
+      },
+      "prompt": "某个模块验证失败了，第一步应该做什么？",
+      "expected_output": "先检查已知错误模式：用 diagnose_error(error_log, kernel_code) 匹配，命中则修复后重跑；无匹配再检查 shape/dtype/interface、内部中间检查点，切换二分式调试；验证通过后冻结模块，后续失败不修改已冻结模块。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 6,
+      "title": "view 和 assemble 不能成为独立模块",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "模块拆分时想把输入切片 pypto.view 单独做 M1，把输出 pypto.assemble 单独做最后一个模块，这样边界更清晰，可以吗？",
+      "expected_output": "回复应拒绝：view 和 assemble 是每个 kernel 的入口/出口固定操作，不是 heavy op，不能独立成模块。入口 view 合并到首个 heavy module，出口 assemble 合并到最后一个 heavy module；罕见中间 view/assemble 也并入相邻 heavy module。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "连续重算子的合并条件与厚度目标",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "两个连续 matmul 之间没有 transpose 或跨 tile reshape。是否一定要拆成两个模块？模块厚度怎样判断？",
+      "expected_output": "回复应说明不一定：没有 layout barrier 且合并后单个 @jit 的上下文和 UB 容量允许时，可合并连续 heavy ops。优先接近 1 个 complexity unit 的少量厚模块，目标约 0.7-1.3 CU；过薄小于 0.5 或过厚大于 1.5 时应请架构师修订 DESIGN.md 断点。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 8,
+      "title": "每轮只扩展一个真实语义模块",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "L1 路径有 M1、M2、M3。为了减少文件，可以一轮同时实现 M1 和 M2，M3 暂时不管吗？",
+      "expected_output": "回复应说明 L1 的硬规则是每轮最多增加一个语义模块的真实 PyPTO 逻辑，下游保持 stub 或由 golden 边界张量喂入；应按 module1、module12、module123 的累积 staged 文件链推进，每个里程碑都包含可运行比较，不能一轮跨两个模块。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 9,
+      "title": "Golden 函数清单有缺项时禁止开跑",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "当前模块已能编译，但 MEMORY.md 的 Golden function inventory 里还有一个属于本模块的操作标为未实现。能否先跑边界测试再补？",
+      "expected_output": "回复应明确不能：首次运行前必须逐项把本模块 golden 操作映射到 PyPTO 调用和行号；任何 ❌ 未实现项存在都禁止运行，应先补齐。这是防止遗漏运算导致精度错误的强制门禁。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 10,
+      "title": "模块边界必须可独立对照 golden 验证",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "一个模块内部逻辑已经写完，但边界中间 tensor 没有任何 golden 对照路径。可以等最终集成后一次验证吗？",
+      "expected_output": "回复应要求每个模块在进入下一个模块前都可独立验证，可使用临时 checkpoint、渐进 kernel 或 host golden 提取边界，但必须映射回最终集成 kernel。用 detailed_tensor_compare 校验 compile/结构、shape、dtype 和边界张量，并把结果写入 Per-module verification log。",
+      "expectations": [],
+      "files": []
+    }
+  ]
+}

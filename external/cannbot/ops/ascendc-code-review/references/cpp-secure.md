@@ -1,51 +1,59 @@
 # CANN C++ 安全编码规范
 
-> **适用场景**：Tiling 侧（Host 侧）和 Kernel 侧（Device 侧）
->
+<适用>
+语言: C++
+侧别: All, Tiling
+领域: true
+触发: 必须触发
+默认启用: true
+
+适用场景: Tiling 侧（Host 侧）和 Kernel 侧（Device 侧）的 C++ 安全编码规范
+不适用场景: Python 代码（见 python-secure.md）、编译链接安全（见 compile-secure.md）
+介绍: CANN C++ 安全编码规范，24 条条款覆盖 8 个安全类别
+类别(All): 总体原则(类型安全/内存安全/未定义行为),, 内存与指针安全(sizeof误用), 输入验证(外部输入合法性/内存操作长度校验), 类与对象安全(非trivially copyable对象位操作), 标准库安全(敏感信息清零/结构体兼容性)
+类别(Tiling): 内存与指针安全(资源句柄释放后赋值/字符串空间), 资源管理(申请成功判断/new-delete配对/分配错误处理), 安全函数使用(安全函数库/destMax参数/返回值检查), 标准库安全(空指针string/c_str指针保存), LOG规范(空指针/格式化占位符)
 > **说明**：安全编码红线规范，所有代码必须 100% 遵守。条款标注适用范围：`[适用: All]` / `[适用: Tiling]`
+</适用>
+
+<检视负载>
+通用检视子 agent 检视条款容量上限: 10
+</检视负载>
 
 ## 快速索引
 
-### 两者都适用 `[适用: All]`（17 条）
+### 两者都适用 `[适用: All]`（10 条）
 
 | 规范编号 | 规范名称 | 类别 | 严重级别 |
 |---------|---------|------|---------|
 | 1.1 | 保证静态类型安全 | 总体原则 | 高 |
 | 1.2 | 保证内存安全 | 总体原则 | 高 |
 | 1.3 | 禁止使用未定义行为 | 总体原则 | 高 |
-| 2.1 | 有符号整数运算不溢出 | 数值安全 | 高 |
-| 2.2 | 无符号整数运算不回绕 | 数值安全 | 高 |
-| 2.3 | 除法/余数运算除零保护 | 数值安全 | 高 |
-| 3.1 | 禁止使用未初始化的变量 | 内存安全 | 高 |
-| 3.3 | 数组索引校验 | 内存安全 | 高 |
-| 3.4 | 禁止 sizeof 指针 | 内存安全 | 中 |
-| 3.5 | 指针使用前判空 | 内存安全 | 高 |
-| 4.1 | 外部输入合法性校验 | 输入验证 | 高 |
-| 4.2 | 内存操作长度校验 | 输入验证 | 高 |
-| 9.1 | 禁止逐位操作非 trivially copyable 对象 | 类与对象 | 中 |
-| 10.3 | 敏感信息使用后清零 | 标准库 | 高 |
-| 10.4 | 结构体字段末尾添加 | 标准库 | 中 |
-| 10.5 | 接口变更考虑兼容性 | 标准库 | 中 |
+| 2.2 | 禁止通过对指针变量进行sizeof操作来获取数组大小 | 内存安全 | 中 |
+| 3.1 | 外部输入合法性校验 | 输入验证 | 高 |
+| 3.2 | 内存操作长度校验 | 输入验证 | 高 |
+| 6.1 | 禁止逐位操作非 trivially copyable 对象 | 类与对象 | 中 |
+| 7.3 | 敏感信息使用后清零 | 标准库 | 高 |
+| 7.4 | 结构体字段末尾添加 | 标准库 | 中 |
+| 7.5 | 接口变更考虑兼容性 | 标准库 | 中 |
 
-### 仅 Tiling 适用 `[适用: Tiling]`（15 条）
+### 仅 Tiling 适用 `[适用: Tiling]`（14 条）
 
 | 规范编号 | 规范名称 | 类别 | 严重级别 |
 |---------|---------|------|---------|
-| 3.2 | 资源释放后指针置新值 | 内存安全 | 中 |
-| 3.6 | 字符串存储有足够空间 | 内存安全 | 高 |
-| 5.1 | 资源申请后判断是否成功 | 资源管理 | 高 |
-| 5.2 | 资源泄露防护 | 资源管理 | 高 |
-| 5.3 | new/delete 配对使用 | 资源管理 | 高 |
-| 5.4 | new 操作符错误处理 | 资源管理 | 高 |
-| 8.1 | 使用安全函数替代危险函数 | 安全函数 | 高 |
-| 8.2 | 正确设置安全函数 destMax 参数 | 安全函数 | 高 |
-| 8.3 | 检查安全函数返回值 | 安全函数 | 高 |
-| 10.1 | 禁止从空指针创建 std::string | 标准库 | 高 |
-| 10.2 | 不要保存 c_str/data 指针 | 标准库 | 中 |
-| 11.1 | LOG API 禁止传入空指针 | LOG API 安全 | 高 |
-| 11.2 | LOG API 参数数量与格式化占位符必须匹配 | LOG API 安全 | 高 |
-| 11.3 | LOG API 参数类型与格式化说明符必须匹配 | LOG API 安全 | 高 |
-| 11.4 | LOG API 禁止传入已释放内存的指针 | LOG API 安全 | 高 |
+| 2.1 | 资源释放后指针置新值 | 内存安全 | 中 |
+| 2.3 | 字符串存储有足够空间 | 内存安全 | 高 |
+| 4.1 | 资源申请后判断是否成功 | 资源管理 | 高 |
+| 4.2 | new/delete 配对使用 | 资源管理 | 高 |
+| 4.3 | new 操作符错误处理 | 资源管理 | 高 |
+| 5.1 | 使用安全函数替代危险函数 | 安全函数 | 高 |
+| 5.2 | 正确设置安全函数 destMax 参数 | 安全函数 | 高 |
+| 5.3 | 检查安全函数返回值 | 安全函数 | 高 |
+| 7.1 | 禁止从空指针创建 std::string | 标准库 | 高 |
+| 7.2 | 不要保存 c_str/data 指针 | 标准库 | 中 |
+| 8.1 | LOG API 禁止传入空指针 | LOG API 安全 | 高 |
+| 8.2 | LOG API 参数必须与格式化占位符逐位一致（数量、类型、顺序） | LOG API 安全 | 高 |
+| 8.3 | LOG API 禁止传入已释放内存的指针 | LOG API 安全 | 高 |
+| 8.4 | LOG 消息英语行文语法正确、表意清晰 | LOG API 规范 | 低 |
 
 ---
 
@@ -87,310 +95,9 @@ C++语言的内存完全由程序员自己控制，所以在操作内存的时�
 
 ---
 
-### 2. 数值运算安全
+### 2. 内存与指针安全
 
-#### 2.1 确保有符号整数运算不溢出 `[适用: All]`
-
-> **Kernel 侧说明**：Kernel 中使用 `uint32_t` 等固定宽度类型进行循环索引和 Buffer 偏移计算，需防止溢出。
-
-**【描述】**
-有符号整数溢出是未定义的行为。出于安全考虑，对外部数据中的有符号整数值在如下场景中使用时，需要确保运算不会导致溢出：
-
-- 指针运算的整数操作数(指针偏移值)
-- 数组索引
-- 变长数组的长度(及长度运算表达式)
-- 内存拷贝的长度
-- 内存分配函数的参数
-- 循环判断条件
-
-在精度低于int的整数类型上进行运算时，需要考虑整数提升。程序员还需要掌握整数转换规则，包括隐式转换规则，以便设计安全的算术运算。
-
-**加法示例：**
-
-```cpp
-int num_a = ... // 来自外部数据
-int num_b = ... // 来自外部数据
-int sum = 0;
-if (((num_a > 0) && (num_b > (INT_MAX - num_a))) ||
-    ((num_a < 0) && (num_b < (INT_MIN - num_a)))) {
-    ... // 错误处理
-}
-sum = num_a + num_b;
-```
-
-**除法示例：**
-
-```cpp
-int num_a = ... // 来自外部数据
-int num_b = ... // 来自外部数据
-int result = 0;
-// 检查除数为0及除法溢出错误
-if ((num_b == 0) || ((num_a == INT_MIN) && (num_b == -1))) {
-    ... // 错误处理
-}
-result = num_a / num_b;
-```
-
-**【检视策略】**
-
-> **强制要求**：必须组合使用三种验证工具进行精确分析，禁止仅凭推测或记忆判断。
-
----
-
-**阶段1：表达式建模与类型分析**
-
-操作步骤：
-1. 从目标代码精确提取运算表达式，识别所有参与运算的变量
-2. 通过代码上下文确定每个变量的精确类型
-3. 推导运算顺序和隐式类型转换，识别风险点
-
----
-
-**阶段2：业务约束快速判断（优先执行）**
-
-> **目的**：先判断业务约束是否已确保安全，避免不必要的重型验证。
-
-快速判断规则（满足任一即可 PASS）：
-- 变量来自 TilingData（已校验）或编译期常量
-- 循环边界内使用（如 `for(i=0; i<N; i++)` 内 `arr[i]`）
-- 变量范围可推导且上限明显低于溢出边界
-
-> **⚠️ 约束**：快速判断通过时，必须在检视输出中给出**具体数值边界**（如 `X∈[0,512], 512×2=1024<INT32_MAX`）。无法给出具体数值的，必须执行阶段3工具验证。禁止仅凭"业务保证不会超限"直接 PASS。
-
-若不适用，进入阶段3工具验证。
-
----
-
-**阶段3：三种工具组合验证**
-
-> **执行方式**：使用 `cat << 'EOF' | g++ -x c++ -std=c++17 -` 形式直接在终端运行，不产生本地文件。
-
-**工具1：GCC builtin 快速检测（优先执行）**
-
-操作方案：
-- 使用 `__builtin_smul_overflow` / `__builtin_umul_overflow` 检测乘法溢出
-- 使用 `__builtin_sadd_overflow` / `__builtin_uadd_overflow` 检测加法溢出
-- 对表达式中的每个同类型运算单元分别检测
-- 输出：是否溢出 + 截断后的错误值
-
-**工具2：C++ 大类型对比验证**
-
-操作方案：
-- 将运算表达式用更大类型（`int64_t` / `uint64_t`）重新计算，获得数学真实值
-- 用原类型计算，获得编译器实际行为（截断值）
-- 对比真实值与截断值是否一致
-- 输出：真实值、截断值、是否溢出
-
-**工具3：Z3 约束求解（复杂表达式或找边界时使用）**
-
-前置命令（一键安装）：
-```bash
-cd /tmp && python3 -m venv z3_env 2>/dev/null; source z3_env/bin/activate && pip install z3-solver -q && python3 << 'EOF'
-from z3 import *
-# ...建模与分析代码...
-EOF
-```
-
-操作方案：
-- 用 BitVec 精确建模每个变量（含位宽）
-- 用 ZeroExt/SignExt 扩展计算真实值
-- 添加溢出约束求解
-- 输出：溢出触发值、安全边界
-
----
-
-**阶段4：综合判定**
-
-| 工具验证结果 | 业务约束保护 | 最终判定 |
-|-------------|-------------|---------|
-| 无溢出 | — | ✅ **PASS** |
-| 存在溢出 | 无保护 | ⚠️ **FAIL（需修复）** |
-| 存在溢出 | 有保护 | 🔶 **需关注（标注约束条件）** |
-
-**"需关注"标注要求**：
-- 明确记录业务约束的具体内容
-- 记录安全边界值
-- 提示未来扩展风险
-
----
-
-#### 2.2 确保无符号整数运算不回绕 `[适用: All]`
-
-> **Kernel 侧说明**：Kernel 中大量使用 `uint32_t` 进行 tileLength、blockLength 计算，需防止回绕。
-
-**【描述】**
-涉及无符号操作数的计算永远不会溢出，因为超出无符号整数类型表示范围的计算结果会按照（结果类型可表示的最大值 + 1）的数值取模。这种行为更多时候被非正式地称为无符号整数回绕。
-
-**乘法示例：**
-
-```cpp
-size_t width = ... // 来自外部数据
-size_t height = ... // 来自外部数据
-if (width == 0 || height == 0) {
-    ... // 错误处理
-}
-if (width > SIZE_MAX / height) {
-    ... // 错误处理
-}
-unsigned char *buf = (unsigned char *)malloc(width * height);
-```
-
-**【检视策略】**
-
-> **强制要求**：必须组合使用三种验证工具进行精确分析，禁止仅凭推测或记忆判断。
-
----
-
-**阶段1：表达式建模与类型分析**
-
-操作步骤：
-1. 从目标代码精确提取运算表达式，识别所有参与运算的变量
-2. 通过代码上下文确定每个变量的精确类型（重点关注 `uint32_t`、`size_t` 等）
-3. 推导运算顺序和隐式类型转换，识别风险点
-
----
-
-**阶段2：业务约束快速判断（优先执行）**
-
-> **目的**：先判断业务约束是否已确保安全，避免不必要的重型验证。
-
-快速判断规则（满足任一即可 PASS）：
-- 变量来自 TilingData（已校验）或编译期常量
-- 循环边界内使用
-- 变量范围可推导且上限明显低于回绕边界
-
-> **⚠️ 约束**：快速判断通过时，必须在检视输出中给出**具体数值边界**（如 `X∈[0,1024], 1024×65536=67108864<UINT32_MAX`）。无法给出具体数值的，必须执行阶段3工具验证。禁止仅凭"业务保证不会超限"直接 PASS。
-
-若不适用，进入阶段3工具验证。
-
----
-
-**阶段3：三种工具组合验证**
-
-> **执行方式**：使用 `cat << 'EOF' | g++ -x c++ -std=c++17 -` 形式直接在终端运行，不产生本地文件。
-
-**工具1：GCC builtin 快速检测（优先执行）**
-
-操作方案：
-- 使用 `__builtin_umul_overflow` / `__builtin_umull_overflow` 检测无符号乘法回绕
-- 使用 `__builtin_uadd_overflow` 检测无符号加法回绕
-- 对每个同宽度的运算单元分别检测
-- 输出：是否回绕 + 回绕后的错误值
-
-**工具2：C++ 大类型对比验证**
-
-操作方案：
-- 用 `uint64_t` 重新计算表达式，获得数学真实值
-- 用原类型计算，获得回绕后的值
-- 对比：`真实值 > UINT32_MAX` 或 `原生值 != 真实值` 时存在回绕
-- 输出：真实值、回绕值、回绕量
-
-**工具3：Z3 约束求解（复杂表达式或找边界时使用）**
-
-前置命令（一键安装）：
-```bash
-cd /tmp && python3 -m venv z3_env 2>/dev/null; source z3_env/bin/activate && pip install z3-solver -q && python3 << 'EOF'
-from z3 import *
-# ...建模与分析代码...
-EOF
-```
-
-操作方案：
-- 用 BitVec（无符号）建模每个变量
-- 用 ZeroExt 扩展计算真实值
-- 添加回绕约束求解
-- 输出：回绕触发值、安全边界
-
----
-
-**阶段4：综合判定**
-
-| 工具验证结果 | 业务约束保护 | 最终判定 |
-|-------------|-------------|---------|
-| 无回绕 | — | ✅ **PASS** |
-| 存在回绕 | 无保护 | ⚠️ **FAIL（需修复）** |
-| 存在回绕 | 有保护 | 🔶 **需关注（标注约束条件）** |
-
-**"需关注"标注要求**：
-- 明确记录业务约束
-- 记录安全边界
-- 提示扩展风险
-
----
-
-#### 2.3 确保除法和余数运算不会导致除以零的错误 `[适用: All]`
-
-> **Kernel 侧说明**：Kernel 中的除法运算（如 `totalLength / blockDim`）需检查除数是否为零。
-
-**【Kernel 侧排除规则】**
-
-以下情况在 Kernel 侧自动排除，无需校验：
-
-| 排除条件 | 参数模式示例 | 排除原因 |
-|---------|-------------|----------|
-| 除数来自 TilingData | `constInfo.*`, `baseInfo.*`, `tilingData->*` | Tiling 阶段已校验非零（如 `OP_CHECK_IF(headDim == 0, return GRAPH_FAILED)`） |
-| 编译期常量 | `FP32_REPEAT_ELEMENT_NUM`, `BLOCK_SIZE`, `MAX_*` | 常量值固定非零 |
-| __aicore__ 函数参数 | 模板类入参 | 架构约定：尽量减少校验，有效性由调用者保证 |
-
-**判定方法**：
-- 识别除数变量名匹配上述模式时，直接判定为 PASS
-- 识别除数赋值来源为 `tilingData->xxx` 时，直接判定为 PASS
-
-**【Kernel 侧需校验场景】**
-
-以下情况在 Kernel 侧仍需校验：
-
-| 校验条件 | 参数来源 | 代码模式 |
-|---------|---------|----------|
-| actS1Size / actS2Size | `GetActualSeqLen()` 运行时获取 | `if (actS1Size == 0) { return; }` |
-| usedCoreNum 可能为零 | 空任务场景 | `if (usedCoreNum == 0) { return; }` |
-| curActualSeqLen 动态值 | TND 布局累积差值 | `if (curActualSeqLen == 0) { return; }` |
-
-**【Tiling 侧校验示例】**
-
-```cpp
-// Tiling 阶段校验静态参数非零
-OP_CHECK_IF(keyShape->GetStorageShape().GetDim(DIM_2) == 0,
-           OP_LOGE(context_, "dim N2 is 0."), return ge::GRAPH_FAILED);
-fBaseParams.g = queryShape->GetStorageShape().GetDim(DIM_2) / keyShape->GetStorageShape().GetDim(DIM_2);
-OP_CHECK_IF(fBaseParams.g == 0, OP_LOGE(context_, "g is 0"), return ge::GRAPH_FAILED);
-```
-
-**【Kernel 侧校验示例】**
-
-```cpp
-// Kernel 阶段校验动态值零值分支
-GetS1S2ActualSeqLen(bIdx, actS1Size, actS2Size);
-if ((actS1Size == 0) || (actS2Size == 0)) {
-    curActSeqLenIsZero = true;
-    return;  // 早期退出，避免后续除法
-}
-// 后续计算：loopTimes = actS1Size / mBaseSize（actS1Size 已确保非零）
-```
-
-**【描述】**
-整数的除法和取余运算的第二个操作数值为0会导致程序产生未定义的行为，因此使用时要确保整数的除法和余数运算不会导致除零错误。
-
----
-
-### 3. 内存与指针安全
-
-#### 3.1 禁止使用未初始化的变量 `[适用: All]`
-
-> **Kernel 侧说明**：Kernel 模板类的成员变量必须在 `Init()` 函数中初始化，UB Buffer 通过 `AllocTensor` 获取后才能使用。
-
-这里的变量，指的是局部动态变量，并且还包括内存堆上申请的内存块。因为他们的初始值都是不可预料的，所以禁止未经有效初始化就直接读取其值。
-
-```cpp
-void foo(...)
-{
-    int data;
-    bar(data); // 错误：未初始化就使用
-    ...
-}
-```
-
-#### 3.2 指向资源句柄或描述符的变量，在资源释放后立即赋予新值 `[适用: Tiling]`
+#### 2.1 指向资源句柄或描述符的变量，在资源释放后立即赋予新值 `[适用: Tiling]`
 
 > **Kernel 侧不适用**：Kernel 无动态资源管理，Buffer 由 `InitBuffer` 静态分配，无需释放后置空。
 
@@ -421,83 +128,7 @@ EXIT:
 }
 ```
 
-#### 3.3 外部数据作为数组索引时必须确保在数组大小范围内 `[适用: All]`
-
-> **Kernel 侧说明**：Kernel 中使用 blockIdx、tileLength 等变量访问 GM/UB，需确保索引不越界。
-
-**【Kernel 侧排除规则】**
-
-以下情况在 Kernel 侧自动排除，无需校验：
-
-| 排除条件 | 参数模式示例 | 排除原因 |
-|---------|-------------|----------|
-| 索引来自 TilingData | `constInfo.*`, `baseInfo.*` | Tiling 阶段已校验范围（如 Shape 维度校验） |
-| 循环边界内索引 | `for (i = 0; i < bound; i++)` 内的 `arr[i]` | 循环条件保证索引在范围内 |
-| GM/UB Buffer 内偏移 | `gmTensor[offset]`，offset 来自 Tiling | Tiling 阶段计算偏移范围 |
-
-**判定方法**：
-- 识别索引变量名匹配 `constInfo.*|baseInfo.*` 时，直接判定为 PASS
-- 识别索引在循环边界内使用时，直接判定为 PASS
-
-**【Kernel 侧需校验场景】**
-
-以下情况在 Kernel 侧仍需校验：
-
-| 校验条件 | 参数来源 | 代码模式 |
-|---------|---------|----------|
-| aiCoreIdx 核索引 | `GetBlockIdx()` 运行时获取 | `if (aiCoreIdx >= usedCoreNum) { return; }` |
-| bIdx batch 累积差值边界 | TND 布局 `actualSeqLen[bIdx] - actualSeqLen[bIdx-1]` | `if (bIdx > 0) { ... } else { return actualSeqLen[0]; }` |
-| 动态计算的偏移 | 运行时计算值 | 边界判断逻辑 |
-
-**【Tiling 侧校验示例】**
-
-```cpp
-// Tiling 阶段校验 Shape 维度范围
-OP_CHECK_IF(shape->GetDimNum() != expectedDim, 
-           OP_LOGE(context_, "dim num mismatch"), return ge::GRAPH_FAILED);
-OP_CHECK_IF(shape->GetDim(i) > MAX_SIZE,
-           OP_LOGE(context_, "dim %d exceeds limit", i), return ge::GRAPH_FAILED);
-```
-
-**【Kernel 侧校验示例】**
-
-```cpp
-// Kernel 核索引范围校验
-if (aiCoreIdx >= tilingData->baseParams.usedCoreNum) {
-    if ASCEND_IS_AIV {
-        SyncAll();  // superkernel 同步
-    }
-    return;  // 超范围核退出
-}
-
-// Kernel TND 布局累积差值边界处理
-if (bIdx > 0) {
-    return actualSeqLen[bIdx] - actualSeqLen[bIdx - 1];  // 累积差值
-} else {
-    return actualSeqLen[0];  // 首元素，避免访问 bIdx-1
-}
-```
-
-**【描述】**
-外部数据作为数组索引对内存进行访问时，必须对数据的大小进行严格的校验，确保数组索引在有效范围内，否则会导致严重的错误。
-
-**【正确代码示例】**
-
-```cpp
-#define DEV_NUM 10
-static Dev devs[DEV_NUM];
-
-int set_dev_id(size_t index, int id)
-{
-    if (index >= DEV_NUM) {
-        ... // 错误处理
-    }
-    devs[index].id = id;
-    return 0;
-}
-```
-
-#### 3.4 禁止通过对指针变量进行sizeof操作来获取数组大小 `[适用: All]`
+#### 2.2 禁止通过对指针变量进行sizeof操作来获取数组大小 `[适用: All]`
 
 > **Kernel 侧说明**：Kernel 中 `LocalTensor<T>` 通过 API（如 `GetSize()`）获取大小，不能用 sizeof。
 
@@ -525,18 +156,7 @@ char *buffer = (char *)malloc(SIZE);
 (void)memset(buffer, 0, SIZE); // 使用申请的缓冲区大小
 ```
 
-#### 3.5 指针操作，使用前必须要判空 `[适用: All]`
-
-> **Kernel 侧说明**：Kernel 中 `GlobalTensor` 和 `LocalTensor` 通过 API 获取，一般不需要判空，但 GM 地址偏移需校验。
-
-**【描述】**
-解引用空指针会导致程序产生未定义行为，通常会造成程序异常终止。
-
-- 指针变量在使用前，一定要做好初始化的赋值，严禁对空指针进行访问
-- 对于指针所代表的地址空间的任何操作，一定要保证空间的有效性
-- 指针指向的内存释放后，需要调用者将指针显式置为NULL，防止"野指针"
-
-#### 3.6 确保字符串存储有足够的空间容纳字符数据和null结束符 `[适用: Tiling]`
+#### 2.3 确保字符串存储有足够的空间容纳字符数据和null结束符 `[适用: Tiling]`
 
 > **Kernel 侧不适用**：Kernel 无 C 风格字符串处理。但 GM 数据搬运时需确保目标 Buffer 有足够空间。
 
@@ -545,9 +165,9 @@ char *buffer = (char *)malloc(SIZE);
 
 ---
 
-### 4. 输入验证
+### 3. 输入验证
 
-#### 4.1 外部输入数据需要做合法性校验 `[适用: All]`
+#### 3.1 外部输入数据需要做合法性校验 `[适用: All]`
 
 > **Kernel 侧说明**：Kernel 中的 `TilingData` 参数（如 `constInfo.*`、`baseInfo.*`）已在 Tiling 阶段校验，无需重复校验。校验职责归属 Tiling 层。
 
@@ -623,7 +243,7 @@ if (constInfo.isActualLenDimsNull == 1) {
 - 外部入参参与循环、递归条件的运算，必须严格校验边界和终止条件
 - 文件路径来自外部数据时，必须对其做合法性校验
 
-#### 4.2 外部输入作为内存操作相关函数的复制长度时，需要校验其合法性 `[适用: All]`
+#### 3.2 外部输入作为内存操作相关函数的复制长度时，需要校验其合法性 `[适用: All]`
 
 > **Kernel 侧说明**：Kernel 中 `DataCopy` 的搬运长度需校验，确保不超过 UB 容量和 GM 数据范围。
 
@@ -632,9 +252,9 @@ if (constInfo.isActualLenDimsNull == 1) {
 
 ---
 
-### 5. 资源管理
+### 4. 资源管理
 
-#### 5.1 资源申请后必须判断是否成功 `[适用: Tiling]`
+#### 4.1 资源申请后必须判断是否成功 `[适用: Tiling]`
 
 > **Kernel 侧不适用**：Kernel 无动态资源申请（malloc/new），Buffer 由 `InitBuffer` 静态分配，编译期确定。
 
@@ -656,30 +276,28 @@ struct tm *make_tm(int year, int mon, int day, int hour, int min, int sec)
 }
 ```
 
-#### 5.2 资源泄露（内存、句柄、锁等） `[适用: Tiling]`
-
-> **Kernel 侧不适用**：Kernel 无动态内存、无锁、无句柄，Buffer 静态分配无需释放。
-
-**【描述】**
-
-- 资源申请和释放必须匹配，包括：内存类的malloc/free/alloc_page/free_page, 锁lock/unlock、文件open/close等
-- 释放结构体/类/数组/各类数据容器指针前，必须先释放成员指针
-- 对外接口处理涉及资源申请但未释放，引起资源泄露，导致拒绝服务
-- C++捕获异常时确保恢复程序的一致性; 建议使用RAII模式，确保资源在异常发生时自动释放
-
-#### 5.3 new和delete配对使用，new[]和delete[]配对使用 `[适用: Tiling]`
+#### 4.2 new和delete配对使用，new[]和delete[]配对使用 `[适用: Tiling]`
 
 > **Kernel 侧不适用**：Kernel 禁止 new/delete。
 
-#### 5.4 使用恰当的方式处理new操作符的内存分配错误 `[适用: Tiling]`
+##### 专属检视方法
+
+除 Tiling 侧（`op_host/`）外，**测试代码**（`tests/`、`ut/`、`st/` 目录下的 `.cpp/.h`）同样适用 new/delete 配对检查——测试代码中 `new` 创建的对象若无对应 `delete`，会导致内存泄漏。
+
+检视指引：
+- Grep 测试文件中的 `new ` 创建对象语句 → 追踪同一作用域或对象生命周期内是否有对应 `delete`
+- 重点关注：测试函数内的局部 `new`（函数结束前未释放）、SetUp/TearDown 中的成员对象创建与销毁配对、`new[]` 是否用 `delete[]`（而非 `delete`）释放
+- 豁免：智能指针（`std::unique_ptr`/`std::shared_ptr`/`std::make_unique`/`std::make_shared`）管理的对象、RAII 模式封装的对象、测试框架自动管理的 fixture 成员
+
+#### 4.3 使用恰当的方式处理new操作符的内存分配错误 `[适用: Tiling]`
 
 > **Kernel 侧不适用**：Kernel 禁止 new。
 
 ---
 
-### 8. 安全函数使用
+### 5. 安全函数使用
 
-#### 8.1 使用社区提供的安全函数库的安全函数，禁止使用内存操作类危险函数 `[适用: Tiling]`
+#### 5.1 使用社区提供的安全函数库的安全函数，禁止使用内存操作类危险函数 `[适用: Tiling]`
 
 > **Kernel 侧不适用**：Kernel 无 memcpy_s/memset_s，使用 Ascend C API（如 `Duplicate`、`DataCopyPad`）。
 
@@ -694,11 +312,11 @@ struct tm *make_tm(int year, int mon, int day, int hour, int min, int sec)
 | 格式化输入 | scanf | scanf_s |
 | 内存初始化 | memset | memset_s |
 
-#### 8.2 正确设置安全函数中的destMax参数 `[适用: Tiling]`
+#### 5.2 正确设置安全函数中的destMax参数 `[适用: Tiling]`
 
 > **Kernel 侧不适用**：Kernel 无安全函数。
 
-#### 8.3 必须检查安全函数返回值，并进行正确的处理 `[适用: Tiling]`
+#### 5.3 必须检查安全函数返回值，并进行正确的处理 `[适用: Tiling]`
 
 > **Kernel 侧不适用**：Kernel 无安全函数。
 
@@ -718,37 +336,37 @@ struct tm *make_tm(int year, int mon, int day, int hour, int min, int sec)
 
 ---
 
-### 9. 类与对象安全
+### 6. 类与对象安全
 
-#### 9.1 禁止逐位操作非trivially copyable对象 `[适用: All]`
+#### 6.1 禁止逐位操作非trivially copyable对象 `[适用: All]`
 
 > **Kernel 侧说明**：Kernel 模板类都是 POD 类型，可以使用 `Duplicate` 进行内存操作。
 
 ---
 
-### 10. 标准库安全
+### 7. 标准库安全
 
-#### 10.1 禁止从空指针创建std::string `[适用: Tiling]`
-
-> **Kernel 侧不适用**：Kernel 无 std::string。
-
-#### 10.2 不要保存std::string类型的 `c_str`和 `data`成员函数返回的指针 `[适用: Tiling]`
+#### 7.1 禁止从空指针创建std::string `[适用: Tiling]`
 
 > **Kernel 侧不适用**：Kernel 无 std::string。
 
-#### 10.3 内存中的敏感信息使用完毕后立即清0 `[适用: All]`
+#### 7.2 不要保存std::string类型的 `c_str`和 `data`成员函数返回的指针 `[适用: Tiling]`
+
+> **Kernel 侧不适用**：Kernel 无 std::string。
+
+#### 7.3 内存中的敏感信息使用完毕后立即清0 `[适用: All]`
 
 > **Kernel 侧说明**：Kernel 中 UB 数据可通过 `Duplicate` 清零，GM 数据需在 Host 侧处理。
 
 口令、密钥等敏感信息使用完毕后立即清零，避免被攻击者获取。
 
-#### 10.4 对外结构体接口新增字段时必须在结构体最后添加 `[适用: All]`
+#### 7.4 对外结构体接口新增字段时必须在结构体最后添加 `[适用: All]`
 
 > **Kernel 侧说明**：`TilingData` 结构体新增字段需在末尾添加，保持 ABI 兼容性。
 
 为了最大程度上在ABI层面的兼容，对外结构体接口添加新字段时必须在结构体最后添加。
 
-#### 10.5 外部接口或数据结构变更必须考虑兼容性 `[适用: All]`
+#### 7.5 外部接口或数据结构变更必须考虑兼容性 `[适用: All]`
 
 > **Kernel 侧说明**：Kernel 接口（如 TilingData 结构体）变更需考虑版本兼容性。
 
@@ -756,11 +374,11 @@ struct tm *make_tm(int year, int mon, int day, int hour, int min, int sec)
 
 ---
 
-### 11. LOG API 安全使用
+### 8. LOG 规范
 
 > **适用范围**：仅 Tiling 侧（Host 侧）。Kernel 侧使用 `AscendC::PRINTF`，无下列风险。
 
-Tiling 侧使用 `OP_LOGE` / `OP_LOGD` / `OP_LOGW` 等格式化 LOG 宏时，若参数使用不当，轻则输出乱码，重则引发段错误（SIGSEGV）。以下 4 条为强制要求。
+Tiling 侧使用 `OP_LOGE` / `OP_LOGD` / `OP_LOGW` 等格式化 LOG 宏。11.1–11.3 为安全强制要求（防段错误/未定义行为），11.4 为质量建议。
 
 LOG 宏签名（业务代码标准调用形式）：
 
@@ -771,7 +389,7 @@ OP_LOGD(context->GetNodeName(), "format string %lu", arg1);
 
 ---
 
-#### 11.1 LOG API 禁止传入空指针作为字符串参数 `[适用: Tiling]`
+#### 8.1 LOG API 禁止传入空指针作为字符串参数 `[适用: Tiling]`
 
 **【问题说明】**
 
@@ -802,74 +420,66 @@ OP_LOGE(context->GetNodeName(),
 
 ---
 
-#### 11.2 LOG API 参数数量必须与格式化占位符数量一致 `[适用: Tiling]`
+#### 8.2 LOG API 参数必须与格式化占位符逐位一致（数量、类型、顺序） `[适用: Tiling]`
 
 **【问题说明】**
 
-参数数量少于占位符时，LOG 宏会从栈上读取垃圾值填充缺失参数。若垃圾值被解释为非法指针（`%s`/`%p`），将触发非法内存访问。
+LOG 宏的格式化占位符与实际参数之间必须满足三个维度的一致性：
 
-**错误示例**
+1. **数量一致**：参数少于占位符时，从栈上读取垃圾值，若被解释为 `%s` 将触发段错误
+2. **类型匹配**：类型大小不匹配时（如 `uint64_t` 误用 `%d`），按说明符宽度截断，后续参数全部错位
+3. **顺序对应**：参数顺序与格式符位置不对应时（如 `%s` 位置收到整数），整数被当作地址读字符串 → **段错误(SIGSEGV)**
 
-```cpp
-// 参考 grouped_matmul_swiglu_quant_tiling.cpp 中的多参数日志场景
-// 2 个占位符，但只传了 1 个参数
-OP_LOGD(context->GetNodeName(),
-        "gmmSwigluBaseParams.M: %ld, K: %ld", m);   // 缺少 k，栈数据被错误读取
-```
+> **⚠️ 禁止仅凭 grep 单行分析 LOG 调用。** 算子仓中大量 LOG 语句跨越多行（2-35 行），且常嵌套在 `OP_CHECK_IF` 等外层宏内。grep 命中后**必须 Read 前后至少 10 行**获取完整的格式字符串和全部参数，否则分析的是截断的不完整调用，结论无效。多行字符串拼接（`"a" "b"`）需先合并再解析。
 
-**正确示例**
+**错误与正确示例**
 
 ```cpp
-OP_LOGD(context->GetNodeName(),
-        "gmmSwigluBaseParams.M: %ld, K: %ld", m, k);
+// ❌ 数量不一致：2 个占位符，1 个参数
+OP_LOGD(ctx, "M: %ld, K: %ld", m);           // 缺少 k
+// ✅
+OP_LOGD(ctx, "M: %ld, K: %ld", m, k);
+
+// ❌ 类型不匹配：uint64_t 用了 %d
+OP_LOGE(ctx, "n = %d, ubSize = %d\n", n, ubSize); // n/ubSize 均为 uint64_t
+// ✅
+OP_LOGE(ctx, "n = %llu, ubSize = %llu\n", n, ubSize);
+
+// ❌ 顺序错位：数量=5 格式符=5，但位置1和3的参数放反了
+//   格式符: %u(1) %u(2) %s(3) %u(4) %u(5)
+//   参数:   inputName.c_str()(1) ... d0Size/NUM8(3) ...
+//   → 位置1: %u 收到 const char*，位置3: %s 收到 uint → 段错误
+OP_CHECK_IF(tempD0 != d0Size,
+    OP_LOGE(opName, "...kvCache(%u)...%s(%u)...",
+        inputName.c_str(), tempD0/NUM8, d0Size/NUM8, tempD0, d0Size),
+    return ge::GRAPH_FAILED);
+// ✅ 参数顺序与格式符逐位对应
+OP_CHECK_IF(tempD0 != d0Size,
+    OP_LOGE(opName, "...kvCache(%u)...%s(%u)...",
+        tempD0/NUM8, d0Size/NUM8, inputName.c_str(), tempD0, d0Size),
+    return ge::GRAPH_FAILED);
 ```
+
+**类型与说明符速查**
+
+| 类型 | 正确 | 常见错误 | 后果 |
+|------|------|---------|------|
+| `uint64_t` | `%llu` | `%u`, `%lu`, `%d` | 截断为 32 位，后续参数错位 |
+| `int64_t` | `%lld` | `%d`, `%ld` | 同上 |
+| `uint32_t` | `%u` | `%d` | 大值显示为负数 |
+| `size_t` | `%zu` | `%d`, `%u` | 64 位系统上截断 |
+| `bool` | `%d` 或 `? "true":"false"` + `%s` | `%s` 直传 | 未定义行为 |
+| `void*` | `%p` | `%x` | 不可移植 |
+
+**【检视方法】**
+
+1. grep `OP_LOGE\|OP_LOGD\|OP_LOGW\|OP_LOGI` 找到所有 LOG 调用
+2. Read 完整调用后，提取格式符序列和参数序列，逐位比对：数量是否一致 → 每个位置的参数类型是否兼容格式符
+3. 高风险标记：`%s` 收到整数（段错误）、`uint64_t`/`int64_t` 配 `%d`（截断错位）
 
 ---
 
-#### 11.3 LOG API 参数类型必须与格式化说明符匹配 `[适用: Tiling]`
-
-**【问题说明】**
-
-类型大小不匹配时，LOG 宏按说明符宽度截断或读取超量字节，导致后续参数全部错位。Tiling 侧最常见：`uint64_t` shape 维度误用 `%d`（4字节），实际类型为 8 字节，造成参数错位。
-
-**错误示例**
-
-```cpp
-// 参考 quant_grouped_matmul_dequant_tiling.cpp：_Params.originM 为 uint64_t
-OP_LOGE(context->GetNodeName(),
-        "No valid row found for n = %d, ubSize = %d\n", n, ubSize);
-// 错误：n/ubSize 均为 uint64_t，%d 只读 4 字节，后续参数全部错位
-```
-
-**正确示例**
-
-```cpp
-// 业务代码正确写法（grouped_matmul_swiglu_quant_tiling.cpp 第 75 行）
-OP_LOGE(context->GetNodeName(),
-        "GMM_SWIGLU_QUANT TILING: No valid row found for n = %lu, ubSize = %lu\n", n, ubSize);
-```
-
-**Tiling 侧常见类型与说明符对照**
-
-| 类型 | 推荐说明符 (通用) | 常见错误 | 说明 |
-| :--- | :--- | :--- | :--- |
-| `int64_t` | `%lld` | `%d`, `%ld` | `%ld` 在 Windows/32位系统上会截断数据。`%lld` 是标准且通用的写法。 |
-| `uint64_t` | `%llu` | `%u`, `%lu` | 同上，`%lu` 在 Windows 上仅读取 32 位。 |
-| `uint32_t` | `%u` | `%d` | `%d` 会导致大于 2^31 的数值显示为负数。 |
-| `int32_t` | `%d` | `%u` | 标准整型，直接对应。 |
-| `bool` | `%d` | `%s` | 除非手动转字符串，否则 `%d` (0/1) 最安全且无需额外逻辑。 |
-| `size_t` | `%zu` | `%d`, `%u` | `size_t` 在 64 位系统上是 64 位，用 `%u` 会截断。 |
-| `void*` | `%p` | `%x` | 永远用 `%p` 打印指针地址。 |
-
-```cpp
-// bool 的正确记录方式（业务代码第 248 行）
-OP_LOGD(context->GetNodeName(),
-        "isSplitWorkSpace: %s", isSplitWorkSpace ? "true" : "false");
-```
-
----
-
-#### 11.4 LOG API 禁止传入已释放内存的指针 `[适用: Tiling]`
+#### 8.3 LOG API 禁止传入已释放内存的指针 `[适用: Tiling]`
 
 **【问题说明】**
 
@@ -893,3 +503,37 @@ OP_LOGE(context->GetNodeName(), "error: %s", errMsg);   // 先记录
 delete[] errMsg;
 errMsg = nullptr;
 ```
+
+---
+
+#### 建议 8.4 LOG 消息的英语行文应语法正确、表意清晰 `[适用: Tiling]`
+
+**【问题说明】**
+
+LOG 消息是排障的第一手线索。语法错误或含义模糊的日志会显著增加定位问题的时间成本。
+
+**检视要点**：
+- 主谓一致、时态统一（LOG 消息惯用一般现在时或过去时）
+- 避免中英文混杂（变量名除外）
+- 避免无意义占位（如 "error error"、"fail to fail"）
+- 关键数值应包含在消息中，而非仅靠格式符
+
+**提醒示例**
+
+```cpp
+// "is not support" → "is not supported"（仓内高频错误模式，5+ 文件）
+OP_LOGE(op_name, "scale shape is not support");          // → is not supported
+OP_LOGE(opName_, "...layout BNSD/BNSD_NBSD is not support"); // → is not supported
+OP_LOGE(ACLNN_ERR_PARAM_INVALID, "...the soc verison is not support"); // → version; is not supported
+
+// "do not support" → "does not support"（主谓不一致）
+OP_LOGE(opName_, "...key layout do not support PA_BSND."); // → does not support
+
+// 拼写错误
+OP_LOGE(opName_, "...cu_seqlens_q's dtype msut be DT_INT32."); // msut → must
+
+// 缺少主语
+OP_LOGD("GetBlockInfoOfBNS4TND", " Not support BN2S2."); // → BN2S2 is not supported
+```
+
+> **检视级别**：仅标记 SUSPICIOUS，不标记 FAIL。

@@ -1,0 +1,17 @@
+strategy_id: P90
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "Mmad|mmad|Matmul|matmul"
+    min_count: 1
+    fail_msg: "未检测到 Mmad/Matmul 调用 → 不适用 P90。检查 P5 或 P28 同步策略。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "isL0CAccum|L0C.*accum|L0CAccum"
+    min_count: 1
+    fail_msg: "未检测到 L0C 累加模式 → P90 仅适用于累加模式的手动 Matmul 流水线。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "PipeBarrier.*PIPE_M|SetFlag|WaitFlag"
+    min_count: 1
+    fail_msg: "未检测到 PipeBarrier 或 Event 同步 → 非手动 Matmul 流水线，不适用 P90。"

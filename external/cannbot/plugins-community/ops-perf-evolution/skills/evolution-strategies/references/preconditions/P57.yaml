@@ -1,0 +1,30 @@
+strategy_id: P57
+description: FlashDecode G 分核归约适用性检查 — 算子为 FlashDecode 场景且 G 维度较大，当前未做 G 轴分核并行
+checks:
+  - id: has_flashdecode_pattern
+    type: grep_count
+    pattern: "FlashDecode|flashdecode|Flash.*Decode|decode|Decode"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子非 FlashDecode 场景 → P57 不适用。检查是否为标准 FlashAttention"
+
+  - id: has_large_g_dimension
+    type: grep_count
+    pattern: "gSize|gDim|GSize|g_size|headDim|groupNum|numGroup"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无 G 维度或 G 很小 → P57 收益低。G 分核需要 G >> BN2"
+
+  - id: no_g_partition_yet
+    type: grep_count
+    pattern: "gSizeSub|coreNumPerGD|gPartition|SplitG|FlashDecodeComputeSplitG"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已有 G 分核逻辑 → P57 已应用"
+
+  - id: not_pure_validation
+    type: grep_count
+    pattern: "OP_CHECK|shape.*check|dim.*check|validation"
+    files: [kernel, header]
+    expected: "<= 3"
+    fail_msg: "纯 Host 侧 shape 校验 → P57 解决的是 tiling 阶段分核策略"

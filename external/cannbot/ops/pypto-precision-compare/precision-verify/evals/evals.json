@@ -1,0 +1,101 @@
+{
+  "skill_name": "precision-verify",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "工具对比法完整流程",
+      "config": {
+        "max_tokens": 120000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 150000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "请介绍 PyPTO 算子精度工具对比法（pass_verify_save / torch.save）的完整流程。",
+      "expected_output": "回复应覆盖：使用 pypto.pass_verify_save 保存 kernel 中间结果、torch.save 保存 golden 参考结果、对比工具分析定位首个失败点。说明 core 原则（数据对齐、全量对比策略），以及 loop 场景的条件保存、命名规范等注意事项。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "pass_verify_save" },
+        { "type": "contains", "pattern": "torch.save" },
+        { "type": "contains", "pattern": "对齐" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "保存策略与对比方法",
+      "config": {
+        "max_tokens": 120000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 150000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "使用 pass_verify_save 保存 PyPTO 算子的中间结果时，应该选择什么保存策略？",
+      "expected_output": "回复应说明三种保存策略：全量对比（同时启用所有 checkpoint）、条件保存（loop 场景只保存最后一块）、命名规范。以及如何确保 golden 和 kernel 之间的数据对齐，包括数据类型、shape 和执行路径的一致性检查。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "全量" },
+        { "type": "contains", "pattern": "条件保存" },
+        { "type": "contains", "pattern": "对齐" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "常见问题与避坑",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "使用 PyPTO 精度工具对比法时有哪些常见坑？怎么避免？",
+      "expected_output": "回复应说明常见陷阱：执行路径不一致（golden 和 kernel 走了不同分支）、dtype 读取不匹配（FP8/BOOL 类型转换问题）、shape 对齐错误、文件命名冲突。针对每个问题给出相应的解决方案。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "FP8" },
+        { "type": "contains", "pattern": "路径" },
+        { "type": "contains", "pattern": "dtype" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "信息不足场景：追问精度问题环境",
+      "config": {
+        "max_tokens": 80000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 100000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "PyPTO 精度有问题，帮我用保存中间结果的方法定位。",
+      "expected_output": "回复应主动追问：是否已确认用 pass_verify_save 方法定位、当前的算子代码和 kernel 结构、是否有条件保存需求（loop 场景）、输入输出的 dtype 和 shape。不应直接给出 checkpoint 插入代码。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "pass_verify_save" },
+        { "type": "contains", "pattern": "dtype" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "正向看护：区分精度验证技能",
+      "config": {
+        "max_tokens": 120000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 150000
+        },
+        "ascend_platforms": ["A2"],
+        "distractor_skills": ["precision-binary-search", "precision-pass", "ops-precision-standard"]
+      },
+      "prompt": "PyPTO 算子精度不对，想用文件保存对比法定位精度问题。",
+      "expected_output": "回复应聚焦工具对比法的核心方法：使用 pass_verify_save 和 torch.save 保存中间结果文件并对比，与二分定位法（修改 kernel 签名）和 Pass 校验法（PreCheck/PostCheck）形成区分。",
+      "files": [],
+      "expectations": [
+        { "type": "skill_activated", "pattern": "precision-verify" },
+        { "type": "contains", "pattern": "pass_verify_save" },
+        { "type": "contains", "pattern": "torch.save" }
+      ]
+    }
+  ]
+}

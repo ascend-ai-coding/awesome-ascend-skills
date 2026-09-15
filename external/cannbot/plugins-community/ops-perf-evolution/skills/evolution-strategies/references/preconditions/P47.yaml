@@ -1,0 +1,17 @@
+strategy_id: P47
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "GetBlockNum|BLOCK_DIM|coreNum|blockIdx|SplitCore"
+    min_count: 1
+    fail_msg: "未检测到多核分块逻辑 → 无块调度优化空间，不适用 P47。检查 P51 或 P16。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "L2|l2|cache|Cache"
+    min_count: 1
+    fail_msg: "未检测到 L2 Cache 相关逻辑 → 无 cache 复用优化空间，不适用 P47。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "MNBlockIdxCompute|对角线|diagonal"
+    min_count: 0
+    fail_msg: "已存在对角线块调度逻辑 → 可能冗余，优先验证现有策略效果。"

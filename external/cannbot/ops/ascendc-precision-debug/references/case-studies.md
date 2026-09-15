@@ -333,6 +333,101 @@ half SoftmaxStable(half* input, int size) {
 
 ---
 
+## 案例5：Multi-matrix 拼接到 L1 时 head 维奇偶 NaN
+
+### 问题描述
+
+某些算子（典型 multi-head 类：multi-head MatMul / multi-head Attention 等）把多个矩阵拼接到同一片 L1 NZ buffer，做一次 LoadData 加载到 L0。每个矩阵在 L1 的起始 offset 必须按 NZ fractal 物理布局正确计算，与数据 dtype 强相关。
+
+切换 dtype 路径（如 fp16 → fp8）或新增 scale 张量时，offset 公式照搬容易出错。
+
+### 症状
+
+按 head 维度切片观察输出，呈现**奇偶 NaN 模式**：
+
+```
+head 0: ✅ 数值合理，无 NaN
+head 1: ❌ 全 NaN（fp8 0x7F）
+head 2: ❌ 全 NaN
+head 3: ✅ 数值合理，无 NaN
+```
+
+`[OK, BAD, BAD, OK]` / `[OK, BAD, OK, BAD]` 等典型奇偶分布。
+
+### 调试过程
+
+#### Step 1: 退化到单 matrix（单 head）测试
+
+把算子退化到 `multi-matrix-count = 1`（单 head），其他参数不变。
+
+- 单 matrix 输出正常 → 问题在多 matrix 拼接（本案例）
+- 单 matrix 也 NaN → 问题在更底层（scale 路径 / Cast 公式 / LoadData 字段），见 [common-traps.md 陷阱10](common-traps.md)
+
+#### Step 2: 常量替换隔离
+
+把可疑 scale 张量全部替换为中性常量（scale = 1.0），重跑：
+
+- NaN 消失 → 根因在 scale 路径
+- NaN 仍在 → 根因在数据载体（本案例）
+
+#### Step 3: 逐 stage printf 采样
+
+在每个 Compute stage 输出位置插入 printf，采样不同 head row 的中间数值：
+
+- 早期 stage 输出在 head 0 / 3 数值正常，head 1 / 2 已经爆炸 → 锁定该 stage 用到的拼接矩阵
+- 早期 stage 全部正常，后期 stage 才出错 → 锁定后期 stage 用到的拼接矩阵
+
+定位到具体 stage 后，对应的 L1 拼接矩阵就是嫌疑对象。
+
+#### Step 4: 对照数据载体的 head offset 公式
+
+检查多 matrix 拼接到 L1 的 head offset 公式系数，是否与 dtype 的 NZ C0 元素数匹配：
+
+```cpp
+// ❌ 照搬 fp16 公式到 fp8 数据载体
+DataCopy(aL1[g * mEff * CUBE_BLOCK], aGm[...], ...);   // CUBE_BLOCK=16 是 fp16 C0 元素数
+
+// ✅ fp8 数据载体应该用 FP8_C0_ELEMS = 32
+DataCopy(aL1[g * mEff * FP8_C0_ELEMS], aGm[...], ...);
+```
+
+修复后模式可能从 `[OK, BAD, BAD, OK]` 变为 `[OK, BAD, OK, BAD]`（部分恢复但仍有错位，说明 scale 载体公式也错）。
+
+#### Step 5: 检查 scale 载体的独立 offset 公式
+
+scale 张量通常用 B16 视图 + Dn2Nz 加载，其 M-fractal element count **与数据载体不同**：
+
+```cpp
+// ❌ scale 载体误用数据载体公式系数
+DataCopy(aScaleL1B16[g * mEff * CUBE_BLOCK], aScaleGmB16[...], ...);
+// 或
+DataCopy(aScaleL1B16[g * mEff * FP8_C0_ELEMS], aScaleGmB16[...], ...);
+
+// ✅ scale 载体用其自己的 M-fractal element count
+DataCopy(aScaleL1B16[g * mEff * scaleK_b16], aScaleGmB16[...], ...);
+```
+
+修复 scale offset 后所有 head 输出正常。
+
+### 经验总结
+
+| 问题 | 根因 | 解决方案 |
+|-----|------|---------|
+| multi-head 奇偶 NaN | 数据载体 head offset 公式 dtype 误用 | 按 dtype 用对应 C0 元素数（fp16=16，fp8=32，fp4=64） |
+| 修一处后仍部分 NaN | scale 载体公式系数误用数据载体公式 | scale 载体公式独立推导，不照搬数据载体 |
+| multi-head 全 NaN | 拼接以外的更底层路径出错 | 退化到单 matrix 优先排查 |
+
+### 关键原则
+
+1. **退化测试是 multi-matrix 类问题的金标准**：单 matrix PASS / 多 matrix FAIL → 立刻锁定拼接相关
+2. **数据载体 vs scale 载体 offset 公式必须独立推导**：同一算子中可能多种 C0 大小并存，不能照搬统一系数
+3. **head 维奇偶 NaN 提示拼接错位**：全 BAD 是数据通路问题（scale 轴 / Cast 公式 / LoadData 字段），奇偶 BAD 才是拼接问题
+4. **常量替换隔离根因**：把可疑张量替换为中性常量，分辨"该张量路径 vs 其他路径"
+
+参数对照：NZ C0 大小、Multi-matrix head offset 公式见 [api-loaddata.md](../../ascendc-api-best-practices/references/api-loaddata.md)。
+
+---
+
 ## 调试经验总结
 
 ### 调试效率排序

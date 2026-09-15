@@ -1,0 +1,31 @@
+strategy_id: P1
+description: 双缓冲机制的适用性检查 — 必须有串行主计算循环、BUFFER_NUM=1、UB 容量充裕
+
+checks:
+  - id: has_compute_loop
+    type: grep_count
+    pattern: "for\\s*\\(.*;.*;.*\\)|while\\s*\\(.*\\)"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无主计算循环（如 Reduce 单次计算、非迭代式算子）→ 双缓冲无从下手。换 D1 混合精度或 P7 数据对齐"
+
+  - id: has_copyin_copyout
+    type: grep_count
+    pattern: "CopyIn|CopyOut|DataCopy"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无 CopyIn/CopyOut/DataCopy（可能全纯计算，无 DMA 搬运）→ 双缓冲收益 0。检查是否为 compute_bound 算子"
+
+  - id: buffer_num_is_one
+    type: grep_value
+    pattern: "(?:BUFFER_NUM|bufferNum)\\s*=\\s*(\\d+)"
+    files: [kernel, header]
+    expected_value: "1"
+    fail_msg: "BUFFER_NUM 已 ≥2，双缓冲已应用。检查 P20 三缓冲或 P22 TQueBind 复用是否更合适"
+
+  - id: no_existing_custom_buffer_policy
+    type: grep_count
+    pattern: "pingPong|PingPong|SetBufferPolicy|CustomDoubleBuffer"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已有自定义 buffer 管理（如 P19 Ping-Pong、手动 BufferPolicy）→ 与标准双缓冲互斥。保持现状或换策略"

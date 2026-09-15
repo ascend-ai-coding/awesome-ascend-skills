@@ -1,0 +1,204 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "运行时错误排查流程",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "NPU 推理跑起来就报运行时错误，整体应该怎么定位？只讲方法不用写代码。",
+      "expected_output": "回复应给出错误分类→二分法逐步缩小范围→匹配算子约束→修复→验证的流程，强调先定位再修复，避免盲目改",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-runtime-debug",
+          "description": "技能 model-infer-runtime-debug 被激活"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "aicore timeout 定位",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "推理时报 aicore timeout，怎么缩小范围找到具体是哪一步卡住的？只讲思路。",
+      "expected_output": "回复应说明用 sync + barrier 检查点二分法，在 prefill/decode 各阶段和模块间插入同步逐步缩小，定位到具体出错算子或模块",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-runtime-debug",
+          "description": "技能 model-infer-runtime-debug 被激活"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "推理卡住排查",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "多卡推理跑着跑着卡住不返回，怎么判断是真卡死还是只是慢，往哪查？只讲方向。",
+      "expected_output": "回复应说明用 npu-smi 看进程和利用率区分真卡 vs CPU 密集慢，逐 rank 检查日志末尾、确认各 rank 是否都到同一里程碑，排查 rank 间分支不一致死锁",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "npu-smi",
+          "description": "回复中提到了 npu-smi"
+        },
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-runtime-debug",
+          "description": "技能 model-infer-runtime-debug 被激活"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "信息不足时主动确认",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "我的模型推理报错了，帮我修。",
+      "expected_output": "回复应先确认必要信息再动手，而不是缺错误信息直接给修复",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-runtime-debug",
+          "description": "技能 model-infer-runtime-debug 被激活"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "正向看护-多 skill 环境下正确触发",
+      "config": {
+        "max_tokens": 150000,
+        "distractor_skills": [
+          "model-infer-precision-debug",
+          "model-infer-kvcache",
+          "model-infer-multi-stream"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "分布式推理某些 rank 挂死、device synchronize 失败，往哪个方向排查？只说方向不用写代码。",
+      "expected_output": "回复应正确激活 model-infer-runtime-debug，给出 HCCL/多卡同步死锁排查方向，即使存在精度、KVCache、多流等相似 skill 也应选运行时调试专项",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-runtime-debug",
+          "description": "技能 model-infer-runtime-debug 被激活"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "使用边界",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "推理不报错也不崩，就是输出和基线对不上，用这个运行时调试 skill 能查吗？",
+      "expected_output": "回复应说明本 skill 只诊断运行时错误（crash/timeout/OOM/卡住），输出精度偏差应交给 model-infer-precision-debug，不在本 skill 范围",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 7,
+      "title": "异步报错先用 synchronize 粗到细定位",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "报错栈只指向 torch.npu.synchronize，我准备一开始就在每个算子后同时加 synchronize 和 dist.barrier，快速找根因。这样合适吗？",
+      "expected_output": "回复应说明 NPU 异步执行导致 synchronize 位置不等于出错算子，先按阶段、层、模块、算子逐级少量插入 synchronize；不要一开始加 barrier，因为某 rank 崩溃会让其他 rank 永久等待，只有怀疑 rank 路径不一致时才用 monitored_barrier 并检查所有 rank 日志",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 8,
+      "title": "A2 MC2 专家数超限回退",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "A2 上 Decode 卡在 npu_moe_distribute_dispatch_v2，计算得 experts_per_rank=32。应该只增大 HCCL 超时继续等吗？",
+      "expected_output": "回复应指出 A2 MC2 dispatch_v2/combine_v2 要求 experts_per_rank 不超过 24，32 已违反算子约束；应回退到 init_routing_v2 加手工 AllToAll 的 double-routing 等功能等价路径，并记录性能影响，而不是只延长超时",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 9,
+      "title": "仅高位 Rank 权重加载越界",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "8 卡加载权重时 rank 0~2 正常，rank 3~7 在 lm_head narrow 时越界；原始 vocab=131125，lmhead_tp_size=8。该怎么定位和修？",
+      "expected_output": "回复应识别高位 rank 切分越界，区分 embedding 与 lm_head 的真实词表维度，把 lm_head 向上 pad 到 8 的倍数，并在加载时把原 checkpoint 权重补零到同一尺寸后再交给 weight_loader；切分必须使用 lmhead_tp_size 而非其他 TP 度",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 10,
+      "title": "CPU 满载的构造阶段不是通信死锁",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "日志停在 HCCL init 后，HBM 一直约 3GB，但每个进程 CPU 都在 100%。能否直接判断 HCCL 死锁并重建通信组？",
+      "expected_output": "回复应先判为模型构造或权重初始化的 CPU 密集慢路径，而非 CPU 0% 的通信等待；重点检查大 vocab Embedding 随机初始化、VocabParallelEmbedding 瞬态全词表分配和 post_init 遍历，可用 no_init_weights 或直接创建分片参数减少无用初始化",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 11,
+      "title": "修复后移除调试点并全 Rank 验收",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "加了很多 sync 后单步不再报错，是否可以保留这些检查点并宣告修复完成？",
+      "expected_output": "回复应要求先确认定位点前后通过，再移除调试 synchronize/barrier，运行完整 warmup 和 inference，逐 rank 日志确认全部成功并核对 DP 输出一致；若用了算子回退还需记录 Prefill/Decode 性能影响和未来恢复条件",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "model-infer-runtime-debug"
+}
