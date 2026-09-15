@@ -1,0 +1,129 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "NPU profiling 正确采集的关键约束",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "我要在昇腾 NPU 上对一个 PyTorch 推理模型采集 profiling，怎么配置才能拿到完整的 kernel 级数据？只讲方法和关键约束，不用写完整脚本。",
+      "expected_output": "回复应说明用 torch_npu.profiler 采集，且必须把 ExperimentalConfig 配成 Level1 + PipeUtilization，否则 kernel_details.csv 列不全、op_statistic/api_statistic 不生成；产出与 Ascend TensorBoard 兼容的 ASCEND_PROFILER_OUTPUT 目录，并在采集后验收产物完整性。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "PipeUtilization",
+          "description": "回复中提到了 PipeUtilization"
+        },
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-profiling",
+          "description": "技能 model-infer-profiling 被激活"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "框架内置 vs 注入采集的路由判断",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "仓库的推理脚本里已经有 enable_profiler 开关了，我还需要自己写一套 profiler 采集代码吗？怎么判断走哪条路？只讲思路。",
+      "expected_output": "回复应说明先做 Step 0 路由：仓库已内置 profiler（有 enable_profiler 开关或 profiler 封装）时走\"框架内置\"路径、只调参数不再重复注入；都没有时才走\"注入采集\"路径自己写 profiler。应优先用框架内置。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-profiling",
+          "description": "技能 model-infer-profiling 被激活"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "路由后先确认采集阶段和步数",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "已经确认仓库走框架内置 profiler。真正开始采集前还要确认哪些范围？用户没特别要求时怎么默认？",
+      "expected_output": "回复应确认采 prefill、decode 还是 both，以及 decode 的稳态步数；默认采 both，decode 建议至少约 10 步或按完整数据需求增大，Prefill active 保持 1，并把首次图编译放在采集窗口外",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "Profiler Schedule 必须跨出 Active 收尾",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "注入采集时 schedule 配 skip_first=2、warmup=1、active=10，循环里只调用 13 次 prof.step() 后就退出，是否完整？",
+      "expected_output": "回复应指出还需要至少一次 step 跨出 active 窗口，总调用数应不小于 skip_first+warmup+active+1，即至少 14；可增加一次只推进 schedule 的 prof.step() 收尾，否则可能停在 RECORD 并产生不完整解析数据",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "首次编译不得混入稳态窗口",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "我想分析 Decode TPOT，把第一次 torch.compile 和第一个 Decode 一起放进 profiler active 窗口，数据更完整，对吗？",
+      "expected_output": "回复应拒绝把首次 torch.compile、TorchAir 构图或 JIT 放入稳态窗口，要求先在 profiler 外预热，再按目标只采 Decode；否则 trace 主要反映编译开销而非 Decode kernel 稳态性能",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "框架解析失败先更换输出文件系统",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "框架 profiler 日志里所有 parser 都 run failed，CSV 全缺，trace_view.json 也截断。是否应马上重写一套注入采集代码？",
+      "expected_output": "回复应先把 profiler 输出切换到另一个本地文件系统并重跑验收，因为该组合常由输出盘导致离线解析失败；可通过复制原始 ascend_pt 数据到另一盘重新 analyse 验证，多个盘都失败后才回退到注入采集",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "采集完成后必须验收产物",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "enable_profiler=True 且推理正常退出，是否就能认定 profiling 成功？请说明最小验收项。",
+      "expected_output": "回复应说明正常退出不足以验收；每个已选阶段都要有 ASCEND_PROFILER_OUTPUT，kernel_details.csv 应约 47 列，op_statistic.csv/api_statistic.csv 存在，trace_view.json 可被 JSON 解析，日志无 run failed，step_trace_time 行数与 active 大致相符",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "model-infer-profiling"
+}

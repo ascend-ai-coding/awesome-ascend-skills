@@ -1,0 +1,102 @@
+{
+  "skill_name": "tune-orchestrator",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "调优编排三级状态机",
+      "config": {
+        "max_tokens": 120000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 150000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "请介绍 PyPTO 算子性能调优流程编排器的三级状态机和工作流程。",
+      "expected_output": "回复应覆盖三级状态机结构：Level 1 主工作流（INIT→S1_SETUP→S2_COLLECT→S3_ANALYZE→S4_TUNE→S5_REPORT→DONE）、Level 2 S4_TUNE 子阶段（PHASE_FRONTEND→PHASE_SWIMLANE→PHASE_INCORE）、Level 3 每阶段的迭代周期（ITER_START→ITER_MODIFY→ITER_VERIFY→ITER_MEASURE→ITER_RECORD→ITER_JUDGE），以及失败时的回退机制。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "Level" },
+        { "type": "contains", "pattern": "S4_TUNE" },
+        { "type": "contains", "pattern": "回退" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Todo 清单管理",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "PyPTO 性能调优流程编排中，Todo 清单如何维护和更新？",
+      "expected_output": "回复应说明 Todo 清单在调优流程中的作用：记录当前阶段和已完成/待完成步骤，实时更新每个阶段的完成状态，防止跳过关键步骤，以及在状态转移时自动更新清单内容。说明编排器不直接提供优化建议，而是控制流程推进。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "Todo" },
+        { "type": "contains", "pattern": "状态" },
+        { "type": "contains", "pattern": "跳过" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "S4_TUNE 迭代机制",
+      "config": {
+        "max_tokens": 120000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 150000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "PyPTO 调优进入 S4_TUNE 阶段后，各个子阶段之间如何流转和迭代？",
+      "expected_output": "回复应说明 S4_TUNE 的三个子阶段（前端调优→泳道图调优→核内调优）的执行顺序，每个子阶段的 ITER 迭代循环（修改→验证→测量→记录→判断），迭代判定标准，以及迭代失败时的回退路径（如返回上一阶段或重新收集数据）。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "前端" },
+        { "type": "contains", "pattern": "泳道" },
+        { "type": "contains", "pattern": "核内" },
+        { "type": "contains", "pattern": "ITER" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "信息不足场景：追问调优阶段",
+      "config": {
+        "max_tokens": 80000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 100000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "我要对 PyPTO 算子做性能调优。",
+      "expected_output": "回复应主动追问当前所处的调优阶段（是否已完成性能分析、是否已进行前端调优、泳道图分析状态等），以及有哪些已有的性能数据，以便编排器确定当前状态并推进到下一阶段。不应跳过流程直接给出调优建议。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "阶段" },
+        { "type": "not_contains", "pattern": "TileShape" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "正向看护：区分调优编排与执行",
+      "config": {
+        "max_tokens": 120000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 150000
+        },
+        "ascend_platforms": ["A2"],
+        "distractor_skills": ["tune-frontend", "tune-swimlane", "tune-incore", "perf-analyzer"]
+      },
+      "prompt": "我想对 PyPTO 算子做完整的性能调优，从哪里开始？流程怎么走？",
+      "expected_output": "回复应聚焦编排器的角色：说明调优的整体流程和阶段划分，描述编排器如何控制流程推进和 Todo 清单更新，引导用户从性能分析开始（S2_COLLECT→S3_ANALYZE），然后依次进入各调优阶段。重点在于流程编排而非具体优化方法。",
+      "files": [],
+      "expectations": [
+        { "type": "skill_activated", "pattern": "tune-orchestrator" },
+        { "type": "contains", "pattern": "流程" },
+        { "type": "contains", "pattern": "阶段" }
+      ]
+    }
+  ]
+}

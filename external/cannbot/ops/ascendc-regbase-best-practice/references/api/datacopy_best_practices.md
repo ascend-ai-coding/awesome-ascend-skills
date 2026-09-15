@@ -52,19 +52,20 @@ RegBase 推荐结构：
 
 ```cpp
 // CopyIn: GM -> UB
-AscendC::DataCopyPad(localUb, xGm[progress],
-    {(uint16_t)1, (uint16_t)(count * sizeof(float)), (uint16_t)0, (uint16_t)0},
-    {false, 0, 0, 0});
+AscendC::DataCopyExtParams copyInParams{1, (uint32_t)(count * sizeof(float)), 0, 0, 0};
+AscendC::DataCopyPadExtParams<float> padInParams{false, 0, 0, 0.0f};
+AscendC::DataCopyPad(localUb, xGm[progress], copyInParams, padInParams);
 
 // CopyOut: UB -> GM
-AscendC::DataCopyPad(yGm[progress], localUb,
-    {(uint16_t)1, (uint16_t)(count * sizeof(float)), (uint16_t)0, (uint16_t)0});
+AscendC::DataCopyExtParams copyOutParams{1, (uint32_t)(count * sizeof(float)), 0, 0, 0};
+AscendC::DataCopyPad(yGm[progress], localUb, copyOutParams);
 ```
 
 使用规则：
 
 - 对齐和 tail 不确定时，GM -> UB 优先考虑 `DataCopyPad`，并写清 padding 是否影响数学语义。
-- `DataCopyParams.blockLen` 描述当前 GM/UB 搬运长度；不要把它误写成 VF lanes 数。
+- `DataCopyExtParams.blockLen` 描述当前 GM/UB 搬运长度（单位：字节）；不要把它误写成 VF lanes 数。
+- `DataCopyPad` 参数统一使用 `DataCopyExtParams` + `DataCopyPadExtParams<T>`，详见 [api-datacopy.md](../../../ascendc-api-best-practices/references/api-datacopy.md)。
 - `DataCopyPad` 的 padding 只属于 UB staging，不等于 VF mask。进入 VF 后仍要用 `MaskReg` 处理 tail。
 - `SetValue` / `GetValue` 只作为调试辅助，不是生产搬运路径。
 

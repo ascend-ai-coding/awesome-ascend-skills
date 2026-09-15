@@ -1,0 +1,101 @@
+{
+  "skill_name": "precision-binary-search",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "二分定位法完整流程",
+      "config": {
+        "max_tokens": 120000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 150000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "请介绍 PyPTO 算子上板二分定位法的工作流程，如何定位首个出错的 Op？",
+      "expected_output": "回复应覆盖完整流程：分析代码结构确定检查点位置→修改 kernel 函数添加 checkpoint tensor→修改 golden 函数返回对应值→修改测试函数对比所有中间结果→二分定位首个出错的 Op。包含对 loop 输出处理、shape 对齐、dtype 一致性等注意事项的说明。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "checkpoint" },
+        { "type": "contains", "pattern": "二分" },
+        { "type": "contains", "pattern": "中间结果" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "检查点插入方法",
+      "config": {
+        "max_tokens": 120000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 150000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "PyPTO 算子二分定位精度问题时，如何在 kernel 函数中插入检查点？需要注意什么？",
+      "expected_output": "回复应说明检查点的插入方法：修改 kernel 函数签名添加 checkpoint tensor 参数、原地修改 checkpoint tensor 保存中间结果、golden 函数相应修改返回值。重点强调注意事项：loop 中输出处理（只取最后一轮或全部保存）、shape 对齐要求、dtype 一致性保证。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "tensor" },
+        { "type": "contains", "pattern": "签名" },
+        { "type": "contains", "pattern": "loop" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "典型精度问题场景",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "PyPTO 算子精度不对，怀疑是某个中间 Op 出错，怎么用二分定位法找出第一个出错的 Op？",
+      "expected_output": "回复应说明二分定位的具体操作：从算子代码中选取中间节点作为二分检查点，逐步缩小定位范围。包括如何设计检查点位置（优先在关键计算步骤后）、如何判断哪个 Op 先出错、以及常见陷阱（执行路径不一致、dtype 隐式转换等）。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "二分" },
+        { "type": "contains", "pattern": "中间节点" },
+        { "type": "contains", "pattern": "dtype" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "信息不足场景：追问精度问题信息",
+      "config": {
+        "max_tokens": 80000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 100000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "PyPTO 精度对不上，怎么二分定位？",
+      "expected_output": "回复应主动追问：算子代码和目标 kernel 结构、是否知道大概哪个区域出问题、第一次出现偏差的表现（数值错误还是 NaN/Inf）、输入输出规格和 dtype。不应直接给出修改 kernel 签名的具体操作。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "kernel" },
+        { "type": "contains", "pattern": "区域" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "正向看护：区分精度定位技能",
+      "config": {
+        "max_tokens": 120000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 150000
+        },
+        "ascend_platforms": ["A2"],
+        "distractor_skills": ["precision-verify", "precision-pass", "ops-precision-standard"]
+      },
+      "prompt": "PyPTO 算子上板精度对不上，想用二分法定位第一个出错的 Op。",
+      "expected_output": "回复应聚焦二分定位法的具体流程：修改 kernel 签名添加 checkpoint tensor、修改 golden 返回值、二分查找首个错误 Op。区别于文件保存对比法和 Pass 校验法。",
+      "files": [],
+      "expectations": [
+        { "type": "skill_activated", "pattern": "precision-binary-search" },
+        { "type": "contains", "pattern": "二分" },
+        { "type": "contains", "pattern": "checkpoint" }
+      ]
+    }
+  ]
+}

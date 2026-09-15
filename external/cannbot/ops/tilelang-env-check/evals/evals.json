@@ -1,0 +1,148 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "TileLang-Ascend 环境检查流程",
+      "config": {
+        "max_tokens": 250000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "帮我检查 TileLang-Ascend 开发环境是否配置正确，包括代码仓库、编译状态和环境变量。",
+      "expected_output": "回复应按顺序执行环境检查步骤：检查 Python 包依赖、CANN 环境变量、代码仓库完整性、编译安装状态和环境变量配置。发现问题时自动修复并按依赖顺序处理。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "ASCEND_HOME_PATH",
+          "description": "回复中提到了 ASCEND_HOME_PATH"
+        },
+        {
+          "type": "contains",
+          "pattern": "install_ascend.sh",
+          "description": "回复中提到了 install_ascend.sh"
+        },
+        {
+          "type": "contains",
+          "pattern": "set_env.sh",
+          "description": "回复中提到了 set_env.sh"
+        },
+        {
+          "type": "contains",
+          "pattern": "quick_verify.py",
+          "description": "回复中提到了 quick_verify.py"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "自动修复策略与依赖顺序",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "环境检查发现子模块不完整怎么办？修复子模块后还需要做什么操作？",
+      "expected_output": "回复应说明发现子模块不完整时，先告知用户问题存在，自动调用 tilelang-submodule-pull skill 拉取子模块，完成后告知用户修复结果。由于子模块更新，必须重新执行编译（bash install_ascend.sh），然后设置环境变量（source set_env.sh），最后运行测试验证。强调修复前必须告知用户问题，修复后告知结果，所有提示都要打印给用户。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "tilelang-submodule-pull",
+          "description": "回复中提到了 tilelang-submodule-pull"
+        },
+        {
+          "type": "contains",
+          "pattern": "install_ascend.sh",
+          "description": "回复中提到了 install_ascend.sh"
+        },
+        {
+          "type": "contains",
+          "pattern": "source set_env.sh",
+          "description": "回复中提到了 source set_env.sh"
+        },
+        {
+          "type": "contains",
+          "pattern": "前置",
+          "description": "回复中提到了 前置"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "环境脚本必须从 Skill 绝对路径调用",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我在业务项目目录直接执行 bash scripts/check_env.sh，提示 No such file。正确的仓库和脚本定位方式是什么？",
+      "expected_output": "回复应说明检查对象是含 install_ascend.sh、3rdparty、build、set_env.sh 的 TileLang-Ascend 仓库；先定位本 SKILL.md 所在 <SKILL_DIR>，用 bash <SKILL_DIR>/scripts/check_env.sh。目标仓按 TILELANG_DIR、当前目录向上、./tilelang-ascend 顺序定位，不能假设 scripts 在当前目录。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "Python 与 CANN 前置项只报告不自动修复",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "检测到 torch=2.5、torch_npu 缺失且 CANN=8.2。env-check 会自动升级这些前置依赖吗？",
+      "expected_output": "回复应说明 torch/torch_npu 最低 2.6.0、CANN 最低 8.3；步骤0-1只检查并汇总问题，不自动安装或升级。存在问题时先明确告知并询问是否继续后续仓库检查，不能把前置失败伪装成已修复。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "submodule 状态前缀的判定",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "git submodule status 的条目前缀分别是 '-'、'+' 和无前缀时，env-check 应怎样判断？",
+      "expected_output": "回复应说明 '-' 表示未初始化，'+' 表示当前 commit 与索引不一致、可能不完整，目录存在但为空也不完整；无前缀且目录有内容才判完整。发现异常要先告知用户，再调用 tilelang-submodule-pull。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "旧编译产物不能跨子模块修复复用",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "build/ 和 .so 已存在，但刚刚修复了缺失子模块。能否跳过重新编译，只 source set_env.sh？",
+      "expected_output": "回复应拒绝：旧产物基于不完整源码生成，子模块修复后必须重新运行 bash install_ascend.sh，再 source set_env.sh，最后做 quick_verify；不能因 build 目录存在就复用旧产物。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "仅环境变量缺失时执行最小修复",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "仓库和子模块完整、编译产物有效，只是 TL_ROOT、PYTHONPATH、ACL_OP_INIT_MODE 未生效。还需要重拉子模块和重编译吗？",
+      "expected_output": "回复应执行最小依赖链：先告知环境变量未设置，source set_env.sh 后复查 TL_ROOT、PYTHONPATH、ACL_OP_INIT_MODE 并运行验证；无需重拉子模块或重编译。修复前后都要向用户报告。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "tilelang-env-check"
+}

@@ -270,3 +270,33 @@ def math_kernel(x_ptr, y_ptr, out_ptr, op, ...):
 - [ ] 是否注意了支持的类型（fp32/fp16/bf16）
 - [ ] 是否需要组合类型转换（`.to(tl.int8)` 等）
 - [ ] 对于内置函数（`tl.exp`、`tl.log`、`tl.abs` 等），是否直接使用内置版本
+
+
+
+---
+
+## 来自 SKILL.md 的原始描述（优化点 9：Libdevice 函数使用）
+
+**适用条件**：代码中存在手动实现的数学函数，而 `tl.extra.cann.libdevice` 中已有优化版本
+
+**典型代码特征**：
+```python
+# 手动实现 round
+return (x + 0.5).to(tl.int8)
+
+# 手动实现 relu
+out = tl.maximum(x, 0.0)
+
+# 手动实现 tanh、sinh、pow 等数学函数
+```
+
+**判断逻辑**：
+- 检查代码中是否手动实现了以下函数：round、trunc、relu、tanh、sinh、cosh、pow、atan、acos、asin、expm1、log1p、hypot 等
+- 如果存在手动实现且 `tl.extra.cann.libdevice` 中有对应函数 → 涉及
+- 如果代码中没有数学函数实现，或已使用 libdevice 版本 → 不涉及，跳过
+
+**命中条件**：代码中存在手动实现的数学函数，且 libdevice 中有优化版本
+
+**参考文档**：`references/libdevice-usage.md`
+
+---

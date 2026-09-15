@@ -26,6 +26,13 @@
    - 分块行宽分别为 M0 和 N0
    - **注意**: 左右矩阵均无法同时满足 512B 的整数倍，需根据实际情况调整
 
+> **`nn.Linear` 落在情况 2**: `weight` 形状是 `[out_features, in_features]`，
+> `y = x @ Wᵀ` 即"A 不转置、B 转置"。kernel 侧表达为**交换权重的两个 stride**——
+> 传 `w.stride(1), w.stride(0)` 而非 `w.stride(0), w.stride(1)`。
+> 方阵（`in == out`）下 `x @ W` 与 `x @ Wᵀ` 的 shape 完全一致，shape 检查不会报错，
+> **只有数值会错**。若权重是参考实现内部随机初始化的，还需先保证权重值逐位一致，
+> 见 SKILL.md「参考实现的 nn.Module 语义复刻」C1。
+
 ### 为什么是 512B？
 
 - 512B = 256 个 fp16/bf16 元素（256 × 2 字节）

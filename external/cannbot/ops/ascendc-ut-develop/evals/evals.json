@@ -1,0 +1,393 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "为 Add 算子开发 op_api 层 UT",
+      "config": {
+        "max_tokens": 200000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 240000,
+          "glm-5": 220000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请介绍 ascendc-ut-develop 技能为 ops-math 仓的 Add 算子开发 op_api 层单元测试的完整工作流程。请依次介绍以下 6 个方面：\n1. 入口参数有哪些（算子名称、仓库类型、芯片架构、测试模块、使用模式）\n2. 强制前置步骤（问卷确认参数、创建 TODO.md、创建临时目录）\n3. 主流程 Step 1 到 Step 5 各步骤概述\n4. op_api 层 UT 使用的核心组件（如 TensorDesc、ScalarDesc、OP_API_UT 宏）\n5. 用例的 TDD 编写顺序（异常用例、正常用例、边界用例）\n6. 覆盖率目标（行覆盖率和函数覆盖率的具体数值）\n不需要执行任何操作，只需要介绍知识。",
+      "expected_output": "回复应体现 ascendc-ut-develop skill 的核心工作流，包含以下要点：\n- 首先确认入口参数：算子名称(add)、仓库类型(ops-math)、芯片架构(ascend910b/arch32)、测试模块(opapi)、使用模式(auto)\n- 说明强制前置步骤：发送问卷确认参数、创建 TODO.md、创建 /tmp/cannbot_add/ 临时目录\n- 说明主流程 Step 1-5：了解仓库信息（阅读基础知识文档、提取 SoC 列表、学习 build.sh 编译命令）→ 检查现有 UT 框架 → （跳过重构）→ 补全用例提升覆盖率 → 生成总结报告\n- 说明 op_api 层 UT 的核心组件：TensorDesc、ScalarDesc、OP_API_UT 宏\n- 说明 TDD 编写顺序：异常用例（nullptr/无效dtype/shape不匹配）→ 正常用例（各 dtype）→ 边界用例（空tensor/0维）\n- 说明覆盖率目标：行覆盖率 ≥ 80%、函数覆盖率 ≥ 80%",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "op_api",
+          "description": "回复中提到了 op_api"
+        },
+        {
+          "type": "contains",
+          "pattern": "覆盖率",
+          "description": "回复中提到了 覆盖率"
+        },
+        {
+          "type": "contains",
+          "pattern": "build.sh",
+          "description": "回复中提到了 build.sh"
+        },
+        {
+          "type": "contains",
+          "pattern": "80%",
+          "description": "回复中提到了 80%"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "覆盖率提升分析与补测策略",
+      "config": {
+        "max_tokens": 200000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 240000,
+          "glm-5": 220000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我需要为 ops-nn 仓的 Softmax 算子提升 op_host 层 UT 覆盖率，目标芯片 ascend910b，自动模式。当前行覆盖率 65%，函数覆盖率 70%，需要提升到 80% 以上。\n\n入口参数已确认：op_name=softmax, repo_type=ops-nn, soc_type=ascend910b, test_model=ophost, interactive_mode=auto。\n\n请直接告诉我 Step 4 补全用例提升覆盖率的完整流程：如何获取覆盖率、如何分析未覆盖代码、如何设计补测用例。",
+      "expected_output": "回复应基于 skill 的 Step 4 覆盖率提升流程，包含以下要点：\n- 获取覆盖率：使用 `bash build.sh -u --ophost --ops=softmax --soc=ascend910b --cov` 编译并生成覆盖率\n- 判断覆盖率类型：区分全局覆盖率和单算子覆盖率，全局覆盖率需用 `lcov --extract` 提取\n- 分析未覆盖代码：使用 `lcov --list ops.info_filtered | grep \":0\"` 获取未覆盖行\n- 按缺口类型补充策略：异常分支（ACLNN_ERR_*/GRAPH_FAILED）、dtype 分支（分析 tiling 实现中的 dtype 分支逻辑）、边界条件（空 tensor、大 shape）\n- op_host 层特有关注点：Tiling 测试（CompileInfo 类型检测、TilingContextPara）、InferShape 测试（NodeAttrs 配置）\n- 完成检查标准：行覆盖率 ≥ 80%、函数覆盖率 ≥ 80%",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "lcov",
+          "description": "回复中提到了 lcov"
+        },
+        {
+          "type": "contains",
+          "pattern": "覆盖率",
+          "description": "回复中提到了 覆盖率"
+        },
+        {
+          "type": "contains",
+          "pattern": "80%",
+          "description": "回复中提到了 80%"
+        },
+        {
+          "type": "contains",
+          "pattern": "补充",
+          "description": "回复中提到了 补充"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "op_api 层 dtype 排列组合校验",
+      "config": {
+        "max_tokens": 200000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 240000,
+          "glm-5": 220000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我需要为 ops-transformer 仓的 FlashAttention 算子确保 op_api 层 UT 覆盖所有合法 dtype 组合，目标芯片全选，自动模式。听说有脚本可以自动提取 dtype 组合。\n\n入口参数已确认：op_name=flash_attention, repo_type=ops-transformer, soc_type=all, test_model=opapi, interactive_mode=auto。\n\n请直接告诉我 dtype 排列组合校验的完整流程：如何定位 def 文件、如何使用脚本提取 dtype 组合、校验步骤和异常组合构造方法。",
+      "expected_output": "回复应基于 skill 的 Dtype 排列组合校验流程，包含以下要点：\n- 定位算子定义文件：`find ${op_path}/op_host -name \"*_def.cpp\"`\n- 使用脚本提取 dtype 组合：`python scripts/extract_dtype_combinations.py ${def_file}`，输出到 `/tmp/${op_name}_dtype_combinations.json`\n- 5 步校验流程：脚本提取 → 补充用例 → 覆盖率分析（lcov 检查 dtype 分支无 `:0`）→ 实际测试（build.sh 全部 PASS）→ 异常校验（构造 3 种非法组合返回 ACLNN_ERR_PARAM_INVALID）\n- 异常组合构造方法：跨位置组合、未定义 dtype、dtype 不一致\n- 判定标准：5 步全部通过则 dtype 校验完整",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "extract_dtype_combinations",
+          "description": "回复中提到了 extract_dtype_combinations"
+        },
+        {
+          "type": "contains",
+          "pattern": "ACLNN_ERR_PARAM_INVALID",
+          "description": "回复中提到了 ACLNN_ERR_PARAM_INVALID"
+        },
+        {
+          "type": "contains",
+          "pattern": "dtype",
+          "description": "回复中提到了 dtype"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "入口参数问卷与强制前置步骤",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我想给 ops-transformer 仓的 Mul 算子写 UT，芯片是 ascend950，测试 ophost 和 opapi 两个模块。请告诉我 skill 的入口参数有哪些，以及执行前必须完成哪些前置步骤。",
+      "expected_output": "回复应准确列出 skill 的 5 个入口参数及其取值：\n- op_name：算子名（mul），驼峰命名自动转换为下划线命名\n- repo_type：仓库类型，枚举值 ops-math/ops-nn/ops-transformer/ops-cv/custom\n- soc_type：芯片架构，枚举值 ascend310p(arch20)/ascend910b(arch32)/ascend910_93(arch32)/ascend950(arch35)\n- test_model：测试模块，枚举值 opapi/ophost/opkernel，可多选\n- interactive_mode：使用模式，auto（默认）或 interactive\n\n说明强制前置步骤（不可跳过）：\n1. 使用 question 工具发送问卷确认入口参数，推断选项加\"【推荐】\"标记\n2. 使用 todowrite 工具创建 TODO.md（内容来自 assets/todo.json）\n3. 创建 /tmp/cannbot_mul/ 临时目录，存储 params.json 和中间文件",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "op_name",
+          "description": "回复中提到了 op_name"
+        },
+        {
+          "type": "contains",
+          "pattern": "repo_type",
+          "description": "回复中提到了 repo_type"
+        },
+        {
+          "type": "contains",
+          "pattern": "soc_type",
+          "description": "回复中提到了 soc_type"
+        },
+        {
+          "type": "contains",
+          "pattern": "test_model",
+          "description": "回复中提到了 test_model"
+        },
+        {
+          "type": "contains",
+          "pattern": "interactive_mode",
+          "description": "回复中提到了 interactive_mode"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "UT 框架重构流程",
+      "config": {
+        "max_tokens": 200000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 240000,
+          "glm-5": 220000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请介绍 ascendc-ut-develop 技能中 Step 3（重构 UT 框架）的详细步骤。我特别想了解：备份旧代码怎么做、搭建新框架要注意什么、ops-transformer 仓的 CSV 格式整改怎么走、迁移旧用例有什么规则、子 Agent 完成后要检查什么。不需要执行任何操作，只需要介绍知识。",
+      "expected_output": "回复应基于 skill 的 Step 3 重构流程，包含以下要点：\n- Step 3.1 备份旧框架代码：将 ut/${test_model} 下的 .cpp/.h 文件备份到 /tmp/cannbot_${op_name}/backup/，然后删除原文件\n- Step 3.2 搭建新框架：使用 Task 工具调用子 Agent，仅迁移一条预期成功的旧用例验证框架，UT 代码放在算子目录下而非仓库根目录的 test 目录\n- CSV 格式重构特殊路径：当 repo_type 为 ops-transformer 且用户提及 CSV 时，参考 ops-transformer.md 和 csv-refactor-workflow.md，使用 assets/csv-refactor/ 下的模板文件，查看详细规范 csv-format-spec.md\n- Step 3.3 迁移所有旧用例：每 5 条一组确保编译运行通过后再迁移下一组，不得更改已迁移用例和公共代码\n- 子 Agent 完成后必须检查：编译通过 + 运行测试全部 PASS + 用例数量与重构前一致",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "备份",
+          "description": "回复中提到了 备份"
+        },
+        {
+          "type": "contains",
+          "pattern": "CSV",
+          "description": "回复中提到了 CSV"
+        },
+        {
+          "type": "contains",
+          "pattern": "子 Agent",
+          "description": "回复中提到了 子 Agent"
+        },
+        {
+          "type": "contains",
+          "pattern": "5 条",
+          "description": "回复中提到了 5 条"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "op_host 层 Tiling 和 InferShape 测试要点",
+      "config": {
+        "max_tokens": 250000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 300000,
+          "glm-5": 275000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请简洁介绍 ascendc-ut-develop 技能中 op_host 层 UT 测试返回 GRAPH_FAILED 的常见原因和解决方法。请依次简要说明以下 5 个要点（每个要点 1-2 句话即可，不要写大段代码示例）：\n1. 最常见原因是什么（NodeAttrs 未配置）\n2. 如何配置 NodeAttrs（InferShape 和 Tiling 分别用什么 API）\n3. MatMul 系列算子有哪些常见属性\n4. CompileInfo 类型检测方法（如何确定命名空间）\n5. 如何确定需要哪些属性（查看什么宏、搜索什么函数调用）",
+      "expected_output": "回复应基于 skill 的 op-host-ut-guide 知识，简要包含以下要点：\n- 最常见原因：未配置 NodeAttrs。大部分算子的 InferShape/Tiling 函数会调用 context->GetAttr() 读取算子属性，未配置则返回 GRAPH_FAILED\n- 解决方案：InferShape 测试使用 InferShapeContextFaker().NodeAttrs() 配置属性，Tiling 测试使用 TilingContextFaker().NodeAttrs() + NodeInputTd()\n- MatMul 系列算子常见属性：adj_x1、adj_x2、offset_x、opImplMode（命名空间 Ops::NN）\n- CompileInfo 类型检测：必须先检测 TilingParse<TYPE> 的类型（BroadcastCompileInfo 用 Ops::Base:: 命名空间，自定义 CompileInfo 用 optiling:: 命名空间）\n- 如何确定需要哪些属性：查看 INFER_SHAPE_FUNC/TILING_FUNC 宏、搜索 GetAttr()/GetAttrValue() 调用",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "NodeAttrs",
+          "description": "回复中提到了 NodeAttrs"
+        },
+        {
+          "type": "contains",
+          "pattern": "GRAPH_FAILED",
+          "description": "回复中提到了 GRAPH_FAILED"
+        },
+        {
+          "type": "contains",
+          "pattern": "CompileInfo",
+          "description": "回复中提到了 CompileInfo"
+        },
+        {
+          "type": "contains",
+          "pattern": "GetAttr",
+          "description": "回复中提到了 GetAttr"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "正向看护-多 skill 环境下正确触发目标 skill",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "distractor_skills": [
+          "ascendc-st-design",
+          "ascendc-code-review",
+          "ascendc-whitebox-design",
+          "ascendc-api-best-practices"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请介绍 ascendc-ut-develop 技能中补全用例提升覆盖率的完整方法。请依次介绍以下 5 个方面：\n1. 如何获取覆盖率数据（具体编译命令，如 build.sh 的 --cov 参数）\n2. 如何分析未覆盖代码（具体工具，如 lcov 命令）\n3. 按哪些缺口类型补充用例（如异常分支、dtype 分支、边界条件等）\n4. op_api 层 UT 使用哪些核心组件（如 OP_API_UT 宏、TensorDesc 等）\n5. 覆盖率目标的具体数值（行覆盖率和函数覆盖率分别要达到多少）\n不需要执行任何操作，只需要介绍知识。",
+      "expected_output": "回复应正确激活 ascendc-ut-develop skill，基于其工作流给出指导。应说明：\n- 使用 build.sh --cov 获取覆盖率数据\n- 使用 lcov 分析未覆盖代码\n- 按缺口类型（异常分支/dtype 分支/边界条件）补充用例\n- op_api 层使用 OP_API_UT 宏、TensorDesc 等组件\n- 覆盖率目标：行覆盖率和函数覆盖率均 ≥ 80%\n即使在 ascendc-st-design、ascendc-code-review 等相似 skill 共存的环境下，也应正确选择 ascendc-ut-develop。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "覆盖率",
+          "description": "回复中提到了 覆盖率"
+        },
+        {
+          "type": "contains",
+          "pattern": "80%",
+          "description": "回复中提到了 80%"
+        },
+        {
+          "type": "skill_activated",
+          "pattern": "ascendc-ut-develop",
+          "description": "技能 ascendc-ut-develop 被激活"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "UT 开发总结报告结构",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "ascendc-ut-develop 的 UT 开发总结报告（Step 5）包含哪些章节？每个章节需要记录什么信息？",
+      "expected_output": "回复应基于 skill 的 assets/template_report.md 模板，列出报告的完整结构：\n- 基本信息：算子名称、算子仓、算子类别、SoC 版本、支持的 dtype 和 format\n- 层支持情况：op_host/op_api/op_kernel 各层是否支持\n- UT 文件路径：展示 ut/ 目录下 op_api/op_host/op_kernel 的文件树\n- 用例统计：按层分别统计异常用例、正常用例、边界用例的数量\n- 覆盖率统计：覆盖率类型（全局/单算子）、行覆盖率/函数覆盖率/分支覆盖率的值和目标（≥80%）\n- 遇到的问题及解决方案\n- 编译命令记录\n- 最终状态检查清单：编译通过、测试通过、覆盖率类型判断、覆盖率达标、TDD 流程遵循、报告生成",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "基本信息",
+          "description": "回复中提到了 基本信息"
+        },
+        {
+          "type": "contains",
+          "pattern": "用例统计",
+          "description": "回复中提到了 用例统计"
+        },
+        {
+          "type": "contains",
+          "pattern": "覆盖率",
+          "description": "回复中提到了 覆盖率"
+        },
+        {
+          "type": "contains",
+          "pattern": "编译命令",
+          "description": "回复中提到了 编译命令"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "信息不足时主动追问",
+      "config": {
+        "max_tokens": 1000000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 1000000,
+          "glm-5": 1000000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "帮我写 UT",
+      "expected_output": "回复应主动追问关键信息，而不是直接开始编写 UT。应至少询问以下信息中的一项或多项：算子名称、仓库类型（ops-math/ops-nn/ops-transformer/ops-cv/custom）、目标芯片架构（ascend310p/ascend910b/ascend910_93/ascend950）、测试模块（opapi/ophost/opkernel）。不应在缺乏算子规格的情况下直接生成测试代码。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "not_contains",
+          "pattern": "TEST_F",
+          "description": "回复中不应包含 TEST_F"
+        },
+        {
+          "type": "not_contains",
+          "pattern": "EXPECT_EQ",
+          "description": "回复中不应包含 EXPECT_EQ"
+        },
+        {
+          "type": "not_contains",
+          "pattern": "OP_API_UT",
+          "description": "回复中不应包含 OP_API_UT"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "build.sh 编译命令与 --noexec 注意事项",
+      "config": {
+        "max_tokens": 160000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 192000,
+          "glm-5": 176000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "在 ascendc-ut-develop 的工作流中，build.sh 的 --noexec 参数有什么作用？使用时需要注意什么？获取覆盖率的编译命令是什么？",
+      "expected_output": "回复应基于 skill 的 Step 1.3 知识，包含以下要点：\n- 不带 --noexec：编译 + 运行一步完成，推荐日常使用，能发现 CSV 格式等运行时错误\n- 带 --noexec：仅编译不运行，仅用于快速验证语法错误\n- 常见错误：加了 --noexec 后忘记运行测试，导致 CSV 格式错误未被发现\n- 编译通过后必须再运行测试\n- 获取覆盖率的命令：`bash build.sh -u --ops=${op_name} --soc=${soc_type} --cov`\n- 按模块编译：`--opapi`、`--ophost`、`--opkernel`",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "--noexec",
+          "description": "回复中提到了 --noexec"
+        },
+        {
+          "type": "contains",
+          "pattern": "--cov",
+          "description": "回复中提到了 --cov"
+        },
+        {
+          "type": "contains",
+          "pattern": "build.sh",
+          "description": "回复中提到了 build.sh"
+        }
+      ]
+    }
+  ],
+  "skill_name": "ascendc-ut-develop"
+}

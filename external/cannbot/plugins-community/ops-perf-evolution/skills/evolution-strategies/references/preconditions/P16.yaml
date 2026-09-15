@@ -1,0 +1,17 @@
+strategy_id: P16
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "GetBlockNum|BLOCK_DIM|coreNum|SplitCore"
+    min_count: 1
+    fail_msg: "未检测到多核分块逻辑（GetBlockNum/BLOCK_DIM/coreNum）→ 非多核算子，不适用 P16。检查 P5 或 P14。"
+  - type: grep_count
+    path: shared/original/op_host
+    pattern: "Tiling|tileSize|ubFactor"
+    min_count: 1
+    fail_msg: "未检测到 Host 侧 Tiling 逻辑 → 无分核调度空间，不适用 P16。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "tiling_imbalance|load_unbalance|不均衡"
+    max_count: 0
+    fail_msg: "已存在负载均衡优化 → 可能冗余，优先验证现有策略效果。"

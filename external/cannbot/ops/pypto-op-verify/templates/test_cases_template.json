@@ -1,0 +1,46 @@
+{
+  "op_name": "<op>",
+  "source": "pypto-op-verify",
+  "description": "PyPTO <op> 算子测试用例 — 由 test_template.py 通过 test_inputs.make_inputs() 读取",
+  "test_cases": [
+    {
+      "id": "<label>_l0",
+      "level": 0,
+      "description": "L0: 最小合法形状 — 冒烟测试",
+      "seed": 42,
+      "shape": {
+        "_comment": "来自 SPEC.md，覆盖契约的最小合法形状",
+        "B": 1,
+        "T": 1,
+        "H": 1,
+        "K": 16,
+        "V": 16
+      },
+      "dtype": {
+        "_comment": "来自 SPEC.md supported_dtypes",
+        "default": "float32"
+      },
+      "atol": 1.0e-3,
+      "rtol": 1.0e-3
+    },
+    {
+      "id": "<label>_l1",
+      "level": 1,
+      "description": "L1: 来自 SPEC.md 的 P0 形状 — 全精度验证",
+      "seed": 42,
+      "shape": {
+        "_comment": "来自 SPEC.md p0_shapes",
+        "B": 1,
+        "T": 64,
+        "H": 24,
+        "K": 128,
+        "V": 128
+      },
+      "dtype": {
+        "default": "float32"
+      },
+      "atol": 1.0e-3,
+      "rtol": 1.0e-3
+    }
+  ]
+}

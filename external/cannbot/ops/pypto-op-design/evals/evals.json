@@ -1,0 +1,222 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "简单 Vector 算子（Add）设计",
+      "config": {
+        "max_tokens": 240000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 288000,
+          "glm-5": 256000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "file_based"
+      },
+      "prompt": "我想设计一个 Add 算子，算子规格如下：\n\n算子名称：Add\n数学公式：z = x + y（逐元素加法）\n输入：x fp16 [1024, 4096], y fp16 [1024, 4096]\n输出：z fp16 [1024, 4096]\n\n请帮我生成 DESIGN.md",
+      "expected_output": "生成的 DESIGN.md 应覆盖以下要点（§1-§6 共 6 个章节）：\n- §1 计算图与精度路由：算子名称 Add、逐元素加法、API 调用序列（PyPTO 逐元素加法 API）、dtype 流转（fp16，无需 cast）\n- §2 数据规格：kernel 签名含 x/y/z（fp16，[1024, 4096]），值类型分析\n- §3 Tiling 策略：判断为 Vector 类型（不含 matmul），使用 set_vec_tile_shapes，含 tile 参数推导、UB 容量估算与展开检查\n- §4 Loop 与数据流：完整伪代码，简单逐元素算子无动态轴、无需动态 pypto.loop，由 Tiling 按 tile 切分处理，含数据搬运与尾块处理\n- §5 约束自检清单：约束检查表（API dtype、广播/Shape、值类型、Tiling 时序）与开放问题\n- §6 验证方案：Golden 函数为简单的 torch 加法，覆盖典型 shape 配置，含精度容差\n- 无残留 {placeholder} 占位符",
+      "files": [],
+      "expectations": [
+        {
+          "type": "file_exists",
+          "pattern": "DESIGN.md",
+          "description": "文件 DESIGN.md 已生成"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Cube 算子（Matmul）设计",
+      "config": {
+        "max_tokens": 400000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 400000,
+          "glm-5": 400000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "file_based"
+      },
+      "prompt": "我想设计一个 Matmul 算子，算子规格如下：\n\n算子名称：Matmul\n数学公式：C = A × B + bias\n输入：A fp16 [512, 4096], B fp16 [4096, 2048], bias fp16 [512, 2048]\n输出：C fp16 [512, 2048]\n典型配置：\n| 配置名称 | 类型 | 优先级 | 参数 | 输入 Shape | 输出 Shape | 说明 |\n|----------|------|--------|------|------------|------------|------|\n| 核心配置 | 性能 | P0 | 无 | A[512,4096], B[4096,2048], bias[512,2048] | C[512,2048] | 标准 matmul |\n算法描述：带 bias 的矩阵乘法，需先执行矩阵乘 A×B，然后与 bias 相加\n\n请帮我生成 DESIGN.md",
+      "expected_output": "生成的 DESIGN.md 应覆盖以下要点（§1-§6 共 6 个章节）：\n- §1 计算图与精度路由：算子名称 Matmul、C=A×B+bias、API 调用序列（matmul 相关 Cube API 与加法 API）、dtype 流转\n- §2 数据规格：kernel 签名含 A/B/bias/C 四个 tensor，数据格式 fp16\n- §3 Tiling 策略：判断为含 matmul 的 cube+vec 混合类型，matmul 阶段使用 set_cube_tile_shapes、bias 加法阶段按需使用 set_vec_tile_shapes，说明 tile 参数推导依据、UB 容量估算与展开检查\n- §4 Loop 与数据流：完整伪代码，根据具体 shape 分析 Loop 结构与跨迭代依赖，数据搬运与尾块处理\n- §5 约束自检清单：约束检查表（API dtype、广播/Shape、值类型、Tiling 时序）与开放问题\n- §6 验证方案：Golden 函数使用 torch.matmul + bias 加法，覆盖典型配置，含精度容差\n- 无残留 {placeholder} 占位符",
+      "files": [],
+      "expectations": [
+        {
+          "type": "file_exists",
+          "pattern": "DESIGN.md",
+          "description": "文件 DESIGN.md 已生成"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "信息不足时主动追问",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "帮我设计一个算子",
+      "expected_output": "回复应询问算子名称、数学公式、输入输出规格等关键信息。不应在缺乏算子规格的情况下直接生成设计文档。应至少询问算子名称和数学公式。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "not_contains",
+          "pattern": "pypto.set_vec_tile_shapes(",
+          "description": "回复中不应包含 pypto.set_vec_tile_shapes("
+        },
+        {
+          "type": "not_contains",
+          "pattern": "pypto.set_cube_tile_shapes(",
+          "description": "回复中不应包含 pypto.set_cube_tile_shapes("
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "正向看护-多 Skill 环境下正确触发 PyPTO 算子设计",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 500000,
+          "glm-5": 500000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "distractor_skills": [
+          "pypto-op-develop",
+          "pypto-api-explore",
+          "ascendc-st-design",
+          "ascendc-tiling-design"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请使用 pypto-op-design skill 的算子设计工作流来设计一个 Softmax 算子，算子规格如下：\n\n算子名称：Softmax\n数学公式：softmax(x_i) = exp(x_i) / sum(exp(x_j))\n输入：x fp16 [1024, 4096]\n输出：y fp16 [1024, 4096]\n\n请运行完整的算子设计工作流，生成 DESIGN.md，输出到当前目录。",
+      "expected_output": "回复应调用 pypto-op-design skill 并执行算子设计工作流，生成 Softmax 算子的 DESIGN.md。内容应包含：§1 计算图与精度路由（exp、pypto.sum、除法 div 等操作的 PyPTO API 序列与 dtype 流转）、§2 数据规格、§3 Tiling 策略（Vector 类型）、§4 Loop 与数据流（含完整伪代码）、§5 约束自检清单、§6 验证方案。应覆盖 DESIGN.md 的 6 个章节，且最终输出 DESIGN.md 文件到当前目录。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "pypto-op-design",
+          "description": "技能 pypto-op-design 被激活"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "工作流知识验证",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "pypto-op-design 算子设计工作流包含哪些阶段？请详细介绍每个阶段的输入和输出。",
+      "expected_output": "回复应覆盖 pypto-op-design 的核心工作流。该工作流是问题驱动的迭代设计，核心为 4 轮迭代，每轮聚焦一个核心问题，发现矛盾时回溯修正前序决策：\n- 第 1 轮 计算图与精度路由：输入算子规格（API 探索报告 / Golden 参考可选），输出 API 调用序列、dtype 流转与 cast 点、排除的备选方案（DESIGN.md §1）\n- 第 2 轮 Tiling 推导：输入第 1 轮确定的 API 序列与 tensor 清单，输出 tile 参数、UB 容量估算与展开检查结果（DESIGN.md §3）\n- 第 3 轮 Loop、数据流与 SymbolicScalar 分析：输入第 1 轮 API 序列与第 2 轮 tile 配置，输出动态轴标注、完整伪代码、伪代码可行性验证（DESIGN.md §4）\n- 第 4 轮 约束交叉验证：输入前 3 轮全部产出，对 API / Tiling / Loop / SymbolicScalar 逐项检查，不通过则回溯到对应轮次修正（DESIGN.md §5）\n回复还应说明 DESIGN.md 的输出结构（§1-§6 共 6 个章节）与最终的完成报告。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "计算图与精度路由",
+          "description": "回复中提到了 计算图与精度路由"
+        },
+        {
+          "type": "contains",
+          "pattern": "Tiling",
+          "description": "回复中提到了 Tiling"
+        },
+        {
+          "type": "contains",
+          "pattern": "Loop",
+          "description": "回复中提到了 Loop"
+        },
+        {
+          "type": "contains",
+          "pattern": "SymbolicScalar",
+          "description": "回复中提到了 SymbolicScalar"
+        },
+        {
+          "type": "contains",
+          "pattern": "约束交叉验证",
+          "description": "回复中提到了 约束交叉验证"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "module_count 必须采用脚本推导结果",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "设计一个复杂 PyPTO 算子时，module_count 能否凭经验手算？应该输入哪些人工信号，产出写到哪里？",
+      "expected_output": "回复应要求先统计 loop-carry 状态组数 S 和跨 tile reduce 次数 R，运行 derive_design_params.py 对 golden 分析，并直接采用 JSON 的 total_complexity、module_count 和 path。结果写入 DESIGN.md §0；若 module_count≥2，再提供 module_count-1 个语义清晰的边界张量。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "标准 FlashAttention forward 不应被过度拆分",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "标准 FlashAttention forward 同时有两个 matmul、softmax 和状态更新，是否应该按每个 heavy op 拆成多个 module？",
+      "expected_output": "回复应说明 1 个复杂度单位正是标准 FlashAttention forward 的工作量，因此它通常 module_count=1、不拆。heavy op 是模块骨架而非边界标记，softmax 的 max-sub-exp-sum-div 整套算一个 heavy op，不能切成多个过薄模块。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 8,
+      "title": "多 shape class 需要分阶段设置 vec tile",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "同一算子三个 Vector 阶段的 operand 分别是 [1,1,BT,K]、[1,1,BT,BT] 和 [1,1,K,V]。只在入口设置一次 vec tile 是否足够？",
+      "expected_output": "回复应先按 operand shape class 分组；存在两个以上 shape class 时需要 per-stage set_vec_tile_shapes，与多个 matmul 的 per-stage cube tile 同理。混合算子要显式切换作用域，但 Stage 7 前仍使用脚本给出的基线值，不在设计阶段做性能穷举。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 9,
+      "title": "生产动态轴必须具备完整四要素",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "kernel 的 Tensor 注解已经写了 pypto.DYNAMIC，也设置了 tile，但直接把整个动态 tensor 喂给 sum，没有 loop 和 view。这样算支持任意 shape 吗？",
+      "expected_output": "回复应明确不支持。生产动态轴必须同时具备 DYNAMIC literal 注解、编译期静态 tile config、沿动态轴且 trip count 来自 shape 的 pypto.loop、loop 内 pypto.view 切 concrete tile；缺 loop/view 会导致运行无法遍历或 workspace estimator overflow/OOM。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 10,
+      "title": "动态尾块 valid_shape 必须 clamp",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "动态轴 B 用 TILE_B=16 切分，代码把 rem=B-offset 直接作为 valid_shape[0]。这个设计是否正确？",
+      "expected_output": "回复应指出错误：非末尾迭代的 rem 可能远大于 declared shape 16，违反每轴 valid_shape≤shape。应使用 (B-offset).min(TILE_B) clamp；若 P0 保证整除，可直接 loop(B//TILE_B) 且不带 valid_shape，只有可能不整除时才使用 clamp 模式。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "pypto-op-design"
+}

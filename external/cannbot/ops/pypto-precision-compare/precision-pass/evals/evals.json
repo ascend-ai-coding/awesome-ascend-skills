@@ -1,0 +1,101 @@
+{
+  "skill_name": "precision-pass",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "Pass 精度校验工作流",
+      "config": {
+        "max_tokens": 120000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 150000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "请介绍 PyPTO 算子 Pass 精度校验的完整工作流程和方法。",
+      "expected_output": "回复应覆盖：PreCheck/PostCheck 全链路 Pass 校验机制、通过 pass 校验定位报错 Pass 的方法、pass_compare 逐 Op 对比定位具体问题 Op、动态 shape 上板数据打印验证、IR 图分析辅助定位。同时应包含错误码速查表（如 0xB4001U→前端问题、0xB200FU→OP 错误→IR 图分析）。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "PreCheck" },
+        { "type": "contains", "pattern": "PostCheck" },
+        { "type": "contains", "pattern": "pass_compare" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "错误码诊断与定位",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "PyPTO 算子精度校验报错 0xB4001U，这个错误是什么意思？怎么定位？",
+      "expected_output": "回复应解释 0xB4001U 错误码的含义（前端问题），提供定位方法和解决路径（使用 verify_options 配置开启 PreCheck/PostCheck，通过 pass_compare 逐 Op 对比），并给出其他常见错误码（如 0xB200FU）的速查表。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "0xB4001" },
+        { "type": "contains", "pattern": "verify_options" },
+        { "type": "contains", "pattern": "pass_compare" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "环境配置与执行",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "如何配置 PyPTO 的 Pass 精度校验环境？需要设置哪些环境变量和配置选项？",
+      "expected_output": "回复应说明环境变量设置方法、verify_options 配置的具体参数、开启 PreCheck/PostCheck 的配置方式，以及如何配置 pass_compare 进行逐 Op 对比。应提供配置示例。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "环境变量" },
+        { "type": "contains", "pattern": "verify_options" },
+        { "type": "contains", "pattern": "PreCheck" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "信息不足场景：追问精度错误信息",
+      "config": {
+        "max_tokens": 80000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 100000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "PyPTO 精度校验报错了，帮我看看什么问题。",
+      "expected_output": "回复应主动追问关键信息：具体的错误码（如 0xB4001U 或 0xB200FU）、报错 Pass 名称、是否有 IR 图可供分析、算子输入输出规格。不应在缺少错误码信息的情况下直接给出配置方法。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "错误码" },
+        { "type": "contains", "pattern": "Pass" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "正向看护：区分精度校验技能",
+      "config": {
+        "max_tokens": 120000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 150000
+        },
+        "ascend_platforms": ["A2"],
+        "distractor_skills": ["precision-binary-search", "precision-verify", "ops-precision-standard"]
+      },
+      "prompt": "PyPTO 算子在做 Pass 校验时报了 0xB200FU 错误，怎么用 Pass 校验定位具体的问题 Op？",
+      "expected_output": "回复应聚焦 Pass 精度校验方法：使用 PreCheck/PostCheck 全链路校验和 pass_compare 逐 Op 对比定位，结合 IR 图分析辅助排查。区别于二分定位法和文件保存对比法。",
+      "files": [],
+      "expectations": [
+        { "type": "skill_activated", "pattern": "precision-pass" },
+        { "type": "contains", "pattern": "pass_compare" },
+        { "type": "contains", "pattern": "IR" }
+      ]
+    }
+  ]
+}

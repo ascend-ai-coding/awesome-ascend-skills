@@ -1,0 +1,123 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "Segmentation Fault 崩溃调试",
+      "config": {
+        "max_tokens": 160000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我在开发 Ascend C 算子时遇到了 Segmentation Fault 崩溃，程序无法正常运行完毕。请问应该如何系统性地定位和解决这个问题？有哪些调试工具和方法可以使用？不需要执行任何工具调用。",
+      "expected_output": "回复应说明 Segmentation Fault 的系统化调试方法：\n- 通过系统配置（如 coredump）来捕获崩溃现场信息\n- 利用调试工具分析崩溃现场获取关键定位信息（如调用栈回溯）\n- 空指针解引用或内存越界是 Segmentation Fault 的常见原因\n- 如堆栈信息不清晰，可使用内存检测工具辅助定位",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 2,
+      "title": "Ascend C 算子卡死问题诊断请求（正向看护）",
+      "config": {
+        "max_tokens": 160000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 180000,
+          "glm-5": 170000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "distractor_skills": [
+          "ascendc-runtime-debug",
+          "ascendc-precision-debug"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我的 Ascend C 算子在 NPU 上运行到一半就卡死了，Kernel 没有任何响应，也没有报错信息就直接超时了。请加载 ascendc-crash-debug 技能帮我诊断可能的原因。",
+      "expected_output": "回复应说明 Kernel 卡死的诊断思路：分析 plog 日志辅助定位；检查 EnQue/DeQue 管道同步是否匹配；检查 AllocTensor/FreeTensor 的 Buffer 配对。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 3,
+      "title": "偶发崩溃与内存越界主动检测（mssanitizer）",
+      "config": {
+        "max_tokens": 160000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我的 Ascend C 算子在 NPU 上运行偶尔会崩溃，复现不稳定，coredump 堆栈信息不清晰，日志里还出现过 aic error。我怀疑是内存越界踩踏之类的问题，想主动做一次内存错误检测，请问该怎么做？不需要执行任何工具调用。",
+      "expected_output": "回复应说明使用 mssanitizer 内存检测工具主动检测内存错误：能检测的异常类型包括 Illegal Read/Write 非法读写、Multi-core Overwrite 多核踩踏、Misaligned Access 非对齐访问、Memory Leak 内存泄漏；可通过 run_memcheck_pre.sh 脚本和 memcheck_input.json 配置模板完成编译-安装-检测；按 ERROR/WARNING 关键字分析 memcheck_output 下的报告定位越界/踩踏位置。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "Abort 崩溃（断言失败/异常终止）调试",
+      "config": {
+        "max_tokens": 160000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我的 Ascend C 算子程序运行过程中直接 Abort 终止了，日志没有报 Segmentation Fault。请问这类崩溃应该如何系统性地定位原因？不需要执行任何工具调用。",
+      "expected_output": "回复应说明 Abort 崩溃的调试流程：启用 coredump（ulimit -c unlimited）捕获崩溃现场，用 GDB 分析 core 文件并通过 bt 查看调用栈；Abort 常见原因是断言失败或异常终止，需重点检查断言条件与终止位置。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "aic error 内存越界与非对齐访问排查",
+      "config": {
+        "max_tokens": 160000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "运行我的 Ascend C 算子时日志报了 aic error，程序结果也不对，我怀疑跟内存访问有关。请问一般是什么原因，应该如何排查？不需要执行任何工具调用。",
+      "expected_output": "回复应说明 aic error 的排查方向：常见原因是内存访问越界或非对齐访问，需检查 DataCopy 长度、GM 地址 offset 计算、UB 访问越界以及 32 字节对齐要求；如代码逻辑复杂，可借助 mssanitizer 内存检测工具主动定位。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "AIV 卡死与 drain 卡死（跨核同步）排查",
+      "config": {
+        "max_tokens": 160000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我的算子有多个核协作执行，AIV 核与 AIC 核之间需要跨核同步，运行中 AIV 核有时会卡死，有时在 drain 阶段卡住不再继续。我怀疑跟核间 flag 同步缺失有关。请问这类卡死通常是什么原因，应该从哪些同步机制入手排查？不需要执行任何工具调用。",
+      "expected_output": "回复应说明跨核同步导致的卡死：AIV 卡死常见原因是跨核同步缺失，如 CrossCoreWaitFlag 没有对应的 SetFlag；drain 卡死常见原因是未发送 AIV 到 AIC 的 flag，需要检查 flag 发送链路是否完整。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "Buffer 冲突与死锁导致核心挂起",
+      "config": {
+        "max_tokens": 160000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我的算子核心挂起、程序长时间无响应，我怀疑是 Buffer 分配释放不配对或死锁导致的。请问应该如何检查定位？不需要执行任何工具调用。",
+      "expected_output": "回复应说明 Buffer 冲突与死锁的排查：检查 AllocTensor/FreeTensor 是否配对（循环内 Alloc 后必须 Free）；检查 EnQue/DeQue 队列同步是否匹配；关注多核同步缺失（CrossCoreWaitFlag 无对应 SetFlag）与 PipeBarrier 滥用等常见死锁模式。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "ascendc-crash-debug"
+}

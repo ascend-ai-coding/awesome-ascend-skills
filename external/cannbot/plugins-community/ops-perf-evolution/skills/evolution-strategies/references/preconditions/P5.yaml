@@ -1,0 +1,24 @@
+strategy_id: P5
+description: 流水线同步优化的适用性检查 — 必须有 Vector 计算、存在跨 pipe 数据依赖、当前无 / 粗粒度同步
+
+checks:
+  - id: has_vector_compute
+    type: grep_count
+    pattern: "\\b(Cast|Add|Sub|Mul|Div|ReduceSum|ReduceMax|Max|Min|Sqrt|Rsqrt|Exp|Log|Abs)\\b"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无 Vector 计算指令（可能是 pure matmul 算子）→ P5 Vector 流水同步无从下手。换 P14 CV 预发射或 P46 Matmul 基础优化"
+
+  - id: has_mte_and_compute
+    type: grep_count
+    pattern: "DataCopy|CopyIn|CopyOut"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无 MTE 搬运（无跨 pipe 数据依赖）→ 加 SetFlag/WaitFlag 毫无意义"
+
+  - id: no_existing_fine_grained_sync
+    type: grep_count
+    pattern: "SetFlag<HardEvent::|WaitFlag<HardEvent::"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已有细粒度 SetFlag/WaitFlag 同步 → P5 主要价值已发挥。若要再优化，考虑换 P19 自定义 Ping-Pong"

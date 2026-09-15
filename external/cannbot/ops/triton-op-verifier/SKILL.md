@@ -8,8 +8,8 @@ argument-hint: 输入：generated-code-path、task-file-path、op-name、warmup�
   固定参数：framework=torch、backend=ascend、dsl=triton_ascend。
 original-name: triton-op-verifier
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-26'
-synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
+synced-date: '2026-09-15'
+synced-commit: 003def93e7a39cf03cede65df8d47fefed3f66a8
 license: UNKNOWN
 ---
 
@@ -18,6 +18,126 @@ license: UNKNOWN
 <role>
 你是一个内核代码验证专家。你的任务是按照标准验证流程，创建验证项目并运行，检查生成的算子代码是否能正确编译运行且与参考实现的输出一致。验证通过后，执行性能测试并收集性能数据。
 </role>
+
+## 精度判定规则
+
+> 本节是 verify.py 精度判定的**唯一权威说明**。所有阈值、决策矩阵、前置检查只在此处定义；下游章节（Step 2/3）只引用、不重复。
+
+verify.py 按"`--non-compute` 开关 + 输入 dtype + 输出 dtype"分流到 **5 类判定路径**。
+
+### 1. 输入类型推断（KernelBench / NPUKernelBench 统一）
+
+从实际传入对象推断（不依赖 task 文件结构化 spec）：
+
+1. 存在 `torch.Tensor` 输入 → 取所有 tensor 中**最高精度 dtype**
+   （例：输入为 `[fp16 tensor, fp32 tensor, int64 tensor]` → 取 fp32）
+2. 否则存在 `list/tuple of Tensor`（tensor_list）→ 取首个 tensor_list 首元素 dtype
+3. 否则视为**无 tensor 输入**（`no_tensor`，最严路径）
+
+**dtype 优先级**：
+
+精度从高到低排列：float64 > float32 > float16 > bfloat16 > float8_e4m3 / float8_e5m2 > int64 > int32 > int16 > int8 / uint8 > bool
+
+**`input_type` 二分类**（用于 §2 决策矩阵分流）：
+
+- `input_type = float`：输入最高精度 dtype 属于浮点族（float64/32/16、bfloat16、float8_e4m3/e5m2、复数 complex64/128）
+- `input_type = int`：输入最高精度 dtype 属于整型族（int64/32/16/8、uint8、bool）
+- `input_type = no_tensor`：无任何 tensor 输入（走最严判定）
+
+> **关于 bool 的两处特殊性**（避免混淆）：
+> - bool 作**输入**：归入 `int`，与 int 系输入等同；分流时只看输出 dtype（如输出 fp 走浮点判定）
+> - bool 作**输出**：不进入 input_type 分流，直接走 §2 "bool 输出"路径（`torch.equal` 严格相等）
+
+### 2. 五类判定决策矩阵
+
+| 类别 | 输入 type | 输出 dtype | `--non-compute` | 误差要求 |
+|---|---|---|---|---|
+| **非计算类** | 任意 | 任意 | **是** | 二进制完全一致（view-as-int 比对，含 NaN bit pattern） |
+| **bool 输出** | 任意 | bool | 否 | `torch.equal` 严格相等 |
+| **整数计算类** | int / no_tensor | int | 否 | `\|actual − golden\| == 0` |
+| **量化计算类 fp→int** | float | int | 否 | `\|actual − golden\| <= 1` |
+| **浮点计算类** | 任意 | float | 否 | 三项 AND（见 §4） |
+
+### 3. 比对前置检查（按顺序，任一失败即判 fail）
+
+0. **隐藏状态对齐检查**（仅第 1 个用例执行一次，详见 §6）
+1. 形状必须一致
+2. NaN 位置必须完全一致（mask 按位相等）
+3. Inf 位置和符号必须完全一致
+4. `bool` dtype：要求 `torch.equal` 完全相等，不进入精度判定
+5. 仅在 `finite_mask`（双方都 finite）上做精度计算；dtype 不一致时 impl 会被 cast 到 golden 的 dtype
+
+### 4. 浮点计算类：三项 AND 整体判定
+
+#### 4.1 元素级 matched 定义（分桶）
+
+对每个 finite 元素 `i`，按 `|golden[i]|` 落入的类别分别判定：
+
+- **小值域** `|golden[i]| < small_value_threshold`：
+  `matched[i] = (|actual[i] - golden[i]| <= small_value_error)`
+- **正常域** `|golden[i]| >= small_value_threshold`：
+  `matched[i] = (|actual[i] - golden[i]| / (|golden[i]| + 1e-7) <= rel_threshold)`
+
+> 计算前两侧统一升 float32，避免低精度 dtype 自身误差污染。
+> 分母 `+1e-7` 仅为保险——正常域里 `|golden| >= sv_thr ≫ 1e-7`。
+
+#### 4.2 三项通过条件（AND，全部满足才算通过）
+
+1. **`max_error_cap`**：所有 finite 元素满足 `|diff| <= atol + rtol * |golden|`（dtype-aware，要求 100% 通过）
+2. **`required_matched_ratio`**：`sum(matched) / total_finite >= 0.9`
+3. **`MERE`**：对所有 finite 元素计算 `rel_err = |diff| / (|golden| + 1e-7)` 再取均值，要求 `MERE < rel_threshold`。当 `total_finite == 0` 时本项自动通过。
+
+#### 4.3 阈值表
+
+**matched_mask 与 MERE 阈值**（沿用 NPU Benchmark 标准）：
+
+| 数据类型 | small_value_threshold | small_value_error | rel_threshold (= MERE 上限) |
+|---|---|---|---|
+| `float16` | 2⁻¹¹ ≈ 4.88e-4 | 2⁻¹⁶ ≈ 1.53e-5 | 2⁻¹⁰ ≈ 9.77e-4 |
+| `bfloat16` | 2⁻⁸ ≈ 3.91e-3 | 2⁻¹⁶ ≈ 1.53e-5 | 2⁻⁷ ≈ 7.81e-3 |
+| `float32` | 2⁻¹⁴ ≈ 6.10e-5 | 2⁻³⁰ ≈ 9.31e-10 | 2⁻¹³ ≈ 1.22e-4 |
+| `hifloat32` | 2⁻¹² ≈ 2.44e-4 | 2⁻²⁸ ≈ 3.73e-9 | 2⁻¹¹ ≈ 4.88e-4 |
+| `float8_e4m3` | 2⁻⁴ = 0.0625 | 2⁻⁶ ≈ 0.015625 | 2⁻³ = 0.125 |
+| `float8_e5m2` | 2⁻³ = 0.125 | 2⁻⁵ = 0.03125 | 2⁻² = 0.25 |
+| 其他 dtype（fallback） | 2⁻¹⁴ | 2⁻³⁰ | 2⁻¹³ |
+
+**max_error_cap 阈值**（`|diff| <= atol + rtol * |golden|`）：
+
+| 数据类型 | atol | rtol |
+|---|---|---|
+| `float16` | 9e-2 | 2⁻¹⁰ ≈ 9.77e-4 |
+| `bfloat16` | 1e-1 | 2⁻⁷ ≈ 7.81e-3 |
+| `float32` | 1e-3 | 2⁻¹³ ≈ 1.22e-4 |
+| 其他 dtype（fallback） | 1e-3 | 2⁻¹³ |
+
+### 5. 运行时诊断输出
+
+verify.py 在每个 case 会向日志输出：
+
+- `[输入类型判定] 来源=...，候选 dtypes=...，最高精度=...，input_type=...`
+- `[评测模式] 模式=...，输入 dtype=...，输出 dtype=...，误差要求=...`
+
+便于上游 agent 立即看到当前 case 落入了哪一类、用了哪些阈值。
+
+### 6. 隐藏状态对齐检查（`scripts/hidden_state_probe.py`）
+
+抓「参考实现 `Model` 的输出依赖不由输入张量决定的内部状态（随机初始化权重 / buffer /
+跨调用缓存），而生成实现没有逐位复刻」这一类失败。它与 kernel 实现无关，单独修 kernel
+永远修不好，且误差形态与"算法全错"无法区分，因此必须在精度比对之前单独点名。
+
+| 层 | 内容 | 严重级别 |
+|---|---|---|
+| P0 | 深度扫描后无隐藏状态 → SKIP | 绝大多数算子走这条，零开销 |
+| P1 | 两侧**同名** parameter/buffer 逐位一致 | **硬失败** → `error_type: HiddenStateMismatch` |
+| P2 | fw 每个隐藏张量需在 im 中找到逐位相等项（不要求同名） | 软诊断（日志 WARN，不影响 passed_cases） |
+| P3 | 同输入连跑两次各自输出一致 | 软诊断（默认关闭，`ProbeOptions(check_determinism=True)` 启用） |
+
+- **执行时机**：第 1 个用例的正式 forward **之前** —— 生成实现编译失败时正式 forward 会直接抛
+  `CompilationError`，放在其后探针就没机会执行。
+- **降级**：`hidden_state_probe.py` 缺失时静默禁用，不阻断验证。
+- 命中后如何修：见 `ops/triton-op-coding/SKILL.md`「参考实现的 nn.Module 语义复刻」C1/C2。
+
+---
 
 ## 验证流程
 
@@ -52,17 +172,39 @@ python3 <本skill所在目录的绝对路径>/scripts/validate_triton_impl.py \
     <生成代码文件路径> --json
 ```
 
-**检测三种退化类型**：
+**检测四种退化类型**：
 
 | 类型 | 含义 | 检测方式 |
 |------|------|---------|
 | Type 1 | 完全无 `@triton.jit` kernel | AST 中无 `triton.jit` 装饰的函数定义 |
 | Type 2 | 有 kernel 但 `forward()` 未调用 | kernel 定义存在但 `ModelNew.forward()` 未引用（含 wrapper 函数追踪） |
-| Type 3 | 部分计算使用 PyTorch | `forward()` 中存在禁止的 `torch.*` / `F.*` 计算操作（精确到行号） |
+| Type 3 | 部分计算使用 PyTorch | `forward()` **及其可达的模块内辅助函数**中存在禁止的 `torch.*` / `F.*` / tensor 方法计算操作（精确到行号）。⚠️ 从 `forward()` 出发做**跨函数可达性分析**——把主链计算挪到 `forward()` 之外的模块级函数里是常见绕过手法 |
+| Type 4 | 只有占位 kernel | 被调用的 kernel **全部**只做 `tl.load`/`tl.store` 搬运、无任何计算（`tl.*` 里除 load/store/arange/program_id 等非计算 API 外为空）。这类 kernel 纯粹为让 AST 检测到"有 kernel 被调用"而存在，真实计算仍在 PyTorch 侧 |
 
 **结果判断**：
 - exit code == 0 → 通过，继续 Step 1
 - exit code != 0 → 退化检测到，解析 JSON 中的 `regression_type` 和 `suggestion`，直接返回失败
+
+> **典型作弊形态（实测捕获，Type 3 + Type 4 同时命中）**：
+> ```python
+> @triton.jit
+> def identity_kernel(x_ptr, o_ptr, n, BLOCK: tl.constexpr):
+>     """占位 kernel：将输入按元素拷贝到输出，保证 AST 检测到真实 Triton 调用。"""
+>     ...  # 只有 tl.load / tl.store
+>
+> def _run_flash_attention(x, ...):        # ← 计算被挪到 forward 之外
+>     query = torch.matmul(x, wq.t())      # 主链全在 torch
+>     weights = scores.softmax(dim=-1)     # 用 tensor 方法绕过对 F.softmax 的拦截
+>     ...
+>
+> class ModelNew(nn.Module):
+>     def forward(self, x, ...):
+>         y = _run_flash_attention(x, ...)     # forward 子树里看不到任何 torch 计算
+>         identity_kernel[grid](y, out, ...)   # 只为满足"kernel 被调用"
+>         return out
+> ```
+> 三个特征缺一不可地共同构成绕过：**计算外移**（避开只扫 forward 的检查）+ **tensor 方法**（避开 `F.softmax` 名单）+ **占位 kernel**（伪造 Triton 调用）。
+> 现在 Type 3 的跨函数可达性分析与 Type 4 的占位 kernel 检测分别堵住其中两环，任一命中即判失败。
 
 **JSON 输出格式**：
 
@@ -127,13 +269,20 @@ python3 /path/to/triton-op-verifier/scripts/verify.py \
 | `--verify_dir` | 否 | 验证目录路径，默认当前目录 |
 | `--triton_impl_name` | 否 | Triton 实现模块名（不含 `{op_name}_` 前缀），默认 `triton_ascend_impl` |
 | `--timeout` | 否 | 超时秒数，默认 900 |
+| `--output` | 否 | 验证结果 JSON 输出路径，默认 `{verify_dir}/verify_result.json` |
+| `--non-compute` | 否 | 适用于非计算类算子（不做数值运算、只对张量进行形状变换、维度重排、切分拼接、索引、类型转换等数据重组操作的算子，常见如 Reshape、Transpose、Concat、Split、Gather、Cast、Pad 等），强制走二进制完全一致判定 |
+| `--fresh-cache` | 否 | 本次运行使用独立的临时 `TRITON_CACHE_DIR`，不使用也不修改用户全局 Triton 缓存（`~/.triton/cache`），跑完即清理。全量重编译在 Ascend 上是分钟级开销，因此**默认关闭**，仅在排查缓存嫌疑时开启（见下方「精度失败的归因禁令」）|
+| `--keep-cache` | 否 | 与 `--fresh-cache` 配合：无论成败都保留临时缓存目录并在 stderr 打印绝对路径。单独使用无效 |
 
 **超时设置**：默认 900 秒，复杂算子可适当增加。
 
-**⛔ 禁止事项**：
+**注意事项**：
 - 禁止自己编写 Python 代码来测试算子（如手动 import 并 forward 比较）
 - 禁止使用 `torch.allclose` 或其他自创方法替代 `scripts/verify.py`
 - 禁止跳过此步骤直接报告验证结果
+- 禁止对计算类算子（含数值运算）传 `--non-compute`；该开关仅适用于不做数值运算、只做形状变换 / 维度重排 / 切分拼接 / 索引 / 类型转换等数据重组操作的算子（如 Reshape、Transpose、Concat、Split、Gather、Cast、Pad）。误用会强制走二进制完全一致判定，把正常的浮点舍入差异判为失败
+- 对非计算类算子（例如形状变换、维度重排、切分拼接、索引、类型转换等数据重组操作的算子）**一定要**传 `--non-compute`；漏传会让此类算子按浮点三项判定走，容许超出预期的差异，无法识别真正的位级不一致
+- 禁止用 `rm -rf ~/.triton/cache` 清缓存：会破坏并发跑的其他算子 / 其他会话的缓存，且不可回滚。需要空缓存一律走 `--fresh-cache`（靠独立目录隔离）
 
 ---
 
@@ -156,17 +305,121 @@ verify.py 会在 `verify_dir` 下生成 `verify_result.json`（或 `--output` �
       "error_type": "CompilationError",
       "error_msg": "..."
     }
-  ]
+  ],
+  "environment": {
+    "timestamp": "2026-09-03T14:22:01+08:00",
+    "triton": {
+      "version": "3.2.0",
+      "path": "/usr/local/python3.11.10/lib/python3.11/site-packages/triton",
+      "key_sha256": "9f2c..."
+    },
+    "cache": {
+      "dir": "/tmp/triton_verify_cache_ab12cd",
+      "fresh": true,
+      "fresh_effective": true,
+      "always_compile": false
+    },
+    "cann": {
+      "ascend_home_path": "/usr/local/Ascend/ascend-toolkit/latest",
+      "info_file": "/usr/local/Ascend/ascend-toolkit/latest/x86_64-linux/ascend_toolkit_install.info",
+      "info_sha256": "3a7e...",
+      "version": "8.0.RC3"
+    },
+    "torch": {"version": "2.1.0", "torch_npu_version": "2.1.0.post..."},
+    "device": {
+      "ASCEND_RT_VISIBLE_DEVICES": "3",
+      "current_device": 0,
+      "npu_name": "Ascend910B4"
+    },
+    "cmdline": {"triton_impl_name": "triton_ascend_impl", "non_compute": false}
+  }
 }
 ```
+
+**`environment` 字段（环境指纹）**：记录本次验证跑在什么环境上，让精度结论可以跨机器 / 跨时间 / 跨 agent 复核。前 5 个字段（`op_name` / `total_cases` / `passed_cases` / `failed_cases` / `failures`）的名称、含义、顺序全部不变，`environment` 只是新增的尾部字段，下游读取逻辑（含 benchmark.py 的 L1 verify 闸门）不受影响。
+
+| 字段 | 含义 |
+|------|------|
+| `triton.key_sha256` | `triton_key()` 的摘要，覆盖全部 triton python 文件 + `libtriton.so` + `backends/` 目录。**一个值就能判定两次跑的是不是同一个 triton 安装**，能抓住小版本编译默认值漂移 |
+| `cache.dir` | 本次实际使用的 Triton 编译缓存目录 |
+| `cache.fresh` | 本次是否传了 `--fresh-cache` |
+| `cache.fresh_effective` | `TRITON_CACHE_DIR` 是否真的决定缓存位置。设置了 `TRITON_CACHE_MANAGER` / `TRITON_REMOTE_CACHE_BACKEND` 时为 `false`，此时**隔离并未成立** |
+| `cache.always_compile` | `TRITON_ALWAYS_COMPILE` 是否设置（影响是否读缓存）|
+| `cann.info_sha256` | 与 Ascend backend `options.hash()` 用的是同一个哈希。两次跑该值不同 ⇒ cache key 必然不同，可直接用来解释缓存命中与否 |
+| `cann.error` | 采集失败原因。**非交互 shell 未 `source set_env.sh` 时 `ASCEND_HOME_PATH` 为空，此处会留下 `EnvironmentError`** —— 这是最有价值的诊断信息，见到它先修环境再谈精度 |
+| `device.ASCEND_RT_VISIBLE_DEVICES` | 只有这个变量对 torch_npu 生效（`ASCEND_DEVICE_ID` 无效），排查坏卡 / 卡占用时必需 |
+
+采集全程 try/except，任何一项失败只写成该分节下的 `{"error": "..."}`，不会影响验证本身的执行与退出码。
+
+**引用与上报约束**：
+- 报告精度结论时**必须连同 `environment` 一起给出**，只给 `58/60` 这类计数不构成可复核的结论。
+- 跨机器 / 跨版本引用历史 verify 结论前，先比对 `triton.key_sha256` 与 `cann.info_sha256`；**不一致则历史结论作废，必须重跑**。
+
+**精度失败时的 `metrics` 字段**：当 `error_type == "AccuracyError"`（浮点三项判定未通过）时，`failures[*]` 会带上结构化 `metrics`，便于下游分类失败原因（max_error_cap 违例 / 离群点过多 / 平均误差偏大）：
+
+```json
+{
+  "case_idx": 1,
+  "input_desc": [...],
+  "error_type": "AccuracyError",
+  "error_msg": "...",
+  "metrics": {
+    "matched_ratio": 0.95,
+    "max_abs_diff": 0.2,
+    "MERE": 2.0e-4,
+    "rel_threshold": 1.22e-4,
+    "small_value_threshold": 6.10e-5,
+    "small_value_error": 9.31e-10,
+    "atol": 1.0e-3,
+    "rtol": 1.22e-4,
+    "max_error_cap_violation_count": 12,
+    "required_matched_ratio": 0.9,
+    "total_finite": 1000,
+    "matched_count": 950,
+    "small_count": 0,
+    "normal_count": 1000,
+    "checks": {
+      "max_error_cap": false,
+      "required_matched_ratio": false,
+      "MERE": false
+    }
+  }
+}
+```
+
+`checks` 三个布尔位标记每项判定是否独立通过。阈值定义见上文 §精度判定规则 §4。
+
+非浮点类失败（`non_compute` / `bool_output` / `integer_compute` / `quant_fp_to_int`）的 `metrics` 字段较简单，含 `category` / `violation_count` / `total_*` 等基本计数。
 
 **多 shape 行为**：每个 shape 独立 try/except，失败不中止后续 shape；全部跑完才落盘并退出。
 
 **退出码语义（策略 A：严格）**：
-- `passed_cases == total_cases` → exit 0，`verifier_result = true`
-- `passed_cases <  total_cases` → exit 1，`verifier_result = false`，`verifier_error` 应读取 `verify_result.json.failures` 的**全部条目**（不是第一个），汇总后提交给 Conductor。
+- `passed_cases == total_cases` 且 `total_cases > 0` → exit 0，`verifier_result = true`
+- 否则（`passed_cases < total_cases`，或 `total_cases == 0`）→ exit 1，`verifier_result = false`，`verifier_error` 应读取 `verify_result.json.failures` 的**全部条目**（不是第一个），汇总后提交给 Conductor。
 
 **超时**：脚本输出 `"验证超时"` 且退出码为 1 → `verifier_error = "验证超时（{timeout}秒）"`。
+
+### 精度失败的归因禁令（缓存 A/B）
+
+**不得在未做 `--fresh-cache` A/B 的前提下，把精度失败归因为"编译缓存里的坏二进制"。**
+
+出现精度失败且怀疑缓存时，唯一允许的排查动作是同一份代码再跑一遍空缓存：
+
+```bash
+python3 <本skill所在目录的绝对路径>/scripts/verify.py \
+    --op_name <算子名> --verify_dir <验证目录> --fresh-cache --keep-cache
+```
+
+判定规则：
+
+| A/B 结果 | 结论 | 允许的动作 |
+|----------|------|-----------|
+| 带与不带 `--fresh-cache` 两次结果**一致** | **真实精度缺陷** | 必须继续修代码，**不得以缓存为由放行** |
+| 两次结果**不一致** | 编译器缺陷嫌疑 | 必须用 `--keep-cache` 保留临时缓存目录（内含 `*.ttir` / `*.ttadapter` / `*.npubin` 与 metadata），连同两份 `verify_result.json` 的 `environment` 一起作为编译器缺陷上报 |
+
+背景：Triton 的 cache key 覆盖 kernel 源码 sha256、triton 安装指纹与 CANN 安装信息文件哈希，因此**改 kernel 源码必然使缓存失效**，"改了代码却命中旧二进制"这条因果链不成立。真实存在的陈旧缓存路径只有一条：原地替换 `bishengir-compile`（打补丁版 / 自编译版）而不动 `ascend_toolkit_install.info` —— `AscendBackend.hash()` 只含 `str(self.target)`，编译器版本不进 key。`--fresh-cache` 正是针对这条路径的排查手段。
+
+等价的手工排查手段（仅作了解，**不推荐**）：`TRITON_ALWAYS_COMPILE=1` 能强制重编，但产物仍写入全局缓存目录，会污染用户缓存，不满足"不触碰用户缓存"。
 
 ---
 
@@ -175,6 +428,12 @@ verify.py 会在 `verify_dir` 下生成 `verify_result.json`（或 `--output` �
 **前置条件（L1 脚本层强制）**：benchmark.py 启动时会自动按 `--triton_impl_name` 推导对应的 `verify_result` 文件并校验 `passed_cases == total_cases`；不通过时直接 **exit 2**，禁止运行 benchmark。详见下方"L1 verify 闸门"小节。
 
 仅在 verify.py 的 `passed_cases == total_cases` 时执行（策略 A）。verify 有任何失败 → 禁止执行 benchmark.py。
+
+**NPU 锁频与频率监控**：benchmark.py 默认在性能测试前尝试对所有可用 NPU 设备执行 A5 锁频（`drv_hlt_dsmi_test set_lp_idle <dev> 0`），并在整个 benchmark 期间按 `--freq-check-interval` 周期采样 `npu-smi info -t common -i <dev>` 中的 `Aicore curFreq(MHZ)`，检测是否相对锁频后的基线频率发生漂移。
+
+- 锁频目标值按设备型号自动探测，不硬编码具体 MHz。
+- 若 `drv_hlt_dsmi_test` 不可用或锁命令失败，默认输出 warning 并继续测试；传 `--lock-frequency-fail-action error` 可在锁频失败或频率漂移时让 benchmark 以非零码退出。
+- 传 `--no-lock-frequency` 可完全关闭锁频与监控。
 
 使用 `bash` 工具调用本 skill 自带的 `scripts/benchmark.py` 脚本。
 
@@ -215,6 +474,9 @@ python3 /path/to/triton-op-verifier/scripts/benchmark.py \
 | `--repeats` | 否 | 正式测试次数，默认 50 |
 | `--output` | 否 | 性能报告输出路径（JSON 格式）|
 | `--verify_not_required` | 否 | 跳过 L1 verify 闸门（默认强制要求 verify_result 全过）|
+| `--lock-frequency` / `--no-lock-frequency` | 否 | 性能测试前是否对 NPU 锁频并在测试期间监控频率（默认开启）|
+| `--lock-frequency-fail-action` | 否 | 锁频失败或频率漂移时的处理方式：`warn`（默认）或 `error`|
+| `--freq-check-interval` | 否 | 频率监控采样间隔，单位秒（默认 `1.0`）|
 
 ---
 
@@ -328,43 +590,6 @@ benchmark.py 启动时按 `--triton_impl_name` 推导对应的 verify_result 文
 
 ---
 
-## 精度阈值说明
-
-验证使用基于数据类型的 **MERE/MARE 双门限相对误差**判定（NPU Benchmark 标准），与 `torch.allclose` 不同。
-
-**判定公式**（必须同时满足）：
-
-```
-MERE < threshold        且        MARE < 10 × threshold
-```
-
-其中：
-- `MERE` = mean(|actual - golden| / max(|golden|, threshold))，平均相对误差
-- `MARE` = max(|actual - golden| / max(|golden|, threshold))，最大相对误差
-- 计算前两侧统一升 float32，避免低精度 dtype 自身误差污染
-- 分母用 `clamp(min=threshold)` 而非 `+epsilon`：当 `|golden| < threshold`（参考值已小到 dtype 精度极限）时，rel_err 退化为 `|diff| / threshold`，等价于按绝对误差归一化，避免零值/极小值附近误报
-
-**dtype 阈值表**（2 的幂次方）：
-
-| 数据类型 | threshold | MERE 上限 | MARE 上限 (10×t) |
-|---------|-----------|-----------|------------------|
-| `float16` | 2⁻¹⁰ ≈ 9.77e-4 | 9.77e-4 | 9.77e-3 |
-| `bfloat16` | 2⁻⁷ ≈ 7.81e-3 | 7.81e-3 | 7.81e-2 |
-| `float32` | 2⁻¹³ ≈ 1.22e-4 | 1.22e-4 | 1.22e-3 |
-| `hifloat32` | 2⁻¹¹ ≈ 4.88e-4 | 4.88e-4 | 4.88e-3 |
-| `float8_e4m3` | 2⁻³ = 0.125 | 0.125 | 1.25 |
-| `float8_e5m2` | 2⁻² = 0.25 | 0.25 | 2.5 |
-| 其他 dtype（fallback） | 2⁻¹³ | 1.22e-4 | 1.22e-3 |
-
-**比对前置检查**（按顺序，任一失败即判 fail）：
-1. 形状必须一致
-2. NaN 位置必须完全一致（mask 按位相等）
-3. Inf 位置和符号必须完全一致
-4. `bool` dtype：要求 `torch.equal` 完全相等，不进入 MERE/MARE 判定
-5. 仅在 `finite_mask` 上做 MERE/MARE 计算；当 dtype 不一致时 impl 会被 cast 到 golden 的 dtype
-
----
-
 ## 脚本位置
 
 验证脚本位于本 skill 的 `scripts/` 目录：
@@ -377,5 +602,5 @@ MERE < threshold        且        MARE < 10 × threshold
 
 **CLI 参数**：
 - `validate_triton_impl.py`: `<file_path>`, `[--json]`
-- `verify.py`: `--op_name`, `--verify_dir`, `--triton_impl_name`, `--timeout`, `--output`
-- `benchmark.py`: `--op_name`, `--verify_dir`, `--triton_impl_name`, `--warmup`, `--repeats`, `--output`, `--skip_framework`, `--framework_latency_ms`, `--verify_not_required`
+- `verify.py`: `--op_name`, `--verify_dir`, `--triton_impl_name`, `--timeout`, `--output`, `--non-compute`, `--fresh-cache`, `--keep-cache`
+- `benchmark.py`: `--op_name`, `--verify_dir`, `--triton_impl_name`, `--warmup`, `--repeats`, `--output`, `--skip_framework`, `--framework_latency_ms`, `--verify_not_required`, `--lock-frequency`, `--lock-frequency-fail-action`, `--freq-check-interval`

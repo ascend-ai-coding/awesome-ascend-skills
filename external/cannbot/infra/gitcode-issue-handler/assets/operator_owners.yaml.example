@@ -1,0 +1,34 @@
+# operator_owners.yaml.example
+#
+# 算子 -> 责任人映射表（可在运行中交互补充）
+#
+# 用途：步骤 2c 识别到 issue 明确涉及某个算子时，在单 Issue 和批量模式下
+#       查此表找算子责任人，并把 Issue 指派给责任人而非直接处理。
+#
+# 复制到 Handler 统一配置目录后按实际算子责任人改写：
+#     mkdir -p .cannbot/gitcode-issue-handler/config
+#     cp operator_owners.yaml.example \
+#       .cannbot/gitcode-issue-handler/config/operator_owners.yaml
+#
+# 格式：
+#   operators:
+#     <算子名>: <GitCode 登录名>
+#
+# 匹配规则（步骤 2c 执行）：
+#   从 issue 的 title / body / 报错栈 / 文件路径中提取算子名，
+#   与此表的 key 做精确匹配（大小写不敏感）。命中则查对应责任人。
+#
+# 注意：
+#   - 算子名应尽量唯一，避免常见英文单词（如 add / sum）造成误匹配；
+#     必要时在 key 中带上命名空间前缀（如 ops.add / linalg.matmul）
+#   - 表缺失、为空或未命中时，助手会先在 Issue 评论区有效响应并继续其他 Issue；
+#     统一执行预览前一次询问：输入 GitCode 责任人并写回本文件，或对当前 Issue 选择 direct
+#   - direct 是当前 Issue 的一次性决定，绝不能作为责任人写入本文件
+#   - 此文件含团队人员信息，通常不进 git；Handler 会把统一运行目录加入
+#     .git/info/exclude，不改写仓库的 .gitignore。
+
+operators: {}
+  # 示例（填充时删除注释并替换为实际内容）：
+  # ops.add: chensi79
+  # ops.matmul: songkai111
+  # ops.conv2d: sunchun

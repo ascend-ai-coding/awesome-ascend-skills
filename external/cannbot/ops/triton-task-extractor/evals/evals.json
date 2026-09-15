@@ -1,0 +1,143 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "从 PyTorch 代码中提取算子任务文件",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我有一段 PyTorch 代码 /workspace/models/my_op.py，其中包含一个 matmul_with_bias 函数需要优化，shape 信息已知。请使用 triton-task-extractor 将其提取为标准化算子任务文件。",
+      "expected_output": "回复应分析源代码，将待优化算子逻辑包装到 Model.forward() 中，初始化状态放入 Model.__init__()，所有依赖的自定义函数内联到文件中。输出应包含 class Model(nn.Module)、def get_inputs() 和 def get_init_inputs() 三个部分。生成后必须使用本 skill 自带的 scripts/validate_task.py 进行静态检查和运行时检查，验证通过后还需使用 question 工具请求用户确认。应说明输出为单一自包含 Python 文件，只允许 torch/torch.nn/标准库的 import。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "class Model",
+          "description": "回复中提到了 class Model"
+        },
+        {
+          "type": "contains",
+          "pattern": "get_inputs",
+          "description": "回复中提到了 get_inputs"
+        },
+        {
+          "type": "contains",
+          "pattern": "get_init_inputs",
+          "description": "回复中提到了 get_init_inputs"
+        },
+        {
+          "type": "contains",
+          "pattern": "validate_task.py",
+          "description": "回复中提到了 validate_task.py"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "单 case 与多 case 模式的选择",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "triton-task-extractor 的两种模式（单 case 和多 case）有什么区别？什么情况下用哪种模式？源文件有多个 shape 需要测试时应该如何处理？",
+      "expected_output": "回复应说明单 case 模式适用于单一自包含 .py 文件，get_inputs 返回单组输入；多 case 模式适用于 .py + 同名 .json 配对，get_input_groups 返回多组输入。判定规则为：如果源 .py 已定义 get_input_groups() 函数，或同目录存在同名 .json 文件，则走多 case 模式，否则走单 case 模式。多 case 模式的核心原则是原样透传、不改写源码，禁止将多 case 源降级为单 case 输出来通过验证。源文件有多 shape 需要测试时应使用多 case 模式。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "单 case",
+          "description": "回复中提到了 单 case"
+        },
+        {
+          "type": "contains",
+          "pattern": "多 case",
+          "description": "回复中提到了 多 case"
+        },
+        {
+          "type": "contains",
+          "pattern": "get_input_groups",
+          "description": "回复中提到了 get_input_groups"
+        },
+        {
+          "type": "contains",
+          "pattern": ".json",
+          "description": "回复中提到了 .json"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "多 case 模式优先级不可降级",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "源 .py 同时有 get_inputs() 和 get_input_groups()，旁边还有同名 JSON。为了简单能否只提取 get_inputs 的一组？",
+      "expected_output": "回复应按优先级判定为多 case 模式，原样保留 get_input_groups 并复制同名 JSON；下游会优先调用 get_input_groups，无需追加 get_inputs 兼容层，更不能降级成单 case。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "多 case 文件对必须同名同目录",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "多 case 源的 op.py 通过 __file__ 找 op.json。提取时能否把 JSON 改名后放进 configs 子目录？",
+      "expected_output": "回复应说明不能；.py 与 .json 必须字节级复制到工作目录并保持同名同目录，验证脚本会用源文件真实路径作为 __file__。不得通过重写 Python 或路径逻辑改变这一约定。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "验证必须包含运行时检查",
+      "config": {
+        "max_tokens": 110000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "任务文件 py_compile 和静态 AST 检查都通过了，可以跳过 validate_task.py 的运行时执行吗？",
+      "expected_output": "回复应说明不可以；必须使用 skill 自带 validate_task.py 完成静态和运行时检查。单 case 要实际执行 Model(*get_init_inputs())(*get_inputs())，多 case 要运行全部 groups，并以退出码 0、[VALID] 及 cases_tested/cases_passed 为准。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "源基线有 bug 时不得篡改",
+      "config": {
+        "max_tokens": 110000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "源 benchmark 的 __init__ 参数和 get_init_inputs 不匹配。为了让提取验证通过，可以直接修源文件再复制吗？",
+      "expected_output": "回复应禁止编辑 npu_benchmark/ascendc-kernelgen-data 等源路径，也禁止在复制时悄悄修正；应使用字节级复制保留基线，在 report.md 标注 baseline_buggy: true 并失败退出。基线 anchor 一旦生成也不得重写。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "验证后必须取得用户确认",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "任务提取和 validate_task.py 已全通过。此时可以直接结束并交给 coding 吗？",
+      "expected_output": "回复应说明还不能结束；必须展示完整任务文件，并使用 question 工具请求用户确认。只有用户确认后才能完成该 skill，普通文本询问不能替代规定的交互确认。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "triton-task-extractor"
+}
