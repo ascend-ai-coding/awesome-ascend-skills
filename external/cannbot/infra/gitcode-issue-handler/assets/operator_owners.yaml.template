@@ -1,0 +1,17 @@
+# 初始化后编辑 .cannbot/gitcode-issue-handler/config/operator_owners.yaml。
+# 仅填写已确认的算子责任人；助手识别算子后查表，按授权转交流程指派。
+# owner 填 GitCode 主页 URL 中能用于 /assign @账号 的账号，不填昵称、邮箱或完整 URL。
+# 例如 https://gitcode.com/songkai111 对应 songkai111；还须确认可在目标仓指派。
+
+# 使用时用以下完整映射替换 operators: {}，去掉注释并改为已确认账号。
+# Abs、Add、Exp 是 ops-math 中的算子；下列负责人仅为假设，不代表实际归属。
+# operators:
+#   Abs: chensi79
+#   Add: songkai111
+#   Exp: xujiachen8
+operators: {}
+
+# 匹配与未命中处理（通常无需修改）
+# 算子名精确匹配、忽略大小写（Abs 与 abs 相同）；不要自行添加 ops. 等前缀。
+# 需要转交但未命中时，先完成首响；每个算子的候选账号及简述写入 summary 供线下确认。
+# 候选提交人不自动视为责任人；direct 是单个 Issue 的决定，不能填作 owner。

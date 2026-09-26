@@ -1,0 +1,200 @@
+{
+  "skill_name": "model-train-precision-numerical-mismatch",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "E01 正向有限值偏差",
+      "config": {"max_tokens": 150000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "固定输入后 NPU 训练 logits 和 loss 都是有限值，但和标杆不一致，怎么定位？只讲流程。",
+      "expected_output": "回复应识别 E01，先确认受控可重复和标杆契约；优先验证 Preflight 单一差异，未闭环时用 statistics 找首个正向差异。targeted tensor 只在需要真实输入构造最小单算子复现时使用。",
+      "files": [],
+      "expectations": [{"type": "skill_activated", "pattern": "model-train-precision-numerical-mismatch"}]
+    },
+    {
+      "id": 2,
+      "title": "E02 反向有限值偏差",
+      "config": {"max_tokens": 150000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "两边正向 loss 能对齐，但 backward 后 GradNorm 与标杆偏差很大，值都不是 NaN 或 Inf。",
+      "expected_output": "回复应识别 E02，检查 loss scaling、反向 API、参数梯度与同步，并用首个反向差异证据定位。",
+      "files": [],
+      "expectations": [{"type": "skill_activated", "pattern": "model-train-precision-numerical-mismatch"}]
+    },
+    {
+      "id": 3,
+      "title": "无标杆边界",
+      "config": {"max_tokens": 120000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "训练 loss 都是有限值，但我没有任何标杆，只觉得效果不对，直接跑 msprobe compare 吧。",
+      "expected_output": "回复应拒绝在无标杆时执行 compare 或套用阈值，先建立可比较标杆或以证据不足结束。",
+      "files": [],
+      "expectations": [{"type": "not_contains", "pattern": "overflow_check"}]
+    },
+    {
+      "id": 4,
+      "title": "重复运行不一致应转 E08",
+      "config": {"max_tokens": 120000, "distractor_skills": ["model-train-precision-determinism", "model-train-precision-nonfinite"], "timeout": 900, "eval_mode": "text"},
+      "prompt": "我本来想和标杆比 loss，但同一个环境固定 seed 后自己跑两遍都不同，也没有非有限值。",
+      "expected_output": "回复应停止标杆有限值定界并转确定性诊断，不能把自不一致的数据直接送入标杆 compare。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 5,
+      "title": "compare 与 overflow 产物隔离",
+      "config": {"max_tokens": 120000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "msprobe compare -da 完成后应该看哪些首差异结果？这和 overflow_check 是一回事吗？",
+      "expected_output": "回复应说明 compare -da 当前查看 compare_result_rank*.json 和 diff_analyze_*.json，并明确 overflow_check 是另一流程。",
+      "files": [],
+      "expectations": [{"type": "contains", "pattern": "diff_analyze_"}]
+    },
+    {
+      "id": 6,
+      "title": "现场版本差异",
+      "config": {"max_tokens": 120000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "网上示例的 PrecisionDebugger.start 参数和我机器上的签名不同，应该照示例强行调用吗？",
+      "expected_output": "回复应先记录 msprobe CLI/包真实路径、distribution/version、命令帮助和运行时签名；以现场安装版本调整 start/stop/step 与自定义 API 用法并记录差异。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 7,
+      "title": "Checkpoint 差异可无 tensor 闭环",
+      "config": {"max_tokens": 120000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "Preflight 已确认 target 使用了有损 Checkpoint 转换，golden 没有。只把这一项改为与 golden 一致后，多次同口径复跑 loss 都对齐。还必须做 tensor dump 和单算子复现才能认定根因吗？",
+      "expected_output": "回复应允许依据已确认差异、单变量对齐和重复复跑形成 Checkpoint/权重粒度的 verified root cause；不强制 tensor dump 或单算子复现，Module/API/Tensor 记 not-applicable 并说明原因。",
+      "files": [],
+      "expectations": [{"type": "contains", "pattern": "not-applicable"}]
+    },
+    {
+      "id": 8,
+      "title": "双侧 dump 完整性门禁",
+      "config": {"max_tokens": 150000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "target/golden 都采了 statistics，但 golden 的 rank3 没有 dump.json，rank2 的 JSON 截断；target 还有一个只有 proc123 的目录。能先 compare 其余 rank 吗？",
+      "expected_output": "回复应建立预期 Step×Rank 矩阵并把缺 rank、损坏 JSON 和 proc-only 产物判为 incomplete；两侧均为 valid 前禁止 compare。应记录退出状态、stop/step、dump_error_info.log、采集范围和完整性证据，补采需审批，无法补采则证据不足。",
+      "files": [],
+      "expectations": [{"type": "contains", "pattern": "incomplete"}]
+    },
+    {
+      "id": 9,
+      "title": "训练门槛与 statistics Result 分离",
+      "config": {"max_tokens": 150000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "statistics compare 的 API 行都是 Result=pass，就能证明首个 loss 相对误差小于 0.5%、平均 loss 小于 1%、global norm 平均小于等于 10% 吗？compare -da JSON 应看哪个字段？",
+      "expected_output": "回复应拒绝用 Result 代替训练级验收；训练门槛从对齐 Step 的 loss/grad_norm 相对误差取绝对值计算。普通 compare 的 Result/Err_message 是节点级启发式；-da 现场 JSON 主要看 is_same、op_items 和实际 diff_analyze_threshold.yaml，diff_analyze 只定位首差异。",
+      "files": [],
+      "expectations": [
+        {"type": "contains", "pattern": "NormRelativeErr"},
+        {"type": "contains", "pattern": "is_same"}
+      ]
+    },
+    {
+      "id": 10,
+      "title": "有符号误差不得抵消",
+      "config": {"max_tokens": 120000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "两步 loss rel error 分别为 +1.5% 和 -1.5%，可视化显示有符号 mean 为 0，能判平均 loss 达标吗？如果某步 golden loss 为 0 呢？",
+      "expected_output": "回复应使用 mean(abs(loss rel error))=1.5%，不能因正负抵消判定达标；golden 为零时使用项目声明的绝对误差，未声明则该项为 unknown，并记录有效 Step 数。",
+      "files": [],
+      "expectations": [{"type": "contains", "pattern": "mean(abs"}]
+    },
+    {
+      "id": 11,
+      "title": "E01/E02 通信节点多 Rank 汇总",
+      "config": {"max_tokens": 150000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "E01 的 statistics 普通 compare 已定位到 all_reduce 附近，并且看起来只有 rank3 偏差。能否用 msprobe merge_result 汇总？现有结果一部分是 CSV，另一次是 md5；汇总表能直接证明 rank3 或通信算子是根因吗？E08 是否也默认执行？",
+      "expected_output": "回复应仅把 merge_result 作为 E01/E02 通信或 rank-local 可疑时的可选结果分析分支。先要求双侧 dump 和逐 Rank compare 完整，并使用普通 compare --xlsx 生成同模式结果；明确 CSV、MD5 和 compare -da JSON 不支持。汇总后检查 API、指标 sheet、Rank 列，空白表示未找到而非通过；汇总表只是派生视图，仍须核对 collective 所有参与 Rank 的输入、调用序号、group 和拓扑，不能直接认证根因，也不应成为 E08 默认步骤。",
+      "files": [],
+      "expectations": [
+        {"type": "contains", "pattern": "merge_result"},
+        {"type": "contains", "pattern": "--xlsx"},
+        {"type": "contains", "pattern": "派生"}
+      ]
+    },
+    {
+      "id": 12,
+      "title": "优先消费 Result 与 Err_message",
+      "config": {"max_tokens": 150000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "E01 已由 Loss 门槛确认。statistics compare 中 API A 是执行顺序最早的 Result=error，Err_message 明确是 NormRelativeErr 输入/输出规则；API B 是 Result=pass，但 MaxRelativeErr 为 90%。shape、dtype 和调用实例都已对齐。还需要自己重算 A 的 10%/50% 才能标记候选吗？能否把训练级 global norm 的 10%当 API 输出阈值？",
+      "expected_output": "回复应优先消费 msProbe 的 Result/Err_message，不重复实现阈值判定器。API A 在顺序和对齐有效后只能记为工具标记的误差引入候选，不能直接认证根因；API B 不能仅凭无通用硬阈值的 MaxRelativeErr 改写 Result。只有 Result/Err_message 缺失、冲突或版本不明时才按现场单位和规则复核。训练级 Global GradNorm 10%不得作为 API 输出阈值。",
+      "files": [],
+      "expectations": [
+        {"type": "contains", "pattern": "Result"},
+        {"type": "contains", "pattern": "工具标记"},
+        {"type": "contains", "pattern": "Global GradNorm"}
+      ]
+    },
+    {
+      "id": 13,
+      "title": "statistics 单位与 warning 边界现场探测",
+      "config": {"max_tokens": 150000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "compare CSV 的 NormRelativeErr 有的版本显示 8%/55%，另一个脚本解析成 0.08/0.55。放大正好 10 倍时一定是 warning 吗？输入误差为零怎么处理？",
+      "expected_output": "回复应先识别百分数字符串与比例值是同一量的不同表示并统一单位，不得直接混算。官方文档表述为 10 倍，但当前本地源码是 output/input >10；输入最大误差为零时当前源码以输出 >10% 单独触发 warning。必须探测现场版本、Err_message 和源码，不能把边界硬编码为所有版本通用规则。",
+      "files": [],
+      "expectations": [
+        {"type": "contains", "pattern": ">10"},
+        {"type": "contains", "pattern": "输入"},
+        {"type": "contains", "pattern": "现场"}
+      ]
+    },
+    {
+      "id": 14,
+      "title": "E01/E02 首问题输入已偏",
+      "config": {"max_tokens": 150000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "E01 的 target/golden statistics compare 中，首个问题 API node_b 的输入已经不同；最后一个输入输出都一致的是 node_a，两者之间有项目 custom fusion API，而且两侧模型封装略有差别。能把 node_b 定为误差根因吗？下一步怎么查？",
+      "expected_output": "回复应拒绝把 node_b 定为误差引入点或根因，将 node_a→node_b 标为可能漏采、无法对齐或两侧结构不同的可疑区间。先核对 Step/Rank/方向/调用实例、双侧采集范围、模型结构和 API 映射，再检查融合、通信、控制流、原地操作及 custom API；用 inspect.signature 核对 register_custom_api 等现场接口，让 target/golden 使用相同注册集合。必要时经批准升到 mix 或 targeted tensor，不直接修改模型逻辑；仍不可见则结合 Preflight 追更早上游或保持证据不足。",
+      "files": [],
+      "expectations": [
+        {"type": "contains", "pattern": "node_a"},
+        {"type": "contains", "pattern": "register_custom_api"},
+        {"type": "contains", "pattern": "结构"}
+      ]
+    },
+    {
+      "id": 15,
+      "title": "E01/E02 单 Rank 通信差异",
+      "config": {"max_tokens": 150000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "E02 的多卡 compare 只有 rank5 在 reduce_scatter 输出开始偏差，其他 Rank 暂时正常。可以直接认定 rank5 的通信算子有 bug 吗？已有完整的 statistics XLSX。",
+      "expected_output": "回复应保留 rank-local 证据，不直接推广为全局通信根因。核对 rank5 的数据和参数/optimizer 分片、pipeline stage、target/golden Rank 映射与拓扑、通信参与者/顺序/group，并检查 collective 所有参与 Rank 的对应输入和调用序号。可选择使用 merge_result 横向观察完整 XLSX 的 Rank 分布，但它不能替代逐 Rank 证据或根因验证。",
+      "files": [],
+      "expectations": [
+        {"type": "contains", "pattern": "rank-local"},
+        {"type": "contains", "pattern": "merge_result"},
+        {"type": "contains", "pattern": "所有参与 Rank"}
+      ]
+    },
+    {
+      "id": 16,
+      "title": "完整 dump 但插桩后 mismatch 未复现",
+      "config": {"max_tokens": 150000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "target/golden 的 statistics dump 都完整可解析，但开启 dump 后对齐 loss 已回到项目门槛内。可以继续 compare 定位原 E01 吗？",
+      "expected_output": "回复应分别记录两侧 dump_integrity=valid，并对 target/golden 比较对记录 symptom_reproduction=not-reproduced；禁止 compare 原症状，产物只作观察者效应/反证。回退 instrumentation 后复核 R0，若恢复 mismatch 再经批准缩小 Step/Rank/scope 或降低采集强度；R0 也不复现则记录条件漂移。",
+      "files": [],
+      "expectations": [
+        {"type": "contains", "pattern": "not-reproduced"},
+        {"type": "not_contains", "pattern": "可以继续 compare"}
+      ]
+    },
+    {
+      "id": 17,
+      "title": "LR 置零与 CPU 对照的阶段边界",
+      "config": {"max_tokens": 150000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "E01 的 Loss 从第二步开始偏。我想在 Scope Reduction 同时把 LR 设为 0，并把半个模型移到 CPU，怎样设计？",
+      "expected_output": "回复应拒绝同时改变两个因素。LR=0 可作为 Scope Reduction 的条件式边界实验，保持相同初始权重和输入并确认权重未更新，用于区分当前 forward/input 与此前 backward/update 累积，不能直接证明 Optimizer 根因。CPU 替代不属于 Scope Reduction；必须先定位具体 API/Module，再保持输入、权重、dtype、shape 和非 Tensor 参数做获批的单变量对照，记录搬运/cast/同步并完成 R0′ 与 NPU 修复复跑。",
+      "files": [],
+      "expectations": [
+        {"type": "contains", "pattern": "LR=0"},
+        {"type": "contains", "pattern": "具体 API/Module"}
+      ]
+    },
+    {
+      "id": 18,
+      "title": "E01/E02 区分首差异与有限值放大器",
+      "config": {"max_tokens": 150000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "E02 中，statistics dump 显示反向节点 A 首次出现很小但可重复的 finite mismatch，后面的节点 B 把误差放大了 30 倍。可以把 A 或 B 直接写成根因吗？这些量级统计从哪里取？",
+      "expected_output": "回复应拒绝直接归因 A 或 B。先确认正向仍在门槛内，按 backward 实际逆向传播顺序和同 Step/Rank/调用实例分析：A 是首个可观测差异边界，只有输入/参数/状态对齐而输出首次偏离时才是误差引入候选；B 是后续放大候选。量级优先读取有效 dump.json 的原始 max/min/mean/norm 和 compare 实际输出，缺失、为 null 或版本语义不明时写 unknown。不得使用跨模型通用倍数阈值，要求重复性和单变量修复/回退验证。",
+      "files": [],
+      "expectations": [
+        {"type": "contains", "pattern": "可观测差异边界"},
+        {"type": "contains", "pattern": "norm"}
+      ]
+    }
+  ]
+}

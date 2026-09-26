@@ -4,8 +4,8 @@ description: Ascend C 算子运行时错误调试技能。用于处理算子运�
   查找等错误），(2) 需要解析 plog 日志定位问题。触发关键词：运行时错误、错误码、Tiling错误、Kernel查找失败、环境变量、plog。
 original-name: ascendc-runtime-debug
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-26'
-synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
+synced-date: '2026-09-26'
+synced-commit: edcd4b94390c2a6b664f0935fbdd8a65e3644e9f
 license: UNKNOWN
 ---
 
@@ -31,7 +31,7 @@ license: UNKNOWN
 
 | 错误码 | 类型 | 排查方向 | 详细方案 |
 |-------|------|---------|---------|
-| 507035 | 向量核异常 | 检查 DataCopyPad 32B对齐 / UB溢出 | [debug_workflow.md](references/debug_workflow.md#507035-向量核异常) |
+| 507035 | 向量核异常 | 检查 UB 端地址 32B 对齐（含 VEC 指令操作数）/ GM→UB padParams 违规 / UB 溢出 | [debug_workflow.md](references/debug_workflow.md#507035-向量核异常) |
 | 161xxx | 参数错误 | 检查 dtype/shape/nullptr | [debug_workflow.md](references/debug_workflow.md#161xxx---参数错误) |
 | 561002 | Tiling错误 | 检查 TilingKey/TilingFunc | [debug_workflow.md](references/debug_workflow.md#561002---tiling错误) |
 | 561003 | Kernel未找到 | 检查算子安装/环境配置 | [debug_workflow.md](references/debug_workflow.md#561003---kernel查找失败) |
@@ -40,7 +40,7 @@ license: UNKNOWN
 
 ## 未知错误码处理
 
-遇到速查表中未列出的错误码时，见 [debug_workflow.md](references/debug_workflow.md#未知错误码处理)
+遇到速查表中未列出的错误码时，见 [debug_workflow.md](references/debug_workflow.md#未知错误码处理兜底方案)
 
 ## 调试工具速查
 

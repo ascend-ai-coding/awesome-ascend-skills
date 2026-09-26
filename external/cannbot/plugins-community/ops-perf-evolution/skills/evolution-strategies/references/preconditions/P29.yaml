@@ -1,0 +1,17 @@
+strategy_id: P29
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "Cube.*Vector|Vector.*Cube|CV|MIX"
+    min_count: 1
+    fail_msg: "未检测到 Cube+Vector 融合模式 → 无需跨核同步，不适用 P29。检查 P14 或 P30。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "CrossCoreSetFlag|CrossCoreWaitFlag|SetFlag|WaitFlag"
+    min_count: 1
+    fail_msg: "未检测到跨核同步原语 → 当前同步机制不足，不适用 P29。检查 P5 或 P14。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "SyncAll|PipeBarrier"
+    min_count: 1
+    fail_msg: "未检测到粗粒度同步（SyncAll/PipeBarrier）→ 无同步优化空间，不适用 P29。"

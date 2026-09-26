@@ -1,0 +1,204 @@
+{
+  "skill_name": "tool-exception-dump",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "dimension": "tool_use_adherence",
+      "title": "ASCEND_OPP_PATH 缺失时的环境拦截与恢复",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "我在故障机器上直接执行 python3 msaicerr.py -p /root/asys_output_20230713074104794 -out /root/result，工具报 Environment variable not set after the CANN software is installed. 然后退出码是 2。是不是工具坏了？要不要重装 CANN？",
+      "expected_output": "应判定为 ASCEND_OPP_PATH 环境变量缺失（退出码 2 属路径错误类工具状态码，不是工具损坏）：先 echo $ASCEND_OPP_PATH 判空，为空则重新 source <CANN安装路径>/set_env.sh 后复检，复检通过再进入 msaicerr.py 所在目录执行；不得建议重装 CANN 或换 -p 路径反复重试，也不得把退出码 2 报告为工具 bug。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "ASCEND_OPP_PATH" },
+        { "type": "contains", "pattern": "set_env.sh" },
+        { "type": "not_contains", "pattern": "重装 CANN" }
+      ]
+    },
+    {
+      "id": 2,
+      "dimension": "trigger_routing",
+      "title": "暂不支持算子（MemSet）拦截",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "收集目录已经准备好了，报错算子是 MemSet，日志里有 aicore error 字样，帮我定位根因。",
+      "expected_output": "应先用名单比对拦截：MemSet 命中 8 个暂不支持分析的算子清单（MatmulAllReduce 类、MatmulAllReduceAddRmsNorm、MatmulAllReduceInplaceAddRmsNorm、AllGatherMatmul、MatmulReduceScatter、GroupedMatmulAllReduce、MemSet、NonMaxSuppressionBucketize），停止分析并如实告知该算子暂不支持；不得凭日志 aicore error 字样给出越界类臆测根因，也不得强行继续分析流程。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "暂不支持" },
+        { "type": "contains", "pattern": "MemSet" },
+        { "type": "skill_activated", "pattern": "tool-exception-dump" }
+      ]
+    },
+    {
+      "id": 3,
+      "dimension": "slot_filling",
+      "title": "L1 场景判定与无 dump 的复现路径决策",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "收集目录的 plog 里有 [AIC_INFO] dev_func:GatherV3_7869a97190b9b4d296d9414a005b954b_high_performance 和 [AIC_INFO] tiling_data:0x5a 0x28 0x00 0x00，目录里没有 dfx/data-dump。这算什么场景？单算子复现还能做吗？",
+      "expected_output": "应按三条 grep 判定场景：[AIC_INFO] dev_func: 命中即 L1（fftsplus task execute failed 与 Begin to dump callback exception 未命中则非 ffts、非 SK）；L1 且无 exception dump 数据时单算子复现走路径 B（构造数据复现），tiling 可按第三源 [AIC_INFO] tiling_data 重建；不得因无 dump 宣布无法复现（无 dump 只影响复现输入来源），也不得把 dev_func 行当普通 INFO 忽略。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "L1" },
+        { "type": "contains", "pattern": "dev_func" },
+        { "type": "contains", "pattern": "构造数据" }
+      ]
+    },
+    {
+      "id": 4,
+      "dimension": "slot_filling",
+      "title": "David 芯片逗号十进制错误码判读",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "报错行是 error code = 65, 361，dump info 后面跟着 sc error info:、su error info:、l1 error info: 几个寄存器键。这个错误码怎么解码？是 0x40000 那种吗？",
+      "expected_output": "应判型为 David（ASCEND_950）：方法一逗号分隔的十进制位号指向 David（0x 开头十六进制才指向 Stars，方向不得写反），方法二 dump info 含 sc/su/l1 error info 键同样指向 David；65、361 即绝对位号，直接查 David 字典（共 187 条，位号按模块分段：CUBE 从 0、MTE 从 64、L1 从 128、SC 从 192、SU 从 256、VEC 从 320 起），65 落在 MTE 段解码为 MTE_NDDMA_REG_BUF_ECC、361 落在 VEC 段解码为 VEC_ERR_DIRTY_ECC_MBERR_T0；David 不走六模块子域分析，模块直接读错误名前缀；不得按 Stars 的 176 位字典做二进制展开。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "David" },
+        { "type": "contains", "pattern": "ASCEND_950" },
+        { "type": "contains", "pattern": "MTE_NDDMA_REG_BUF_ECC" }
+      ]
+    },
+    {
+      "id": 5,
+      "dimension": "slot_filling",
+      "title": "ffts 场景 D2H failed 与结论码 102 判读",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "plog 里有 fftsplus task execute failed, device_id=0, stream_id=42, task_id=1, fault kernel_name=FlashAttentionScore_..._mix_aic，还有 [Dump][Exception] D2H failed。dump 是不是收集成功了？接下来复现怎么走？",
+      "expected_output": "应判定 ffts 场景成立（fftsplus task execute failed 命中）且 dump 失败：D2H failed 命中即 dump 失败、结论码 102（内存分配错误方向），P4 复现无 dump 输入可用、改走路径 B（构造数据复现）；不得把 D2H failed 当 host 与 device 间通信故障去查链路网卡，不得把 102 当作工具自身 bug，也不得在 dump 失败后仍对 data-dump 目录执行 -d 解析。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "D2H failed" },
+        { "type": "contains", "pattern": "102" },
+        { "type": "contains", "pattern": "路径 B" }
+      ]
+    },
+    {
+      "id": 6,
+      "dimension": "tool_use_adherence",
+      "title": "路径 A dump 解析与复现成功判读（kernel 名共现）",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "收集目录 dfx/data-dump/0/ 下有 exception_info.42.1.1726159207469285，解析日志里有 input[0] NaN/INF. Input data invalid. Please check!，单算子复现的日志里出现了 there is an aicore error exception。复现成功了吧？是不是输入数据问题？",
+      "expected_output": "应走路径 A 判读：dump 解析的 NaN/Inf 命中为强证据、输入数据非法、关联结论码 104（data invalid 子串是 104 的直接判定依据）；复现成功的判定必须同时满足日志命中五种错误串之一且同一日志文件内出现目标 kernel 名（RetCode.FAILED，注意语义反转，FAILED 才是复现成功），仅凭日志含 aicore error 字样不能认定复现成功，须先确认目标 kernel 名共现；数据无效只关联 104，不得臆断 101、103 等其他结论。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "104" },
+        { "type": "contains", "pattern": "kernel 名" },
+        { "type": "not_contains", "pattern": "复现成功，根因是硬件" }
+      ]
+    },
+    {
+      "id": 7,
+      "dimension": "output_quality",
+      "title": "四证据链汇聚与优先级链判定",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "dump 解析发现输入张量 NaN/INF（Input data invalid），但单算子复现跑了没报错（未复现）。结论应该是什么？复现没成功是不是说明算子没问题？",
+      "expected_output": "应按四证据链汇聚（反编译→101、寄存器解码→103、dump 校验→104、单算子复现→105-107）后用优先级链 105→107→104→106→102→101→103→0 取结论：本场景无 105/107 证据、dump 校验链命中 data invalid，最终结论码 104；复现未复现不推翻 104（链上 104 先于 101，未复现须走升级路径而非改写结论），未复现什么都没证明，应输出 msSanitizer、op_debug_config=oom 等升级路径；置信度应为中（仅 dump 链单链直接触发、复现未复现构成可解释反证）并在反证段如实呈现。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "优先级" },
+        { "type": "contains", "pattern": "104" },
+        { "type": "contains", "pattern": "升级路径" }
+      ]
+    },
+    {
+      "id": 8,
+      "dimension": "tool_use_adherence",
+      "title": "端到端降级：无 dump 目录且 ops 有 json 无 .o",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "收集目录结构：dfx/ops 下只有 GatherV3_..._high_performance.json 没有 .o 文件，没有 dfx/data-dump 目录，dfx/log/host/cann 下有 plog 且含 [AIC_INFO] dev_func:GatherV3_..._high_performance。帮我完整诊断这个 AI Core Error。",
+      "expected_output": "应按完整流程推进并如实降级：三要素校验判缺 dump（dfx/data-dump 不存在）与缺 .o/.json 编译文件（只有 json 无 .o），打\"缺 dump\"与\"定位降级\"双标记；plog 存在所以不停止、继续 P2；场景判定 dev_func 命中即 L1；报错行定位链因无 .o 断链属正常降级、保留偏移级结果，不得伪造 cce 行号；本场景是\"缺 dump 数据\"（收集侧无 data-dump 目录）而非\"dump 失败\"，不得误关联结论码 102；复现走路径 B（tiling 从 plog 重建，三源都没有时如实记录并传空串继续）；报告按六段式输出，反编译链与 dump 校验链如实写\"本链失效（原因）\"，链大面积缺失时置信度降级为低、只输出排查方向。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "定位降级" },
+        { "type": "contains", "pattern": "缺 dump" },
+        { "type": "contains", "pattern": "路径 B" }
+      ]
+    },
+    {
+      "id": 9,
+      "dimension": "trigger_routing",
+      "title": "真机日志触发与路由：Ascend910B4 AI Core Error（CUBE 参数非法）识别",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": ["Ascend910B4"],
+        "eval_mode": "text"
+      },
+      "prompt": "真机 Ascend910B4 上跑性能样例，业务侧 rtStreamSynchronize 直接报错，plog 里摘了两行原文：\n[ERROR] RUNTIME(4028848,aicore_error_locate):2026-09-22-14:54:51.635.208 [device_error_core_proc.cc:1227]4028877 PrintCoreInfo:An error occurs on the device(chipId:0, dieId:0), the serial number is 40, the error is aicore error, core id is 24, error code = 0, dump info: pc start: 0x124000000000, current: 0x124000000500, vec error info: 0, mte error info: 0xfb9bf383af, ifu error info: 0x69cf2dcae66c0, ccu error info: 0xe29d17e679cef0e, cube error info: 0x100003b, biu error info: 0, aic error mask: 0x6500020bd00028c, para base: 0x12c100000000, aic cond: 0. The extend info: errcode:(0, 0x4000000000000000, 0) errorStr: The CUBE instruction parameter is invalid. fixp_error0 info: 0xbf383af, fixp_error1 info: 0xfb, fsmId:0, tslot:0, thread:0, ctxid:0, blk:0, sublk:0, subErrType:4. For details, see the troubleshooting document on the Ascend official website. Search for the keyword \"AI Core Error\".\n[ERROR] RUNTIME(4028848,aicore_error_locate):2026-09-22-14:54:51.653.742 [api_c_stream.cc:168]4028848 rtStreamSynchronize:ErrCode=507015, desc=[aicore exception], InnerCode=0x7150026\n这是什么错误？该按什么流程排查？",
+      "expected_output": "应识别为 AI Core Error 并按 tool-exception-dump 技能的诊断流程处理：rtStreamSynchronize 返回码 507015、desc=[aicore exception] 即 AI Core Error 在业务侧的暴露形态，PrintCoreInfo 行明确 the error is aicore error；error code = 0 为裸 0 不等于无错误，cube error info: 0x100003b 与 errorStr 指向 CUBE 指令参数非法，属 CUBE 参数非法类 AI Core Error；应从环境与输入检查、收集目录三要素校验、场景判定（L0/L1/ffts/SK）推进到报错行定位、错误类型识别与单算子复现；不得把 error code = 0 当作无错误而结束分析。",
+      "files": [],
+      "expectations": [
+        { "type": "skill_activated", "pattern": "tool-exception-dump" },
+        { "type": "contains", "pattern": "AI Core Error" },
+        { "type": "contains", "pattern": "CUBE" }
+      ]
+    },
+    {
+      "id": 10,
+      "dimension": "slot_filling",
+      "title": "真机日志报错行定位判读：fixedPCOffset 与 CANN 内联头落点",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": ["Ascend910B4"],
+        "eval_mode": "text"
+      },
+      "prompt": "真机 Ascend910B4 的 AI Core Error 日志里有这么一段符号化链，报错行到底在哪？\n[ERROR] IDEDD(4028848,aicore_error_locate):2026-09-22-14:54:51.636.342 [kernel_symbol_locator.cpp:725][tid:4028877] [Dump][Exception] Error PC information. coreId=24, coreType=0, originalStartPC=0x124000000000, fixedStartPC=0x124000000000, originalCurrentPC=0x124000000500, fixedCurrentPC=0x1240000004ec, fixedPCOffset=0x4ec.\n[ERROR] IDEDD(4028848,aicore_error_locate):2026-09-22-14:54:51.636.347 [kernel_symbol_locator.cpp:744][tid:4028877] [Dump][Exception] Error symbol information. coreId=24, coreType=0, symbol=_Z8asc_mmadPU3AS5fPU3AS3DhPU3AS4Dhttthbbb.cube+0xd4.\n[ERROR] IDEDD(4028848,aicore_error_locate):2026-09-22-14:54:51.653.404 [kernel_source_symbolizer.cpp:674][tid:4028877] [Dump][Exception][Symbolize] llvm-symbolizer raw output for offset 0x4ec (total 94 bytes):\n[ERROR] IDEDD(4028848,aicore_error_locate):2026-09-22-14:54:51.653.415 [kernel_source_symbolizer.cpp:676][tid:4028877] /usr/local/Ascend/cann-9.3.0/asc/impl/c_api/memory_base_impl/cube_compute_intf_impl.h:161:9\n[ERROR] IDEDD(4028848,aicore_error_locate):2026-09-22-14:54:51.653.457 [kernel_symbol_locator.cpp:522][tid:4028877] Group[0] oFile=~/runtime/example/5_performance/adump/4_adump_error_locate/extra-info/data-dump/0/_Z12error_kernelPDhS_S__host.o fixedPCOffset=0x4ec symbol=_Z8asc_mmadPU3AS5fPU3AS3DhPU3AS4Dhttthbbb.cube+0xd4\n[ERROR] IDEDD(4028848,aicore_error_locate):2026-09-22-14:54:51.653.466 [kernel_symbol_locator.cpp:522][tid:4028877] Group[0] outerSrc=/usr/local/Ascend/cann-9.3.0/asc/impl/c_api/memory_base_impl/cube_compute_intf_impl.h:161:9 innerSrc=/usr/local/Ascend/cann-9.3.0/asc/impl/c_api/memory_base_impl/cube_compute_intf_impl.h:161:9\n定位结果落在 CANN 自己的头文件里，这算定位成功还是失败？",
+      "expected_output": "应判读报错行定位链成功：Error PC information 行给出 fixedCurrentPC=0x1240000004ec、fixedPCOffset=0x4ec（修正 PC 由 AI Core 错误寄存器回填，比原始 PC 0x124000000500 更可信）；错误符号为 asc_mmad（_Z8asc_mmad...cube+0xd4，即 asc_mmad 内联展开实现的 .cube 段+0xd4）；llvm-symbolizer 对偏移 0x4ec 的源码行解析为 cube_compute_intf_impl.h:161:9；Group[0] 的 outerSrc 与 innerSrc 同落 /usr/local/Ascend/cann-9.3.0/asc/impl/c_api/memory_base_impl/cube_compute_intf_impl.h:161:9，属 CANN 内联头文件的内联展开语义：错误发生在 asc_mmad 内联实现处而非用户算子源文件，这是正常落点，不是定位失败也不是无关行；host.o（oFile）在案，可作为符号化与复现输入。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "0x4ec" },
+        { "type": "contains", "pattern": "161:9" },
+        { "type": "contains", "pattern": "asc_mmad" }
+      ]
+    },
+    {
+      "id": 11,
+      "dimension": "slot_filling",
+      "title": "真机日志错误类型识别：裸 0 三元组重读与 CUBE 参数非法",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": ["Ascend910B4"],
+        "eval_mode": "text"
+      },
+      "prompt": "真机 Ascend910B4 日志里错误码看着是 0，是没出错吗？两行原文如下：\n[ERROR] RUNTIME(4028848,aicore_error_locate):2026-09-22-14:54:51.635.208 [device_error_core_proc.cc:1227]4028877 PrintCoreInfo:An error occurs on the device(chipId:0, dieId:0), the serial number is 40, the error is aicore error, core id is 24, error code = 0, dump info: pc start: 0x124000000000, current: 0x124000000500, vec error info: 0, mte error info: 0xfb9bf383af, ifu error info: 0x69cf2dcae66c0, ccu error info: 0xe29d17e679cef0e, cube error info: 0x100003b, biu error info: 0, aic error mask: 0x6500020bd00028c, para base: 0x12c100000000, aic cond: 0. The extend info: errcode:(0, 0x4000000000000000, 0) errorStr: The CUBE instruction parameter is invalid. fixp_error0 info: 0xbf383af, fixp_error1 info: 0xfb, fsmId:0, tslot:0, thread:0, ctxid:0, blk:0, sublk:0, subErrType:4. For details, see the troubleshooting document on the Ascend official website. Search for the keyword \"AI Core Error\".\n[ERROR] IDEDD(4028848,aicore_error_locate):2026-09-22-14:54:51.636.317 [kernel_symbol_locator.cpp:688][tid:4028877] [Dump][Exception] Error register information. coreId=24, coreType=0, AIC_ERR_0=0x0 AIC_ERR_1=0x0 AIC_ERR_2=0x0 AIC_ERR_3=0x40000000 AIC_ERR_4=0x0 AIC_ERR_5=0x0 BIU_ERR_0=0x0 BIU_ERR_1=0x0 CCU_ERR_0=0x679cef0e CCU_ERR_1=0xe29d17e CUBE_ERR_0=0x100003b CUBE_ERR_1=0x0\n芯片形态和错误类型该怎么判？",
+      "expected_output": "应判读错误类型：error code = 0 为裸 0，两芯片同形，只能落到 Stars（ASCEND_910B）路径走兜底（真机 SoC=Ascend910B4，与 Stars 判定一致）；方法二 dump info 含 ifu error info:、ccu error info:、biu error info: 键同样指向 Stars，两法一致；错误码 0x0 不等于无异常，按场景 5 从 extend info 三元组 errcode:(0, 0x4000000000000000, 0) 重读错误码；CUBE_ERR_0=0x100003b 与 cube error info: 0x100003b、errorStr \"The CUBE instruction parameter is invalid.\" 共同指向 CUBE 指令参数非法类；结论只落 Stars 与 CUBE 方向，三元组重建不出时按 trap_or_timeout 兜底并注明置信度低，不得因错误码 0 判无错误。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "Stars" },
+        { "type": "contains", "pattern": "CUBE" },
+        { "type": "not_contains", "pattern": "David" }
+      ]
+    }
+  ]
+}

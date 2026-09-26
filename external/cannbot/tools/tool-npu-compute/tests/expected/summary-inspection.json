@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "record_categories": [
+    "PipeUtilization",
+    "Memory",
+    "MemoryL0",
+    "MemoryUB",
+    "L2Cache",
+    "ArithmeticUtilization",
+    "ResourceConflictRatio",
+    "OpInfoSummary"
+  ],
+  "real_fixture": {
+    "file": "summary.jsonl",
+    "record_count": 8,
+    "section_categories": [
+      "PipeUtilization",
+      "Memory",
+      "MemoryL0",
+      "MemoryUB",
+      "L2Cache",
+      "ArithmeticUtilization",
+      "ResourceConflictRatio"
+    ],
+    "op_info_summary": {
+      "selected_values": {
+        "Op Type": "vector",
+        "Block Dim": 8,
+        "Mix Block Dim": null,
+        "Device Id": 0,
+        "Current Freq": 1650.0,
+        "Rated Freq": 1650.0
+      }
+    }
+  }
+}

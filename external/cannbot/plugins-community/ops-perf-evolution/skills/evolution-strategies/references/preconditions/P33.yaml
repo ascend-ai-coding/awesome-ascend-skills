@@ -1,0 +1,17 @@
+strategy_id: P33
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "Gather|gather|提取|子张量"
+    min_count: 1
+    fail_msg: "未检测到 Gather 操作 → 不适用 P33。检查 P32 或 P56。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "offset|Offset|偏移|table|Table"
+    min_count: 1
+    fail_msg: "未检测到偏移表/索引计算 → 无 Gather 偏移优化空间，不适用 P33。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "UB|ub|LocalTensor|TBuf"
+    min_count: 1
+    fail_msg: "未检测到 UB/LocalTensor 使用 → 偏移表无法常驻，不适用 P33。"

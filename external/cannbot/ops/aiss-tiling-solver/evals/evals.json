@@ -1,0 +1,85 @@
+{
+  "skill_name": "aiss-tiling-solver",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "AISS-TilingSolver 工具使用流程",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "如何使用 AISS-TilingSolver 工具为 Ascend C 算子求解最优 tiling 参数？请说明完整的使用步骤。可以加载技能，不需要执行其他外部工具调用。",
+      "expected_output": "回复应说明 AISS-TilingSolver 的完整使用流程：下载 CLI 工具（tiling_solver 和 platform_info 两个二进制文件）；运行 platform_info 采集硬件平台参数；构造输入 JSON 文件（填入算子类型、形状、数据类型及采集到的硬件参数）；运行 tiling_solver input.json 求解；解读输出 JSON 中的最优 tiling 参数（如 base_m、base_n、base_k 等）。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 2,
+      "title": "MatMul 算子 Tiling 求解（关键能力）",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我要为一个 float16 的 MatMul 算子（M=1024，N=640，K=256）求解最优 tiling 参数。输入 JSON 里应该填哪些字段？求解出来的 base_m、single_core_m、db_l0c、iterate_order 这些输出字段分别是什么意思？",
+      "expected_output": "应说明 MatMul 输入 JSON 构造：type 设为 matmul，M/N/K 为必填，a_dtype/b_dtype/c_dtype 指定数据类型，aic_core_num/aiv_core_num 与 L0A/L0B/L0C/L1/UB/L2/HBM 等硬件参数需从 platform_info 采集后填入；并解读输出字段：base_m/base_n/base_k 为内层循环切块、single_core_m/single_core_n 为每个核的 M/N 范围、step_ka/step_kb 为 K 方向 L1 缓冲步长、depth_a1/depth_b1 为 L1 缓冲深度、db_l0a/db_l0b/db_l0c 为 L0 双缓冲（1 或 2）、iterate_order 为迭代顺序（0=M 优先，1=N 优先）。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 3,
+      "title": "Vector 算子 Tiling 求解（关键能力）",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我想为 Add 这类逐元素 Vector 算子求解 tiling，total_length 是 16384，两个输入一个输出，中间需要 float32 的临时 buffer。输入 JSON 怎么构造？输出里的 block_dim、tile_num、buf_num、tile_length 这些字段该怎么解读？",
+      "expected_output": "应说明 Vector 输入 JSON 构造：type 设为 vector，total_length 为必填，num_inputs=2/num_outputs=1 指定输入输出个数，temp_buf_dtypes 声明临时 buffer 类型（如 float32），UB_SIZE/aiv_core_num 等硬件参数建议从 platform_info 获取；并解读输出字段：block_dim 为 AI Core 核数、tile_num 为每核 tile 数、buf_num 为缓冲数、tile_length 为每 tile 元素数。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "status 结果解读与故障处理",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我运行 tiling_solver 求解后，输出 JSON 里的 status 字段返回了 unsat。这个状态是什么意思？我该怎么处理？另外 timeout 和 error 状态分别代表什么？",
+      "expected_output": "应说明 status 字段四类取值的含义与处理：ok 表示求解成功、参数可直接应用；unsat 表示约束不可满足、当前 shape/dtype 在此硬件上无可行解，可先尝试缩小维度确认是否有可行解再逐步放大；timeout 表示 Z3 求解超时，可增大 timeout_ms（如 30000）或设 optimize 为 false 获取可行解；error 表示输入参数非法或内部异常。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "二进制下载与架构选择",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我在服务器上运行 tiling_solver 报错 \"cannot execute binary file\"，是什么原因？怎么修复？我担心是不是还缺什么运行环境依赖。",
+      "expected_output": "应说明 \"cannot execute binary file\" 通常是下载了错误架构的二进制，需要先用 uname -m 确认平台架构（aarch64 或 x86_64），下载对应的 tiling_solver_aarch64/tiling_solver_x86_64 与 platform_info_aarch64/platform_info_x86_64 版本并重命名、chmod +x；同时说明环境要求 glibc ≥ 2.38，若报 GLIBC_2.38 not found 需升级系统 glibc 或使用容器。",
+      "expectations": [],
+      "files": []
+    }
+  ]
+}

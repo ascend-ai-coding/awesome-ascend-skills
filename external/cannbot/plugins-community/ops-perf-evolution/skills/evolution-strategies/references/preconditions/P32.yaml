@@ -1,0 +1,17 @@
+strategy_id: P32
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "Scatter|scatter|Index|index|indices|更新"
+    min_count: 1
+    fail_msg: "未检测到 Scatter/Index 相关操作 → 不适用 P32。检查 P33 或 P64。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "DataCopy|DataCopyPad|CopyIn|CopyOut"
+    min_count: 1
+    fail_msg: "未检测到 DataCopy 操作 → 无散射写入空间，不适用 P32。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "stride|Stride|offset|Offset"
+    min_count: 1
+    fail_msg: "未检测到 stride/offset 寻址 → 无 stride 优化空间，不适用 P32。"

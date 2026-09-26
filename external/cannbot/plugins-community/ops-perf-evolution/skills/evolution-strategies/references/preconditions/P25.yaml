@@ -1,0 +1,17 @@
+strategy_id: P25
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "DataCopy|DataCopyPad|CopyIn|CopyOut"
+    min_count: 1
+    fail_msg: "未检测到 DataCopy 操作 → 无 Pad 对齐优化空间，不适用 P25。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "Align|对齐|pad|Pad|padding"
+    min_count: 1
+    fail_msg: "未检测到对齐/Pad 相关逻辑 → 无 DataCopyPad 需求，不适用 P25。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "DataCopyPadExtParams|padParams|DataCopyPad"
+    min_count: 0
+    fail_msg: "已存在 DataCopyPad 优化 → 可能冗余，优先验证现有策略效果。"

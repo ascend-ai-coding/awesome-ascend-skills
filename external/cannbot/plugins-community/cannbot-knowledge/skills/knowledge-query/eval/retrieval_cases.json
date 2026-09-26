@@ -1,0 +1,139 @@
+{
+  "version": 2,
+  "description": "Small knowledge-query preflight regression set. Expected doc-ids must be retrieved and forbidden doc-ids must stay out of results and suggested_get.",
+  "cases": [
+    {
+      "id": "a3-excludes-strict-950-only-api",
+      "task": "在 910C(A3) 平台使用 __hdiv API",
+      "forbidden": [
+        "asc-devkit/api/simt_api/half/__hdiv.md"
+      ]
+    },
+    {
+      "id": "datacopypad-unaligned-usage",
+      "task": "DataCopyPad 非对齐搬运怎么写",
+      "expected": [
+        "asc-devkit/api/basic_api/datacopypad_isasi.md",
+        "asc-devkit/examples/simd_cpp_api/datacopy_pad_unaligned.md"
+      ]
+    },
+    {
+      "id": "datacopypad-small-dtype-trap",
+      "task": "小 dtype 标量广播 DataCopyPad blockLen 小于 32B 返回脏数据怎么处理",
+      "expected": [
+        "runbooks/field-notes/precision/int16-broadcast-datacopypad-below-min-copy-granularity.md",
+        "runbooks/field-notes/precision/datacopypad-blocklen-non-32b-aligned-rlen.md"
+      ]
+    },
+    {
+      "id": "datacopypad-narrowing",
+      "task": "DataCopyPad narrowing conversion 编译失败 blockLen uint16_t uint32_t",
+      "expected": [
+        "asc-devkit/api/basic_api/datacopypad_isasi.md"
+      ]
+    },
+    {
+      "id": "tiling-blockdim",
+      "task": "GetBlockDim Host Tiling numBlocks SetBlockDim 多核切分",
+      "expected": [
+        "asc-devkit/api/utils_api/calctschblockdim.md",
+        "ascend-c-op-dev-guide/programming_guide/基本流程.md",
+        "ascend-c-op-dev-guide/operator_practice/多核_tiling.md"
+      ]
+    },
+    {
+      "id": "tiling-debug",
+      "task": "如何进行 Tiling 调测 kernel 侧获取 tiling 信息不正确",
+      "expected": [
+        "ascend-c-op-dev-guide/programming_guide/如何进行_tiling_调测.md",
+        "ascend-c-op-dev-guide/programming_guide/kernel_侧获取_tiling_信息不正确.md"
+      ]
+    },
+    {
+      "id": "workspace-programming",
+      "task": "Ascend C 如何使用 workspace Host 侧申请 Kernel 侧访问",
+      "expected": [
+        "ascend-c-op-dev-guide/programming_guide/如何使用_workspace.md",
+        "asc-devkit/api/utils_api/workspace.md"
+      ]
+    },
+    {
+      "id": "workspace-561103-version-info",
+      "task": "GetWorkspaceSize 全量失败 561103 version.info CANN 版本不匹配",
+      "expected": [
+        "runbooks/field-notes/build/error-561103-all-fail-package-version-mismatch.md"
+      ]
+    },
+    {
+      "id": "msprof-ai-task-collect",
+      "task": "msprof 采集 AI 任务运行性能数据",
+      "expected": [
+        "ascend-c-profiling/msprof_collect/采集_ai_任务运行性能数据.md",
+        "ascend-c-profiling/msprof_collect/msprof_采集通用命令.md"
+      ]
+    },
+    {
+      "id": "msprof-export",
+      "task": "msprof export 解析并导出性能数据 timeline summary db",
+      "expected": [
+        "ascend-c-profiling/msprof_parse_export/解析并导出性能数据.md",
+        "ascend-c-profiling/appendix/导出性能数据.md"
+      ]
+    },
+    {
+      "id": "matmul-atomicadd",
+      "task": "Matmul 高阶 API 使能 AtomicAdd 选项",
+      "expected": [
+        "ascend-c-op-dev-guide/operator_practice/matmul_使能_atomicadd_选项.md",
+        "asc-devkit/api/basic_api/atomicadd.md",
+        "asc-devkit/api/basic_api/setatomicadd.md"
+      ]
+    },
+    {
+      "id": "shapeinfo-stack",
+      "task": "通过缩减 Tensor ShapeInfo 维度优化栈空间",
+      "expected": [
+        "ascend-c-op-dev-guide/operator_practice/通过缩减_tensor_shapeinfo_维度_优化栈空间.md",
+        "asc-devkit/api/advanced_api/shapeinfo.md"
+      ]
+    },
+    {
+      "id": "optimization-overview",
+      "task": "SIMD 算子性能优化建议 总览 Tiling 流水 内存访问",
+      "expected": [
+        "ascend-c-op-dev-guide/operator_practice/优化建议总览表.md",
+        "ascend-c-op-dev-guide/operator_practice/matmul_性能优化策略总览.md"
+      ]
+    },
+    {
+      "id": "similar-example-vector-add-tiling",
+      "task": "找一个 VectorAdd 多核 Tiling 策略相似样例",
+      "expected": [
+        "asc-devkit/examples/simd_cpp_api/tiling_strategy.md",
+        "asc-devkit/examples/simd_cpp_api/add_broadcast_multicore_tiling.md"
+      ]
+    },
+    {
+      "id": "globaltensor-getvalue",
+      "task": "GlobalTensor GetValue 读取单个元素怎么用",
+      "expected": [
+        "asc-devkit/api/basic_data_structures/data_structure/getvalue.md",
+        "asc-devkit/api/basic_data_structures/data_structure/globaltensor简介.md"
+      ]
+    },
+    {
+      "id": "dynamic-msprof-collect",
+      "task": "msprof launch attach 动态采集性能数据 PID",
+      "expected": [
+        "ascend-c-profiling/msprof_collect/动态采集性能数据.md"
+      ]
+    },
+    {
+      "id": "opdef-format-datatype-length",
+      "task": "OpDef Format UnknownShapeFormat DataType 数组长度不一致 dtype size is 0",
+      "expected": [
+        "runbooks/field-notes/build/opbuild-dtype-size-zero-format-length.md"
+      ]
+    }
+  ]
+}

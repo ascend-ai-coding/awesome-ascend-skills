@@ -1,0 +1,383 @@
+{
+  "eval_mode": "text",
+  "skill_name": "tool-npu-compute",
+  "evals": [
+    {
+      "id": 1,
+      "title": "Memory 带宽字段解释",
+      "config": {
+        "max_tokens": 20000,
+        "max_tokens_by_model": {"deepseek-v4-flash": 100000},
+        "ascend_platforms": ["A5"],
+        "eval_mode": "text"
+      },
+      "prompt": "请分析下面的 Memory.csv 片段中 aiv_gm_to_ub_bw(GB/s) 字段，说明字段含义、适用 Core、单位、依赖、计算规则和 NA 条件，并结合这一行的实际值解释。只陈述数据能够支持的结论。\n\n```csv\nblock_id,sub_block_id,aiv_time(us),aiv_total_cycles,aiv_gm_to_ub_bw(GB/s),aiv_main_mem_read_bw(GB/s)\n0,vector0,4.224242,6970,3.640416,3.640416\n```",
+      "expected_output": "准确解释该字段的公式、依赖和 NA 条件，引用实际值 3.640416，并避免没有基线的瓶颈判断。",
+      "files": []
+    },
+    {
+      "id": 2,
+      "title": "PipeUtilization 数据可用性分析",
+      "config": {
+        "max_tokens": 20000,
+        "max_tokens_by_model": {"deepseek-v4-flash": 100000},
+        "ascend_platforms": ["A5"],
+        "eval_mode": "text"
+      },
+      "prompt": "请检查下面的 PipeUtilization.csv 片段，解释为什么部分 active_bw 字段有数值而另一些字段全是 NA。区分 Core 不适用、跨 Section 计数依赖和当前实现固定不可用三类原因，并判断这是否足以说明采集失败。\n\n```csv\nblock_id,sub_block_id,aic_mte2_active_bw(GB/s),aiv_mte2_active_bw(GB/s),aiv_mte3_active_bw(GB/s)\n0,vector0,NA,4.829406,NA\n1,vector0,NA,4.958706,NA\n2,vector0,NA,4.665998,NA\n3,vector0,NA,4.659144,NA\n4,vector0,NA,4.692750,NA\n5,vector0,NA,4.830325,NA\n6,vector0,NA,4.802896,NA\n7,vector0,NA,4.818401,NA\n```",
+      "expected_output": "根据 vector 行和字段定义区分不同 NA 原因，不把 NA 当作零或直接判定采集失败。",
+      "files": []
+    },
+    {
+      "id": 3,
+      "title": "混合 Kernel 时长选择",
+      "config": {
+        "max_tokens": 20000,
+        "max_tokens_by_model": {"deepseek-v4-flash": 100000},
+        "ascend_platforms": ["A5"],
+        "eval_mode": "text"
+      },
+      "prompt": "解释同一份 PMU 结果同时出现 cubeN 和 vectorN 行时，npu-compute 如何识别混合 Kernel，以及 Memory、MemoryL0、MemoryUB 的普通带宽如何选择计算时长。还要说明 PipeUtilization、L2Cache 是否使用同一操作时长。",
+      "expected_output": "准确说明混合核识别、Task Log 中位数操作时长、无效时回退和不同 Section 的时长边界。",
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "Memory 跨 Block 统计",
+      "config": {
+        "max_tokens": 20000,
+        "max_tokens_by_model": {"deepseek-v4-flash": 100000},
+        "ascend_platforms": ["A5"],
+        "eval_mode": "text"
+      },
+      "prompt": "请比较下面 Memory.csv 片段中不同 Block 的 aiv_gm_to_ub_bw(GB/s)，报告有效行数、最小值、最大值和平均值，说明行匹配方法以及包含 NA 的字段如何参与统计。不要在没有阈值或基线时下瓶颈结论。\n\n```csv\nblock_id,sub_block_id,aiv_gm_to_ub_bw(GB/s)\n0,vector0,3.640416\n1,vector0,3.633118\n2,vector0,3.430269\n3,vector0,3.574264\n4,vector0,3.891671\n5,vector0,3.815020\n6,vector0,3.789947\n7,vector0,3.724306\n```",
+      "expected_output": "按 block_id 与 sub_block_id 识别 8 行，给出正确统计值（最小值 3.430269、最大值 3.891671、平均值约 3.687376）并排除 NA。",
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "HardwareInfo 字段解释",
+      "config": {
+        "max_tokens": 20000,
+        "max_tokens_by_model": {"deepseek-v4-flash": 100000},
+        "ascend_platforms": ["A5"],
+        "eval_mode": "text"
+      },
+      "prompt": "请解释下面的 HardwareInfo.jsonl，概括记录类别，并重点解释 npu count、chip info、arch info、AI Core/Cube/Vector 数量、三类频率、hbm total 和 hbm used 的实际值及含义；区分设备配置和采集时状态。\n\n```jsonl\n{\"category\":\"Host Info\",\"cpu physical count\":2,\"cpu logical count\":88,\"memory total size(MB)\":515563.11,\"disk total size(GB)\":5864.53}\n{\"category\":\"Device Info\",\"npu count\":1,\"chip info\":\"Ascend950PR_9599 V100\",\"arch info\":\"3510\"}\n{\"category\":\"CPU Information\",\"control cpu count\":1,\"ai cpu count\":6,\"ai cpu frequency(MHZ)\":1500}\n{\"category\":\"AI Core Information\",\"ai core count\":36,\"ai cube count\":36,\"ai vector count\":72,\"ai cube frequency(MHZ)\":1650,\"ai vector frequency(MHZ)\":1650}\n{\"category\":\"Memory Information\",\"hbm total(MB)\":131072,\"hbm used(MB)\":62061.89,\"hbm frequency(MHZ)\":1500}\n```",
+      "expected_output": "准确读取实际值，区分主机信息、设备静态属性与频率、HBM 使用量等采集时状态。",
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "HardwareInfo 环境比较",
+      "config": {
+        "max_tokens": 20000,
+        "max_tokens_by_model": {"deepseek-v4-flash": 100000},
+        "ascend_platforms": ["A5"],
+        "eval_mode": "text"
+      },
+      "prompt": "请比较下面两份 HardwareInfo.jsonl，判断两次采集的硬件上下文是否一致、哪些字段发生变化，以及这些变化是否阻止后续比较 Section CSV。区分设备配置和采集时状态。\n\n第一次采集：\n```jsonl\n{\"category\":\"Host Info\",\"cpu physical count\":2,\"cpu logical count\":88}\n{\"category\":\"Device Info\",\"npu count\":1,\"chip info\":\"Ascend950PR_9599 V100\",\"arch info\":\"3510\"}\n{\"category\":\"CPU Information\",\"control cpu count\":1,\"ai cpu count\":6,\"ai cpu frequency(MHZ)\":1500}\n{\"category\":\"AI Core Information\",\"ai core count\":36,\"ai cube count\":36,\"ai vector count\":72,\"ai cube frequency(MHZ)\":1650,\"ai vector frequency(MHZ)\":1650}\n{\"category\":\"Memory Information\",\"hbm total(MB)\":131072,\"hbm used(MB)\":62063.16,\"hbm frequency(MHZ)\":1500}\n```\n\n第二次采集：\n```jsonl\n{\"category\":\"Host Info\",\"cpu physical count\":2,\"cpu logical count\":88}\n{\"category\":\"Device Info\",\"npu count\":1,\"chip info\":\"Ascend950PR_9599 V100\",\"arch info\":\"3510\"}\n{\"category\":\"CPU Information\",\"control cpu count\":1,\"ai cpu count\":6,\"ai cpu frequency(MHZ)\":1500}\n{\"category\":\"AI Core Information\",\"ai core count\":36,\"ai cube count\":36,\"ai vector count\":72,\"ai cube frequency(MHZ)\":1650,\"ai vector frequency(MHZ)\":1650}\n{\"category\":\"Memory Information\",\"hbm total(MB)\":131072,\"hbm used(MB)\":62061.89,\"hbm frequency(MHZ)\":1500}\n```",
+      "expected_output": "识别两次采集的静态硬件属性一致，仅 HBM 已使用量不同，并对可比性作有边界的判断。",
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "Skill 能力边界",
+      "config": {
+        "max_tokens": 20000,
+        "max_tokens_by_model": {"deepseek-v4-flash": 100000},
+        "ascend_platforms": ["A5"],
+        "eval_mode": "text"
+      },
+      "prompt": "npu-compute 启动后提示 Runtime 注入失败，最终 .npu-rep 也无法解包。请分析是哪个 Hook 接口导致失败、修改 CLI 代码并给出补丁。",
+      "expected_output": "识别请求属于 CLI、Runtime Hook 和报告编解码故障，说明问题不属于指标分析范围，不使用指标技能臆测原因或修改代码。",
+      "files": []
+    },
+    {
+      "id": 8,
+      "title": "ArithmeticUtilization 字段解释",
+      "config": {
+        "max_tokens": 20000,
+        "max_tokens_by_model": {"deepseek-v4-flash": 100000},
+        "ascend_platforms": ["A5"],
+        "eval_mode": "text"
+      },
+      "prompt": "请分析下面的 ArithmeticUtilization.csv 片段，解释 aiv_vec_ratio、aiv_vec_vf_ratio、aiv_vec_sfu_ratio 和 aiv_vec_simt_vf_ratio 分别表示什么、如何计算以及什么情况下为 NA；结合这一行说明数值为 0 是否等于未采集。\n\n```csv\nblock_id,sub_block_id,aiv_total_cycles,aiv_vec_ratio,aiv_vec_vf_ratio,aiv_vec_sfu_ratio,aiv_vec_simt_vf_ratio\n0,vector0,7054,0.097392,0.096824,0.000000,0.000000\n```",
+      "expected_output": "准确解释四个 AIV 算术利用率字段的指标边界、分母和 NA 条件，并区分有效零值与缺失值。",
+      "files": []
+    },
+    {
+      "id": 9,
+      "title": "ResourceConflictRatio 字段解释",
+      "config": {
+        "max_tokens": 20000,
+        "max_tokens_by_model": {"deepseek-v4-flash": 100000},
+        "ascend_platforms": ["A5"],
+        "eval_mode": "text"
+      },
+      "prompt": "请分析下面的 ResourceConflictRatio.csv 片段，解释 aiv_vec_ldu_cflt_ratio、aiv_vec_sfu_cflt_ratio 和 aiv_vec_wait_ratio，说明它们的分母、SFU 字段的数据依赖、NA 条件以及能否仅凭这三个值判断性能瓶颈。\n\n```csv\nblock_id,sub_block_id,aiv_total_cycles,aiv_vec_ldu_cflt_ratio,aiv_vec_sfu_cflt_ratio,aiv_vec_wait_ratio\n0,vector0,7054,0.002268,0.000000,0.730649\n```",
+      "expected_output": "准确解释三个资源冲突字段、SFU 聚合规则和数据可用性，并避免在没有基线时直接判断瓶颈。",
+      "files": []
+    },
+    {
+      "id": 10,
+      "title": "Pipeline 时间线汇总",
+      "config": {
+        "max_tokens": 20000,
+        "max_tokens_by_model": {"deepseek-v4-flash": 100000},
+        "ascend_platforms": ["A5"],
+        "eval_mode": "text"
+      },
+      "prompt": "请分析下面的 PipeTrace.json，报告事件数、轨道数、时间范围，并按流水线汇总事件数和累计时长。解释 SCALAR、VECTOR 和 MTE2 轨道表示什么，只陈述输入数据能够支持的结论。\n\n```json\n{\"displayTimeUnit\":\"ns\",\"profilingType\":\"op\",\"schemaVersion\":1,\"traceEvents\":[{\"cname\":\"startup\",\"dur\":0.5,\"name\":\"SCALAR\",\"ph\":\"X\",\"pid\":\"group0.veccore0\",\"tid\":\"SCALAR\",\"ts\":1.0},{\"cname\":\"rail_idle\",\"dur\":1.0,\"name\":\"VECTOR\",\"ph\":\"X\",\"pid\":\"group0.veccore0\",\"tid\":\"VECTOR\",\"ts\":1.5},{\"cname\":\"yellow\",\"dur\":2.0,\"name\":\"MTE2\",\"ph\":\"X\",\"pid\":\"group0.veccore0\",\"tid\":\"MTE2\",\"ts\":2.0}]}\n```",
+      "expected_output": "识别 3 个事件和 3 条轨道（轨道数为 3），时间范围为 1.0 至 4.0 微秒；分别给出 SCALAR、VECTOR、MTE2 的事件数和累计时长，并将 SCALAR 解释为标量（Scalar）流水线，把 displayTimeUnit 解释为显示提示。",
+      "files": []
+    },
+    {
+      "id": 11,
+      "title": "Pipeline 时间单位解释",
+      "config": {
+        "max_tokens": 20000,
+        "max_tokens_by_model": {"deepseek-v4-flash": 100000},
+        "ascend_platforms": ["A5"],
+        "eval_mode": "text"
+      },
+      "prompt": "下面的 PipeTrace.json 声明 displayTimeUnit 为 ns，但事件中 ts 和 dur 是小数。请说明三个字段各自的单位，并给出该事件的开始时间、持续时长和结束时间。\n\n```json\n{\"displayTimeUnit\":\"ns\",\"profilingType\":\"op\",\"schemaVersion\":1,\"traceEvents\":[{\"cname\":\"startup\",\"dur\":0.25,\"name\":\"SCALAR\",\"ph\":\"X\",\"pid\":\"group0.veccore0\",\"tid\":\"SCALAR\",\"ts\":2.5}]}\n```",
+      "expected_output": "说明 ts 和 dur 的单位均为微秒，事件从 2.5 微秒持续 0.25 微秒并在 2.75 微秒结束；displayTimeUnit=ns 是查看器显示提示，不把事件数值按纳秒换算。",
+      "files": []
+    },
+    {
+      "id": 12,
+      "title": "Pipeline 合并轨道来源",
+      "config": {
+        "max_tokens": 20000,
+        "max_tokens_by_model": {"deepseek-v4-flash": 100000},
+        "ascend_platforms": ["A5"],
+        "eval_mode": "text"
+      },
+      "prompt": "请解释下面 PipeTrace.json 中 pid=process2.result3.device0.replay1.group4.veccore1 的每一段分别表示什么，并说明 tid 与 name 如何标识流水线。\n\n```json\n{\"displayTimeUnit\":\"ns\",\"profilingType\":\"op\",\"schemaVersion\":1,\"traceEvents\":[{\"cname\":\"rail_animation\",\"dur\":0.4,\"name\":\"MTE3\",\"ph\":\"X\",\"pid\":\"process2.result3.device0.replay1.group4.veccore1\",\"tid\":\"MTE3\",\"ts\":6.0}]}\n```",
+      "expected_output": "将轨道来源解释为 process 序号 2、result 序号 3、device ID 0、replay ID 1、group ID 4 和 veccore1；说明 tid 与 name 均标识 MTE3 流水线，但不把不同 replay 推断为连续全局时间线。",
+      "files": []
+    },
+    {
+      "id": 13,
+      "title": "Pipeline 空数据与重叠事件边界",
+      "config": {
+        "max_tokens": 20000,
+        "max_tokens_by_model": {"deepseek-v4-flash": 100000},
+        "ascend_platforms": ["A5"],
+        "eval_mode": "text"
+      },
+      "prompt": "请分别分析下面两份 PipeTrace.json。第一份 traceEvents 为空时是否代表文件格式错误；第二份包含两个重叠事件，请计算时间线跨度和累计事件时长，并判断累计事件时长能否直接作为 Kernel 时长。\n\n第一份：\n```json\n{\"displayTimeUnit\":\"ns\",\"profilingType\":\"op\",\"schemaVersion\":1,\"traceEvents\":[]}\n```\n\n第二份：\n```json\n{\"displayTimeUnit\":\"ns\",\"profilingType\":\"op\",\"schemaVersion\":1,\"traceEvents\":[{\"cname\":\"startup\",\"dur\":2.0,\"name\":\"SCALAR\",\"ph\":\"X\",\"pid\":\"group0.veccore0\",\"tid\":\"SCALAR\",\"ts\":1.0},{\"cname\":\"rail_idle\",\"dur\":2.0,\"name\":\"VECTOR\",\"ph\":\"X\",\"pid\":\"group0.veccore0\",\"tid\":\"VECTOR\",\"ts\":2.0}]}\n```",
+      "expected_output": "说明第一份是格式有效的空时间线；第二份时间范围为 1.0 至 4.0 微秒、跨度为 3.0 微秒、累计事件时长为 4.0 微秒。由于事件会重叠，累计事件时长不能直接作为 Kernel 时长。",
+      "files": []
+    },
+    {
+      "id": 14,
+      "title": "生成单 Section 采集命令",
+      "config": {
+        "max_tokens": 20000,
+        "max_tokens_by_model": {"deepseek-v4-flash": 100000},
+        "ascend_platforms": ["A5"],
+        "eval_mode": "text"
+      },
+      "prompt": "我想采集当前目录下 ./add_custom 的 Memory 数据，只告诉我命令，不要执行。",
+      "expected_output": "只生成 npu-compute --section Memory ./add_custom，不执行采集。",
+      "files": []
+    },
+    {
+      "id": 15,
+      "title": "生成多 Section 脚本采集命令",
+      "config": {
+        "max_tokens": 20000,
+        "max_tokens_by_model": {"deepseek-v4-flash": 100000},
+        "ascend_platforms": ["A5"],
+        "eval_mode": "text"
+      },
+      "prompt": "run.sh 没有执行权限，需要用 bash 启动。请生成一条采集 Memory 和 L2Cache 的命令，并把 --input input.bin --repeat 2 原样传给脚本；只输出命令和必要说明，不执行。",
+      "expected_output": "生成 npu-compute --section Memory --section L2Cache -- bash run.sh --input input.bin --repeat 2；每个 Section 分别指定，-- 明确结束 npu-compute 选项，后续参数传给 bash 和 run.sh。",
+      "files": []
+    },
+    {
+      "id": 16,
+      "title": "区分询问方法和直接执行",
+      "config": {
+        "max_tokens": 20000,
+        "max_tokens_by_model": {"deepseek-v4-flash": 100000},
+        "ascend_platforms": ["A5"],
+        "eval_mode": "text"
+      },
+      "prompt": "请说明下面两种请求应如何处理。场景 A：我只想知道怎么采集，不要运行。场景 B：我已授权，请直接执行，在 examples/add 目录采集 ./add_custom 的 Memory 数据。",
+      "expected_output": "场景 A 只生成 npu-compute --section Memory ./add_custom，不启动目标程序。场景 B 先在 examples/add 确认 Memory 受支持，再执行采集；根据退出状态、终端 report 路径和报告文件判断结果，不把目标程序自身输出当作采集成功证据。",
+      "files": []
+    },
+    {
+      "id": 17,
+      "title": "解包 npu-rep 报告",
+      "config": {
+        "max_tokens": 20000,
+        "max_tokens_by_model": {"deepseek-v4-flash": 100000},
+        "ascend_platforms": ["A5"],
+        "eval_mode": "text"
+      },
+      "prompt": "我已有报告 reports/input.npu-rep，unpacked-results 是已经存在的目录。请给出使用 --import 和 --export 解包到该目录下的命令，并说明如何判断解包成功。",
+      "expected_output": "给出 npu-compute --import reports/input.npu-rep --export unpacked-results。退出状态为 0、终端出现 npu-compute: unpacked= 路径且该唯一子目录实际存在并包含可识别文件时，才判断解包成功。",
+      "files": []
+    },
+    {
+      "id": 18,
+      "title": "检查完整解包结果",
+      "config": {
+        "max_tokens": 20000,
+        "max_tokens_by_model": {"deepseek-v4-flash": 100000},
+        "ascend_platforms": ["A5"],
+        "eval_mode": "text"
+      },
+      "prompt": "解包命令输出 npu-compute: unpacked=unpacked-results/npu-compute-import-123。该目录根级包含 HardwareInfo.jsonl 和 summary.jsonl，collection-p42-0001 下包含 Memory.csv，另有 unknown.bin。请说明如何检查完整解包结果，以及如何处理子结果集合和未知文件。",
+      "expected_output": "对终端给出的实际路径运行 inspect_collection.py；分别报告根级文件、collection-p42-0001 子结果集合和 unknown.bin，不把不同子结果集合中的同名文件合并，也不把未知文件解释为已支持结果。",
+      "files": []
+    },
+    {
+      "id": 19,
+      "title": "summary 数据解释",
+      "config": {
+        "max_tokens": 20000,
+        "max_tokens_by_model": {"deepseek-v4-flash": 100000},
+        "ascend_platforms": ["A5"],
+        "eval_mode": "text"
+      },
+      "prompt": "请解释下面 summary.jsonl 的两条记录分别处于什么数据层级，并说明能否用 Memory 记录替代逐 Block 的 Memory.csv。\n\n```jsonl\n{\"category\":\"Memory\",\"aiv_time(us)\":4.2,\"aiv_total_cycles\":7000}\n{\"category\":\"OpInfoSummary\",\"Op Name\":\"add_custom\",\"Op Type\":\"AddCustom\",\"Task Duration(us)\":4.5,\"Block Dim\":8,\"Mix Block Dim\":null,\"Device Id\":0}\n```",
+      "expected_output": "直接分析内联片段：Memory 是该 Section 的 task-average 任务级平均摘要，OpInfoSummary 是 Kernel 级操作摘要。summary 不保留 block_id 和 sub_block_id，不能替代 Memory.csv 的逐 Block 分析。",
+      "files": []
+    },
+    {
+      "id": 20,
+      "title": "Pipeline 采样边界解释",
+      "config": {
+        "max_tokens": 20000,
+        "max_tokens_by_model": {"deepseek-v4-flash": 100000},
+        "ascend_platforms": ["A5"],
+        "eval_mode": "text"
+      },
+      "prompt": "目标程序启用了全部 Core，但 PipeTrace.json 只出现 group0.veccore0 和 group5.cubecore。请解释这是否表示程序只启用了两个 Core，并说明 Pipeline 结果的采样边界。",
+      "expected_output": "不能据此判断程序只启用了两个 Core。Pipeline 基于采样生成，结果最多 6 个采样 Group；group0 和 group5 及其 Core 轨道只表示实际写入 PipeTrace 的采样数据，Group 数和轨道数不能用于推断实际启用 Core 数量。",
+      "files": []
+    },
+    {
+      "id": 21,
+      "title": "常用指标 Set 选择",
+      "config": {
+        "max_tokens": 12000,
+        "max_tokens_by_model": {"deepseek-v4-flash": 140000},
+        "ascend_platforms": ["A5"],
+        "eval_mode": "text"
+      },
+      "prompt": "我想采集常用指标：当前目录下 ./add_custom，只告诉我命令，不要执行。",
+      "expected_output": "只生成 npu-compute --set basic ./add_custom，不执行目标程序。",
+      "files": []
+    },
+    {
+      "id": 22,
+      "title": "完整指标 Set 选择",
+      "config": {
+        "max_tokens": 12000,
+        "max_tokens_by_model": {"deepseek-v4-flash": 140000},
+        "ascend_platforms": ["A5"],
+        "eval_mode": "text"
+      },
+      "prompt": "请采集全部指标：目标是 ./add_custom，只生成命令，不要执行。",
+      "expected_output": "只生成 npu-compute --set full ./add_custom，不执行目标程序。",
+      "files": []
+    },
+    {
+      "id": 23,
+      "title": "未指定指标使用默认 basic",
+      "config": {
+        "max_tokens": 12000,
+        "max_tokens_by_model": {"deepseek-v4-flash": 140000},
+        "ascend_platforms": ["A5"],
+        "eval_mode": "text"
+      },
+      "prompt": "只采集当前目录下 ./add_custom，不指定具体指标，不要执行。",
+      "expected_output": "生成 npu-compute ./add_custom。说明未指定 Section 或 Set 时默认使用 basic 指标集合，命令中不需要额外添加 --set basic。",
+      "files": []
+    },
+    {
+      "id": 24,
+      "title": "Section 先于 basic Set 的组合顺序",
+      "config": {
+        "max_tokens": 12000,
+        "max_tokens_by_model": {"deepseek-v4-flash": 140000},
+        "ascend_platforms": ["A5"],
+        "eval_mode": "text"
+      },
+      "prompt": "针对目标程序 ./add_custom，先采集 Memory，再补充 basic，生成命令但不要执行。",
+      "expected_output": "生成 npu-compute --section Memory --set basic ./add_custom，保持用户指定的 Section、Set 顺序。",
+      "files": []
+    },
+    {
+      "id": 25,
+      "title": "basic Set 追加 ResourceConflictRatio",
+      "config": {
+        "max_tokens": 12000,
+        "max_tokens_by_model": {"deepseek-v4-flash": 140000},
+        "ascend_platforms": ["A5"],
+        "eval_mode": "text"
+      },
+      "prompt": "针对目标程序 ./add_custom，在 basic 指标基础上增加 ResourceConflictRatio，生成命令。",
+      "expected_output": "生成 npu-compute --set basic --section ResourceConflictRatio ./add_custom。",
+      "files": []
+    },
+    {
+      "id": 26,
+      "title": "独立查询支持的 Set",
+      "config": {
+        "max_tokens": 12000,
+        "max_tokens_by_model": {"deepseek-v4-flash": 140000},
+        "ascend_platforms": ["A5"],
+        "eval_mode": "text"
+      },
+      "prompt": "请给出查看 npu-compute 支持哪些集合的查询命令。只生成命令，不要执行，也不要启动目标程序。",
+      "expected_output": "只生成 npu-compute --list-sets 查询命令，不执行查询或启动目标程序。",
+      "files": []
+    },
+    {
+      "id": 27,
+      "title": "单 Section 不扩大采集范围",
+      "config": {
+        "max_tokens": 12000,
+        "max_tokens_by_model": {"deepseek-v4-flash": 140000},
+        "ascend_platforms": ["A5"],
+        "eval_mode": "text"
+      },
+      "prompt": "针对目标程序 ./add_custom，只采集单个 Section Memory，不要扩大到 basic 或 full。只生成命令，不要执行。",
+      "expected_output": "只生成 npu-compute --section Memory ./add_custom，不执行目标程序。",
+      "files": []
+    },
+    {
+      "id": 28,
+      "title": "Set 采集后的报告分析流程",
+      "config": {
+        "max_tokens": 16000,
+        "max_tokens_by_model": {"deepseek-v4-flash": 140000},
+        "ascend_platforms": ["A5"],
+        "eval_mode": "text"
+      },
+      "prompt": "我已经用 --set full 生成了报告，请说明如何确认 report、解包并解析结果。",
+      "expected_output": "先确认 npu-compute 输出的 report 路径和退出状态，再使用 npu-compute --import <report.npu-rep> --export <目录> 解包；最后进行结果解析并运行 inspect_collection.py，按结果集合边界检查 HardwareInfo、summary.jsonl 和 Section CSV。",
+      "files": []
+    },
+    {
+      "id": 29,
+      "title": "程序参数使用显式分隔符",
+      "config": {
+        "max_tokens": 12000,
+        "max_tokens_by_model": {"deepseek-v4-flash": 140000},
+        "ascend_platforms": ["A5"],
+        "eval_mode": "text"
+      },
+      "prompt": "采集 ./add_custom，并把 --input input.bin 原样传给目标程序；程序参数可能与工具选项冲突，请生成命令。",
+      "expected_output": "生成 npu-compute -- ./add_custom --input input.bin。未指定指标时不显式添加 --set；说明 -- 后的第一个参数是目标程序，后续内容全部作为程序参数传递。",
+      "files": []
+    }
+  ]
+}

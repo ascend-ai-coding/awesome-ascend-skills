@@ -1,0 +1,207 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "FX 图静态审计流程",
+      "config": {
+        "max_tokens": 180000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 210000,
+          "glm-5": 195000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我的模型在 npugraph_ex 下 5 步都通过了，但推理速度很慢。torch-npugraph-ex-performance-diagnosis 能帮我做什么？",
+      "expected_output": "回复应说明 performance-diagnosis 针对\"5 步全过但推理慢\"的场景，通过 FX 图静态审计来识别冗余张量搬运（由 reinplace 回填不完整导致的 copy_/clone）。应说明三类冗余搬运的归类方式：input-side copy_ epilogue、auto_functionalized materialization clones、missed out-of-place ops。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "reinplace",
+          "description": "回复中提到了 reinplace"
+        },
+        {
+          "type": "contains",
+          "pattern": "copy_",
+          "description": "回复中提到了 copy_"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "冗余张量搬运分类",
+      "config": {
+        "max_tokens": 150000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 180000,
+          "glm-5": 165000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "FX 图中的 copy_ 和 clone 信号如何分类？分别代表什么问题？",
+      "expected_output": "回复应说明三类冗余张量搬运：input-side copy_ epilogue（输入侧多余的拷贝）、auto_functionalized materialization clones（自动函数化产生的克隆）、missed out-of-place ops（未被 inplace 替换的算子）。应说明如何交叉验证 debug.log 中的 missed opportunities 信号。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "copy_",
+          "description": "回复中提到了 copy_"
+        },
+        {
+          "type": "contains",
+          "pattern": "clone",
+          "description": "回复中提到了 clone"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "性能诊断证据链",
+      "config": {
+        "max_tokens": 150000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 180000,
+          "glm-5": 165000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "torch-npugraph-ex-performance-diagnosis 诊断性能问题时需要哪些证据？如何输出审计结果？",
+      "expected_output": "回复应说明诊断需要 TORCH_COMPILE_DEBUG=1 产生的 FX 图输出。应说明审计结果需附带文件名和行号作为证据。应说明通过 cross-reference debug.log 中的 \"missed opportunities\" 信号来验证推测。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "TORCH_COMPILE_DEBUG",
+          "description": "回复中提到了 TORCH_COMPILE_DEBUG"
+        },
+        {
+          "type": "contains",
+          "pattern": "debug.log",
+          "description": "回复中提到了 debug.log"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "正向看护-多 graph skill 环境下正确触发",
+      "config": {
+        "max_tokens": 280000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 310000,
+          "glm-5": 295000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "distractor_skills": [
+          "torch-npugraph-ex-dfx-triage",
+          "torch-npugraph-ex-compile-error-diagnosis",
+          "torch-npugraph-ex-runtime-error-diagnosis",
+          "torch-npugraph-ex-knowledge"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我的模型在 npugraph_ex 下 5 步测试全部通过，但推理性能比预期慢很多。这是 TORCH_COMPILE_DEBUG=1 产出的日志目录，请帮我做性能诊断。",
+      "expected_output": "回复应激活 torch-npugraph-ex-performance-diagnosis skill，说明通过 FX 图静态审计来识别冗余张量搬运问题（如 copy_、clone 等信号）。根据用户提供的日志目录，指导用户定位和分类冗余 tensor move 的成因。即使在多个 npugraph_ex 诊断 skill 共存的环境下，也应正确激活 performance-diagnosis。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "copy_",
+          "description": "回复中提到了 copy_"
+        },
+        {
+          "type": "skill_activated",
+          "pattern": "torch-npugraph-ex-performance-diagnosis",
+          "description": "技能 torch-npugraph-ex-performance-diagnosis 被激活"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "性能诊断前置条件和转诊",
+      "config": {
+        "max_tokens": 110000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "模型不仅慢，而且 torchdynamo/debug.log 里有 graph break；我还没有 step5 的 torch_compile_debug 产物。能直接做 reinplace 审计吗？",
+      "expected_output": "回复应停止性能静态审计并转到 compile-error-diagnosis/dfx-triage；performance-diagnosis 的前提是五步通过或已有等价 standalone debug 产物。graph break、Restarting analysis、guard failure 均不属于该 skill。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "不能只统计 copy 节点",
+      "config": {
+        "max_tokens": 130000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我想只统计末图中的 aten.copy_ 数量来判断 reinplace 是否成功，这样够吗？",
+      "expected_output": "回复应说明不够：还要查 clone、保留的 out-of-place/*_functional 算子和 debug.log 的 missed opportunities。输入侧 copy_ 是 functionalize 写回判据，未折叠才是问题；中间张量未原地化可能没有任何 copy/clone 节点。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "auto functionalized 未原地化信号",
+      "config": {
+        "max_tokens": 130000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "decompose_auto_functionalized 后出现 as_strided→clone→as_strided→自定义原地算子，末尾还有 copy_(input, clone结果)。这表示什么？",
+      "expected_output": "回复应归为 auto_functionalized base 未被 reinplace_input_mutated_ops 原地化，decompose 阶段为未命中的 base 物化了 clone 和非同源写回 copy_；应结合 debug.log 的 unable to reinplace/missed opportunities 字节数确认，而不是把 clone 当普通模型算子。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 8,
+      "title": "多流安全门控的判定",
+      "config": {
+        "max_tokens": 120000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "日志显示 cross-stream user 没有 event protection，随后 check stream safety failed for reinplace。应该强行开启原地化吗？",
+      "expected_output": "回复应说明这是两条 reinplace pass 共用的多流安全门控，存在跨流且无 event 保护的读者时保守拦截；不应强行绕过，应先验证跨流依赖并补正确的 event record/wait，或确认多流划分是否必要。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 9,
+      "title": "区分正确跳过与性能漏优化",
+      "config": {
+        "max_tokens": 120000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "reinplace 日志里出现 self_has_wrong_metadata、repeated self argument 和 mutate program inputs，这三种都算性能 bug 吗？",
+      "expected_output": "回复应区分：metadata 不匹配或重复 self 参数是语义安全要求下的正确跳过；mutate program inputs 会交给 reinplace_input_mutated_ops 处理，本身不等于性能损失。真正值得继续查的是多流检查失败、used-later、missed opportunities N>0 或输入 copy_ 最终残留，并给出文件/日志证据。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "torch-npugraph-ex-performance-diagnosis"
+}

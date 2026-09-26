@@ -1,0 +1,30 @@
+strategy_id: P81
+description: UB/TBuf 常驻 Buffer 复用适用性检查 — 算子有循环结构和小尺寸参数，且当前未将参数常驻 UB/TBuf
+checks:
+  - id: has_loop_structure
+    type: grep_count
+    pattern: "for\\s*\\(|while\\s*\\(|loop|Loop|iteration|Iteration|batch|Batch"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无循环结构 → P81 不适用。常驻复用需要循环场景"
+
+  - id: has_small_parameter
+    type: grep_count
+    pattern: "weight|bias|scale|gamma|offset|param|state|accumulator|grad"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无小尺寸参数 → P81 收益低。需有跨迭代复用的数据"
+
+  - id: no_resident_buffer_yet
+    type: grep_count
+    pattern: "resident|Resident|常驻|循环外.*Copy|Process.*Alloc|FreeTensor.*Process"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已有常驻 buffer 设计 → P81 已应用"
+
+  - id: not_pure_validation
+    type: grep_count
+    pattern: "OP_CHECK|shape.*check|dim.*check|validation"
+    files: [kernel, header]
+    expected: "<= 3"
+    fail_msg: "纯 Host 侧 shape 校验 → P81 解决的是 Kernel 内 buffer 复用"

@@ -1,0 +1,31 @@
+strategy_id: P20
+description: 三缓冲轮转适用性检查 — 算子必须有 Cube+Vector 混合架构和三级流水线，且当前未使用三缓冲
+
+checks:
+  - id: has_mixed_architecture
+    type: grep_count
+    pattern: "Cube|Vector|AIC|AIV|mmad|Mmad|VEC"
+    files: [kernel]
+    expected: ">= 2"
+    fail_msg: "算子无 Cube+Vector 混合架构 → P20 不适用。检查是否为纯 Vector 或纯 Cube 算子"
+
+  - id: has_three_stage_pipeline
+    type: grep_count
+    pattern: "CopyIn|DataCopy|CopyOut|Compute|Cube|Mmad"
+    files: [kernel]
+    expected: ">= 3"
+    fail_msg: "算子无三级流水结构 → 三缓冲无应用场景。考虑 P1 双缓冲"
+
+  - id: no_triple_buffer_yet
+    type: grep_count
+    pattern: "BuffersPolicy3buff|triple.*buffer|三缓冲|flag1_.*flag1_vec1|a_.*b_.*c_"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已使用三缓冲 → P20 已应用"
+
+  - id: has_buffer_space
+    type: grep_count
+    pattern: "InitBuffer|TBuf|TQue|BUFFER_NUM"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无 buffer 管理 → 无法实施三缓冲。先实现基础 buffer 管理"

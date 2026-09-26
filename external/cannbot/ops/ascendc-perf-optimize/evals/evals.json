@@ -1,0 +1,153 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "性能优化四步流程",
+      "config": {
+        "max_tokens": 160000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请介绍 ascendc-perf-optimize 技能中 Ascend C 算子的性能优化工作流程是什么？需要经过哪些步骤？每一步分别关注什么？不需要执行任何工具调用。",
+      "expected_output": "回复应描述 4 步分层流水：1) Step 1 Tiling 理论建模，确定理想 tiling data；2) Step 2 卡间流水优化，仅适用通信类算子，关注通算演算与卡间通信瓶颈；3) Step 3 核间流水优化，仅适用多核间同步算子；4) Step 4 单核流水优化，适用所有算子，关注核内流水与 bound 诊断。Step 2/3 按算子类型选择性执行，不可将流程简化为 3 步。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 2,
+      "title": "性能优化所需输入",
+      "config": {
+        "max_tokens": 160000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "进行 Ascend C 算子性能优化需要提供哪些输入信息？需要准备哪些数据和材料？不需要执行任何工具调用。",
+      "expected_output": "回复应说明性能优化所需的输入，包括算子类型与计算流程（kernel 代码/伪代码）、Shape 与 dtype、Tiling 参数与建模数据、流水仿真图、Profiling 数据、硬件配置信息等。这些输入是进行性能瓶颈分析和优化方案设计的基础。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 3,
+      "title": "算子崩溃排查咨询（负向看护）",
+      "config": {
+        "max_tokens": 200000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 240000,
+          "glm-5": 220000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我的 Ascend C 算子在 NPU 上运行时出现了 Segmentation Fault，程序直接崩溃了，请问该怎么排查？",
+      "expected_output": "回复应聚焦于 NPU 算子崩溃的通用排查思路，包括收集崩溃现场信息、分析 Segmentation Fault 的常见原因（越界访问、空指针等）和定位方法，不涉及性能优化相关内容。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "通信类算子卡间流水优化（Step 2）",
+      "config": {
+        "max_tokens": 160000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我在优化一个 AllReduce 集合通信算子的 Ascend C 实现，profiling 数据表明卡间通信耗时占比很高，希望通过通算演算来优化卡间流水、提升通信与计算的重叠程度。请按照 ascendc-perf-optimize 技能的四步流程给出分析与优化方向。不需要执行任何工具调用。",
+      "expected_output": "回复应指出通信类算子（如 AllReduce/AllGather/ReduceScatter）须执行 Step 2 卡间流水优化：1) 输入 Step 1 的 tiling data、计算流程、仿真图与 profiling 数据；2) 进行通算演算，分析远端卡数据经卡间链路（HCCS/NVLINK）到达本卡 UB 与本卡计算的流水重叠；3) 输出卡间流水仿真图分析、通信/profiling 数据报告与卡间流水优化策略；4) 给出对 Step 1 tiling 策略的修正建议。非通信类算子跳过此步骤。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "MC² 通算融合算子前置数据采集（强制检查）",
+      "config": {
+        "max_tokens": 160000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我在优化一个 MC² 通算融合算子（存在 fork 多 rank 且用 CrossCoreFlag 同步），想直接进入流水配平分析给出切分方案，但发现 host 代码没有打印 tiling 参数，隔离测试也还没做。请根据 ascendc-perf-optimize 技能的规范，说明进入流水配平分析前必须先完成哪些数据采集：具体要采集哪些 TilingData 参数、host 未打印时如何采集、隔离测试如何实测 T_comm/T_compute 并判定 Bound 类型、以及数据缺失时应如何处理。可以阅读该技能文档获取规范，不要实际执行 profiling 或修改代码。",
+      "expected_output": "回复应说明 MC² 算子进入流水配平分析前必须先完成强制数据采集，缺失任何一项须返回数据采集阶段补采，不得凭经验给出切分方案：1) 采集 TilingData 参数 baseM/baseN/baseK/usedCoreNum（含长块/短块各自的 tiling data），若 host 未打印须在源码副本启用 PrintTilingData 后重新运行；2) 在 tileCnt=1 下分别注释通信/计算 process 进行隔离测试；3) 实测 T_comm 与 T_compute，计算 R 值判定 Bound 类型。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "单核流水 Bound 诊断（Step 4）",
+      "config": {
+        "max_tokens": 160000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我的一个 Ascend C Vec 算子性能不达标，profiling 报告显示 Vector 单元利用率很高、向量指令是主要瓶颈，访存带宽充足。请按 ascendc-perf-optimize 技能的单核流水优化流程诊断瓶颈并给出优化思路。不需要执行任何工具调用。",
+      "expected_output": "回复应说明 Step 4 单核流水优化适用于所有算子：1) 基于仿真图或 profiling 数据判定 bound 类型，本例 Vector 单元利用率高且向量指令为主要限制，判定为 Vec Bound；2) 按 bound 类型路由到对应优化策略（Scalar/访存/Vec/无 Bound）；3) 输出核内流水仿真图分析、核内 profiling 数据报告（bound 诊断结论）与核内流水优化策略；4) 给出对 Step 1 tiling 策略的修正建议并汇总最终优化方案。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "优化步骤路由选择（普通计算算子）",
+      "config": {
+        "max_tokens": 160000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我要优化一个普通的 MatMul 计算算子，它既不做卡间集合通信，也不涉及多核间同步。请告诉我按 ascendc-perf-optimize 技能的四步流程，这个算子应该依次执行哪些步骤、跳过哪些步骤？不需要执行任何工具调用。",
+      "expected_output": "回复应说明四步分层流水中的步骤选择逻辑：1) Step 1 Tiling 理论建模与 Step 4 单核流水优化为所有算子必选；2) Step 2 卡间流水仅适用通信类算子；3) Step 3 核间流水仅适用多核间同步算子；4) 普通计算算子（如 MatMul）流程为 Step 1 → 跳过 Step 2 → 跳过 Step 3 → Step 4，不可将流程简化为 3 步。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 8,
+      "title": "多核同步算子核间流水（Step 3）",
+      "config": {
+        "max_tokens": 160000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我在优化一个涉及跨核同步的 Ascend C 算子（生产者-消费者模式，存在核间数据依赖），希望提升多核并行效率。请根据 ascendc-perf-optimize 技能，说明这类多核间同步算子对应四步流程中的哪一步、该步骤应分析什么内容、理论上应产出哪些输出，并结合当前技能实现状态说明实际执行时会得到什么结果（是否因参考内容缺失而需要跳过）。可以阅读该技能文档获取规范，不要实际执行 profiling 或修改代码。",
+      "expected_output": "回复应说明多核间同步算子对应 Step 3 核间流水优化：1) 适用条件为多核间同步算子（如跨核同步 Barrier/Event、核间数据依赖）；2) 分析核间任务依赖、同步开销与数据依赖，评估核间流水并行效率，输出核间流水仿真图分析、核间 profiling 数据报告、核间流水优化策略及对 Step 1 tiling 策略的修正建议；3) 当前 references/inter-core-pipeline 内容为空，实际执行时应返回「核间流水优化策略暂未收录，跳过核间流水分析」。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 9,
+      "title": "MatMul Scalar Bound 评估常量折叠",
+      "config": {
+        "max_tokens": 160000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我在优化一个普通 MatMul 算子，msprof 显示 aic_scalar_ratio=0.42，aic_mte2_ratio=0.55，kernel 使用 AscendC::Matmul 并从 GM 加载 TCubeTiling。请按 ascendc-perf-optimize 的单核流水流程判断是否推荐 Matmul API 常量折叠，以及实施应去哪个技能。不需要执行任何工具调用。",
+      "expected_output": "回复应说明：1) 普通 MatMul 走 Step 1 后跳过 Step 2/3，进入 Step 4；2) aic_scalar_ratio>0.3 判定 Scalar Bound，且含 Matmul API，应加载 single-core-pipeline/matmul_constant_folding.md 并给出 Go；3) 常量折叠与 host buildTiling 正交；4) 实施细节在 ascendc-performance-best-practices 的 matmul constant_folding_design.md，不要把逐步改代码写进本技能流程本身。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "ascendc-perf-optimize"
+}

@@ -22,7 +22,7 @@
 
 | 错误码值 | 错误信息 | 说明 |
 |---------|---------|------|
-| 507035 | 向量核异常 (vector core exception) | NPU 向量核执行异常，通常由 DMA 对齐错误 / UB 溢出触发。通过 `aclrtStreamSynchronize()` 报告给用户 |
+| 507035 | 向量核异常 (vector core exception) | NPU 向量核执行异常，通常由 UB 端地址非 32B 对齐（DataCopy/DataCopyPad/VEC 计算指令）/ GM→UB padParams 违规 / UB 溢出触发。通过 `aclrtStreamSynchronize()` 报告给用户 |
 
 > 507035 排查详见 [debug_workflow.md#507035-向量核异常](debug_workflow.md#507035-向量核异常)
 

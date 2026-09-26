@@ -1,0 +1,31 @@
+strategy_id: P8
+description: UB 内存分区管理适用性检查 — 必须有多个 UB buffer、UB 紧张或溢出风险、且存在可调整的 tiling 参数
+
+checks:
+  - id: has_multiple_ub_buffers
+    type: grep_count
+    pattern: "InitBuffer"
+    files: [kernel]
+    expected: ">= 2"
+    fail_msg: "算子只有一个 InitBuffer（单 tensor 场景）→ UB 分区管理无意义。检查是否需要 P1 双缓冲或 P10 向量化拷贝"
+
+  - id: has_tiling_parameter
+    type: grep_count
+    pattern: "tileSize|tile_size|ubFactor|ub_factor|blockSize|BLOCK_SIZE|elemsPerCore"
+    files: [tiling, kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子无 tileSize / ub_factor 等 tiling 参数 → 无法通过调整 tileSize 来优化 UB 占用。可能是全量计算算子，换 P5 同步或 P46 Matmul 优化"
+
+  - id: ub_usage_high_or_overflow
+    type: grep_count
+    pattern: "UB overflow|ub overflow|out of ub|UB_MEMORY|ubUsage"
+    files: [kernel, header]
+    expected: ">= 0"
+    fail_msg: "（软提示）算子当前未报 UB overflow 且代码中无 UB 紧张痕迹 → P8 收益可能有限。建议先 profiling 确认 bottleneck 是否为 ub_memory_pressure 或 mte3_stall"
+
+  - id: not_pure_matmul_high_level
+    type: grep_count
+    pattern: "MatmulImpl|Matmul<"
+    files: [kernel]
+    expected: "<= 2"
+    fail_msg: "纯 MatmulImpl 高阶 API 算子 → 内部 UB 分配由 CANN 自动管理，P8 手动分区无介入点。优先考虑 P46/P78/P86"

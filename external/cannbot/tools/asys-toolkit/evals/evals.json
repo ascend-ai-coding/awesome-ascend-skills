@@ -1,0 +1,171 @@
+{
+  "eval_mode": "text",
+  "skill_name": "asys-toolkit",
+  "evals": [
+    {
+      "id": 1,
+      "title": "进程卡死时的堆栈导出命令",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我的训练进程卡住不动了，PID 是 468625，想用 asys 导出这个进程所有线程的堆栈，应该用什么命令？有什么风险要注意？",
+      "expected_output": "回复应给出 asys collect -r=stacktrace --remote=468625 --all 命令，说明 --remote 和 --all 在 stacktrace 模式下必选、--remote 取值需大于等于 2，并提示导出会向进程发送信号 35；若 ASCEND_COREDUMP_SIGNAL 设为 none 则关闭 trace 信号集、进程会被终止且拿不到堆栈，因此加 --quiet 跳过交互确认前要先确认该变量。还应提示同一卡住进程不支持并行导出、建议先清理 $HOME/ascend/atrace/ 下的 trace 日志。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "-r=stacktrace",
+          "description": "回复中给出了 -r=stacktrace 模式"
+        },
+        {
+          "type": "contains",
+          "pattern": "--remote",
+          "description": "回复中给出了 --remote 参数"
+        },
+        {
+          "type": "contains",
+          "pattern": "35",
+          "description": "回复中提到了信号 35 的风险"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "AI Core Error 日志关键字的解析路径",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "算子跑起来后屏幕报了 there is an aivec error exception，用 asys 怎么解析这个故障？",
+      "expected_output": "回复应给出 asys analyze -r=aicore_error 命令，说明 --path 指向存放日志和 dump 的目录、不配置时由 asys 自动收集且依赖环境变量与业务运行时一致，结果看终端提示的 info.txt。还应提示复现前先清理日志、--output 不能为 --path 目录或其子目录以避免循环拷贝、存在多个 AI Core Error 时按日志时间只解析第一次出现的那个。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "aicore_error",
+          "description": "回复中给出了 aicore_error 解析模式"
+        },
+        {
+          "type": "contains",
+          "pattern": "info.txt",
+          "description": "回复中提到了 info.txt 输出"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "压力检测的电压恢复风险",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我想用 asys 做 AI Core 压力检测排查硬件问题，执行前需要注意什么？",
+      "expected_output": "回复应给出 asys diagnose -r=stress_detect 命令，并强调三点：必须在物理机且 root 用户下执行；需提前安装算子二进制包 Ascend-cann-*-ops-*.run；检测会调整 device 侧部分电压，异常退出时可能不能自行恢复，需用 asys config --restore --stress_detect 手动恢复，建议检测前后各用 --get 取一次电压对比。还应说明 Warn 表示检测失败，查 Host 侧 plog 按 [ERROR] AML 过滤，错误码首位 1 为用例执行或任务下发失败、2 为精度比对失败、3 为硬件问题。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "stress_detect",
+          "description": "回复中给出了 stress_detect 检测模式"
+        },
+        {
+          "type": "contains",
+          "pattern": "restore",
+          "description": "回复中提到了 --restore 恢复配置"
+        },
+        {
+          "type": "contains",
+          "pattern": "root",
+          "description": "回复中提到了 root 权限要求"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "复跑收集的环境变量覆盖陷阱",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我用 asys launch --task=\"sh run.sh\" 复跑并收集，但 run.sh 里自己设置了 NPU_COLLECT_PATH，这样会有问题吗？",
+      "expected_output": "回复应指出有问题：asys launch 执行时会自动开启 NPU_COLLECT_PATH、ASCEND_PROCESS_LOG_PATH、ASCEND_WORK_PATH 临时存放收集到的信息，但复跑任务脚本中若涉及这些环境变量，会导致 asys 设置的环境变量被覆盖不生效，进而无法收集对应的信息。建议从 run.sh 中移除这些变量的设置。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "NPU_COLLECT_PATH",
+          "description": "回复中提到了 NPU_COLLECT_PATH 覆盖问题"
+        },
+        {
+          "type": "contains",
+          "pattern": "覆盖",
+          "description": "回复中说明了覆盖关系"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "coretrace 解析的产品限制",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我在 Atlas A2 训练服务器上想用 asys analyze -r=coretrace 解析 coretrace 文件，可以吗？",
+      "expected_output": "回复应明确指出不可以：analyze -r=coretrace 仅 Ascend 950PR / Ascend 950DT 支持，对于 Atlas A3、Atlas A2 训练与推理系列产品均不支持，Atlas 200I/500 A2 推理产品、Atlas 推理系列、Atlas 训练系列也不支持。可建议改用 -r=stackcore 解析 stackcore 文件。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "950",
+          "description": "回复中指出仅 Ascend 950PR/950DT 支持"
+        },
+        {
+          "type": "contains",
+          "pattern": "不支持",
+          "description": "回复中明确 A2 不支持"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "UB 文件解析的输入要求",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我用 msnpureport 导出了一批 UB 维测文件，怎么用 asys 解析成可读的文本？",
+      "expected_output": "回复应给出 asys analyze -r=ub --path=directory 命令，说明 ub 模式下 --path 必选、指定的是目录而不是单个文件，asys 会读取该目录下的 ubnl_dfx_config_item.bin、ubnl_dfx_statistic.bin、ubnl_dfx_ssu_schedule.bin、ubmem_daw.bin、ubtpl_acl_src.bin、sl_to_vl.bin 并解析为同名 txt 文件，结果路径看终端提示。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "-r=ub",
+          "description": "回复中给出了 -r=ub 解析模式"
+        },
+        {
+          "type": "contains",
+          "pattern": "--path",
+          "description": "回复中说明了 --path 指定目录"
+        }
+      ]
+    }
+  ]
+}
