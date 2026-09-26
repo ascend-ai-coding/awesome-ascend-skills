@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "section": "Pipeline",
+  "output_file": "PipeTrace.json",
+  "format": {
+    "container": "JSON",
+    "top_level_fields": [
+      "displayTimeUnit",
+      "profilingType",
+      "schemaVersion",
+      "traceEvents"
+    ],
+    "display_time_unit": "ns",
+    "profiling_type": "op",
+    "trace_schema_version": 1,
+    "timestamp_unit": "us",
+    "event_phase": "X",
+    "event_fields": [
+      "cname",
+      "dur",
+      "name",
+      "ph",
+      "pid",
+      "tid",
+      "ts"
+    ],
+    "track_key": [
+      "pid",
+      "tid"
+    ]
+  },
+  "pipelines": {
+    "SCALAR": {
+      "color": "startup"
+    },
+    "VECTOR": {
+      "color": "rail_idle"
+    },
+    "CUBE": {
+      "color": "rail_response"
+    },
+    "MTE1": {
+      "color": "thread_state_iowait"
+    },
+    "MTE2": {
+      "color": "yellow"
+    },
+    "MTE3": {
+      "color": "rail_animation"
+    },
+    "FIXP": {
+      "color": "thread_state_unknown"
+    }
+  },
+  "core_tracks": [
+    "cubecore",
+    "veccore0",
+    "veccore1"
+  ],
+  "sampling": {
+    "maximum_sampled_groups": 6,
+    "group_id_range": [
+      0,
+      5
+    ],
+    "core_tracks": [
+      "cubecore",
+      "veccore0",
+      "veccore1"
+    ],
+    "tracks_represent_all_enabled_cores": false,
+    "meaning": "PipeTrace 记录采样到的 Group 和 Core 轨道；轨道数量不能用于推断目标程序实际启用的 Core 数量。"
+  },
+  "pid_patterns": {
+    "single_result": {
+      "pattern": "group<group_id>.<core>",
+      "meaning": "标识单个来源片段中的 Group 和 Core 轨道。"
+    },
+    "merged_results": {
+      "pattern": "process<process_ordinal>.result<result_sequence>.device<device_id>.replay<replay_id>.group<group_id>.<core>",
+      "meaning": "标识合并结果中的进程、结果、Device、Replay、Group 和 Core 轨道。"
+    }
+  },
+  "summary": {
+    "event_count": "traceEvents 的元素数量。",
+    "track_count": "不同 pid 和 tid 组合的数量。",
+    "sampled_group_ids": "从事件 pid 中提取并去重、升序排列的 Group ID。",
+    "sampled_group_count": "实际出现事件的 Group 数量。",
+    "sampled_core_tracks": "各 Group 实际出现事件的 Core 轨道。",
+    "trace_start_us": "全部事件 ts 的最小值。",
+    "trace_end_us": "全部事件 ts + dur 的最大值。",
+    "trace_span_us": "trace_end_us 减去 trace_start_us。",
+    "pipeline_event_count": "按 name 统计的事件数量。",
+    "pipeline_duration_sum_us": "按 name 对 dur 求和。"
+  },
+  "data_boundaries": {
+    "empty_trace": "traceEvents 可以为空，表示没有写入完整流水线区间。",
+    "incomplete_interval": "缺少开始或结束的流水线区间不会写入事件。",
+    "overlap": "不同轨道或不同来源的事件可以重叠，累计 dur 不等于 Kernel 执行时长。",
+    "merged_time": "合并来源前缀只标识来源，不表示不同 Replay 构成连续的全局时间轴。"
+  }
+}

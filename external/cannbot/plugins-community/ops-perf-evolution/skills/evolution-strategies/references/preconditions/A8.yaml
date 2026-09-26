@@ -1,0 +1,31 @@
+strategy_id: A8
+description: 量化专用精度适用性检查 — 算子包含量化/反量化计算，且当前未做边界限制和精细化 RoundMode 处理
+
+checks:
+  - id: has_quantization_op
+    type: grep_count
+    pattern: "quant|Quant|dequant|Dequant|scale|zero.*point|quant_min|quant_max|fake_quant|FakeQuant"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无量化/反量化操作 → A8 不适用。检查是否为纯计算算子"
+
+  - id: has_cast_precision
+    type: grep_count
+    pattern: "Cast|cast|RoundMode|ROUND|RINT|quant_min|quant_max"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无 Cast 或量化边界 → A8 收益低。检查是否已有完整量化链路"
+
+  - id: no_quant_boundary_yet
+    type: grep_count
+    pattern: "Maxs|maxs|Mins|mins|clamp|Clip|clip.*quant|boundary.*quant"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已有量化边界限制 → A8 已应用"
+
+  - id: not_pure_validation
+    type: grep_count
+    pattern: "OP_CHECK|shape.*check|dim.*check|validation"
+    files: [kernel, header]
+    expected: "<= 3"
+    fail_msg: "纯 Host 侧 shape 校验 → A8 解决的是 Kernel 内量化精度，非 Host 校验"

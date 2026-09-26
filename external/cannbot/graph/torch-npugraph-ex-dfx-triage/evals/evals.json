@@ -1,0 +1,197 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "DFX 问题分诊入口流程",
+      "config": {
+        "max_tokens": 180000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 210000,
+          "glm-5": 195000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我的模型在用 npugraph_ex 编译时出了问题，不知道是编译错误还是运行时错误。torch-npugraph-ex-dfx-triage 能帮我做什么？",
+      "expected_output": "回复应说明 dfx-triage 是 npugraph_ex DFX 问题的统一入口，通过 5 步分层日志采集工作流收集信息，然后路由到对应的子 skill（compile-error/runtime-error/accuracy/performance）。它本身不做最终诊断结论，而是负责分诊和路由。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "路由",
+          "description": "回复中提到了 路由"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "5 步分层采集工作流",
+      "config": {
+        "max_tokens": 180000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 210000,
+          "glm-5": 195000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "torch-npugraph-ex-dfx-triage 的 5 步分层采集工作流是什么？每一步的作用是什么？",
+      "expected_output": "回复应说明 5 步工作流：pure eager → backend=\"eager\" → backend=\"aot_eager\" → backend=\"npugraph_ex\" with force_eager=True → 完整 backend=\"npugraph_ex\"。每一步逐步增加编译层，在首次出错的步骤定位问题，然后路由到对应的子 skill。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "eager",
+          "description": "回复中提到了 eager"
+        },
+        {
+          "type": "contains",
+          "pattern": "aot_eager",
+          "description": "回复中提到了 aot_eager"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "问题路由机制",
+      "config": {
+        "max_tokens": 150000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 180000,
+          "glm-5": 165000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "torch-npugraph-ex-dfx-triage 采集完信息后，如何判断应该路由到哪个子 skill？",
+      "expected_output": "回复应说明基于哪一步首次失败来路由：编译期失败路由到 compile-error-diagnosis、运行时失败路由到 runtime-error-diagnosis、精度问题路由到对应的精度子 skill、性能问题路由到 performance-diagnosis。应说明 dfx-triage 收集完整信息后不自己下结论。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "compile-error",
+          "description": "回复中提到了 compile-error"
+        },
+        {
+          "type": "contains",
+          "pattern": "runtime-error",
+          "description": "回复中提到了 runtime-error"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "正向看护-多 graph skill 环境下正确触发",
+      "config": {
+        "max_tokens": 180000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 210000,
+          "glm-5": 195000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "distractor_skills": [
+          "torch-npugraph-ex-compile-error-diagnosis",
+          "torch-npugraph-ex-runtime-error-diagnosis",
+          "torch-npugraph-ex-knowledge",
+          "torch-npugraph-ex-performance-diagnosis"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我的模型在用 torch.compile + npugraph_ex 时报错了，我不确定是什么类型的问题。帮我排查一下。",
+      "expected_output": "回复应激活 torch-npugraph-ex-dfx-triage skill，说明将通过 5 步分层采集来定位问题并路由到正确的子 skill。即使在多个 npugraph_ex 诊断 skill 共存的环境下，也应正确激活 dfx-triage 作为统一入口。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "torch-npugraph-ex-dfx-triage",
+          "description": "技能 torch-npugraph-ex-dfx-triage 被激活"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "信息不完整时禁止提前定根因",
+      "config": {
+        "max_tokens": 120000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "npugraph_ex 报错了，我只截了最后一行 RuntimeError，没有复现脚本、版本和前序日志。你先猜一个最可能根因并给修复代码吧。",
+      "expected_output": "回复应拒绝在证据不足时猜根因或直接给修复代码，先补齐最小复现或核心调用、PyTorch/torch_npu/torchair/CANN 版本、shape、多流/自定义算子/In-place 信息，并执行 5-step 分层采集取得完整报错栈和关键日志。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "五步失败即停与产物标记",
+      "config": {
+        "max_tokens": 130000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "分层采集时 step3 aot_eager 已失败，还要继续跑 step4 和 step5 吗？失败记录和日志目录应怎样保留？",
+      "expected_output": "回复应说明 5-step 必须顺序执行并在首个失败 step 立即停止，不再运行后续步骤；根目录使用带时间戳和 shell PID 的独立目录，保留对应 stdout_stderr.log、ascend_plog、实际脚本副本，并在 first_failure.txt 写明 step 与退出码，缺失产物写 warnings.txt。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "最小改造并继承 compile 参数",
+      "config": {
+        "max_tokens": 140000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "原脚本 torch.compile 使用 fullgraph=True、dynamic=False、options={\"foo\": 1}。生成五步脚本时参数怎么处理，能否顺便重构模型和数据加载？",
+      "expected_output": "回复应只修改复现路径上的 torch.compile 及紧邻赋值，不改模型、输入、数据、随机种子等业务逻辑。step1 去掉 compile；step2/3 改为 eager/aot_eager 并保留 fullgraph、dynamic，去掉后端专属 options；step4 浅合并原 options 并强制 force_eager=True；step5 保持原配置。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 8,
+      "title": "step4 成功 step5 失败的分诊",
+      "config": {
+        "max_tokens": 110000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "五步中 step1 到 step4 都成功，只有 step5 完整 npugraph_ex 失败；首个致因错误含 npu_fx_compiler。应该如何交接？",
+      "expected_output": "回复应明确问题只在 force_eager=False 的 full compile/optimization path 暴露，并按首个致因错误路由到 compile-error-diagnosis；交接需写明首个失败 step、命中的规则、证据文件和关键行，而不是由末尾级联错误分类。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 9,
+      "title": "性能分诊交接精确产物路径",
+      "config": {
+        "max_tokens": 110000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "五步全部成功但性能很慢，准备交给 performance-diagnosis。交接里只写“step5 success”够吗？",
+      "expected_output": "回复应说明不够；需列出已采集日志及关键行，明确性能现象与路由规则，并交接 step5-npugraph_ex/torch_compile_debug/run_<ts>-pid_<pid>/ 的精确路径及即将加载的 performance-diagnosis skill，缺失项也要写明。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "torch-npugraph-ex-dfx-triage"
+}

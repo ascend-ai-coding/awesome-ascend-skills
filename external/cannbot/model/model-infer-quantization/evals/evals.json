@@ -1,0 +1,204 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "量化适配工作流",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "我想给模型接入量化降显存提吞吐，整体按什么流程做？只讲方法，不用写代码。",
+      "expected_output": "回复应给出以既有 compressed-tensors 量化产物接入、核对契约并验证真实生效的流程，而非重设计量化算法",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "compressed-tensors",
+          "description": "回复中提到了 compressed-tensors"
+        },
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-quantization",
+          "description": "技能 model-infer-quantization 被激活"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "量化产物契约核对",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "拿到一份量化权重，接入前要先核对哪些信息才能判断模型能不能用？只讲方向。",
+      "expected_output": "回复应说明先核对量化契约信息是否与模型结构和 runtime 匹配，再决定能否接入",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-quantization",
+          "description": "技能 model-infer-quantization 被激活"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "量化收益评估方向",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "量化改完想知道有没有用，从哪些方面看收益？只讲方向。",
+      "expected_output": "回复应说明从显存占用、吞吐/时延和精度偏差几方面对比量化前后，确认收益且精度可接受",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 4,
+      "title": "前置条件不满足时确认",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "想把这个模型量化降低显存，但我手上没有量化方案也没有量化权重，可以直接量化吗？",
+      "expected_output": "回复应说明量化接入前提是已有可用的 compressed-tensors 量化产物，缺方案和权重时应先确认产物来源，本 skill 不重新设计上游量化算法",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-quantization",
+          "description": "技能 model-infer-quantization 被激活"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "正向看护-多 skill 环境下正确触发",
+      "config": {
+        "max_tokens": 150000,
+        "distractor_skills": [
+          "model-infer-fusion",
+          "model-infer-kvcache",
+          "model-infer-parallel-impl"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "量化权重和方案都备好了，要把模型接到量化路径上跑起来，往哪个方向做？只说方向。",
+      "expected_output": "回复应正确激活 model-infer-quantization，给出量化接入方向，即使存在融合、KVCache、并行等相似 skill 也应选量化专项",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-quantization",
+          "description": "技能 model-infer-quantization 被激活"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "量化真实生效核对",
+      "config": {
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "量化改造后怎么确认权重和算子真按量化路径走，没有悄悄回退成原精度？只讲思路。",
+      "expected_output": "回复应说明通过权重 dtype、量化算子调用和收益指标核对量化真实生效，并提示融合算子与量化冲突时按非量化路径回退",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "model-infer-quantization",
+          "description": "技能 model-infer-quantization 被激活"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "执行模式决定是否允许修改",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "当前 mode=初评估，我已经有 model_dir 和量化产物，能否顺手把量化 runtime 接线也改掉？如果 mode=验证 呢？",
+      "expected_output": "回复应说明初评估只分析契约、结构、显存和接入分级，不修改代码；验证模式只核实真实生效、输出与收益，也不得自行调试改代码；只有改造模式在有可复现非量化基线和用户继续量化决策后才可实施",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 8,
+      "title": "量化契约缺项必须回压补齐",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "量化目录缺 model.safetensors.index.json 和 deploy_quantization.md，scale 张量语义也不清楚，但 qweight 文件看起来存在。可以猜命名后硬编码加载吗？",
+      "expected_output": "回复应拒绝猜测和硬编码，列明缺失配置、张量/scale 语义、受影响 runtime object、期望命名/shape/dtype 与阻塞原因，要求产物方补齐 compressed-tensors 契约，在 Gate 未通过前不进入代码改造",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 9,
+      "title": "接入分级必须按模块逐项保留",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "Dense Linear 只需配置对齐，MoEGMM 需要 post-load，Indexer 缺 runtime kernel，KVCache 又缺契约。整体应该只给一个等级吗？",
+      "expected_output": "回复应分别给出 L0、L1、L2、L3 模块级分级并保留理由，整体动作按最坏级触发；Indexer runtime gap 应作为独立补齐任务而非默默扩展，KVCache 契约缺失则停止相应落码并输出补充诉求",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 10,
+      "title": "融合量化冲突不得擅改产物语义",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "融合算子拒绝量化 dtype。为了跑通，我想直接改产物 config.json 的 targets/ignore，把该层排除并宣布量化成功，可以吗？",
+      "expected_output": "回复应禁止修改产物 config.json、targets、ignore 或张量语义；若没有用户确认的冲突原则应停止并请求决策，用户接受后才回退该模块到非融合算子路径，同时保持原量化产物加载并记录算子、错误契约、回退点和后续需求",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 11,
+      "title": "量化生效需要对象权重和运行证据",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "量化模型能加载并生成一句话，是否足以证明真实生效和有收益？",
+      "expected_output": "回复应说明不足；至少用对象级 probe 断言目标层 quant_method 不是 UnquantizedLinearMethod，并对账 qweight/weight_scale 命中数，若已有 profiling 再查量化算子；还需与同模型 BF16 greedy 输出做接线等价性自检，并以充分 warmup、多轮中位数比较显存、Prefill、Decode 和部署卡数",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "model-infer-quantization"
+}

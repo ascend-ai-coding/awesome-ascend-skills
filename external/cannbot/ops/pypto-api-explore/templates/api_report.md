@@ -85,11 +85,12 @@ feasibility: {feasibility}
 ### 6.1 匹配示例
 
 <!-- 无匹配时填写：无匹配参考实现，需从零设计 -->
-<!-- 置信度：models/（排除 experimental）和 examples/ 为「高」，models/experimental/ 为「中」 -->
+<!-- 置信度：正式算子实现为「高」，golden 用法为「高」，experimental 实现为「中」 -->
+<!-- 注意：tests/ 中的 golden/用法仅作 API 用法参考，不是 production 实现标准；简化写法（如 pypto.Tensor([])）可能违反门禁要求，冲突时以门禁要求为准，不得据此判定门禁误报。 -->
 
-| 示例路径 | 来源 | 相似度 | 置信度 | 可复用点 |
+| 参考路径 | 来源 | 相似度 | 置信度 | 可复用点 |
 |----------|------|--------|--------|----------|
-| `{example_path}` | {models/examples} | {高/中/低} | {高/中} | {reuse_points} |
+| `{ref_path}` | {算子实现/golden}（`pypto-docs-search` 命中） | {高/中/低} | {高/中} | {reuse_points} |
 
 ### 6.2 可复用模式
 
@@ -126,12 +127,14 @@ feasibility: {feasibility}
 <!-- REQUIRED -->
 ## 8. 证据索引
 
+证据路径（已知具体文档给 raw URL；参考实现给 `pypto-docs-search` 命中的 算子参考实现路径）：
+
 | 信息 | 文档路径 |
 |------|----------|
-| API 存在性 | `pypto/docs/zh/api/operation/index.md` |
-| {api} 文档 | `pypto/docs/zh/api/operation/pypto-{api}.md` |
-| 入口约束 | `pypto/docs/zh/api/others/pypto-from_torch.md` |
-| 参考实现 | `{example_path}`（如有） |
+| API 存在性 | `https://raw.gitcode.com/cann/pypto/raw/master/docs/zh/api/operation/index.md` |
+| {api} 文档 | `https://raw.gitcode.com/cann/pypto/raw/master/docs/zh/api/operation/pypto-{api}.md` |
+| 入口约束 | `https://raw.gitcode.com/cann/pypto/raw/master/docs/zh/api/others/pypto-from_torch.md` |
+| 参考实现 | `pypto-docs-search` 命中的 算子参考实现路径（如有） |
 
 ---
 

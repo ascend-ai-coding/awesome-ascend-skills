@@ -1,0 +1,17 @@
+strategy_id: P80
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "sink|Sink|streaming|Streaming LLM"
+    min_count: 1
+    fail_msg: "未检测到 Sink/Streaming LLM 相关逻辑 → 无 task 注入需求，不适用 P80。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "FlashAttention|flash.*attention|FA|IFA"
+    min_count: 1
+    fail_msg: "未检测到 Flash Attention 相关逻辑 → 无流水线注入场景，不适用 P80。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "ExecuteTask|TaskInfo|isSinkTensor"
+    min_count: 0
+    fail_msg: "已存在 sink task 注入逻辑 → 可能冗余，优先验证现有策略效果。"

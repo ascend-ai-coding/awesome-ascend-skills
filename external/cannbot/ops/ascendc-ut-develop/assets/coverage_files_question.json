@@ -1,0 +1,24 @@
+{
+  "questions": [
+    {
+      "header": "target_files",
+      "question": "请选择需要提升覆盖率的文件（可多选），不选择则自动处理未覆盖代码：",
+      "multiselect": true,
+      "options": [
+        {
+          "label": "auto",
+          "description": "自动处理未覆盖代码"
+        },
+        {
+          "label": "{{文件名1}}",
+          "description": "覆盖率: {{覆盖率1}}%"
+        },
+        {
+          "label": "{{文件名2}}",
+          "description": "覆盖率: {{覆盖率2}}%"
+        }
+      ],
+      "default": ["auto"]
+    }
+  ]
+}

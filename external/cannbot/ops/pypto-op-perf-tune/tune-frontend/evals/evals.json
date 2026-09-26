@@ -1,0 +1,100 @@
+{
+  "skill_name": "tune-frontend",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "前端调优三阶段流程",
+      "config": {
+        "max_tokens": 120000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 150000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "请介绍 PyPTO 算子前端性能调优的完整流程，包括三个阶段分别做什么？",
+      "expected_output": "回复应覆盖三阶段调优流程：Phase A 全局分析（loop 结构分析、常量依赖分析、reshape 分析、TileShape 审查）、Phase B 局部/数据操作分析、Phase C 逐项优化实施。说明每个阶段的输入输出和检查清单内容。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "Phase A" },
+        { "type": "contains", "pattern": "TileShape" },
+        { "type": "contains", "pattern": "loop" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Loop 结构优化",
+      "config": {
+        "max_tokens": 120000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 150000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "我的 PyPTO 算子中 loop 结构可能不够优化，怎么分析和改进？",
+      "expected_output": "回复应说明 loop 结构优化的分析要点：检查 loop 嵌套层次是否合理、是否存在不必要的数据搬运、循环边界对齐情况、常量依赖提取优化，以及如何通过 TileShape 设置改善循环效率。说明 Phase A 中 loop 分析的具体方法和审查标准。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "嵌套" },
+        { "type": "contains", "pattern": "TileShape" },
+        { "type": "contains", "pattern": "搬运" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "TileShape 设置优化",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "PyPTO 算子中 TileShape 设置对性能有什么影响？如何确定最优的 TileShape？",
+      "expected_output": "回复应说明 TileShape 对数据搬运、计算流水和利用率的影响，给出 TileShape 选择的参考原则（根据算子类型和输入 shape 选择），以及在 Phase A 中 TileShape 审查的具体标准。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "TileShape" },
+        { "type": "contains", "pattern": "数据搬运" },
+        { "type": "contains", "pattern": "利用率" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "信息不足场景：追问算子结构",
+      "config": {
+        "max_tokens": 80000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 100000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "我的 PyPTO 算子性能不太好，帮我调优。",
+      "expected_output": "回复应主动追问当前算子的实现细节：算子功能和输入输出规格、当前的 TileShape 配置、loop 结构特征、是否已有性能分析数据。不应在缺乏代码信息的情况下直接给出调优方案。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "TileShape" },
+        { "type": "contains", "pattern": "代码" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "正向看护：区分前端调优与深度调优",
+      "config": {
+        "max_tokens": 120000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 150000
+        },
+        "ascend_platforms": ["A2"],
+        "distractor_skills": ["tune-swimlane", "tune-incore", "perf-analyzer", "tune-orchestrator"]
+      },
+      "prompt": "我需要优化 PyPTO 算子的性能，先从代码层面的开箱调优入手，该怎么做？",
+      "expected_output": "回复应聚焦代码级前端调优的三阶段流程：Phase A 的 loop 结构、TileShape、常量依赖等全局分析，Phase B 的数据操作分析，Phase C 的逐项实施。区别于泳道图分析和核内深度调优，前端调优不涉及流水线排布和指令级优化。",
+      "files": [],
+      "expectations": [
+        { "type": "skill_activated", "pattern": "tune-frontend" },
+        { "type": "contains", "pattern": "Phase" }
+      ]
+    }
+  ]
+}

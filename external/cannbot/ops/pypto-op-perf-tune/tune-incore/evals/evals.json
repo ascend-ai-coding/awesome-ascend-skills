@@ -1,0 +1,102 @@
+{
+  "skill_name": "tune-incore",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "核内调优完整工作流",
+      "config": {
+        "max_tokens": 120000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 150000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "请介绍 PyPTO 算子核内性能调优的工作流程，包括哪些优化维度？",
+      "expected_output": "回复应覆盖核内调优的主要维度：特殊 Shape 处理（小 shape Matmul 优化）、L2 Cache 策略（set_cache_policy 配置）、冗余计算消除、指令级优化、核内流水优化。说明前置条件（泳道分析和深度调优已完成、精度验证已通过、每轮需重新采集数据）。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "L2 Cache" },
+        { "type": "contains", "pattern": "指令级" },
+        { "type": "contains", "pattern": "流水" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "小 Shape Matmul 优化策略",
+      "config": {
+        "max_tokens": 120000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 150000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "我的 PyPTO 算子在处理小 shape 的 Matmul 时性能不佳，有什么优化方法？",
+      "expected_output": "回复应说明小 shape Matmul 的优化策略：L2 Cache 策略调整（使用 set_cache_policy 配置 CachePolicy.NONE_CACHEABLE 等）、计算与数据搬运的流水重叠优化、消除冗余依赖和冗余计算的方法。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "set_cache_policy" },
+        { "type": "contains", "pattern": "CachePolicy" },
+        { "type": "contains", "pattern": "重叠" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "指令级与流水优化",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "PyPTO 算子的核内指令流水怎么优化？如何分析单 task 的指令效率？",
+      "expected_output": "回复应说明分析单 task 指令效率的方法（查看指令序列、分析流水线停顿、识别冗余操作），以及指令级优化的具体手段（指令重排减少依赖等待、消除冗余计算、优化内存访问模式）。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "指令" },
+        { "type": "contains", "pattern": "流水" },
+        { "type": "contains", "pattern": "冗余" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "信息不足场景：追问核内调优条件",
+      "config": {
+        "max_tokens": 80000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 100000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "我的 PyPTO 算子核内性能需要优化。",
+      "expected_output": "回复应确认前置条件是否满足：泳道分析和深度调优是否已完成、精度验证是否已通过、最新性能数据是否已采集。主动询问当前的算子实现和性能瓶颈表现。",
+      "files": [],
+      "expectations": [
+        { "type": "contains", "pattern": "泳道" },
+        { "type": "contains", "pattern": "精度验证" },
+        { "type": "contains", "pattern": "数据" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "正向看护：区分核内调优与其他调优",
+      "config": {
+        "max_tokens": 120000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 150000
+        },
+        "ascend_platforms": ["A2"],
+        "distractor_skills": ["tune-frontend", "tune-swimlane", "perf-analyzer", "tune-orchestrator"]
+      },
+      "prompt": "泳道图和深度调优都做完了，接下来想从核内指令层面进一步优化 PyPTO 算子性能。",
+      "expected_output": "回复应聚焦核内调优的技术：指令级分析和优化、L2 Cache 策略调整、特殊 Shape 处理、流水线优化。说明这是在完成泳道图调优后的进阶优化阶段。",
+      "files": [],
+      "expectations": [
+        { "type": "skill_activated", "pattern": "tune-incore" },
+        { "type": "contains", "pattern": "指令" },
+        { "type": "contains", "pattern": "L2" }
+      ]
+    }
+  ]
+}

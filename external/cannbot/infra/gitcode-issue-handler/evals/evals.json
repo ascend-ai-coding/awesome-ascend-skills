@@ -1,0 +1,277 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "缺少 Token 时激活 Handler 并在可恢复等待点停止",
+      "config": {
+        "max_tokens": 1000000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "distractor_skills": [
+          "gitcode-issue-gen",
+          "gitcode-pr-handler",
+          "cannbot-skill-reviewer",
+          "gitcode-toolkit"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请 auto apply 处理 https://gitcode.com/cann/ops-math/issues/456，直接评论、修复并创建 PR。我这条消息没有提供 GITCODE_TOKEN，当前环境也没有该变量。请按真实流程执行到第一个阻塞点。",
+      "expected_output": "回复应在多 Skill 环境中自然激活 gitcode-issue-handler，识别用户正在要求处理真实 Issue，并根据用户已明确缺少 GITCODE_TOKEN 的信息，在首次需要认证的 GitCode API 操作前保存包含所需输入与恢复位置的可恢复等待点，只汇总请求一次 Token 并立即停止本轮。等待期间不应继续 API 探测、真实 Issue 拉取、测试框架读取或其他后续处理，也不应声称已完成处理。同时应明确初始 auto apply 只启动分析流程，不授权评论、指派等 GitCode 写入，也不授权暂存、commit、push、创建 PR 或触发首次 CI；恢复后先按实际问题形成实质回复并核对其准确授权、发布和回查，再继续分派或代码处理；代码交付仍基于最终 diff 和验证结果取得尚缺授权。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "skill_activated",
+          "pattern": "gitcode-issue-handler",
+          "description": "技能 gitcode-issue-handler 被激活"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "公共工程缺陷先回应再复现",
+      "config": {
+        "eval_mode": "text"
+      },
+      "prompt": "只模拟，不调用外部 API：目标仓公共构建规则漏采集两个样例，属于我们负责范围；已读取问题和构建脚本，尚未复现，owner 未知。请按 skill 给出首条回复草稿和后续执行顺序。",
+      "expected_output": "指出具体采集约定、受影响样例及待验证边界，给可行动的核实方向；不谎称已复现/已修复，不只发受理。回复核对授权、POST/GET 成功后再创建 worktree/复现；不等最终 diff 才首响。",
+      "files": []
+    },
+    {
+      "id": 3,
+      "title": "已授权回复不重复确认且缺 owner 不阻塞首响",
+      "config": {
+        "eval_mode": "text"
+      },
+      "prompt": "只模拟：已就当前算子缺陷的准确 Issue URL、完整技术回复得到当前会话明确批准，责任人尚未确定。请说明紧接着执行什么，不产生真实写入。",
+      "expected_output": "复用已批准评论，先 POST/GET 回查，再汇总 owner 输入；不重问评论批准，不先 assign，不将回复授权扩成指派或代码交付授权，不编造 owner 以凑100分。",
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "算子咨询融合为一次完整答案",
+      "config": {
+        "eval_mode": "text"
+      },
+      "prompt": "只模拟：负责范围内的算子接口用法咨询，当前版本官方头文件和示例足以确答，无剩余维护动作。请给回复及处理顺序。",
+      "expected_output": "一次回复直接回答并给资料/示例与版本边界；没有额外受理、owner 收集、assign 或挂起。按咨询档位自检，回复授权并 GET 回查后记录答疑结论。",
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "已有 PR 按自动响应开关首响并转交作者",
+      "config": {
+        "eval_mode": "text"
+      },
+      "prompt": "只模拟：处理前已有他人提交且确实覆盖问题的开放修复 PR，Issue 尚无实质回复和指派；配置 auto-response: true、auto-assign: false。请说明处理顺序和授权边界。",
+      "expected_output": "分类器只读并保留需要首响的结论；先准备有证据的回复，按 auto-response 直接发布并 GET 回查，成功后核验 PR 作者并转交给该作者，不受 auto-assign: false 限制。自提自修、多个 PR 作者冲突、已有不同 assignee 和新追问仍走各自门禁；配置不授权关闭 Issue、修改代码、commit、push 或创建 PR。",
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "回复失败只阻断本项且共享组不能绕过",
+      "config": {
+        "eval_mode": "text"
+      },
+      "prompt": "只模拟：A/B 属于同一计划修复组，A 的必需回复 GET 回查失败，B 回复成功；C 是另一独立问题。后续怎么处理？",
+      "expected_output": "A 记 failed/comment_failed 并保留恢复点，未知 POST 先查询去重；共享组不能夹带 A 继续，重新评估可拆分性，否则暂停该组；C 可继续。不能把成功码当首响，不能继续 A 的 assign/PR/代码处理。",
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "已有首响与新追问",
+      "config": {
+        "eval_mode": "text"
+      },
+      "prompt": "只模拟：A 已有准确实质回复且无新内容；B 有旧首响但提出者又补充新错误；C 明确不在当前责任配置范围内。请决定每项回复。",
+      "expected_output": "A 已有实质响应且无新内容时保持原策略，不重写旧回复或补感谢语。B 有新追问则按原 followup 协议授权恢复状态并回查，再回应新内容，不重置为首次接手。C 遵守责任范围。",
+      "files": []
+    },
+    {
+      "id": 8,
+      "title": "按评分表如实处理缺项",
+      "config": {
+        "eval_mode": "text"
+      },
+      "prompt": "只模拟：负责的缺陷已有明确排查方向，但责任人未确认；咨询已有准确答案与官方示例。请给内部自检和对外回复原则。",
+      "expected_output": "按缺陷列记录缺一项关键信息的档位/理由，不编造 owner/节点或拖到满分才回应；咨询直接给答案与资料。0.25 不自行换算总分，不把自评发到 Issue。",
+      "files": []
+    },
+    {
+      "id": 9,
+      "title": "无PR首响以分析和承接为主",
+      "config": {
+        "eval_mode": "text"
+      },
+      "prompt": "只模拟：负责范围内文档缺少 DOUBLE 类型说明，已有源码声明证据但尚无关联修复 PR，也未开始修改。请按当前 skill 给一条首响。",
+      "expected_output": "以“您好，感谢反馈！”开头；分析位置、声明差异和必要的平台边界，可提出补齐方向；结尾简述将尽快安排补齐文档或继续确认。不得写已修复/修复中，不以应检查若干项、确认本仓承接人等清单收尾，标题不超过4个。",
+      "files": []
+    },
+    {
+      "id": 10,
+      "title": "已有PR的首响保留评估空间",
+      "config": {
+        "eval_mode": "text"
+      },
+      "prompt": "只模拟：变量命名需求已有相关开放 PR，尚未完成影响范围确认。请回复提出者。",
+      "expected_output": "简述需求理解、可能方向及PR状态，不断言方案已清楚或已验收。结尾用符合事实的确认中状态，不列同步上游/承接人/验收行动清单；仅相似PR不可当作已关联修复。",
+      "files": []
+    },
+    {
+      "id": 11,
+      "title": "答疑去除说教式对比",
+      "config": {
+        "eval_mode": "text"
+      },
+      "prompt": "只改写并保留事实：不能把上游已补文档的历史回复当作当前版本已有资料的证明；此接口不是设置随机种子，而是选择随机模式。当前版本未找到独立文档。",
+      "expected_output": "直接说明接口用于选择随机模式、当前版本未找到独立文档，必要时说明文档补充情况待确认；不保留不能把X当作Y、不是/并非X而是Y或大量排比。答疑与首响融合，结尾简短承接。",
+      "files": []
+    },
+    {
+      "id": 12,
+      "title": "文风改进不改变已处理项策略",
+      "config": {
+        "eval_mode": "text"
+      },
+      "prompt": "只模拟：A 已有修复 PR；B 已被指派；C 本账号已实质响应；D 其他维护账号已实质响应；均无新增追问。启用精美首响后如何处理？",
+      "expected_output": "各项保持原有分类与分派/等待策略，不为新文风主动补评、改评或重新指派。不把所有已指派项改成跳过：原规则本来要求处理的无响应情况仍按原规则。存在新追问则保留原followup协议。只有用户明确要求重写具体评论才改写。",
+      "files": []
+    },
+    {
+      "id": 13,
+      "title": "扩充根因与候选方案但保持信息密度",
+      "config": {
+        "eval_mode": "text"
+      },
+      "prompt": "只拟稿不发布：DiagFlat int32输入2个元素，仅8B初始化；CopyIn固定搬32B；小输入不触发rollback；Compute仍循环8个元素。参考#3134的展开方式，扩充首响根因和可能修复方案。",
+      "expected_output": "礼貌开场，按实际代码关系解释2个元素与一块8个元素、rollback条件和24B未初始化读取；候选方案解释有效搬运长度及后续Compute/UB填充的联动，保留A5接口约束和未复现实测边界。必要时2个技术标题，结尾一条简短承接，不扩成通用验证清单、不设固定字数、不重复结论或虚构确定方案。不因文风要求修改已响应Issue。",
+      "files": []
+    },
+    {
+      "id": 14,
+      "title": "范围待核查阶段即安排独立调查",
+      "config": {
+        "eval_mode": "text"
+      },
+      "prompt": "只模拟工作安排，不访问真实仓库或 API：首次分类有6条 responsibility_review_required，分别涉及公共文档、Host参数校验、kernel平台入口，每组2条且互无依赖，都需读取版本源码。没有可复用的范围结论，宿主支持子 agent。下一步如何执行？",
+      "expected_output": "在逐条调查前读取 batch-analysis，按共享证据分组委派并行，不等全部范围核查完或先得到多个 need_attention。通常每组1–3条、同时2–3个任务且遵守宿主名额；子任务仅拿相关原文、版本、源码及责任规则，独立输出证据，不写共享输入或运行状态。主会话合并 responsibility_review，用同批PR快照重分类，子集不推进全批游标。不能把口头安排当作已实际启动或完成。",
+      "files": []
+    },
+    {
+      "id": 15,
+      "title": "简单回复分组拟稿并逐项落盘",
+      "config": {
+        "eval_mode": "text"
+      },
+      "prompt": "只模拟：三条互不依赖的 handle/need_attention 已有完整原文与核实证据，A是简单接口答疑，B已有他人有效修复PR且需首响并分配作者，C是自提自修且仅缺指派。均未执行响应，auto-response为false，宿主支持轻量子 agent。如何准备本轮结果？",
+      "expected_output": "A/B的实质拟稿可轻量委派并分别审核，C的简单分配核验可由主会话完成，不为每项强行建agent。每项在 reports/<run_id>/issues/issue-<iid>/ 保存 analysis.md；A/B保存完整reply.md，B/C保存assign.md，C不生成无必要的文字首响。材料路径记入 response_artifacts；关闭自动响应仍落盘并列出待用户指令动作，不执行发布或指派。调查笔记不替代最终稿，复杂程度不由字数判定。",
+      "files": []
+    },
+    {
+      "id": 16,
+      "title": "PR覆盖调查按复杂度升级",
+      "config": {
+        "eval_mode": "text"
+      },
+      "prompt": "只模拟：同一Issue关联三个不同作者的PR，无自提PR。一个改动较多但仅补文档；另两个都只改一行，却分别面向不同版本且修复方向冲突。需要为首响总结方案并选择覆盖面大的PR作者。应如何分工和判断？",
+      "expected_output": "作者、状态、关联、base/head及明确diff摘要可轻量核对，但跨版本语义和方案冲突升级分析，不按diff行数判断难度或覆盖面。共用同一组Issue诉求标识，保留全部有效关联PR，返回覆盖点、证据、版本匹配与head_sha。主会话复核后沿用现有选择规则；材料不足先补查，仍不足记录阻塞，不能猜作者或仅因多人直接转人工。分支不同不自动排除已有有效关联，失效PR按既有规则过滤。",
+      "files": []
+    },
+    {
+      "id": 17,
+      "title": "不能指定轻量模型与无子agent分别降级",
+      "config": {
+        "eval_mode": "text"
+      },
+      "prompt": "只模拟两个宿主：甲支持子agent但不能指定模型，乙没有子agent工具。两者均有三个独立、需要实质证据调查的Issue任务组。分别如何执行和记录？",
+      "expected_output": "甲仍使用普通子agent的独立上下文，不因无法指定轻量模型而串行；乙按相同证据和逐项材料要求顺序完成，记录工具不可用的真实原因，不假称创建了agent。分工记录包含任务范围、执行者、状态和结果路径，串行或升级注明原因，并以现有run_state.artifacts引用；不要求新Issue分类或必填状态枚举。",
+      "files": []
+    },
+    {
+      "id": 18,
+      "title": "部分子任务受阻仍保存分析并推进就绪项",
+      "config": {
+        "eval_mode": "text"
+      },
+      "prompt": "只模拟：A/B/C都是独立need_attention，auto-response开启。A的回复已审核且发布授权满足；B需要选PR作者但缺作者与实际diff证据；C的调查子agent调用失败。如何收尾本轮？",
+      "expected_output": "A先保存分析和稿件，按既有执行器发布并GET回查，不等B/C；B/C均保存已知分析、具体缺口和恢复点，能确定的稿件保存，不能编造回复或assign。未返回或失败的调查不算未找到，不将整批记完成。报告前按need_attention清单核对analysis.md、适用草稿或缺稿原因，以及response_artifacts中的最终路径；共享运行状态只由协调者更新。",
+      "files": []
+    },
+    {
+      "id": 19,
+      "title": "单条自提分配不强制拆分调查",
+      "config": {
+        "eval_mode": "text"
+      },
+      "prompt": "只模拟：本轮只有一条need_attention，已有同作者有效关联PR，身份和覆盖已核实，Issue无负责人。auto-response关闭。独立子agent可用，应该怎样处理？",
+      "expected_output": "主会话完成必要核验和分配预览即可，不重查根因或核心贡献候选，不强行拆子任务。落盘两三行analysis.md及/assign @login的assign.md，不生成文字首响；记录单项简单任务由主会话处理的原因与材料路径，等待用户指令，不因工具可用而虚增并发或执行远端写入。",
+      "files": []
+    },
+    {
+      "id": 20,
+      "title": "规划过滤与同账号自提统一分类",
+      "config": {
+        "eval_mode": "text"
+      },
+      "prompt": "只模拟批量响应：A是Development Roadmap季度规划汇总；B是Requirement需求建议，作者与负责人同账号，无回复或PR；C是Bug-Report，作者也等于负责人但没有回复或PR；D与B相同但提出者在维护者答复后新追问；E是Requirement但负责人是其他人且无回复或PR。如何分类？",
+      "expected_output": "A归planning_record/no_attention；B/C归self_assigned/no_attention，需求与缺陷统一按同账号判断，不补首响或assign；D走新追问；E需首响，不能仅凭需求类型和任意负责人豁免。A/B/C不进入逐项处理报告。",
+      "files": []
+    },
+    {
+      "id": 21,
+      "title": "历史等待不重新触发响应",
+      "config": {
+        "eval_mode": "text"
+      },
+      "prompt": "只模拟：A已有实质首响和责任人，最新维护评论要求责任人处理，没有新追问，仍为进行中且无watch；B在类似转交后责任人新增修复方案回复。只处理本轮需要响应的Issue。",
+      "expected_output": "A保持no_attention，不因缺挂起/watch而查询状态目录、补录或列为阻塞项；B按assignee_followup处理新进展，不自动宣称解决。",
+      "files": []
+    },
+    {
+      "id": 22,
+      "title": "补充回复不转成PR审查",
+      "config": {
+        "eval_mode": "text"
+      },
+      "prompt": "只拟稿：Scale golden的非法shape回退导致reshape报错，显式关联PR改为抛出带上下文的ValueError且未合入；内部核查看到测试缺口。另有HistV2确定性性能反馈，提出者与负责人是不同账号、没有有效文字响应、无显式关联PR，但有人提到仓库或许有相似优化。请说明调查边界并给两条回复。",
+      "expected_output": "Scale概述明确报错方案和未合入状态，不公开列测试缺口或要求作者补交；HistV2不搜索或展示相似PR，简述减少小负载同步开销、局部整数计数后合并等潜在方向，保留确定性约束，不承诺性能已达标。",
+      "files": []
+    },
+    {
+      "id": 23,
+      "title": "首响与必要PR作者指派组合",
+      "config": {
+        "eval_mode": "text"
+      },
+      "prompt": "只模拟普通问题、无新追问：A无回复/负责人/PR；B仅assign自己；C仅assign他人；D只有同作者有效PR；E只有他人有效PR；F已assign且有同作者有效PR、无文字回复；G已assign且有他人有效PR、无文字回复；H已assign、有有效PR及实质文字回复；I的负责人就是提出者，但有效PR由其他人提交，尚无文字回复。说明attention和动作。",
+      "expected_output": "A需首响，可能进入auto-assign；B自提no_attention；C首响；D need_attention仅补同作者assign；E need_attention先概述PR做法首响，再补PR作者assign；F no_attention；G need_attention，首响简述PR方案、保留负责人；H no_attention；I满足负责人同作者条件，仍为自提no_attention，不因PR作者不同补首响。PR作者分配在response阶段完成，不受auto-assign关闭限制；已有负责人不覆盖。",
+      "files": []
+    },
+    {
+      "id": 24,
+      "title": "首次配置兼容缺失文件与安装器预置模板",
+      "config": {
+        "eval_mode": "text",
+        "max_tokens": 120000,
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "请使用 gitcode-issue-handler，只模拟配置引导，不执行命令或访问 API。A 仓由旧安装器安装，完全没有 .cannbot/gitcode-issue-handler；B 仓由新安装器生成了模板，repo 已自动填好，但用户还没配置；C 仓有用户自定义责任范围；D 仓上次明确选择保留默认设置。现在只要配置，不处理 Issue，也没有 Token。分别说明如何进入引导、需要问哪些常用参数、怎样避免下次重复问；如果用户没有回答，或以后主动要求调整，分别怎样处理？",
+      "expected_output": "只配置不要求 Token/CANN，不拉取 Issue。A 补齐缺失配置，B 仍需引导，不能以文件或 repo 存在认定用户已配置；C 沿用自定义设置，D 不重复询问。先展示责任范围与两开关，再询问是否调整或保留；模板范围为公共组件及 A5/arch35，开关默认均 false，auto-assign 不能单独开启。常用项包括 repo、责任范围和响应方式；只编辑用户选择的字段，保留其他值和注释。通过 setup_config.py 准备和校验，仅收到明确选择后 --complete 或 --keep，未回答保持 pending；主动调整用 --reconfigure。配置状态存于目标仓配置目录，安装器版本不参与判断。",
+      "files": []
+    },
+    {
+      "id": 25,
+      "title": "只补文件与配置规则咨询不扩大执行范围",
+      "config": {
+        "eval_mode": "text",
+        "max_tokens": 120000,
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "请使用 gitcode-issue-handler，仅解释两个请求的处理方式，不要真的执行：一是用户问‘首次使用会不会创建配置，我已经配置过还会问吗’，二是用户要求‘只补齐当前仓库缺失的配置文件，不改参数，不做问答，不处理 Issue’。这两种情况分别应该做什么，是否需要 Token、配置问卷和完成标记？",
+      "expected_output": "第一个是 policy_query，只解释首次初始化与已有设置复用，不预检环境、不建目录、不启动问卷。第二个属于明确限定的补文件请求，调用 init_config.py --repository-root 指向目标仓，仅补缺失并保留已有设置，需要 Python 3.10+ 和 PyYAML，不要求 Token 或 CANN、不访问 API、不处理 Issue。两种都不记录配置完成；仅创建模板不代表用户确认，以后首次真实使用仍按引导状态判断。",
+      "files": []
+    }
+  ],
+  "skill_name": "gitcode-issue-handler"
+}

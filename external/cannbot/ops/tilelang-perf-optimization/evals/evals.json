@@ -1,0 +1,148 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "算子性能优化工作流",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我写了一个 TileLang GEMM 算子，精度已经通过验证但性能不达标，请问如何进行性能优化？",
+      "expected_output": "回复应按六步工作流执行：Step 1 精度校验（强制前置，精度未通过禁止优化），Step 2 性能数据采集（使用 msprof 工具采集 kernel 耗时），Step 3 算子类型判断（通过 get_kernel_source() 查看翻译后的 Ascend C 代码，搜索 IS_ASCEND_AIC/IS_ASCEND_AIV 判断 Cube 型/Vector 型/混合型），Step 4 根据类型选择优化手段（pass_configs 调优、核内优化、核间优化、流水线优化、Fixed Core 等），Step 5 精度再验证，Step 6 效果验证对比基线。强调每次只修改一个参数，修改后立即验证，性能回退则回退。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "msprof",
+          "description": "回复中提到了 msprof"
+        },
+        {
+          "type": "contains",
+          "pattern": "get_kernel_source",
+          "description": "回复中提到了 get_kernel_source"
+        },
+        {
+          "type": "contains",
+          "pattern": "IS_ASCEND_AIC",
+          "description": "回复中提到了 IS_ASCEND_AIC"
+        },
+        {
+          "type": "contains",
+          "pattern": "pass_configs",
+          "description": "回复中提到了 pass_configs"
+        },
+        {
+          "type": "contains",
+          "pattern": "T.Pipelined",
+          "description": "回复中提到了 T.Pipelined"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "性能优化的前置约束",
+      "config": {
+        "max_tokens": 80000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "算子精度还没完全通过验证，可以先开始做性能优化吗？有什么必须遵守的原则？",
+      "expected_output": "回复应强调\"精度优先\"原则：精度未通过禁止进入性能优化步骤。每次优化后必须重新验证精度，不能为修复精度而撤销优化。优化过程需遵守\"迭代验证\"原则：每次只修改一个参数/配置，修改后立即验证，性能回退则回退到上一版本。优化记录保存在 examples/{op_name}/perf_tuning/ 目录，包括 baseline.json、optimization_log.md、final_report.md。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "精度优先",
+          "description": "回复中提到了 精度优先"
+        },
+        {
+          "type": "contains",
+          "pattern": "精度未通过禁止性能优化",
+          "description": "回复中提到了 精度未通过禁止性能优化"
+        },
+        {
+          "type": "contains",
+          "pattern": "迭代验证",
+          "description": "回复中提到了 迭代验证"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "性能基线必须来自 msprof op",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我用 Python time.time 和 torch 事件测了 kernel 10 次平均值。能否作为 TileLang 优化基线和最终证据？",
+      "expected_output": "回复应拒绝 Python/Torch 计时作为性能门禁，必须用 msprof op 指定 kernel 采集真实基线与每轮结果，同时验证精度；结果写入 baseline.json 和 optimization_log.md。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "算子类型以翻译后源码标记判定",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "kernel 源码看起来只有 Vector 后处理，但 get_kernel_source() 同时出现 IS_ASCEND_AIC 和 IS_ASCEND_AIV。优化路线应判为什么类型？",
+      "expected_output": "回复应依据翻译后的 Ascend C 标记判为混合型；只有 AIC 为 Cube、只有 AIV 为 Vector、两者都有为混合。不能仅凭 Python 表面代码或算子名称选择文档。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "优化点识别与实施步骤不能合并",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "看到 optimization-guide 的标题像适用，就直接 Edit 代码，可以吗？",
+      "expected_output": "回复应先在 Step3 读指南/反模式标题筛选，再逐项阅读适用场景和约束，写 Part A 适用性、证据行号与 [ORDER-PLAN]。Step4 每项先 [ORDER-CHECK]，再写 [IMPL-#N] 记录文档约束，才允许 Edit，最后写 [RESULT-#N] 后才能下一项。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "扩大 kernel 调用域前先做复用审计",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "一个优化会新增 decode shape 和 BF16 路径，但兼容性维度有两项 unknown。ORDER-PLAN 能直接写 reuse 现有 kernel 吗？",
+      "expected_output": "回复应先写 KERNEL-REUSE-PRECHECK，按该优化章节给出的兼容维度记录新增调用域和 unknown/false；存在未知时不能 direct-reuse。Edit 前还要复核 KERNEL-REUSE-AUDIT，先修复现有 kernel 或新建并单独验证，再扩大调用域。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "Double Buffer 修改前必须完成三问分析",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "准备把 BUFFER_NUM 从1改2。实施前有哪些强制分析，能否只改配置看性能？",
+      "expected_output": "回复应先完成 [DB-ANALYSIS]：循环内是否有 MTE3、是否存在跨迭代累加器、选择何种同步方式；未完成禁止写代码。修改仍作为单一优化点，随后真实精度验证、msprof op 性能采集和结果记录。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "tilelang-perf-optimization"
+}

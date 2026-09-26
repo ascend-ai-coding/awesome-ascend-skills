@@ -1,0 +1,17 @@
+strategy_id: P87
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "Matmul|matmul|Cube|Mmad|mmad"
+    min_count: 1
+    fail_msg: "未检测到 Matmul/Mmad 相关逻辑 → 无手动流水线优化空间，不适用 P87。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "L0A|L0B|L0C|l0a|l0b|l0c"
+    min_count: 1
+    fail_msg: "未检测到 L0 buffer 使用 → 无手动时序控制空间，不适用 P87。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "HardEvent|unitFlag|PipeBarrier.*PIPE_M"
+    min_count: 0
+    fail_msg: "已存在手动 Mmad 流水线控制 → 可能冗余，优先验证现有策略效果。"

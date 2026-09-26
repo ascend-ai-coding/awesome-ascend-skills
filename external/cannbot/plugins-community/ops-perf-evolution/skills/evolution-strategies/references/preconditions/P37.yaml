@@ -1,0 +1,17 @@
+strategy_id: P37
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "grad|Grad|梯度|dW|weight_grad"
+    min_count: 1
+    fail_msg: "未检测到梯度相关计算 → 无梯度累加器需求，不适用 P37。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "batch|Batch|loopS|B×S"
+    min_count: 1
+    fail_msg: "未检测到 batch/seq 循环结构 → 无跨 batch 累加场景，不适用 P37。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "TBuf|VECCALC|常驻|resident"
+    min_count: 0
+    fail_msg: "已存在常驻累加逻辑 → 可能冗余，优先验证现有策略效果。"

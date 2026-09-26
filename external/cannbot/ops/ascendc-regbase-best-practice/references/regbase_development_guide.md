@@ -162,8 +162,8 @@ private:
     TPipe* pipe_;
     GlobalTensor<float> xGm_;
     GlobalTensor<float> yGm_;
-    TQue<QuePosition::VECIN, 2> queIn_;
-    TQue<QuePosition::VECOUT, 2> queOut_;
+    TQue<QuePosition::VECIN, 1> queIn_;
+    TQue<QuePosition::VECOUT, 1> queOut_;
 };
 ```
 

@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "field_query": {
+    "arguments": [
+      "--section",
+      "Memory",
+      "--field",
+      "aiv_gm_to_ub_bw(GB/s)",
+      "--format",
+      "json"
+    ],
+    "result": {
+      "section": "Memory",
+      "output_file": "Memory.csv",
+      "field": {
+        "name": "aiv_gm_to_ub_bw(GB/s)",
+        "meaning": "AIV GM 到 UB 相关平均带宽",
+        "core_types": [
+          "AIV"
+        ],
+        "unit": "GB/s",
+        "dependencies": [
+          "AIV 主存读取次数、两类修正次数、AIV `D`"
+        ],
+        "formula": "`BW(GM 到 UB 相关计数, 128, D)`",
+        "na_conditions": [
+          "非 AIV 行、任一计算所需计数缺失或 `D` 无效"
+        ],
+        "analysis_notes": "修正后的计数小于零时按零计算"
+      }
+    }
+  },
+  "section_query": {
+    "arguments": [
+      "--section",
+      "MemoryUB",
+      "--format",
+      "json"
+    ],
+    "section": "MemoryUB",
+    "output_file": "MemoryUB.csv",
+    "field_count": 10,
+    "first_field": "block_id",
+    "last_field": "aiv_ub_write_bw_gm(GB/s)"
+  },
+  "markdown_query": {
+    "arguments": [
+      "--section",
+      "Memory",
+      "--field",
+      "aiv_gm_to_ub_bw(GB/s)",
+      "--format",
+      "markdown"
+    ],
+    "required_fragments": [
+      "# Memory / `aiv_gm_to_ub_bw(GB/s)`",
+      "AIV GM 到 UB 相关平均带宽",
+      "**适用 Core：** AIV",
+      "**单位：** GB/s",
+      "**依赖：** AIV 主存读取次数、两类修正次数、AIV `D`",
+      "**计算规则：** `BW(GM 到 UB 相关计数, 128, D)`",
+      "**`NA` 条件：** 非 AIV 行、任一计算所需计数缺失或 `D` 无效"
+    ]
+  },
+  "new_field_queries": [
+    {
+      "arguments": [
+        "--section",
+        "ArithmeticUtilization",
+        "--field",
+        "aiv_vec_simt_vf_ratio",
+        "--format",
+        "json"
+      ],
+      "result": {
+        "section": "ArithmeticUtilization",
+        "output_file": "ArithmeticUtilization.csv",
+        "field": {
+          "name": "aiv_vec_simt_vf_ratio",
+          "meaning": "AIV SIMT VF 指令活跃周期占 AIV 总周期的比值",
+          "core_types": ["AIV"],
+          "unit": "比值",
+          "dependencies": ["AIV SIMT VF 指令活跃周期、AIV `C`"],
+          "formula": "`AIV SIMT VF 指令活跃周期 / C`",
+          "na_conditions": ["非 AIV 行、SIMT VF 指令活跃周期缺失或 `C` 为零"],
+          "analysis_notes": "原始比值，不乘以 100"
+        }
+      }
+    },
+    {
+      "arguments": [
+        "--section",
+        "ResourceConflictRatio",
+        "--field",
+        "aiv_vec_sfu_cflt_ratio",
+        "--format",
+        "json"
+      ],
+      "result": {
+        "section": "ResourceConflictRatio",
+        "output_file": "ResourceConflictRatio.csv",
+        "field": {
+          "name": "aiv_vec_sfu_cflt_ratio",
+          "meaning": "AIV Vector SFU 冲突周期占 AIV 总周期的比值",
+          "core_types": ["AIV"],
+          "unit": "比值",
+          "dependencies": ["四类 AIV Vector SFU 冲突周期、AIV `C`"],
+          "formula": "`四类 AIV Vector SFU 冲突周期之和 / C`",
+          "na_conditions": ["非 AIV 行、任一 SFU 冲突周期缺失或 `C` 为零"],
+          "analysis_notes": "四类 SFU 冲突周期全部存在时才计算；原始比值，不乘以 100"
+        }
+      }
+    }
+  ]
+}

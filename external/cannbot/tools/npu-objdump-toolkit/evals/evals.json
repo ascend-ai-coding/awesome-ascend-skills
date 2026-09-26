@@ -1,0 +1,453 @@
+{
+  "skill_name": "npu-objdump-toolkit",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "用法咨询不要求样本",
+      "config": {},
+      "prompt": "我已经安装了 CANN，想了解 msobjdump 怎么用。是不是 source 之后直接 msobjdump xxxx 就行？这里只问用法，不需要执行。",
+      "expected_output": "说明加载实际 CANN 安装目录的 set_env.sh 后，使用 msobjdump --dump-elf 文件名等带操作参数的形式。无需用户提供 ELF 或执行分析；不把 ASCConfig.cmake、编译器或 NPU 检查作为已有文件解析的前置条件。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "set_env.sh"
+        },
+        {
+          "type": "contains",
+          "pattern": "--dump-elf"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "默认操作与信息边界",
+      "config": {},
+      "prompt": "用户给了一个 Ascend 算子产物 demo，说“看看里面的 kernel 信息”，环境已经可用。你会选哪个 msobjdump 命令？只给操作建议，不执行。能顺便判断这个算子运行速度吗？",
+      "expected_output": "默认选择 msobjdump --dump-elf demo，不自动执行 list、extract、sass 或完整 verbose。解释元数据不能证明运行速度，需要真实性能测量，不能用核类型或任务配比推断加速比。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "--dump-elf"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "verbose 不是软件版本",
+      "config": {},
+      "prompt": "我想查看 Ascend 融合产物 demo 的 ELF header、section 和 symbol。msobjdump -V 是查版本的吗？dump 中 VERSION: 1 是不是 CANN 1？只解释命令。",
+      "expected_output": "给出 --dump-elf demo --verbose；解释 -V 为详细模式，VERSION 是产物元数据版本，不是 CANN 或工具的软件版本。融合输入详细输出可能属于提取后的 device ELF。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "--verbose"
+        },
+        {
+          "type": "contains",
+          "pattern": "--dump-elf"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "列出与提取分别调用",
+      "config": {},
+      "prompt": "对融合产物 demo，先列出里面的 ELF，再提取到我指定的空目录 out。暂时不执行，给出命令。是否能把 --list-elf 和 --extract-elf 写进同一次调用？",
+      "expected_output": "先确保 out 存在，再分别调用 --list-elf 和 --extract-elf --out-dir。每条命令只带一个主操作，说明提取后须检查实际文件，不能只凭无报错就声称成功。不得运行 demo。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "--list-elf"
+        },
+        {
+          "type": "contains",
+          "pattern": "--extract-elf"
+        },
+        {
+          "type": "contains",
+          "pattern": "--out-dir"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "同一 shell 使用指定环境",
+      "config": {},
+      "prompt": "机器有两套 CANN，我指定使用 /opt/cann-choice，那里有 set_env.sh。Agent 每次命令都开新 shell。msobjdump 命令指向新包，但 import msobjdump 却来自旧虚拟环境。该怎么检查和配置？不要安装东西或改启动文件。",
+      "expected_output": "在执行命令的同一 shell source 用户指定的 set_env.sh，核对 command -v msobjdump、python3 和 msobjdump.__file__，处理包来源不一致。不能因为上一条 shell source 成功就认为下一条继承环境，也不能选择另一套“最新”包。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "/opt/cann-choice"
+        },
+        {
+          "type": "contains",
+          "pattern": "set_env.sh"
+        },
+        {
+          "type": "contains",
+          "pattern": "__file__"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "不混淆解析和编译依赖",
+      "config": {},
+      "prompt": "我有已经编译好的 Ascend ELF，Python 和 msobjdump 已可用，但没有 NPU，也没有 ASCConfig.cmake。能解析吗？依赖还要看哪些？只解释。",
+      "expected_output": "可离线解析，不要求 NPU 或 ASCConfig.cmake。说明 readelf 为基础依赖，融合产物需要 llvm-objcopy，静态库路径需要 ar；不得要求先编译、运行样例或检查设备。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "readelf"
+        },
+        {
+          "type": "contains",
+          "pattern": "llvm-objcopy"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "单算子列表与无元数据提示",
+      "config": {},
+      "prompt": "我有两次 msobjdump 输出：对单算子 .o 执行 list 返回“[WARNING]: nothing to list in single op elf file”；另一次 dump 返回“The kernel meta information cannot be found.”。两个退出码都是 0。它们都算成功吗？文件坏了吗？",
+      "expected_output": "分别解释：单算子没有内嵌 ELF 可列出，不等于文件损坏；无元数据可能是格式不支持、缺少内容或依赖问题，需核对输入及 readelf。不能只根据退出码零判断成功，也不能统一归因为文件损坏。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "readelf"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "含空格路径的同包回退",
+      "config": {},
+      "prompt": "输入路径是 /work/input files/demo，输出目录是 /work/output files。我已经给路径加引号，但 msobjdump 仍报 unrecognized arguments。当前安装的 CANN（9.2.0）入口脚本使用未引用的 $@，Python 模块已确认来自所选 CANN。如何调用？不要改原文件名或工具源码。",
+      "expected_output": "解释当前已安装版本的 Shell 包装层会二次拆词（asc-tools 新版入口已修复为 \"$@\"，随后续安装包发布），并给出同包 python3 -m msobjdump 调用，完整引用输入和输出路径；提取前确保输出目录存在。不能仅建议在原命令外再加引号，也不能通过改原文件名掩盖问题。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "python3 -m msobjdump"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "提取不能覆盖已有文件",
+      "config": {},
+      "prompt": "想用 msobjdump 提取到 out，但这里已经有同名 demo.aicore.o，不能覆盖。如何安排？另外 extract 退出码是 0，却没有任何终端输出，能说文件已经提取了吗？只说明处理方法。",
+      "expected_output": "选择独立空子目录并告知，或在用户坚持精确目录时澄清处理方式，不删除或覆盖原文件。不打印输出本身不代表失败或成功，需检查实际新增文件及非空大小。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 10,
+      "title": "字段含义与未知值",
+      "config": {},
+      "prompt": "msobjdump 输出 KERNEL_TYPE: MIX_AIC_MAIN、MIX_TASK_RATION: [1:2]、BLOCK_NUM: 0xFFFFFFFF、FUNCTION_ENTRY: 4294967297，另有我不认识的字段。是不是运行用了 4294967295 个核、Vector 耗时是 Cube 的两倍？FUNCTION_ENTRY 是入口地址吗？",
+      "expected_output": "纠正三个误解：BLOCK_NUM 为当前实现占位值，配比不是耗时，FUNCTION_ENTRY 按工具文档表示 TilingKey 并保留完整整数。未知字段保留原值，不猜解释或性能；MIX_AIC_MAIN 表示产物的混合核类型配置。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "TilingKey"
+        },
+        {
+          "type": "contains",
+          "pattern": "4294967297"
+        },
+        {
+          "type": "contains",
+          "pattern": "占位"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "缺少融合提取依赖",
+      "config": {},
+      "prompt": "msobjdump 能显示帮助，分析融合 ELF 时却报 llvm-objcopy is not available。是否要重新安装 NPU 驱动？请只定位依赖，不执行安装。",
+      "expected_output": "指出该融合产物需要 llvm-objcopy 提取 .aicore_binary，检查当前 CANN 环境和 PATH；不将其误判为驱动问题，不自动安装或换包。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "llvm-objcopy"
+        },
+        {
+          "type": "contains",
+          "pattern": ".aicore_binary"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "host 侧反汇编与计时不适用",
+      "config": {},
+      "prompt": "我要把普通 x86 ELF 的机器指令反汇编出来，然后测量程序运行时间。npu-objdump-toolkit 是否适用？不要执行命令。",
+      "expected_output": "说明本 Skill 用于 Ascend 编译产物元数据、内嵌文件处理与 device 侧 AICore 指令反汇编（--sass），不能完成 host 侧（x86 等）普通指令反汇编和运行时间测量；建议使用 GNU/LLVM objdump 与计时工具，不编造 msobjdump 的 host 反汇编或 profiling 参数。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 13,
+      "title": "真实融合产物操作",
+      "config": {
+        "eval_mode": "file_based",
+        "disabled": true
+      },
+      "prompt": "评测环境已加载选定 CANN，并在当前目录提供 input/demo（由 asc-tools 的 examples/04_msobjdump 生成的 MatmulLeakyRelu 融合产物）。请用 npu-objdump-toolkit 查看核类型、列出内嵌 ELF，提取到空目录 extracted，并提供完整 ELF 信息日志 verbose.log。不要运行 demo，不修改输入。",
+      "expected_output": "按独立调用完成 dump、list、extract、verbose，识别 mix_aic/mix_aiv 对应的 kernel 配置并返回真实结果。extracted/demo.aicore.o 非空且与 input/demo 的 .aicore_binary 段内容一致；输入摘要保持不变，verbose.log 包含实际 ELF 结构。缺少指定 fixture 时必须报告无法执行，不伪造样本或声称通过。本用例默认禁用，评测负责人提供 fixture 后启用；文件存在性检查之外还需核验段内容及输入摘要。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "file_exists",
+          "pattern": "extracted/demo.aicore.o"
+        },
+        {
+          "type": "file_exists",
+          "pattern": "verbose.log"
+        },
+        {
+          "type": "skill_activated",
+          "pattern": "npu-objdump-toolkit"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "title": "多 Skill 环境的正向触发",
+      "config": {
+        "distractor_skills": [
+          "cann-env-setup",
+          "ops-profiling",
+          "ascendc-runtime-debug"
+        ]
+      },
+      "prompt": "我想了解如何从 Ascend 融合编译产物中查看 kernel 元数据和列出 device ELF。CANN 环境已经配置好，只需要说明工具用法，不需要安装环境或上板测试。",
+      "expected_output": "激活 npu-objdump-toolkit，解释 msobjdump 的 dump 和 list，不转入完整环境安装、性能采集或设备运行排查流程。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "--dump-elf"
+        },
+        {
+          "type": "contains",
+          "pattern": "--list-elf"
+        },
+        {
+          "type": "skill_activated",
+          "pattern": "npu-objdump-toolkit"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "title": "实际分析前的接口探测",
+      "config": {},
+      "prompt": "我在使用已经配置好的 CANN，准备分析一个融合 ELF。听说 msobjdump 迭代很快，先告诉我怎么检查 Skill 记载的接口和当前安装是否一致；这次不要解析输入文件。",
+      "expected_output": "使用 `scripts/check_interface.py`（可加 `--json`）：无状态探测，拿当前安装的 `msobjdump -h` 与 Skill 自带的 interface.json 快照比对，不写任何文件。根据 `ok`、`newer-install`、`missing-options` 或不可用状态决定后续，不执行 dump/list/extract/sass。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "check_interface.py"
+        },
+        {
+          "type": "contains",
+          "pattern": "interface.json"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "title": "安装比 Skill 记载更新",
+      "config": {},
+      "prompt": "接口探测返回 `newer-install`，说当前 msobjdump 有一个 Skill 未记载的选项 --future。我能直接用这个选项分析吗？",
+      "expected_output": "不能直接用。`newer-install` 表示安装比 Skill 快照新，Skill 文档落后；先核对 asc-tools 变更或官方文档确认该选项语义，再决定是否使用，不凭选项名或帮助一句话猜行为。需要持久支持时按 PR 流程重新生成快照并更新文档。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "interface.json"
+        },
+        {
+          "type": "contains",
+          "pattern": "更新"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "title": "安装比 Skill 记载更旧",
+      "config": {},
+      "prompt": "当前 `msobjdump -h` 不再显示 `--list-elf`，但 Skill 仍然有 list 用法。探测发现 `missing-options`，应该怎么处理？",
+      "expected_output": "报告当前安装缺少 Skill 记载的必备参数，不能继续声称当前版本支持 `--list-elf`。按安装版实际能力回答，保留旧指导作为历史参考；核对所选 CANN 是否误装旧包，确认接口变化后再按 PR 流程更新 Skill/eval。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "--list-elf"
+        },
+        {
+          "type": "contains",
+          "pattern": "missing-options"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "title": "无源码无网络时的探测",
+      "config": {},
+      "prompt": "我只安装了 Skill 和 CANN 包，没有 asc-tools 源码，也不能访问网络。接口文档可能已经变化，怎么自检？",
+      "expected_output": "`check_interface.py` 只依赖当前安装和 Skill 自带的 interface.json 快照，无需源码和网络即可运行，双向漂移（安装更新/更旧）都能发现。持久更新需要之后提供源码或新版 Skill，不能伪造仓库内容。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "interface.json"
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "title": "快照更新流程与运行期写入",
+      "config": {},
+      "prompt": "我已经阅读了变化的文档，并用真实融合产物确认新参数行为。现在怎样更新 Skill 的接口快照？运行探测或更新时会往 Skill 目录或我的环境写缓存吗？",
+      "expected_output": "用 `scripts/gen_interface.py` 从源码重新生成 interface.json（新选项需先在 OPTION_CLASS 分类，否则生成失败），语义变化同步修订 SKILL.md/references/evals，随 PR 评审合入。运行期探测 `check_interface.py` 无状态、不写任何文件，也没有本地缓存或\"接受基线\"步骤。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "gen_interface.py"
+        },
+        {
+          "type": "contains",
+          "pattern": "不写"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "title": "纯咨询不执行自检",
+      "config": {},
+      "prompt": "我只想了解 npu-objdump-toolkit 以后如何自检更新。允许只读加载 Skill 说明，但不要运行检查器、msobjdump 或其他分析命令，也不要修改文件。请解释流程。",
+      "expected_output": "只说明实际使用时可运行 `check_interface.py` 的触发时机、状态含义和 PR 期快照更新流程（gen_interface.py）；本次不运行探测、不运行 msobjdump，也不修改任何文件。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "check_interface.py"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "title": "sass 反汇编基本用法",
+      "config": {},
+      "prompt": "我想看融合编译产物 demo 里 device 侧的实际指令，而不是只看元数据。环境已加载支持 --sass 的 CANN。给出调用方式，暂时不执行。",
+      "expected_output": "使用 `msobjdump --sass demo`；说明输出打印到 stdout、保存用 Shell 重定向，融合产物会自动提取 .aicore_binary 后反汇编；依赖 llvm-objcopy 与带 Ascend 反汇编后端的 llvm-objdump。解释 SASS 只是选项名、输出为 Ascend AICore 指令。不与 --out-dir 组合。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "--sass"
+        },
+        {
+          "type": "contains",
+          "pattern": "llvm-objdump"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "title": "sass 与其他主操作互斥",
+      "config": {},
+      "prompt": "我想一次调用同时完成元数据查看和指令反汇编：msobjdump --dump-elf demo --sass demo，为什么报错 \"--sass cannot be combined with an existing ELF action\"？这是工具坏了吗？",
+      "expected_output": "解释这是预期的参数互斥（新版 argparse 强制，退出码 2），不是故障；dump 和 sass 属于竞争的主操作，应分两次调用。不能建议删掉报错检查或拼接参数。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "互斥"
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "title": "sass 无 device ELF 与 thin archive",
+      "config": {},
+      "prompt": "两个 --sass 报错：对 /bin/ls 输出 \"no device ELF found in input\"；对 libx.a 输出 \"thin archive is not supported\"。文件是坏的吗？怎么处理？",
+      "expected_output": "解释两者均为预期失败而非文件损坏：host-only ELF 不含 device 镜像（可先 dump/list 确认内容）；thin archive 不支持，改用普通归档或先解出成员再反汇编。不归因为损坏，也不静默换输入。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "thin archive"
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "title": "llvm-objdump 缺 Ascend 反汇编后端",
+      "config": {},
+      "prompt": "--sass 对融合产物报 \"llvm-objdump produced no valid instruction lines\"，手工跑 llvm-objdump -d 看到每条指令都显示为占位符 not available（尖括号包裹）。要重装 CANN 吗？文件坏了吗？",
+      "expected_output": "解释当前 PATH 选中的 llvm-objdump 不带 Ascend device 架构反汇编后端（同版本号也可能有差异），输出占位符 not available 被工具判定为失败；换用带该后端的环境（如 CANN 的 bisheng_compiler 工具链）或更新 CANN。不是文件损坏，也不必先重装整套 CANN/驱动。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "not available"
+        },
+        {
+          "type": "contains",
+          "pattern": "llvm-objdump"
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "title": "npu-objdump 主命令与 msobjdump 兼容软链",
+      "config": {},
+      "prompt": "机器上同时有 npu-objdump 和 msobjdump 两个命令。它们是什么关系？用 npu-objdump --sass demo 可以吗？",
+      "expected_output": "说明 npu-objdump 是安装包主命令，msobjdump 是指向它的兼容软链接，参数与行为一致，npu-objdump --sass demo 与 msobjdump --sass demo 等价。不把两者当成不同工具分别解释。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "npu-objdump"
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "title": "旧安装缺少可选能力",
+      "config": {},
+      "prompt": "接口探测状态为 ok，但结果里有 \"optional capability not present in this install: --sass\"。我接下来想反汇编指令，能用吗？",
+      "expected_output": "解释当前安装的 msobjdump 早于 --sass 引入版本，该能力不可用；optional 缺失不算故障，状态仍是 ok，按安装版实际能力回答（dump/list/extract 正常），说明需升级到包含 --sass 的版本后使用，不编造替代参数。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "--sass"
+        },
+        {
+          "type": "contains",
+          "pattern": "升级"
+        }
+      ]
+    }
+  ]
+}

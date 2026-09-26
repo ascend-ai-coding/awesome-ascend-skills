@@ -1,0 +1,143 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "Triton Ascend 算子算法草图设计",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请为 Ascend NPU 上的一个 matmul 算子设计算法草图。算子名称是 matmul_example，任务文件路径为 /workspace/tasks/matmul.py，架构为 A2。请使用 UnifiedSketch DSL 格式输出算法草图，用于指导后续的代码生成。",
+      "expected_output": "回复应以 sketch op_name { ... } 格式输出 UnifiedSketch DSL 描述的算法草图，包含算子类型判断（elementwise/reduce/matmul/attention/复合）、并行化策略、数据切分方式、Tile 大小选择等高层设计。应参考 npu-arch 硬件规格文档，考虑 Ascend NPU 的硬件特性（core 级别并行、内存层次、UB 容量和对齐要求）。草图中应包含 @llm_hint 注解标注优化点和权衡决策。回复应说明该草图仅用于指导后续的 triton-op-coding 代码生成，不包含可执行代码。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "sketch",
+          "description": "回复中提到了 sketch"
+        },
+        {
+          "type": "contains",
+          "pattern": "UnifiedSketch",
+          "description": "回复中提到了 UnifiedSketch"
+        },
+        {
+          "type": "contains",
+          "pattern": "npu-arch",
+          "description": "回复中提到了 npu-arch"
+        },
+        {
+          "type": "contains",
+          "pattern": "@llm_hint",
+          "description": "回复中提到了 @llm_hint"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "设计边界与触发条件",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "triton-op-designer 和 triton-op-coding 的分工是什么？什么情况下应该先用 designer 再使用 coding？什么情况下可以直接使用 coding 而不需要 designer？",
+      "expected_output": "回复应说明 triton-op-designer 仅生成算法草图（UnifiedSketch DSL），不生成可执行代码；而 triton-op-coding 负责将草图或任务描述转换为可执行的 Triton Ascend 代码。当用户需要从任务描述出发设计算法的并行策略和优化方向时，应使用 triton-op-designer 先设计草图，再将草图传给 triton-op-coding 进行实现。如果已经明确知道实现方案，可以直接使用 triton-op-coding 而不需要 designer。设计过程中应加载 references/sketch-design.md 了解 UnifiedSketch DSL 语法规范，并根据算子类型选择最相关的 2 个手写优化案例作为参考。",
+      "files": [],
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "triton-op-coding",
+          "description": "回复中提到了 triton-op-coding"
+        },
+        {
+          "type": "contains",
+          "pattern": "UnifiedSketch",
+          "description": "回复中提到了 UnifiedSketch"
+        },
+        {
+          "type": "contains",
+          "pattern": "sketch-design.md",
+          "description": "回复中提到了 sketch-design.md"
+        },
+        {
+          "type": "contains",
+          "pattern": "手写优化案例",
+          "description": "回复中提到了 手写优化案例"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "经验文件 Layer 1 约束前置自检",
+      "config": {
+        "max_tokens": 110000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "通用设计模板推荐单 kernel 展平，但项目算子类别经验文件 Layer 1 禁止。草图可以先照通用方案写，再让 coding 修正吗？",
+      "expected_output": "回复应在设计前读取类别经验文件，逐条自检 Layer 1，并在草图阶段直接重设计冲突架构；不得把已知冲突下放给 coding。最终 sketch 开头应以 @architecture_decision 注释说明符合 Layer 1 的核心选择和理由。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "GPU 参考仅用于算法结构",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "有一份 CUDA Triton kernel 使用 shared memory 和 num_warps。设计算法草图时能否照搬这些优化？",
+      "expected_output": "回复应只借鉴 GPU 参考的 grid 划分、数据流和并行思想，不能照搬 CUDA shared memory、warp 或其他 GPU 特有优化；草图必须基于 A2 的 core 并行、UB、对齐和 Ascend Triton 能力重新表达。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "按任务选择最相关手写案例",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "为小 bins histogram 设计算法时，是否应把 references/cases 下所有案例都加载进来？",
+      "expected_output": "回复应根据任务类型只选择最相关的两个手写优化案例，例如小 bins 直方图与相关 reduce/scatter 案例，并结合必选的 sketch DSL、硬件规格和类别经验；不应无差别加载所有案例。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "Layout transform 草图专用路径",
+      "config": {
+        "max_tokens": 120000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "请为覆盖常见 permutation 的 layout-transform 设计主路径。可以只写一个线性 index 映射的 generic gather 吗？",
+      "expected_output": "回复应为 2D transpose、batch transpose、相邻维交换、反转维、移动 size-1 维等常见模式设计独立 kernel 或 view 短路，优先合并连续维并明确 tile-based 连续 load/store；generic gather 只能作为罕见 permutation fallback。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "草图输出而非可执行代码",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "designer 的最终交付需要包含完整 Python、@triton.jit kernel 和 ModelNew 吗？",
+      "expected_output": "回复应明确最终只直接输出 sketch op_name { ... } 的 UnifiedSketch DSL 草图，包含架构决策、并行/切分/数据流和必要 @llm_hint；不输出可执行 Python 或 ModelNew，实际代码由 triton-op-coding 生成。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "triton-op-designer"
+}

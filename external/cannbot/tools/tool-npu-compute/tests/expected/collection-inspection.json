@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "real_fixture": {
+    "recognized_files": [
+      "ArithmeticUtilization.csv",
+      "HardwareInfo.jsonl",
+      "L2Cache.csv",
+      "Memory.csv",
+      "MemoryL0.csv",
+      "MemoryUB.csv",
+      "PipeTrace.json",
+      "PipeUtilization.csv",
+      "ResourceConflictRatio.csv",
+      "summary.jsonl"
+    ],
+    "unknown_files": [
+      "fixture-manifest.json"
+    ]
+  },
+  "result_subdirectory_patterns": [
+    "collection-p<process-id>-<sequence>",
+    "collection-p<process-id>-<unique-suffix>"
+  ]
+}

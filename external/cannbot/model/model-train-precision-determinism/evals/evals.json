@@ -1,0 +1,150 @@
+{
+  "skill_name": "model-train-precision-determinism",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "受控重复运行仍不一致",
+      "config": {"max_tokens": 150000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "同一份数据和权重，固定 seed 并开启确定性后独立跑两次，loss 和 gradnorm 仍对不齐，怎么查？",
+      "expected_output": "回复应识别 E08，以两次运行互为天然标杆，先核对完整随机性契约并逐个验证已确认的单一差异；未闭环时用校验值 statistics 找首差异，targeted tensor 仅在构造最小复现需要真实输入时使用。",
+      "files": [],
+      "expectations": [{"type": "skill_activated", "pattern": "model-train-precision-determinism"}]
+    },
+    {
+      "id": 2,
+      "title": "确定性控制后症状消失",
+      "config": {"max_tokens": 120000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "原来两次 loss 不同，补齐固定 seed、数据顺序和确定性开关后两次完全一致，还要继续全量 dump 吗？",
+      "expected_output": "回复应停止深挖并记录症状在确定性控制后消失；可判与随机性/非确定性相关，但没有更多证据时不命名具体根因。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "md5 字段语义",
+      "config": {"max_tokens": 120000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "PyTorch msprobe 的 summary_mode=md5 是在做密码学 MD5 吗？",
+      "expected_output": "回复应说明当前 PyTorch msProbe 记录 CRC-32 校验值和统计量，字段名不代表密码学 MD5，并要求以现场版本为准。",
+      "files": [],
+      "expectations": [{"type": "contains", "pattern": "CRC-32"}]
+    },
+    {
+      "id": 4,
+      "title": "bench_path 版本兼容",
+      "config": {"max_tokens": 120000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "想用 bench_path 只 dump 两次运行中校验值不同的节点，能直接复制网上配置吗？",
+      "expected_output": "回复应先探测现场版本和配置字段，确认预置数据也是兼容版本的 md5 模式；不支持时先 compare 再用 list/scope 定向采集。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 5,
+      "title": "非有限值优先路由",
+      "config": {"max_tokens": 120000, "distractor_skills": ["model-train-precision-nonfinite", "model-train-precision-numerical-mismatch"], "timeout": 900, "eval_mode": "text"},
+      "prompt": "两次训练都不稳定，而且第二次先出现 NaN，我该先做确定性 compare 还是查 NaN？",
+      "expected_output": "回复应按路由优先级先进入 E04 非有限值诊断，不能用不完整的非有限值运行做确定性 compare。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 6,
+      "title": "无需外部标杆",
+      "config": {"max_tokens": 120000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "我没有 CPU golden，但同一固定配置可以独立跑 A/B 两次，能定位非确定性吗？",
+      "expected_output": "回复应说明 E08 以受控 run A/run B 互为天然标杆，不要求外部标杆；先证明输入、权重、Step、环境和随机状态一致，再找两次运行的首差异。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 7,
+      "title": "worker seed 差异可无 dump 闭环",
+      "config": {"max_tokens": 120000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "Preflight 确认只有 worker seed 未按 Rank 正确派生。只修正这一项后，连续多组 A/B 运行都一致。必须再定位到某个 API/Tensor 才能认定根因吗？",
+      "expected_output": "回复应允许依据随机性契约差异、单变量修正和重复运行形成 worker seed 粒度的 verified root cause；不强制 statistics/tensor dump，Module/API/Tensor 记 not-applicable 并说明原因。",
+      "files": [],
+      "expectations": [{"type": "contains", "pattern": "not-applicable"}]
+    },
+    {
+      "id": 8,
+      "title": "A/B dump 完整性门禁",
+      "config": {"max_tokens": 150000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "run A/run B 的 md5 statistics 已定位首差异，随后两侧都采了 targeted tensor；run B 少了 step8/rank5，另一个 rank 的 dump.json 引用了不存在的 tensor 文件。其余结果没看到差异，能判确定性通过吗？",
+      "expected_output": "回复应把 run B 判为 incomplete；建立预期 Step×Rank 矩阵并检查 JSON、采集范围、错误日志及 targeted tensor 引用。A/B 均为 valid 前禁止以 compare 声明一致，也不得认证根因。",
+      "files": [],
+      "expectations": [{"type": "contains", "pattern": "incomplete"}]
+    },
+    {
+      "id": 9,
+      "title": "首问题 API 输入已不一致",
+      "config": {"max_tokens": 150000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "E08 的 md5 statistics compare 找到首个问题 API node_b，但 node_b 的输入已经和 run A 不同；上一个可见且一致的是 node_a，中间有项目自定义融合 API。能把 node_b 定为非确定性根因吗？下一步怎么查？",
+      "expected_output": "回复应拒绝把 node_b 定为根因，把 node_a→node_b 标为可能漏采或无法对齐的可疑区间。先核对 Step/Rank/方向/调用实例和采集范围，检查遗漏算子及 custom API；按现场签名注册 custom API，A/B 使用相同集合。必要时经批准升到 mix 或 targeted tensor，不直接修改模型逻辑；补采后仍输入先偏则结合 Preflight 继续追通信或更早上游。",
+      "files": [],
+      "expectations": [
+        {"type": "contains", "pattern": "node_a"},
+        {"type": "contains", "pattern": "register_custom_api"}
+      ]
+    },
+    {
+      "id": 10,
+      "title": "仅单 Rank 确定性差异",
+      "config": {"max_tokens": 120000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "两次 16 卡运行只有 rank7 的 CRC-32 从第 12 步不同，其他 rank 都一致。可以直接说某个算子全局非确定吗？",
+      "expected_output": "回复应保留 rank-local 证据而不推广为全局根因，核对 rank7 的样本/数据分片、Rank Seed、worker/进程角色、通信参与者与配对、pipeline stage 和拓扑映射；若首差异在 collective 输出，还要检查所有参与 Rank 的输入和调用序号。",
+      "files": [],
+      "expectations": [{"type": "contains", "pattern": "rank-local"}]
+    },
+    {
+      "id": 11,
+      "title": "完整 A/B dump 但差异未复现",
+      "config": {"max_tokens": 150000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "run A/run B 的 md5 statistics 文件都完整，但插桩后的两次运行按原口径已经一致。还能 compare 并据此分析原 E08 吗？",
+      "expected_output": "回复应分别记录 A/B dump_integrity=valid，并对 A/B 比较对记录 symptom_reproduction=not-reproduced；阻断 compare，不能把完整文件等同于原差异复现。产物只作观察者效应/反证；回退 instrumentation 后复核 R0，再经批准尝试更轻量采集。",
+      "files": [],
+      "expectations": [
+        {"type": "contains", "pattern": "not-reproduced"},
+        {"type": "not_contains", "pattern": "还能 compare"}
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Step 1 发现确定性设置被重复覆盖",
+      "config": {"max_tokens": 150000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "启动时已经 seed_all 并开启 deterministic algorithms，但业务回调在首个 forward 前再次调用 seed_all，参数默认值可能关闭确定性。现在应该直接做 msProbe md5 dump 吗？",
+      "expected_output": "回复应先停在 E08 Step 1，不直接 dump。确认实际加载模块，使用 inspect.signature/inspect.getsourcefile 核对现场 seed_all 的签名和源码；枚举业务/框架/配置重载中的 Seed 与确定性 setter，在初始化后、首次 forward/backward 前和首 Step 后记录当时实际生效且可验证的随机性与确定性状态，包括 torch.are_deterministic_algorithms_enabled 及现场可观测的 NPU/HCCL 状态。若首差异前被覆盖，先单变量修正、撤销回退并做多组 A/B；一次删除多个 setter 只能说明相关性。",
+      "files": [],
+      "expectations": [
+        {"type": "contains", "pattern": "inspect.signature"},
+        {"type": "contains", "pattern": "are_deterministic_algorithms_enabled"},
+        {"type": "not_contains", "pattern": "直接做 msProbe"}
+      ]
+    },
+    {
+      "id": 13,
+      "title": "E08 聚焦首不等边界与 CPU 同步效应",
+      "config": {"max_tokens": 150000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "两次运行在 API A 的 CRC-32 首次不同，API B 之后误差快速放大；把 B 放到 CPU 后两次一致。能否因为误差在 B 放大且 CPU 对照一致，就把 B 定为 NPU 非确定算子？",
+      "expected_output": "回复应把 A 记为首个可观测不相等边界，而不是直接称为起源；只有输入/参数/状态/调用和通信参与者对齐而输出首次不同时，A 才是非确定行为引入候选。B 之后的差异扩大属于传播或业务影响，不是 E08 的另一条起源定位轴线，也不能把定位目标从 A 移到 B。CRC-32 只判等，不表示误差幅度；若边界不足以界定更早位置，应核对采集范围、调用实例和对齐关系，必要时补充 targeted tensor。CPU 对照用于判断设备执行路径相关性，但不属于 Scope Reduction；保持输入/权重/dtype/shape/非 Tensor 参数，记录搬运/cast/同步。若原始 NPU 基线 R0 不一致、仅替换 B 到 CPU 的 R1 一致、恢复 NPU 的 R0′ 再次不一致，只能收敛到 NPU 特有路径或同步影响；CPU 会改变算法和同步，仍需围绕首次不相等边界在 NPU 上完成相同输入重复计算及修复/回退验证。",
+      "files": [],
+      "expectations": [
+        {"type": "contains", "pattern": "可观测不相等边界"},
+        {"type": "contains", "pattern": "CRC-32"},
+        {"type": "contains", "pattern": "R0′"}
+      ]
+    },
+    {
+      "id": 14,
+      "title": "全量 Dump 观察者效应与单算子不复现后的竞争检查",
+      "config": {"max_tokens": 150000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "E08 原始整网 A/B 稳定不一致，开启全量 Mix Dump 后却完全一致；改用更轻的 L1 采集仍复现并把候选锁到 API X，但固定相同 dump 输入的单算子脚本循环数百次都一致。可以排除 X 吗？怎样区分算子内竞争和算子间多流竞争？",
+      "expected_output": "回复应把全量 Dump 下症状消失记为观察者效应，不用该产物否定原问题；单算子负结果只说明孤立常规上下文未复现，不能排除 X。算子内检查要把调用 X 的 Kernel 直调程序、aclnn run.sh 或现场支持的 PyTorch 单算子脚本作为 mssanitizer 的 application：先核对版本、适用场景、实际 Kernel/算子包和 sanitizer 编译支持，建议先用 --tool=memcheck 排除先发内存异常，再用 --tool=racecheck 拉起 application；synccheck 只用于未配对 SetFlag/WaitFlag 假设。算子间检查则依据整网最后一致到首个不相等边界的实际子图构造普通 NPU 最小并发 application，保留相邻依赖、流/事件、异步拷贝、buffer alias/复用和 launch 顺序，并以只改变一个 stream 或同步因素的同构串行组作对照。工具报告或并发相关性均不能直接认证根因，须完成修复、撤销回退和整网 R0/R0′ 多组 A/B；不可用、仍不复现或未闭环时返回 Scope Reducer。",
+      "files": [],
+      "expectations": [
+        {"type": "contains", "pattern": "--tool=racecheck"},
+        {"type": "contains", "pattern": "最小并发图"},
+        {"type": "contains", "pattern": "R0′"}
+      ]
+    }
+  ]
+}

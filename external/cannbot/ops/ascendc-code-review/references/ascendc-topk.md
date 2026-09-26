@@ -1,20 +1,34 @@
 # Ascend C TOPK 问题清单
 
-> **适用场景**：算子开发代码检视高频问题
->
+<适用>
+语言: C++
+侧别: All, Host, Kernel
+领域: true
+触发: 必须触发
+默认启用: true
+
+适用场景: Ascend C 算子开发中实际高频出现的编码问题，来源于生产环境经验总结
+介绍: Ascend C TOPK 高频问题清单，14 条条款覆盖算子开发中最常触发的错误模式
+类别(All): 野指针(局部变量指针生命周期)、特殊值(nan/inf/+0/-0边界处理)、整数vs浮点(可整数计算时禁止转浮点)、宏定义命名冲突
+类别(Host): 返回值校验(函数返回值必须检查)、Dtype/Shape获取(GetInputDesc+context)、属性获取(context获取禁止CompileInfo传递)、属性类型一致性(与ir原型一致)、外部输入校验(融合规则/InferShape/Tiling)、dlopen管理(thread_local禁用)
+类别(Kernel): atomic累加(src(ub)与dst(gm)双清零)、通信算子融合(核间同步)
 > **说明**：TOPK 问题是检视实践中发现的高频风险点，需重点关注。条款标注适用范围：`[适用: All]` / `[适用: Host]` / `[适用: Kernel]`
+</适用>
+
+<检视负载>
+通用检视子 agent 检视条款容量上限: 3
+</检视负载>
 
 ## 快速索引
 
-### 两者都适用 `[适用: All]`（5 条）
+### 两者都适用 `[适用: All]`（4 条）
 
 | 序号 | 问题类型 | 类别 | 严重级别 |
 |-----|---------|------|---------|
 | 3 | 生命周期内使用局部变量指针，避免野指针 | 内存安全 | 高 |
 | 6 | 必须考虑nan/inf/+0/-0等特殊值和边界值处理 | 数值安全 | 高 |
-| 8 | gm内存偏移或大小必须用int64表示 | 内存安全 | 高 |
-| 10 | 可整数计算时不允许转浮点数计算 | 数值安全 | 中 |
-| 12 | 宏定义中临时变量命名不能和外部变量冲突 | 编码规范 | 中 |
+| 9 | 可整数计算时不允许转浮点数计算 | 数值安全 | 中 |
+| 11 | 宏定义中临时变量命名不能和外部变量冲突 | 编码规范 | 中 |
 
 ### 仅 Host 侧适用 `[适用: Host]`（7 条）
 
@@ -25,14 +39,16 @@
 | 4 | 属性从context获取，禁止CompileInfo传递 | API使用 | 高 |
 | 5 | 属性获取类型需与ir原型一致 | 类型安全 | 高 |
 | 7 | 融合规则/InferShape/Tiling外部输入校验 | 输入验证 | 高 |
-| 13 | dlopen管理的so禁用thread_local | 并发安全 | 高 |
+| 12 | dlopen管理的so禁用thread_local | 并发安全 | 高 |
+| 13 | 在使用SyncAll的场景，需要使用SetScheduleMode设置BATCH_MODE_SCHEDULE | 并发安全 | 高 |
 
-### 仅 Kernel 侧适用 `[适用: Kernel]`（2 条）
+### 仅 Kernel 侧适用 `[适用: Kernel]`（3 条）
 
 | 序号 | 问题类型 | 类别 | 严重级别 |
 |-----|---------|------|---------|
-| 9 | atomic累加需src(ub)与dst(gm)清零处理 | 内存安全 | 高 |
-| 11 | 通信算子融合需核间同步 | 并发安全 | 高 |
+| 8 | atomic累加需src(ub)与dst(gm)清零处理 | 内存安全 | 高 |
+| 10 | 通信算子融合需核间同步 | 并发安全 | 高 |
+| 14 | 在支持superKernel场景，调用全核同步API（SyncAll、CrossCoreWaitFlag）时禁止做BlockDim的限制 | 并发安全 | 高 |
 
 ---
 
@@ -40,7 +56,7 @@
 
 ### 1. 必须校验函数返回值 `[适用: Host]`
 
-> **交叉引用**：涉及指针返回值的判空检视策略，参见 SEC-3.5。
+> **交叉引用**：涉及指针返回值的判空检视策略，参见 ascendc-red-line.md 条例6。
 
 **问题说明**
 
@@ -94,7 +110,7 @@ ge::DataType dtype = tensor->GetDataType();  // 不推荐
 
 ### 3. 生命周期内使用局部变量指针，避免野指针 `[适用: All]`
 
-> **交叉引用**：未初始化导致的野指针检视策略，参见 SEC-3.1；指针判空策略参见 SEC-3.5。
+> **交叉引用**：未初始化导致的野指针检视策略，参见 ascendc-red-line.md 条例5；指针判空策略参见 ascendc-red-line.md 条例6。
 
 **问题说明**
 
@@ -202,7 +218,7 @@ auto* attrActivateLeft = attrs->GetAttrPointer<int>(INDEX_ATTR_ACTIVATE_LEFT);  
 
 ### 6. 必须考虑nan/inf/+0/-0等特殊值和边界值处理 `[适用: All]`
 
-> **交叉引用**：除零检视策略参见 SEC-2.3。
+> **交叉引用**：除零检视策略参见 ascendc-red-line.md 条例1。
 
 **问题说明**
 
@@ -221,7 +237,7 @@ auto* attrActivateLeft = attrs->GetAttrPointer<int>(INDEX_ATTR_ACTIVATE_LEFT);  
 
 ### 7. 融合规则/InferShape/Tiling外部输入校验 `[适用: Host]`
 
-> **交叉引用**：除零检视策略参见 SEC-2.3；外部输入合法性校验策略参见 SEC-4.1。
+> **交叉引用**：除零检视策略参见 ascendc-red-line.md 条例1；外部输入合法性校验策略参见 cpp-secure.md SEC-3.1。
 
 **问题说明**
 
@@ -236,62 +252,7 @@ auto* attrActivateLeft = attrs->GetAttrPointer<int>(INDEX_ATTR_ACTIVATE_LEFT);  
 
 ---
 
-### 8. gm内存偏移或大小必须用int64表示 `[适用: All]`
-
-> **交叉引用**：整数溢出检视策略参见 SEC-2.1。
-
-**问题说明**
-
-涉及 GM（Global Memory）内存偏移或者大小必须用 `int64_t` 表示。GM 地址空间可能很大，使用 `int32_t` 可能导致溢出。
-
-> **Kernel 侧说明**：Kernel 中使用 `GM_ADDR` 和 `GlobalTensor`，偏移量计算需用 `int64_t` 防止大地址溢出。
-
-**典型溢出场景**
-
-多维张量的 GM 偏移量在大模型场景下极易超过 `uint32_t` 上限（~4GB）：
-
-- batch=32, heads=32, seqLen=8192, headDim=128, FP16 → 32×32×8192×128×2 = **54GB**
-
-**隐蔽错误**
-
-即使最终变量声明为 `int64_t`，若右侧乘法的操作数全为 `uint32_t`，乘法先以 `uint32_t` 计算并溢出，再转换为 `int64_t` 也于事无补。
-
-**错误示例**
-
-```cpp
-// ❌ 错误：int32_t 可能溢出
-int32_t totalLength = shape[0] * shape[1];  // 大 shape 可能溢出
-
-// ❌ 隐蔽错误：赋给 int64_t，但右侧先以 uint32_t 溢出
-int64_t offset = batchIdx * numHeads * seqLen * headDim;
-//               ↑ 四个 uint32_t 相乘，先 overflow 再赋值，结果仍错
-```
-
-**正确示例**
-
-```cpp
-// ✅ Host侧 Tiling：使用 int64_t
-int64_t totalLength = shape[0] * shape[1] * shape[2];
-
-// ✅ Kernel侧：类成员变量使用 int64_t
-int64_t blockLength_ = 0;
-inputGMX.SetGlobalBuffer((__gm__ T*)x + blockLength_ * AscendC::GetBlockIdx(), blockLength_);
-
-// ✅ 多维偏移：强转第一个操作数，后续自动提升
-int64_t offset = (int64_t)batchIdx * numHeads * seqLen * headDim;
-
-// ✅ 等效：声明变量时直接用 int64_t
-int64_t batchOffset = (int64_t)batchIdx * numHeads;
-int64_t offset = batchOffset * seqLen * headDim;
-```
-
-**检视规则**
-
-表达式中有 2 个及以上维度相乘时，检查第一个操作数是否已显式转换为 `int64_t`。
-
----
-
-### 9. atomic累加需src(ub)与dst(gm)清零处理 `[适用: Kernel]`
+### 8. atomic累加需src(ub)与dst(gm)清零处理 `[适用: Kernel]`
 
 **问题说明**
 
@@ -310,7 +271,7 @@ AscendC::AtomicAdd(dstGM[0], srcLocal, srcLength);
 
 ---
 
-### 10. 可整数计算时不允许转浮点数计算 `[适用: All]`
+### 9. 可整数计算时不允许转浮点数计算 `[适用: All]`
 
 **问题说明**
 
@@ -333,7 +294,7 @@ float totalElements = (float)batchSize * (float)seqLen * (float)headNum;  // 不
 
 ---
 
-### 11. 通信算子融合需核间同步 `[适用: Kernel]`
+### 10. 通信算子融合需核间同步 `[适用: Kernel]`
 
 **问题说明**
 
@@ -348,7 +309,7 @@ AscendC::SyncAll();  // 核间全同步
 
 ---
 
-### 12. 宏定义中临时变量命名不能和外部变量冲突 `[适用: All]`
+### 11. 宏定义中临时变量命名不能和外部变量冲突 `[适用: All]`
 
 **问题说明**
 
@@ -374,7 +335,7 @@ AscendC::SyncAll();  // 核间全同步
 
 ---
 
-### 13. dlopen管理的so禁用thread_local `[适用: Host]`
+### 12. dlopen管理的so禁用thread_local `[适用: Host]`
 
 **问题说明**
 
@@ -387,3 +348,61 @@ AscendC::SyncAll();  // 核间全同步
 **正确做法**
 
 避免在会被 `dlopen/dlclose` 管理的动态库中使用 `thread_local` 变量。
+
+### 13 在使用SyncAll的场景，需要使用SetScheduleMode设置BATCH_MODE_SCHEDULE `[适用: Host]`
+
+> **Kernel 侧说明**：Kernel 中 `GlobalTensor` 和 `LocalTensor` 通过 API 获取，一般不需要判空，但 GM 地址偏移需校验。
+
+**【描述】**
+多流场景，如果kernel侧使用了SyncAll，但是tiling侧没有使用SetScheduleMode设置BATCH_MODE_SCHEDULE，会导致卡死问题。
+
+**错误示例**
+```cpp
+// ❌ 错误：kernel侧使用了SyncAll，但是tiling侧未使用SetScheduleMode设置BATCH_MODE_SCHEDULE
+
+// kernel1侧代码如下：
+AscendC::SyncAll<false>();
+
+// tiling侧代码如下：
+constexpr uint32_t BATCH_MODE_DEFAULT = 0;
+context_->SetScheduleMode(BATCH_MODE_DEFAULT);
+```
+
+**正确示例**
+
+```cpp
+// ✅ kernel侧使用了SyncAll，且tiling侧使用了SetScheduleMode设置BATCH_MODE_SCHEDULE
+
+// kernel1侧代码如下：
+AscendC::SyncAll<false>();
+
+// tiling侧代码如下：
+constexpr uint32_t BATCH_MODE_SCHEDULE = 1;
+context_->SetScheduleMode(BATCH_MODE_SCHEDULE);
+```
+
+### 14 在支持superKernel场景，调用全核同步API（SyncAll、CrossCoreWaitFlag）时禁止做BlockDim的限制 `[适用: Kernel]`
+
+> **Kernel 侧说明**：Kernel 中 `GlobalTensor` 和 `LocalTensor` 通过 API 获取，一般不需要判空，但 GM 地址偏移需校验。
+
+**【描述】**
+在superKernel场景开启的核数大于实际使用的核数时，如果算子只在部分核调用SyncAll，会导致部分核未set_flag,而全部核都在wait_flag,导致卡死。
+
+**错误示例**
+```cpp
+// ❌ 错误：调用全核同步API（SyncAll）时做了BlockDim的限制
+if (AscendC::GetBlockIdx() < AscendC::GetBlockNum()) {
+    AscendC::SyncAll<false>();
+    DataCopy(dstLocal[AscendC::GetBlockIdx() * countPerCore], srcGm[AscendC::GetBlockIdx() * countPerCore]);
+}
+```
+
+**正确示例**
+
+```cpp
+// ✅ 调用全核同步API（SyncAll）时不做BlockDim的限制
+AscendC::SyncAll<false>();
+if (AscendC::GetBlockIdx() < AscendC::GetBlockNum()) {
+    DataCopy(dstLocal[AscendC::GetBlockIdx() * countPerCore], srcGm[AscendC::GetBlockIdx() * countPerCore]);
+}
+```
