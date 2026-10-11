@@ -1,24 +1,21 @@
 # API 文档索引
 
-基于 `asc-devkit/docs/api/` 的完整 API 文档索引。
+基于 `$ASC_DEVKIT_DIR/docs/zh/api/` 的完整 API 文档索引。
 
 ---
 
 ## 文档位置
 
 ```
-asc-devkit/docs/api/
-├── context/           # 基础数据结构（LocalTensor、GlobalTensor 等）
-├── basic_api/         # 基础 API（表2-13）
-├── adv_api/           # 高阶 API（表14-15）
-├── utils/             # 公共辅助函数
-├── aicpu_api/         # AI CPU API
-└── c_api/             # C API
+$ASC_DEVKIT_DIR/docs/zh/api/  — Ascend C API 文档根目录
 ```
+
+> 子目录结构随 CANN 版本演进有变化（如 `context/` 扁平结构 → `SIMD-API/SIMT-API` 层级结构 → 目录与文件名英文化：`基础API/`→`basic_api/`、`高阶API/`→`adv_api/`、`Ascend-C-API列表.md`→`docs/zh/api/api_list.md`）。
+> **不要假设具体的子目录名**，统一用 `find "$ASC_DEVKIT_DIR/docs/zh/api/" -name "{APIName}*.md"` 搜索。
 
 ---
 
-## 一、基础数据结构（context/）
+## 一、基础数据结构
 
 | API | 说明 |
 |-----|------|
@@ -30,7 +27,7 @@ asc-devkit/docs/api/
 
 ---
 
-## 二、基础 API（basic_api/）
+## 二、基础 API
 
 ### 表2：标量计算 API
 | API | 说明 |
@@ -104,55 +101,92 @@ asc-devkit/docs/api/
 
 ---
 
-## 三、高阶 API（adv_api/）
+## 三、高阶 API
 
-### 表14：数学计算 API
-| 类别 | API |
-|-----|-----|
-| 三角函数 | `Acos`、`Acosh`、`Asin`、`Asinh`、`Atan`、`Atanh`、`Cos`、`Cosh`、`Sin`、`Sinh`、`Tan`、`Tanh` |
-| 双曲函数 | `Sinh`、`Cosh`、`Tanh` |
-| 位运算 | `BitwiseAnd`、`BitwiseNot`、`BitwiseOr`、`BitwiseXor` |
-| 类型转换 | `Cast` |
-| 复合运算 | `Addcdiv`、`Addsub` 等 |
+> 实际目录 `docs/zh/api/SIMD-API/adv_api/` 子目录索引见下表。HCCL 通信类详见[第七章](#七hccl-通信-api)。
 
-### 表15：量化操作 API
-| API | 说明 |
-|-----|------|
-| 量化相关操作 | 量化/反量化操作 |
-
----
-
-## 四、Utils API（utils/）
-
-公共辅助函数，提供通用工具支持。
-
----
-
-## 五、AI CPU API（aicpu_api/）
-
-AI CPU 处理器相关 API。
+| 子目录 | 类别 | 典型 API |
+|--------|------|---------|
+| `math_compute/` | 三角/双曲/位运算/类型转换 | `Acos`、`Acosh`、`Cos`、`Cast`、`BitwiseAnd`、`BitwiseOr`、`Addcdiv`、`Addsub` |
+| `quantization/` | 量化/反量化 | 量化相关操作 |
+| `reduction_operations/` | 归约 | `ReduceMax`、`ReduceSum` |
+| `sort_operations/` | 排序 | `Sort`、`TopK` |
+| `tensor_transform/` | 张量重排 | `Broadcast`、`Transpose` |
+| `normalization/` | 归一化 | `LayerNorm` 相关 |
+| `activation_functions/` | 激活 | `Relu`、`Sigmoid`、`Gelu` |
+| `cube_compute/` | 矩阵 | `Mmad` 相关 |
+| `convolution_compute/` | 卷积 | 卷积相关 |
+| `index_compute/` | 索引 | 索引相关 |
+| `data_filter/` | 过滤 | 数据过滤相关 |
+| `random_functions/` | 随机 | 随机数生成 |
+| `data_structures/` | 高阶 API 数据结构 | `TensorShape`、`TensorDataType` |
+| `experimental/` | 实验性接口 | `BesselI0`、`Ndtri` 等 |
+| `HCCL_communication/` | 集合通信 | 详见[第七章](#七hccl-通信-api) |
 
 ---
 
-## 六、C API（c_api/）
+## 四、Utils API
+
+> 实际目录 `docs/zh/api/Utils-API/`，含调测接口（printf、asc_dump）等。用 `find "$ASC_DEVKIT_DIR/docs/zh/api/Utils-API/" -name "*.md"` 查阅。
+
+---
+
+## 五、AI CPU API
+
+> 实际目录 `docs/zh/api/AI-CPU-API/`。用 `find "$ASC_DEVKIT_DIR/docs/zh/api/AI-CPU-API/" -name "*.md"` 查阅。
+
+---
+
+## 六、C API
 
 | 类别 | 说明 |
 |-----|------|
 | `atomic/` | 原子操作 C API |
 | `cache_ctrl/` | 缓存控制 C API |
 | `cube_compute/` | Cube 计算 C API |
+| `cube_datamove/` | Cube 数据搬运 C API |
 | `vector_compute/` | 矢量计算 C API |
+| `vector_datamove/` | 矢量数据搬运 C API |
+| `reg_compute/` | 寄存器矢量计算 C API |
+| `scalar_compute/` | 标量计算 C API |
+| `sync/` | 同步控制 C API |
+| `utils/` | 工具函数 C API（sys_init/sys_misc/sys_var） |
+| `defs/` | 常量/枚举/类型定义 |
+| `spr/` | 特殊寄存器访问 |
+
+---
+
+## 七、HCCL 通信 API
+
+HCCL（集合通信）API 文档位于 `docs/zh/api/SIMD-API/adv_api/HCCL_communication/`（另有总览 `HCCL_communication.md`），子目录如下：
+
+| 子目录 | 内容 | 典型 API |
+|--------|------|---------|
+| `HCCL_Kernel/` | Kernel 侧通信原语 | `Hccl::InitV2`、`Hccl::AlltoAllV`、`Hccl::Wait`、`Hccl::Finalize` |
+| `HCCL_Tiling/` | Host 侧 Tiling 配置 | `Mc2CcTilingConfig`、`SetCcTilingV2` |
+| `HCCL-Context/` | 通信上下文 | `GetHcclContext`、`SetHcclContext` |
+
+**建议先读使用说明**，获取完整调用流程和代码示例，再按需查阅单个 API 文档：
+- `HCCL_Kernel/HCCL_usage.md` — Kernel 侧标准调用流程（InitV2 → SetCcTilingV2 → Prepare → Commit → Wait → Finalize），含完整 Kernel 代码示例
+- `HCCL_Tiling/HCCL_Tiling_usage.md` — Tiling 侧配置流程（创建 Mc2CcTilingConfig → Set 系列配置 → GetTiling），含代码示例
+- `HCCL-Context/HCCL_Context_intro.md` — 通信上下文 GetHcclContext/SetHcclContext 说明
+
+查找命令：
+```bash
+find "$ASC_DEVKIT_DIR/docs/zh/api/SIMD-API/adv_api/HCCL_communication/" -name "*.md"
+```
+
+HCCL 头文件另见 `$ASC_DEVKIT_DIR/include/adv_api/hccl/`（`hccl.h`、`hccl_common.h`、`hccl_tiling.h`、`hccl_tilingdata.h`）。
 
 ---
 
 ## 使用建议
 
-1. **API 文档查找优先级**：
+1. **API 文档查找**：
+   ```bash
+   find "$ASC_DEVKIT_DIR/docs/zh/api/" -name "${APIName}*.md"
    ```
-   asc-devkit/docs/api/context/  →  基础数据结构
-   asc-devkit/docs/api/basic_api/ →  基础 API
-   asc-devkit/docs/api/adv_api/   →  高阶 API
-   ```
+   （不依赖具体子目录结构）
 
 2. **查阅 API 文档时注意**：
    - **Restriction 章节**：查看使用限制和对齐要求

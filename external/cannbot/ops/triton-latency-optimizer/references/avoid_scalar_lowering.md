@@ -35,6 +35,12 @@
 ```
 总结：只有 i32 的等于/不等于 和 所有浮点比较 能走向量加速；其余整数比较都会降级。
 
+**补充（int64 下标比较，不改变上表）**
+
+- **命中**：GPU FLA 常把 `program_id().to(tl.int64)` 乘进 `o_t = i_t * BT + tl.arange(...)`，再做 `o_t < seqlen` 或 `o[:,None] > o[None,:]` 当 mask。这是 i64 向量比较，按上表会降级。点 6 对此加一次命中。
+- **处方**：只把比较链源头改 int32（`i_t = i_pid.to(tl.int32)`）。不要改 `bos`/`eos`/`i_tg` 等指针基址。不要把真随机 `tl.load(indices)` 当成这一条（那是点 4）。
+- **与原规则**：本条做完后，i32 LT/GT 是否再按上表 / checklist 处理，仍走原规则，不因本条关闭。
+
 ---
 
 ---
@@ -87,6 +93,8 @@ Reg-based 架构（如 Ascend310B / Ascend950）：
 2. 避免使用扩展乘法相关算子；
 3. reduce算子的输入尽可能32B对齐；
 4. 避免使用取余算子，建议将`a % b` 替换成i32类型的 `a - (a // b) * b`；
+
+5. 若 mask 来自 int64 的 `arange`/chunk 下标：只把该比较链改 int32，不要改指针基址（见比较操作节「补充」）。
 
 ### cumsum和cumprod的累积维度降级优化方法
 
@@ -181,3 +189,45 @@ for n_start in range(0, N, BLOCK_N):
 6. **UB 溢出时不要盲目缩小 BLOCK_N**
    - 如果编译报 `ub overflow`，优先检查是否构造了过大的中间索引张量（如 `col_major_idx`、额外的 `valid_mask` 等），通过寄存器内 reshape 消除这些张量来释放 UB。
    - 盲目把 `BLOCK_N` 从 2048 缩小到 512 会导致循环次数翻 4 倍，loop overhead 完全抵消 cumsum 向量加速的收益，甚至严重劣化。
+
+
+
+---
+
+## 来自 SKILL.md 的原始描述（优化点 6：避免向量API标量降级）
+
+**适用条件**：代码中存在可能被编译器降级为标量循环的向量操作，包括通用算术操作、比较操作、扩展乘法、累积操作（cumsum/cumprod）或归约操作（reduce）
+
+**典型代码特征**：
+```python
+# 特征 1：通用算术操作使用 i64，或者满足降级条件
+z = x + y  # x/y 为 i64
+z = x % y  # x/y 为 i32且执行取余计算
+
+# 特征 2：整数比较操作（非 i32 EQ/NE，或非浮点比较）
+mask = x < y  # i8/i16/i32/i64 的 LT/GT/LE/GE 比较
+# 补充：int64 的 o_t = i_t * BT + arange，再 o_t < seqlen / 下三角比较当 mask
+#       → 先把 i_t/o_t 改 int32；不要改 bos 等地址。i32 LT 是否再处理仍按原表。
+
+# 特征 3：扩展乘法
+z = x * y  # 触发 vmulext，始终降级
+
+# 特征 4：cumsum/cumprod 在最后一个维度上操作
+x_cumsum = tl.cumsum(x_1d, axis=0)  # 一维张量，或 cumDim 是 lastDim
+
+# 特征 5：reduce 操作在特定条件下
+# i64 类型的 sum/prod/max/min
+# 整数类型的 argmax/argmin
+# 浮点类型 argmax/argmin 且 flatten 后维度 > 2
+```
+
+**判断逻辑**：
+- 检查通用算术操作（add/sub/mul/min/max/abs/shl/shr/interleave/deinterleave）：如果数据类型为 i64
+- 检查比较操作：如果数据类型为 i8/i16/i64（所有比较），或 i32 的 LT/GT/LE/GE → 涉及
+- 补充：int64 的 `arange`/chunk 下标参与向量比较且结果作 mask → 涉及；处方只改比较链为 int32，不改指针基址。**不关闭**上一条对 i32 LT/GT 的命中。
+- 检查取余操作：如果数据类型是任何int类型 → 涉及
+- 检查扩展乘法（vmulext）：任何扩展乘法 → 涉及
+- 检查 cumsum/cumprod：如果累积维度是输入张量的最后一个维度（一维时 axis=0 即最后维度），或数据类型为 i64 → 涉及
+- 检查 reduce 操作：如果是 i64 类型的 sum/prod/max/min；整数类型的 argmax/argmin；浮点类型 argmax/argmin 且 flatten 后维度 > 2 → 涉及
+
+---

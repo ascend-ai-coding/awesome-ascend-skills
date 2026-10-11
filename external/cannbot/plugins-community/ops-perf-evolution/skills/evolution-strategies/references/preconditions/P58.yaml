@@ -1,0 +1,30 @@
+strategy_id: P58
+description: TND 负载均衡分核适用性检查 — 算子处理变长序列且按 BS 切分，当前未做线段抽象负载均衡
+checks:
+  - id: has_variable_length
+    type: grep_count
+    pattern: "actualKVS|seqLen|sequence|variable.*len|dynamic.*len|actualLen"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子非变长序列 → P58 不适用。负载均衡针对变长场景"
+
+  - id: has_tiling_partition
+    type: grep_count
+    pattern: "batchSize|coreNum|blockIdx|SplitCore|GetBlockNum|partition"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子无分核逻辑 → P58 收益低。需有 tiling/partition 结构"
+
+  - id: no_load_balance_yet
+    type: grep_count
+    pattern: "loadBalance|avgS2Length|segment|线段|totalS2Length|recordSplitInfo"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已有负载均衡分核 → P58 已应用"
+
+  - id: not_pure_validation
+    type: grep_count
+    pattern: "OP_CHECK|shape.*check|dim.*check|validation"
+    files: [kernel, header]
+    expected: "<= 3"
+    fail_msg: "纯 Host 侧 shape 校验 → P58 解决的是 tiling 阶段负载均衡"

@@ -1,0 +1,17 @@
+# example-routes.yaml — 范式 → 参考实现路由表
+#
+# 根据 op.paradigms 路由到对应的参考实现示例代码。
+# 路径相对于 ascendc-regbase-best-practice skill 根目录。
+#
+# 匹配规则：
+#   op.paradigms 列表逐项匹配，结果自动去重。
+#
+# 兜底机制：当 op.paradigms 在本表中没有任何匹配时，返回空，
+# 不强制注入通用示例。
+
+routes:
+  paradigms:
+    Broadcast:
+      - references/paradigms/broadcast/example/xdivy_custom_package
+    Reduction:
+      - references/paradigms/reduction/example/euclidean_norm_package

@@ -1,0 +1,17 @@
+strategy_id: P21
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "Matmul|matmul|Cube|MLA|nope|rope"
+    min_count: 1
+    fail_msg: "未检测到 Matmul/Cube 密集型算子 → 不适用 P21。检查 P20 或 P22。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "BUFFER_NUM|InitBuffer|TQue|AllocTensor|FreeTensor"
+    min_count: 1
+    fail_msg: "未检测到 Buffer/队列管理 → 无 2x2 buffer 优化空间，不适用 P21。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "切M|切K|M方向|K方向|双维度"
+    min_count: 0
+    fail_msg: "已存在 M/K 双维度流水优化 → 可能冗余，优先验证现有策略效果。"

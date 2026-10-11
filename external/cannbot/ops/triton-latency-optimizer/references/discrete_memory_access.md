@@ -2,7 +2,7 @@
 
 ## 概述
 
-在 Triton NPU kernel 中，当线程通过非连续或不可预测的索引向量访问全局内存时，会导致访存效率低下，显著降低带宽利用率。先将整块数据读取到UB（Unified Buffer），再取非连续或不可预测的索引可以显著提升计算效率。
+在 Triton NPU kernel 中，当线程通过非连续或不可预测的索引向量访问全局内存时，会导致访存效率低下，显著降低带宽利用率。先将整块数据读取到share memory，再取非连续或不可预测的索引可以显著提升计算效率。
 
 ## 触发条件
 
@@ -87,6 +87,28 @@ val = tl.load(src_ptr + index, mask=mask)  # 直接从global中离散访问取�
 	)
 ```
 
+### 随机读的三条路径与选型（含 gather→dot 缺陷说明）
+
+当随机读结果**用于 `tl.dot`**（典型：稀疏注意力的 K/V gather、MLA-absorb）时，除 `gather_out_to_ub`
+外还有两条路径。选型判据：
+
+| 路径 | 结构 | 适用条件 | 实测边界（SparseFlashAttention, Ascend910B3） |
+|---|---|---|---|
+| ① `gather_out_to_ub` | 单 kernel，gather 到 UB 直接参与计算 | 采集结果可放 UB 且不需要 `tl.dot`（或后端 lowering 支持） | 硬件接口能力见上文；本文不展开 |
+| ② **内核内 gather 连续化暂存** | 单 kernel：`unmasked gather → store 到 per-core scratch（L2 驻留）→ barrier → 全仿射 load + dot` | 单 pass；per-core working set（`核数 × K × (D+DR) × 2B`）可驻留 L2 | SFA 主路径：随机访存 vs CANN 0.070→0.4110（5.9×）；本例 scratch 11.5MB/核 |
+| ③ Device-side gather（独立 kernel + 全局 workspace） | 两 kernel：gather→GM workspace→仿射消费 | per-core working set 放不进 L2，或 gather 跨多 pass 重复（workspace 可复用） | SFA 实测**劣化 27%~49%**（workspace HBM 往返 + 无阶段重叠），详见 `device-side-gather.md`「反例与适用边界」 |
+
+⚠️ **为什么 ② 需要 `store→load` 绕行（编译器 lowering 缺陷记录）**：
+- **unmasked 2D gather 直喂 `tl.dot`**：产出错值（±512 级垃圾值）；极简形态还会编译失败
+  （`Unknown core type: llvm.func @malloc`）；
+- **masked gather 直喂 `tl.dot`**：数值正确，但有**每迭代 ~12µs 固定开销**（与 BN 无关），
+  小 K 场景会退化为 20ms 级；
+- 纯 gather→store（无 dot 参与）则**数值正确且跑满带宽**（~1.4TB/s，含写）。
+→ 结论：把 gather 结果先落到连续 buffer（scratch 或 workspace），再以**仿射 load** 消费，
+是本编译器下唯一的正确高速路径。该约束已同步归档到生成期 template
+（block_sparse_attention.md L1.14），算子级实测与证伪清单见
+`operators/sparse-flash-attention-optimization.md`。
+
 ### 随机写优化方法
 
 随机写可以尝试使用`scatter_ub_to_out`接口替换，该接口功能为：将统一缓冲区（Unified Buffer, UB） 中的数值张量（value）根据索引张量（index）沿目标张量的指定维度（dim），分散存储到全局内存（Global Memory, GM）的目标张量（ptr）中。该函数输入：
@@ -160,14 +182,14 @@ val = tl.load(x_ptr + offset + idx * stride_x, mask=mask)  # 直接从global中�
 offset = tl.load(offset_ptr) # offset是一个完全无法预测的随机标量
 idx = tl.load(idx_ptr + rn * stride_idx) # idx是一个完全无法预测的随机值向量
 rm = tl.arange(0, M) # rm包含了所有的值，M为x张量的总长度
-x_shared = tl.load(x_ptr + offset + rm * stride_x) # 将x对应偏移的所有数据从global搬至UB
-val = tl.gather(x_shared.to(tl.float16), idx, 0).to(tl.int32)  # 再从UB中select目标值，注意数据类型的切换
+x_shared = tl.load(x_ptr + offset_ptr + rm * stride_x) # 将x对应偏移的所有数据从global搬至share
+val = tl.gather(x_shared.to(tl.float16), idx, 0).to(tl.int32)  # 再从share中select目标值，注意数据类型的切换
 ```
 
 ### 关键点
 
 1. **识别无法预测的随机值**：溯源`tl.load`的输入索引计算过程，找到是否有无法预测的随机值，例如被`tl.load`读进来的值
-2. **自动优化**：将 `tl.load`的输入指针中的随机值剔除，改为读取一大块内存（注意不能超过UB限制），然后使用`tl.gather`输入随机值，得到最终需要取的值
+2. **自动优化**：将 `tl.load`的输入指针中的随机值剔除，改为读取一大块内存（注意不能超过share memory限制），然后使用`tl.gather`输入随机值，得到最终需要取的值
 3. **注意gather的数据类型**：`tl.gather`不支持`int类型`，最好将输入强转成`tl.float16`再执行`tl.gather`,最后再转回原有的数据类型。如果提示精度报错，可以尝试强转成`tl.float32`。
 
 ### 模式 2：循环内通过随机索引访问小查找表
@@ -215,3 +237,66 @@ for x in range(cntx):
 | 风险 | 说明 | 缓解措施 |
 |------|------|----------|
 | 精度下降 | `tl.gather`输入强转成`tl.float16`可能会丢失精度 | 尝试将`tl.gather`输入强转成`tl.float32`或者放弃优化 |
+
+## ⚠️ compile_hint 使用规范
+
+`tl.extra.cann.extension.compile_hint(x, "mayDiscretememaccess")` 用于提示编译器某次 load 的访问模式可能是离散的，帮助编译器选择更合适的底层指令。
+
+**应保留 hint 的场景**（真正离散访存）：
+- 索引来自 `tl.load` 加载的随机值（如 `chunk_indices`、`cu_seqlens` 查表）
+- 索引为运行时不确定的值，导致访存地址无法静态预测
+
+**应移除 hint 的场景**（非离散访存，hint 反而限制编译器优化）：
+- `tl.load` 使用 `tl.make_block_ptr`（编译器已知访存模式）
+- 索引为 `tl.program_id` 线性变换（确定性连续访存）
+- 标量值的 load/store
+- 存储操作（`tl.store`）后的 hint（无意义）
+
+**示例**：
+```python
+# ✅ 保留：b_h 通过 block_ptr 从 h 加载，h 的偏移含 chunk_indices 查表结果
+b_h = tl.load(p_h, boundary_check=(0, 1))
+tl.extra.cann.extension.compile_hint(b_h, "mayDiscretememaccess")
+
+# ❌ 移除：b_q 通过 block_ptr 从 q 加载，偏移完全确定
+b_q = tl.load(p_q, boundary_check=(0, 1), padding_option="zero")
+# tl.extra.cann.extension.compile_hint(b_q, "mayDiscretememaccess")  ← 冗余，应删除
+
+# ❌ 移除：存储操作上的 hint 无意义
+casted_b_dA = b_dA.to(p_dA.dtype.element_ty)
+tl.store(p_dA, casted_b_dA, boundary_check=(0, 1))
+# tl.extra.cann.extension.compile_hint(casted_b_dA, "mayDiscretememaccess")  ← 冗余，应删除
+```
+
+**判断原则**：只有当 load 的基地址偏移含运行时随机值（如查表结果）时才加 hint；block_ptr 的确定性访存和 store 操作不需要。
+
+
+
+---
+
+## 来自 SKILL.md 的原始描述（优化点 4：离散访存优化）
+
+**适用条件**：代码中存在通过随机/不可预测索引访问全局内存
+
+**典型代码特征**：
+```python
+# 索引来源于 tl.load 加载的值（随机性）
+idx = tl.load(indices_ptr + offset)  # idx 是运行时确定的随机值
+val = tl.load(data_ptr + idx)        # 通过随机索引访问
+
+# 或者索引来源于 kernel 入参（可能是随机值）
+val = tl.load(ptr + random_index)
+```
+
+**判断逻辑**：
+- 检查 `tl.load` 的索引来源：
+  - 如果索引是 `tl.program_id` 线性变换 → 确定性连续，不涉及
+  - 如果索引是循环变量线性变换 → 确定性步长，不涉及
+  - 如果索引来源于 `tl.load` 加载的值或 kernel 入参 → 潜在随机，涉及
+- 如果所有访存索引都是确定性连续/步长模式 → 不涉及，跳过
+
+**命中条件**：代码中存在通过随机/不可预测索引访问全局内存
+
+**参考文档**：`references/discrete_memory_access.md`
+
+---

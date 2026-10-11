@@ -1,0 +1,87 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 2,
+      "title": "优化边界与触发条件",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我设计了一个新的 Triton 算子，还没有实现代码，能用 triton-latency-optimizer 来优化吗？这个 skill 和 triton-op-coding 有什么区别？",
+      "expected_output": "回复应说明 triton-latency-optimizer 的触发条件是用户已有在 Ascend NPU 上运行的 Triton 算子代码需要进行性能优化、降低时延、提升吞吐。它只对已有的 Triton 代码进行优化，不负责从零生成算子代码。triton-op-coding 负责从任务描述生成 Triton Ascend 内核代码，两者分工不同。同时应强调只能使用本 skill 规定的 13 种优化方式，禁止使用超出本 skill 之外的优化方式，且优化过程中必须确保功能一致性和精度一致性。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "单次只应用首个命中优化点",
+      "config": {
+        "max_tokens": 110000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "扫描代码时优化点 4 和 7 都满足命中条件。一次 latency-optimizer 调用能否把两项都改完再交给 verifier？",
+      "expected_output": "回复应说明必须按 Index.md 顺序扫描，命中第一个优化点后立即停止扫描，只加载该点对应参考文档、应用这一项并执行 checklist；本次不得顺带应用后续点。verify、benchmark、采纳或回退由调用方负责。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "cursor 与 exclude_points 语义",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "调用时 cursor=8，exclude_points=[10, 12]。本轮应该从哪里开始检查，命中排除项后能否仍然应用？",
+      "expected_output": "回复应从 cursor 指定位置继续按索引顺序扫描，并无条件跳过 exclude_points 中的 10 和 12；排除项即使代码满足条件也禁止命中或应用。仍须遵守首个非排除命中即停。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "无优化点时仍生成可验证产物",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "31 个优化点都没有命中，latency-optimizer 是否可以不写 output_path，直接回复“无需优化”？",
+      "expected_output": "回复应说明不可以；即使没有优化点也必须把可执行且功能一致的代码写入 output_path，并返回代码路径、命中状态/优化点、优化说明、功能一致性和精度一致性说明，使调用方能继续交给 verifier。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "优化器不自行验证和基准",
+      "config": {
+        "timeout": 1800,
+        "max_tokens": 110000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "沙箱内没有 Triton 算子工程、测试数据和 NPU 运行环境，不需要实际执行命令，也不用跑 profiling、编译或测试，请不要真的去扫描或改动算子代码。请先加载并 Read triton-latency-optimizer 技能的 SKILL.md（需要时再 Read references/Index.md、references/checklist.md），然后直接回答这个职责边界问题：调用方要求「完成一个优化点后，由 latency-optimizer 自己连续跑精度测试、benchmark，并按结果自动回退版本」，这个要求成立吗？请逐条说明：1）该 skill 一次调用到底负责哪些步骤、要产出什么、命中后是否继续扫描；2）精度验证、性能 benchmark、版本采纳与回退、迭代目录管理和 cursor/多轮循环分别由谁负责，本 skill 是否自行执行；3）本 skill 返回值中与验证相关的字段与说明是什么，实际 verify/benchmark 应由哪个组件承接、调用方应怎样接续。",
+      "expected_output": "1. 回复应说明该 skill 是无状态单步函数：一次调用只负责加载 references/Index.md、从 scan_from 起按序扫描并应用第一个命中的优化点、真实加载该点对应参考文档、执行 references/checklist.md 检查，然后写出 output_path 并返回 hit_optimization_point，命中后立即返回、不再继续扫描后续编号。\n2. 回复应说明精度验证、性能 benchmark、按 speedup 是否大于等于 1.0 决定采纳或以优化前代码回退、迭代目录管理与多轮循环全部由调用方（如 triton-op-generator Phase 4）负责，本 skill 一律不自行执行，也不能自己连续跑测试。\n3. 回复应拒绝「由本 skill 自己连续跑精度测试、benchmark 并自动回退版本」的要求，指出本 skill 至多在返回信息中给出优化说明、功能一致性说明与精度一致性说明，产出的代码应由 triton-op-verifier 承接验证与基准测试。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "Block Size Scaling 完整候选阶梯",
+      "config": {
+        "max_tokens": 120000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "进入最终 Block Size Scaling 时当前 BLOCK=1024。因为预计更大的值不会更快，能否只产出 2048 一个候选就结束？host 侧分档可否只改其中一档？",
+      "expected_output": "回复应拒绝按耗时或性能猜测裁剪候选，按规则完整产出向上和向下的候选阶梯；单维 BLOCK 若由 host 分档控制，整个阶梯必须同步修改。停止条件只能由调用方 verify 失败或 BLOCK 超过 65536 触发。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "triton-latency-optimizer"
+}

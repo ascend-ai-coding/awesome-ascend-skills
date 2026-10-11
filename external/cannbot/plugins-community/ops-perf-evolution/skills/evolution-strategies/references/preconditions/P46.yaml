@@ -1,0 +1,30 @@
+strategy_id: P46
+description: MatmulImpl 高阶 API 适用性检查 — 算子包含手写 Matmul 流水线，且当前未使用 MatmulImpl 高阶 API
+checks:
+  - id: has_matmul_code
+    type: grep_count
+    pattern: "Mmad|LoadData|Fixpipe|L0A|L0B|L0C|L1_PREFETCH"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无 Matmul 代码 → P46 不适用"
+
+  - id: has_handwritten_pipeline
+    type: grep_count
+    pattern: "LoadNdGmToNzL1|LoadNzL1ToZzL0A|FixpipeNzL0cToNdGm"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子未手写 Matmul 流水线 → P46 收益低"
+
+  - id: no_matmulimpl_yet
+    type: grep_count
+    pattern: "MatmulImpl|matmul::MatmulImpl|REGIST_MATMUL_OBJ|IterateAll"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已使用 MatmulImpl → P46 已应用"
+
+  - id: not_pure_validation
+    type: grep_count
+    pattern: "OP_CHECK|shape.*check|dim.*check|validation"
+    files: [kernel, header]
+    expected: "<= 3"
+    fail_msg: "纯 Host 侧 shape 校验 → P46 解决的是 Kernel 内 Matmul 优化"

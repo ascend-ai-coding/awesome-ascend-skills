@@ -12,9 +12,8 @@
 4. [DAV_3510 微架构与编程影响](#dav_3510-微架构与编程影响)
 5. [SIMT vs SIMD 硬件能力差异](#simt-vs-simd-硬件能力差异)
 6. [DAV_3510 数据格式扩展](#dav_3510-数据格式扩展)
-7. [CCU 通算融合开发模型](#ccu-通算融合开发模型)
-8. [架构兼容性检查清单](#架构兼容性检查清单)
-9. [参考信息来源](#参考信息来源)
+7. [架构兼容性检查清单](#架构兼容性检查清单)
+8. [参考信息来源](npu-arch-guide.md#参考信息来源)
 
 ---
 
@@ -79,9 +78,9 @@
 | Cube 算力 BF16/FP16 | 353T | 378T | 432T |
 | Cube 算力 FP8/HiF8/MXFP8 | — | 757T | 865T |
 | Cube 算力 MXFP4 | — | 1514T | 1730T |
-| Vector 算力 FP16 | 22T | 47T [¹](#unverified) | 54T [¹](#unverified) |
+| Vector 算力 FP16 | 22T | 47T [²](#whitepaper) | 54T [²](#whitepaper) |
 | Memory 容量 (GB) | 64 | 112 | 128 |
-| Memory 带宽 | 1.6 TB/s [¹](#unverified) | 1.4 TB/s [¹](#unverified) | 1.6 TB/s [¹](#unverified) |
+| Memory 带宽 | 1.6 TB/s [¹](#unverified) | 1.4 TB/s [²](#whitepaper) | 1.6 TB/s [²](#whitepaper) |
 
 > **注意**：以上为选定子型号的典型值（真源：`platform_config/*.ini`）。**同架构其他子型号的核数、频率、L2、Memory 等存在差异**（如 910B4 核数 20@1.5GHz / L2 96MB / Memory 32GB），详见 `npu-hardware-params.md` 典型SKU示例。
 
@@ -111,7 +110,7 @@ TFLOPS = M × K × N × 核数 × cube_freq(MHz) × 2 ÷ 10⁶
 Ascend910B2:   4096 × 24 × 1800 × 2 ÷ 10⁶ = 353.89 TFLOPS
 ```
 
-> **Cube 算力与 Vector 算力**：上表中 Cube 算力为纯 Cube 单元算力，不含 Vector Core 贡献。Vector 算力单独列出，总芯片算力 = Cube + Vector（但需注意 Vector 不支持 bfloat16，故 BF16 总算力即 Cube 算力）。
+> **Cube 算力与 Vector 算力**：上表中 Cube 算力为纯 Cube 单元算力，不含 Vector Core 贡献。Vector 算力单独列出，总芯片算力 = Cube + Vector。950 白皮书表3-1 给出的 950PR BF16/FP16 总算力 486/425T 即 Cube(432/378) + Vector(54/47) 之和——DAV_3510 的 Vector Core 已**原生支持 BF16**（白皮书 §4.1.2），不存在 BF16 只能用 Cube 的限制。
 
 #### FP8_E4M3FN 算力推导
 
@@ -135,7 +134,7 @@ FP8 族系（含 HiF8、MXFP8）均视为 8192 MAC/周期。MXFP4 按 INT4 的 M
 950PR PCIE:    16384 × 28核 × 1650 MHz × 2(FMA) ÷ 10⁶ = 1514 TFLOPS
 ```
 
-> 注：HiF8、MXFP8 在 INI 中无独立的 DtypeMKN 条目，但算力等效于 E4M3FN。
+> 注：HiF8、MXFP8 在 INI 中无独立的 DtypeMKN 条目，但算力等效于 E4M3FN。950 白皮书 §4.1.1 确认：相同频率下 HiF8/MXFP8/FP8 提供 2 倍 FP16 张量算力，MXFP4 提供 4 倍；表3-1 对 PCIE 档 Cube 算力按向下取整标注为 FP8 756 / MXFP4 1513 TFLOPS（公式值为 756.9/1513.9）。
 
 #### Vector 算力推导
 
@@ -152,8 +151,10 @@ TFLOPS = vec_calc_size × vector_core_cnt × vec_freq(MHz) × 2(FMA) ÷ 10⁶
 | 频率 (MHz) | 1800 | 1650 | 1650 | 910B2: `cube_freq`（INI 无独立 `vec_freq`）；950PR: `[VectorCoreSpec] vec_freq` |
 
 **910B2**：128 × 48 × 1800 × 2 ÷ 10⁶ = **22 TFLOPS**  
-**950PR PCIE**：128 × 56 × 1650 × 2 ÷ 10⁶ = 23.7T，含 Regbase OOO 双发（见 SIMD-Regbase 节）再 ×2 = **47 TFLOPS**[¹](#unverified)  
-**950PR Server**：128 × 64 × 1650 × 2 ÷ 10⁶ = 27T，含 Regbase OOO 双发（见 SIMD-Regbase 节）再 ×2 = **54 TFLOPS**[¹](#unverified)
+**950PR PCIE**：128 × 56 × 1650 × 2 ÷ 10⁶ = 23.7T，含 Regbase OOO 双发再 ×2 = **47 TFLOPS**[²](#whitepaper)  
+**950PR Server**：128 × 64 × 1650 × 2 ÷ 10⁶ = 27T，含 Regbase OOO 双发再 ×2 = **54 TFLOPS**[²](#whitepaper)
+
+> 950 白皮书确认：Vector Core 升级为**双发射 Register-Based SIMD 架构**（§3）并支持乱序执行（OOO，§4.1.3），单核 FP16/FP32 算力较上一代提升 100%（§4.1.2）；表3-1 官方 Vector 算力 FP16/BF16 = 54/47T、FP32 = 27/23T（均为 Server/PCIE 两档值，每档 FP16 与 BF16 相同），与上式一致。注意并非所有 Vector 指令均支持双发。
 
 ### AIV (Vector) 核数
 
@@ -175,6 +176,8 @@ TFLOPS = vec_calc_size × vector_core_cnt × vec_freq(MHz) × 2(FMA) ÷ 10⁶
 | **L2** | 192 MB | **128 MB** (Server) / **112 MB** (PCIE) | 跨核共享缓存 |
 | **BT** (biasSize) | 1 KB | **4 KB** | FixPipe Bias 表 |
 | **SSBuffer** | — | 256 KB [¹](#unverified) | **DAV_3510 新增** AIC↔AIV 核间消息通路 |
+
+> **UB 口径说明（"按组计"为推断，证据链见 `npu-arch-guide.md`）**：950 白皮书表4-2 原文标注 UB = **512 KB per AI Core**；与 INI 对齐的解读是按 **AI Core 组（1 AIC + 2 AIV）计物理容量**（每 AIV 物理 256 KB × 2）；INI `[VectorCoreSpec] ub_size = 253952` = **248 KB** 是**每 AIV 用户可用值**（物理 256 KB − 8 KB 预留，精确吻合）。旁证：同表 "L1 512KB per AI Core" 也只有按组理解才自洽（L1 在 AIC 侧、每组一份）。三者不矛盾，Tiling 以 `GetCoreMemSize` 返回值为准。
 
 
 ## DAV_3510 微架构与编程影响
@@ -205,11 +208,11 @@ TFLOPS = vec_calc_size × vector_core_cnt × vec_freq(MHz) × 2(FMA) ÷ 10⁶
 
 ### DAV_3510 相比 DAV_2201 的关键数据通路改动
 
-DAV_3510 新增三条通路，使 Cube 与 Vector 可直接交换数据，避免 GM workspace 中转：
+DAV_3510 新增三条通路，使 Cube 与 Vector 可直接交换数据，避免 GM workspace 中转（白皮书 §4.1.4 证实 CV 直通通路；§4.1.1 确认 L0C→UB 支持随路量化 FP32/INT32→BF16/FP16/FP8/INT8）：
 
 1. **L0C → UBuffer**：Cube 结果直达 Vector，FixPipe 输出到 UB
 2. **UBuffer ↔ L1**：Vector 与 Cube 双向直连（UB→L1 为新增方向），避免 GM 中转
-3. **SSBuffer 消息通路**：CV 间细粒度同步信号
+3. **SSBuffer 消息通路**：CV 间细粒度同步信号 [¹](#unverified)
 
 **典型受益场景**：FA / FIA 类融合算子可彻底消除 workspace A/B/C 的 GM 读写。
 
@@ -217,9 +220,11 @@ DAV_3510 新增三条通路，使 Cube 与 Vector 可直接交换数据，避免
 
 ### 指令序列与 BufferID 同步
 
-DAV_3510 上各执行单元拥有独立指令队列：Cube / FixPipe / MTE1 / MTE2 / MTE3 / SIMD VF / SIMT VF。
+DAV_3510 上各执行单元拥有独立指令队列：Scalar / Cube / FixPipe / MTE1 / MTE2 / MTE3 / SIMD VF or SIMT VF。
 
 **BufferID 同步机制**：消除原 set/wait 强制配对需求，简化多流水算子的同步代码。
+
+> **CCU 通算融合**：DAV_3510 在 IO-Die 上新增集合通信引擎，本文不展开，详见 `npu-arch-guide.md` §CCU 通算融合开发模型（三种通信范式、KFC 调度模型）。
 
 ---
 
@@ -286,4 +291,22 @@ DAV_3510 上 Cube MMAD 计算单元支持的数据类型（黑体为 DAV_3510 �
 - [ ] 性能在目标架构上达到基线要求
 
 ---
+
+## 参考信息来源
+
+### 官方白皮书
+
+- 《[昇腾950 NPU架构白皮书](https://public-download.obs.cn-east-2.myhuaweicloud.com/ascend/%E6%98%87%E8%85%BE950%20NPU%E6%9E%B6%E6%9E%84%E7%99%BD%E7%9A%AE%E4%B9%A6.pdf)》（华为，Ascend950PR/950DT）：DAV_3510 官方规格与微架构真源。章节内容地图见 `npu-arch-guide.md` §参考信息来源。
+
+### CANN 安装包可见（`${ASCEND_HOME_PATH}/<arch>/`）
+
+| 文件 | 内容 |
+|------|------|
+| `asc/include/utils/tiling/platform/platform_ascendc.h` | `SocVersion` 枚举、`PlatformAscendC` 接口 |
+| `include/platform/soc_spec.h` | `NpuArch` 枚举完整定义 |
+
+### 标注
+
+- <a id="unverified">¹</a> 基于公开资料与经验值，暂未在当前安装的 INI 及 950 白皮书中找到直接对应的可核验字段。详见 `npu-hardware-params.md` §4。
+- <a id="whitepaper">²</a> 已由《昇腾950 NPU架构白皮书》证实（原 ¹ 项升级）。
 

@@ -1,0 +1,30 @@
+strategy_id: P79
+description: Grad Cube2+Cube3 融合适用性检查 — 算子为 Flash Attention 反向传播且 headDim=64，当前未融合 Cube2/Cube3
+checks:
+  - id: has_flash_attention_grad
+    type: grep_count
+    pattern: "FlashAttention|flash.*attention|grad|反向|backward|dQ|dK|dV|dS"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子非 FA 反向 → P79 不适用"
+
+  - id: has_d64
+    type: grep_count
+    pattern: "headDim|head.*dim|d=64|64|sparseMode"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子 headDim ≠ 64 → P79 收益低"
+
+  - id: no_cube23_fusion_yet
+    type: grep_count
+    pattern: "Cube23|cube23|Cube2.*Cube3|融合.*Cube|ping.*pong.*L0A"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已融合 Cube23 → P79 已应用"
+
+  - id: not_pure_validation
+    type: grep_count
+    pattern: "OP_CHECK|shape.*check|dim.*check|validation"
+    files: [kernel, header]
+    expected: "<= 3"
+    fail_msg: "纯 Host 侧 shape 校验 → P79 解决的是 Cube 融合优化"

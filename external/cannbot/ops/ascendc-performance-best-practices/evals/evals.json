@@ -1,0 +1,138 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 2,
+      "title": "MatMul 族在 DAV_3510 上的优化",
+      "config": {
+        "max_tokens": 200000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 240000,
+          "glm-5": 220000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "ascendc-performance-best-practices 中 MatMul 算子族有哪些优化知识？在 DAV_3510 架构上适用的优化指南是什么？可以加载技能，不需要执行其他外部工具调用。",
+      "expected_output": "回复应引用 MatMul 族的优化策略内容，说明 DAV_3510 架构上 MatMul 算子的优化策略和最佳实践。应列出 MatMul 族包含的变体和可用的优化策略类型。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 3,
+      "title": "Vector 算子性能优化咨询（正向看护）",
+      "config": {
+        "max_tokens": 160000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 180000,
+          "glm-5": 170000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "distractor_skills": [
+          "ascendc-perf-optimize",
+          "ascendc-tiling-design"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我想了解 ascendc-performance-best-practices 中 Vector 算子族在 DAV_3510 上的优化策略和最佳实践，请加载技能帮我查看具体内容。",
+      "expected_output": "回复应介绍 Vector 算子族在 DAV_3510 上的优化思路和主要方向。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "MC² 通算融合算子 matmul_all_reduce 性能优化",
+      "config": {
+        "max_tokens": 160000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我在实现 matmul_all_reduce 通算融合算子，当前通信和计算是串行执行的，性能不达标。这个技能里 MC² 通算融合类在 DAV_3510 上有哪些性能优化策略？可阅读该技能文档获取规范，但不要实际执行 profiling 或修改代码。",
+      "expected_output": "回复应引用 MC² 通算融合类算子族（matmul_all_reduce、allgather_matmul、matmul_reducescatter、alltoall_matmul 等变体）的性能优化策略，说明 local_matmul（将本 rank 的 matmul 从通信块循环中分离以与通信重叠）与 pipeline_balancing（TilingData 驱动的系统搜索）等优化手段，并说明其在 DAV_3510 上的适用关系。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "Reduction 归约类 Softmax 模板代码查找与集成",
+      "config": {
+        "max_tokens": 160000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我要在 DAV_3510 上实现一个输入为 3D [A1,R,A0]、且 R 超出 UB 容量的 Softmax 算子，想复用这个技能里的模板代码。应该如何查找并集成这些模板？可阅读该技能文档获取规范，但不要实际执行代码修改。",
+      "expected_output": "回复应说明 Reduction 归约类（Softmax/LayerNorm/RMSNorm）模板代码查找链路：从 SKILL.md 定位 reduce 族 → references/reduce/guide.md → templates/ 下按 R 与 UB 关系选择模板，R 超出 UB 时应选 ARA-Recompute（R 切 bin、3 阶段重读 + 二分累加树）；并强调使用前必须按 usage_guide.md 将 .template 转成同名 .h 后拷贝到项目 op_kernel 使用，禁止从零重写。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "Broadcast 广播算子实现选型（多实现选型型）",
+      "config": {
+        "max_tokens": 160000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我在 DAV_3510 上实现 Add 广播算子，shape 为 [M,1]+[1,N] 部分轴广播，发现性能差而且有时出现 nan。这个技能里 Broadcast 族有哪些实现路径，该怎么选？可阅读该技能文档获取规范，但不要实际执行 profiling 或修改代码。",
+      "expected_output": "回复应说明 Broadcast 广播类族属于多实现选型型优化：OneDim 合轴塌一维快路径（标量广播前置优先）+ tile 内 NDDMA（搬入即广播）/ DataCopyPad（外层广播 offset 寻址）/ UB 内 Broadcast 三类实现；选型需按广播轴位置与 shape 判断，选错实现会变慢甚至产生 nan，应给出选型依据。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "Elementwise 逐元素算子双缓冲流水线优化",
+      "config": {
+        "max_tokens": 160000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我写的 Exp 逐元素算子很慢，感觉数据搬运和计算是串行执行的，计算单元大量空闲。这个技能里 Elementwise 族在 DAV_3510 上有什么优化方案？可阅读该技能文档获取规范，但不要实际执行 profiling 或修改代码。",
+      "expected_output": "回复应引用 Elementwise 逐元素类的双缓冲设计（references/elementwise/double_buffer_design.md），说明通过多缓冲（如 InitBuffer 双缓冲）让 MTE2 搬入、Vector 计算、MTE3 搬出三个阶段流水线并行以隐藏内存访问延迟，并可就向量化效率优化方向给出提示。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 8,
+      "title": "公共优化能力：数据量不能被 tile 整除的尾块处理",
+      "config": {
+        "max_tokens": 160000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我在实现一个归约类算子，数据量不能被 tile 大小整除，尾块处理出现越界和负载不均衡的问题。这个技能里的公共优化能力有尾块处理的方案吗？可阅读该技能文档获取规范，但不要实际执行 profiling 或修改代码。",
+      "expected_output": "回复应引用公共优化能力中的尾块处理指南（references/common/tail_block_design.md），说明对不能被 tile 大小整除的数据量采用双轨制 norm/tail 核分离、GatherMask 向量化处理尾块以及 32B/64B 对齐与 DataCopyPad 等策略，避免越界访问与负载不均衡。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 9,
+      "title": "MatMul API 常量折叠实施",
+      "config": {
+        "max_tokens": 160000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我要把 Ascend C Matmul API 的运行时 TCubeTiling 改成编译期 MatmulApiStaticTiling 常量折叠，降低 aic_scalar_time。这个技能里 MatMul 族有对应的实施指南吗？改造时要注意哪些精度相关问题？可阅读该技能文档获取规范，但不要实际执行 profiling 或修改代码。",
+      "expected_output": "回复应引用 MatMul 族 constant_folding 策略（references/matmul/constant_folding_design.md），说明用 constexpr MatmulApiStaticTiling 作为第 5 个模板参数、Init/REGIST 传 nullptr 后再 SetOrgShape、调用点 shape 必须全程 constexpr；并强调 isTrans/BiasType/对象类型不可改、singleCore 填上界、SetOrgShape 不能放在 REGIST 之前，以及尾块维度不可常量化。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "ascendc-performance-best-practices"
+}

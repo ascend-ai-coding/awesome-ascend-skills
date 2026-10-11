@@ -1,0 +1,192 @@
+/**
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
+
+/*!
+ * \file transpose_tiling_data.h
+ * \brief POD TilingData for the <<<>>> direct-launch Transpose op.
+ *
+ * This replaces the framework-generated (BEGIN_TILING_DATA_DEF ...) struct used by the
+ * original arch35 op. The field names, types and array lengths match TransposeOpTilingData
+ * in transpose_tiling_arch35.h exactly, so the arch35 kernel headers read it unchanged via
+ * plain member access (tilingData_->field). The struct is a plain-old-data blob copied
+ * verbatim from host to the kernel `tiling` GM argument.
+ */
+#ifndef TRANSPOSE_TILING_DATA_H
+#define TRANSPOSE_TILING_DATA_H
+
+#include <cstdint>
+
+#ifndef TRANSPOSE_MAX_AXIS_NUM_TD
+#define TRANSPOSE_MAX_AXIS_NUM_TD 8
+#endif
+#ifndef NDDMA_MAX_DIM_NUM_TD
+#define NDDMA_MAX_DIM_NUM_TD 5
+#endif
+
+#pragma pack(push, 8)
+struct TransposeOpTilingData {
+    int64_t permSize;
+    int64_t inCutIndex;
+    int64_t outCutIndex;
+    int64_t inUbFactor;
+    int64_t outUbFactor;
+    int64_t inTailFactor;
+    int64_t outTailFactor;
+    int64_t realCoreNum;
+    int64_t blkFactor;
+    int64_t blkTailFactor;
+    int64_t ubSize;
+    int64_t totalNddmaNum;
+    int64_t rangeMainEnd;
+    int64_t rangeInputTailStart;
+    int64_t rangeInputTailEnd;
+    int64_t rangeOutputTailStart;
+    int64_t rangeOutputTailEnd;
+    int64_t rangeTailStart;
+    int64_t rangeTailEnd;
+    int64_t inputShape[TRANSPOSE_MAX_AXIS_NUM_TD];
+    int64_t outputShape[TRANSPOSE_MAX_AXIS_NUM_TD];
+    int64_t perm[TRANSPOSE_MAX_AXIS_NUM_TD];
+    int64_t baseInShape[TRANSPOSE_MAX_AXIS_NUM_TD];
+    int64_t baseNddmaShape[NDDMA_MAX_DIM_NUM_TD];
+    int64_t nddmaIdx[NDDMA_MAX_DIM_NUM_TD];
+    int64_t expandedPerm[NDDMA_MAX_DIM_NUM_TD];
+    int64_t expandedInputShape[NDDMA_MAX_DIM_NUM_TD];
+    int64_t expandedOutputShape[NDDMA_MAX_DIM_NUM_TD];
+    int64_t inUbMainSrcShape[NDDMA_MAX_DIM_NUM_TD];
+    int64_t inUbMainDstShape[NDDMA_MAX_DIM_NUM_TD];
+    int64_t inUbInputTailSrcShape[NDDMA_MAX_DIM_NUM_TD];
+    int64_t inUbInputTailDstShape[NDDMA_MAX_DIM_NUM_TD];
+    int64_t inUbOutputTailSrcShape[NDDMA_MAX_DIM_NUM_TD];
+    int64_t inUbOutputTailDstShape[NDDMA_MAX_DIM_NUM_TD];
+    int64_t inUbTailSrcShape[NDDMA_MAX_DIM_NUM_TD];
+    int64_t inUbTailDstShape[NDDMA_MAX_DIM_NUM_TD];
+};
+
+// Wrapper struct kept for parity with the original TransposeTilingData layout,
+// so the kernel entry can pass &tilingData.transposeOpTiling like the original.
+struct TransposeTilingData {
+    TransposeOpTilingData transposeOpTiling;
+};
+
+// ===================== Accelerator-strategy TilingData (POD) =====================
+// These mirror the framework (BEGIN_TILING_DATA_DEF ...) structs used by the
+// gather / vconv(5hd) / 021vconv arch35 kernels. Field names/types/order match the
+// originals exactly so the kernel headers read them unchanged via plain member access.
+
+#ifndef GATHER_UB_MAX_DIM_NUM_TD
+#define GATHER_UB_MAX_DIM_NUM_TD 6
+#endif
+#ifndef GATHER_MAX_TRANS_AXIS_NUM_TD
+#define GATHER_MAX_TRANS_AXIS_NUM_TD 8
+#endif
+
+struct GatherTransposeTilingData {
+    uint64_t tilingKey;
+    uint32_t dataTensorSize;
+    uint32_t indexTensorSize;
+    uint32_t usedCoreCnt;
+    int8_t blkAxesCnt;
+    int8_t blkInUbCutPos;
+    int8_t blkOutUbCutPos;
+    int8_t ubAxesCnt;
+    int8_t inUbInCutPos;
+    int8_t inUbOutCutPos;
+    int8_t outUbInCutPos;
+    int8_t outUbOutCutPos;
+    int64_t blkFactor;
+    int64_t blkTailFactor;
+    int64_t inUbCutAxisSize;
+    int64_t outUbCutAxisSize;
+    int32_t inUbCutAxisFactor;
+    int32_t outUbCutAxisFactor;
+    int64_t axis0InSrcStride;
+    int64_t axis1InSrcStride;
+    int64_t axis2InSrcStride;
+    int64_t axis0OutDstStride;
+    int64_t axis1OutDstStride;
+    int64_t axis2OutDstStride;
+    int64_t blkAxes[GATHER_MAX_TRANS_AXIS_NUM_TD];
+    int64_t blkAxesInAOffset[GATHER_MAX_TRANS_AXIS_NUM_TD];
+    int64_t blkAxesOutAOffset[GATHER_MAX_TRANS_AXIS_NUM_TD];
+    int32_t inUbAxes[GATHER_UB_MAX_DIM_NUM_TD];
+    int32_t outUbAxes[GATHER_UB_MAX_DIM_NUM_TD];
+    int8_t ubPerm[GATHER_UB_MAX_DIM_NUM_TD];
+};
+
+struct CoreSplitPara {
+    int64_t AlignBlockFactor;
+    int64_t BlockFactor;
+    int64_t BlockCount;
+    int64_t AlignBlockTailFactor;
+    int64_t BlockTailFactor;
+};
+
+struct UbSplitPara {
+    int64_t MainCoreUbAlignFactor;
+    int64_t MainCoreUbFactor;
+    int64_t MainCoreUbCount;
+    int64_t MainCoreTailUbAlignFactor;
+    int64_t MainCoreTailUbFactor;
+    int64_t TailCoreUbAlignFactor;
+    int64_t TailCoreUbFactor;
+    int64_t TailCoreUbCount;
+    int64_t TailCoreTailUbAlignFactor;
+    int64_t TailCoreTailUbFactor;
+};
+
+struct TransposeVCONVTilingData {
+    int64_t AvailableUbSize;
+    int64_t UsedCoreNum;
+    int64_t MainCoreLoopCount;
+    int64_t TailCoreLoopCount;
+    int64_t RLen;
+    int64_t CLen;
+    int64_t RAlignBlock;
+    int64_t CAlignBlock;
+    int64_t RAlignBlockElem;
+    int64_t CAlignBlockElem;
+    bool IsRSplit;
+    bool IsRCSplit;
+    CoreSplitPara rSplitPara;
+    CoreSplitPara cSplitPara;
+    UbSplitPara rUbSplitPara;
+    UbSplitPara cUbSplitPara;
+};
+
+struct Transpose021UbSplitPara {
+    int64_t UbAlignFactor;
+    int64_t UbFactor;
+    int64_t UbCount;
+    int64_t UbTailAlignFactor;
+    int64_t UbTailFactor;
+};
+
+struct Transpose021VCONVTilingData {
+    int64_t AvailableUbSize;
+    int64_t UsedCoreNum;
+    int64_t NLen;
+    int64_t HLen;
+    int64_t WLen;
+    int64_t HAlignBlockElem;
+    int64_t WAlignBlockElem;
+    int64_t NPerCore;
+    int64_t NTailCore;
+    int64_t UbLoopCount;
+    bool UseRConv;
+    bool UseHSplit;
+    int64_t HPerCore;
+    int64_t HTailCore;
+    Transpose021UbSplitPara rUbSplitPara;
+    Transpose021UbSplitPara cUbSplitPara;
+};
+#pragma pack(pop)
+
+#endif // TRANSPOSE_TILING_DATA_H

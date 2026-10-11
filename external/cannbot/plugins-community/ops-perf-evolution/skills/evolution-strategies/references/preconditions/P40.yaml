@@ -1,0 +1,17 @@
+strategy_id: P40
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "workspace|Workspace|ws|中间结果|intermediate"
+    min_count: 1
+    fail_msg: "未检测到 workspace/中间结果传递 → 无双缓冲优化空间，不适用 P40。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "Cube.*Vector|Vector.*Cube|CV|MIX"
+    min_count: 1
+    fail_msg: "未检测到 Cube+Vector 融合模式 → 无中间结果流水传递场景，不适用 P40。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "dbWorkspace|double.*buffer|pingpong|loop.*%.*2"
+    min_count: 0
+    fail_msg: "已存在双缓冲逻辑 → 可能冗余，优先验证现有策略效果。"

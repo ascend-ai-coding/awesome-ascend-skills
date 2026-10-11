@@ -48,9 +48,9 @@ Step 2: A0 决定模式
 
 | 维度 | 选项 | 适用条件 | 详细文档 |
 |------|------|---------|---------|
-| 算法选择 | Welford Online | 分载 + 需要流式计算两个相关统计量 | [algorithms.md](algorithms.md#2-welford-online-算法在线单遍) |
-| 多核策略 | Group Reduce | R 太大单核处理不完 + A 太小不足以并行 | [algorithms.md](algorithms.md#3-group-reduce跨核归约) |
-| 精度策略 | 二分累加 | 大向量 sum 精度敏感 | [algorithms.md](algorithms.md#5-二分累加dichotomy-addition) |
+| 算法选择 | Welford Online | 分载 + 需要流式计算两个相关统计量 | [algorithms.md](algorithms.md#welford-online在线单遍) |
+| 多核策略 | Group Reduce | R 太大单核处理不完 + A 太小不足以并行 | [algorithms.md](algorithms.md#group-reduce跨核归约) |
+| 精度策略 | 二分累加 | 大向量 sum 精度敏感 | [algorithms.md](algorithms.md#二分累加--half-interval) |
 | 索引跟踪 | With-Index | 归约+返回极值位置 | [with-index.md](with-index.md) |
 
 ---
@@ -172,7 +172,7 @@ ARA 模式 (A1, R, A0)，A0 > 1
 
 ### S4: Welford Online（R 需 UB 切片）
 
-**适用**: ARA 模式下需要流式计算两个相关统计量（第二个依赖第一个的增量更新）。典型算子：reduce_var / reduce_std。参见 [algorithms.md](algorithms.md#2-welford-online-算法在线单遍)。
+**适用**: ARA 模式下需要流式计算两个相关统计量（第二个依赖第一个的增量更新）。典型算子：reduce_var / reduce_std。参见 [algorithms.md](algorithms.md#welford-online在线单遍)。
 
 ### S5: Group Reduce（R 跨核）
 

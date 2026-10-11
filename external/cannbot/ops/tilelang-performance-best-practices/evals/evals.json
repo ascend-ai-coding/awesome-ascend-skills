@@ -1,0 +1,13 @@
+{
+  "skill_name": "tilelang-performance-best-practices",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "当前为 Ascend950 TileLang 工作流，需要使用 tilelang-performance-best-practices。请说明应读取的正文与平台边界，不执行上板命令。",
+      "expected_output": "读取 tilelang-performance-best-practices/Ascend950/instructions.md 及其分支内资源，不加载 Ascend910 技能规则。",
+      "files": [],
+      "expectations": []
+    }
+  ]
+}

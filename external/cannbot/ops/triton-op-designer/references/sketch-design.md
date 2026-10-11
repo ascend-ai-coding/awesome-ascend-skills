@@ -197,7 +197,7 @@ reduce_max(src, axis, dst)    # dst = max(src, axis=axis)
 ```python
 relu(src, dst)                # dst = max(0, src)
 gelu(src, dst)                # dst = gelu(src)
-silu(src, dst)                # dst = src * sigmoid(src)
+silu(src, dst)                # dst = src * sigmoid(src)   # ⚠️ triton.language 无 tl.silu，需手写为 x * tl.sigmoid(x)
 softmax(src, dst)             # dst = softmax(src)
 ```
 

@@ -1,0 +1,31 @@
+strategy_id: P19
+description: 自定义多级 PingPong 双缓冲适用性检查 — 算子必须有多级存储流水，且标准 TQue 无法满足复用需求
+
+checks:
+  - id: has_multi_level_pipeline
+    type: grep_count
+    pattern: "L0A|L0B|L0C|L1|L1A|L1B|GM.*L1|L1.*L0"
+    files: [kernel]
+    expected: ">= 2"
+    fail_msg: "算子无多级存储流水 → P19 不适用。考虑 P1 标准双缓冲"
+
+  - id: standard_tque_limited
+    type: grep_count
+    pattern: "TQue|TBuf|BUFFER_NUM"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无标准队列机制 → 无法判断是否需要自定义。先实现基础 TQue"
+
+  - id: no_custom_pingpong_yet
+    type: grep_count
+    pattern: "BuffersPolicyDB|pingpong|ping_pong|GetPre|GetReused|flag1_|flag2_"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已使用自定义 PingPong → P19 已应用"
+
+  - id: needs_reuse_pattern
+    type: grep_count
+    pattern: "reuse|reused|GetPre|preLoad|resident|Q.*reuse|KV.*reuse"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无复用需求 → 标准 TQue 已足够。考虑 P1 或 P22"

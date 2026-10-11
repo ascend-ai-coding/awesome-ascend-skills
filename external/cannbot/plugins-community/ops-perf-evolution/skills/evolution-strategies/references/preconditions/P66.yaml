@@ -1,0 +1,17 @@
+strategy_id: P66
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "DataCopy|CopyIn|CopyOut|Fixpipe|GM|gm"
+    min_count: 1
+    fail_msg: "未检测到 GM 访问操作 → 无对齐优化空间，不适用 P66。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "Align|对齐|offset|Offset|stride|Stride"
+    min_count: 1
+    fail_msg: "未检测到对齐/偏移相关逻辑 → 无 512B 对齐优化空间，不适用 P66。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "512|256|32B|align.*512"
+    min_count: 0
+    fail_msg: "已存在 512B/256B/32B 对齐优化 → 可能冗余，优先验证现有策略效果。"

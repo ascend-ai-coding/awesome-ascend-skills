@@ -1,0 +1,58 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+
+# Synthesize pattern（极值输入合成模式）—— 把测试 case 的"输入应当是什么样"机器化
+#
+# 作用：
+#   spec.yaml 在 extreme_inputs[] 中描述各种"异常输入" case：含 NaN / 含 +inf /
+#   全零 / fp16 上溢边界…… 这些 case 不是用具体数字写死，而是用一个 pattern 名 +
+#   shape 规格，让测试合成器在跑测试时自动生成符合该 pattern 的输入张量。
+#   本文件登记所有合法的 pattern 名，校验器（stage 2）逐条比对，未登记 ⇒ FAIL。
+#
+# 使用方法：
+#   extreme_inputs[].synthesize.patterns[] 形如：
+#     extreme_inputs:
+#       - case: "real 含 NaN, imag 含 +inf"           # 多目标多 pattern
+#         synthesize:
+#           shapes: {real: "[1]", imag: "[1]"}
+#           patterns:
+#             - {pattern: inject_nan_one_element, target: real}
+#             - {pattern: single_pos_inf,         target: imag}
+#         machine_check: {kind: matches_oracle}
+#
+#       - case: "fp16 上溢边界"
+#         synthesize:
+#           shapes: {x: "[1]"}
+#           patterns:
+#             - {pattern: "all_same(60000.0)", target: x}    # 带参 pattern
+#           dtype: float16
+#         machine_check: {kind: matches_oracle}
+#
+#   带参 pattern（takes_value: true）写法：name(value)，由 parse_regex 解析。
+#
+# 维护：新增 pattern 必须先登记到本文件，并在测试合成器实现端添加对应的张量生成函数。
+
+schema_version: 1
+
+patterns:
+  - {name: inject_nan_one_element,  takes_value: false}   # 在张量某一位置注入 NaN，其余正常；测 NaN 传播
+  - {name: single_pos_inf,          takes_value: false}   # 张量某一位置注入 +inf；测 inf 处理
+  - {name: single_neg_inf,          takes_value: false}   # 张量某一位置注入 -inf；测 inf 处理
+  - {name: all_pos_inf,             takes_value: false}   # 整个张量全 +inf；测溢出；e.g. softmax 全 +inf 输入
+  - {name: all_neg_inf,             takes_value: false}   # 整个张量全 -inf；e.g. softmax 全 -inf → exp 全 0 → NaN
+  - {name: all_zero,                takes_value: false}   # 整个张量全 0；测零值边界；e.g. matmul(0, B) == 0
+  - {name: all_same,                takes_value: true}    # all_same(<value>)；张量全为该值；e.g. all_same(60000.0) 测 fp16 上溢
+  - {name: subnormal_only,          takes_value: false}   # 仅 subnormal 浮点（非常小）；测 FTZ/DAZ 一致性
+  - {name: min_max_alternate,       takes_value: false}   # 元素在 dtype 最大/最小值间交替；测累加误差
+  - {name: denormal_boundary,       takes_value: false}   # 取在 normal/denormal 边界附近的值；测精度退化
+
+# 解析规则（generator/validator 用此正则拆 name + value）：
+# - "all_same(60000.0)" → name=all_same, value=60000.0
+# - "all_zero" → name=all_zero
+# - 其他形式 ⇒ stage 2 FAIL
+parse_regex: '^(?P<name>[a-z_]+)(\((?P<value>[^()]*)\))?$'

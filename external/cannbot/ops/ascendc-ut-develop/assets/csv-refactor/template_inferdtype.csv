@@ -1,0 +1,5 @@
+case_name,expectResult,input0_dtype,input1_dtype,input_optional_dtype,output0_dtype,output_optional_dtype,attr_int,attr_float,attr_string,attr_bool,case_annotation
+basic_success,SUCCESS,FLOAT16,FLOAT16,FLOAT16,INT8,FLOAT,16,0.04166,ND,0,基础成功场景（完整dtype填写）
+optional_input,SUCCESS,FLOAT16,,,FLOAT16,FLOAT,8,0.08838,ND,1,Optional input1不使用（dtype留空）
+multi_dtype,SUCCESS,BF16,INT8,FLOAT16,BF16,INT32,4,1.0,NCHW,0,混合精度测试（多种dtype组合）
+failed_case,FAILED,FLOAT16,INT8,,INT8,FLOAT,0,0.1,ND,0,dtype不匹配场景

@@ -1,0 +1,41 @@
+{
+  "skill_name": "tool-npu-check",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "memcheck-report-interpretation",
+      "prompt": "npu-check memcheck 报告中的 `Invalid GM read of size 32 bytes`，其 `location` 指向包含 `DataCopy(...)` 调用的源码行，应该如何解读？",
+      "expected_output": "先结合未经修改的原始捕获日志和运行上下文判断诊断可信度。若该诊断上下文充分，它表示 `DataCopy(...)` 所在源码位置对应的搬运路径发生了一次访问长度为 32 字节的设备全局内存（GM）越界读；32 字节是本次访问的总长度，不是实际越界量。报告说明该访问没有完整落入工具记录的有效 NPU 内存分配范围，但不提供具体代码修改方案。",
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "synccheck-report-interpretation",
+      "prompt": "npu-check synccheck 报告 `WAIT_FLAG` 找不到匹配的 `SET_FLAG`，这条诊断说明什么？",
+      "expected_output": "当前核函数下发批次（launch）中的 WAIT_FLAG 没有配对参数相同的 SET_FLAG，表示等待操作缺少对应的事件设置操作。配对参数可包含源/目的流水和事件编号，用于说明本次实际执行中哪组同步操作未配对；报告不提供算子代码修改方案。",
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "report-scope-and-data-export",
+      "prompt": "应用只下发 NPU 核函数、没有调用流同步接口，或者 memcheck 显示未发现问题且精度通过，能否说明整个算子没有问题？",
+      "expected_output": "不能。未调用 aclrtSynchronizeStream 或 aclrtSynchronizeStreamWithTimeout 时，检测数据可能没有导出，不能把没有诊断解释为通过。完成同步后也要先根据原始捕获日志和运行上下文判断诊断可信度；只有可靠报告才能说明本次输入和执行路径在 memcheck 的受支持检查范围内未发现问题，不能替代其他输入形状、synccheck、精度或性能验证。",
+      "expectations": []
+    },
+    {
+      "id": 4,
+      "title": "verified-runtime-configuration",
+      "prompt": "npu-check 当前已验证的运行配置和能力边界是什么？",
+      "expected_output": "当前已验证配置包括 Ascend 950（芯片架构 dav-3510）、匹配且包含 npu-check 的 CANN 包，以及通过 `<<<>>>` NPU 核函数调用语法直接调用一个算子、一次运行只下发一次，即单算子单次调用的单进程单线程可执行程序。PyTorch 场景暂不支持；memcheck 仅检查受支持数据搬运指令对设备全局内存（GM）的访问，不支持标量直接访问（scalar）；synccheck 仅支持同一执行核内的同步操作配对检查。工具不检查数值精度、性能、CPU 侧（Host）逻辑和构建配置。超出已验证配置时，对应能力应标记为不支持或覆盖范围未知，结果不能作为有效检查结论。",
+      "expectations": []
+    },
+    {
+      "id": 5,
+      "title": "log-file-output-semantics",
+      "prompt": "使用 `npu-check --log-file reports/check.log` 时，检查报告和应用的标准输出、标准错误分别写到哪里？终端和日志文件中的重复内容应如何处理？",
+      "expected_output": "检查报告只写入 `--log-file` 指定文件，不再显示在终端；应用的标准输出和标准错误仍显示在终端，同时写入该文件。因此该文件是检查报告和应用输出组成的混合日志，终端应用输出只是重复副本。应分别保留两者，但不得重新拼接或重复计算应用输出，也不能把它们当作两份独立检查报告。",
+      "expectations": []
+    }
+  ]
+}

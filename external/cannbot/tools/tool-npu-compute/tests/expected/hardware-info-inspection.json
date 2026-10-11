@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "record_count": 5,
+  "categories": [
+    {
+      "name": "Host Info",
+      "field_count": 5,
+      "selected_values": {
+        "cpu logical count": 88,
+        "memory total size(MB)": 515563.11
+      }
+    },
+    {
+      "name": "Device Info",
+      "field_count": 4,
+      "selected_values": {
+        "npu count": 1,
+        "chip info": "Ascend950PR_9599 V100",
+        "arch info": "3510"
+      }
+    },
+    {
+      "name": "CPU Information",
+      "field_count": 4,
+      "selected_values": {
+        "ai cpu count": 6,
+        "ai cpu frequency(MHZ)": 1500
+      }
+    },
+    {
+      "name": "AI Core Information",
+      "field_count": 6,
+      "selected_values": {
+        "ai core count": 36,
+        "ai cube count": 36,
+        "ai vector count": 72,
+        "ai vector frequency(MHZ)": 1650
+      }
+    },
+    {
+      "name": "Memory Information",
+      "field_count": 4,
+      "selected_values": {
+        "hbm total(MB)": 131072,
+        "hbm used(MB)": 62061.89,
+        "hbm frequency(MHZ)": 1500
+      }
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+strategy_id: P88
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "InitBuffer|TBuf|TPipe|pipe|workspace"
+    min_count: 1
+    fail_msg: "未检测到 Buffer/pipe 分配 → 无阶段拆分优化空间，不适用 P88。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "stage|Stage|阶段|phase|Phase|preprocess|postprocess"
+    min_count: 1
+    fail_msg: "未检测到多阶段结构 → 无阶段拆分场景，不适用 P88。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "SyncAll.*Reset|pipe-.*Reset|多阶段|phase.*decom"
+    min_count: 0
+    fail_msg: "已存在阶段拆分逻辑 → 可能冗余，优先验证现有策略效果。"

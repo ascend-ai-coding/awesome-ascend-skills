@@ -1,0 +1,106 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "TileLang-Ascend 环境检查流程",
+      "config": {
+        "max_tokens": 250000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "帮我检查 TileLang-Ascend 开发环境是否配置正确，包括代码仓库、编译状态和环境变量。沙箱内没有完整的 TileLang-Ascend 工程与 NPU，不需要实际执行拉取子模块或编译，请说明该技能的检查顺序，以及发现问题时按依赖顺序的修复策略与报告要求。",
+      "expected_output": "1. 回复应说明环境检查按顺序执行：Python 包依赖（torch 与 torch_npu 均需 >= 2.6.0）→ CANN 环境变量（ASCEND_HOME_PATH，CANN >= 8.3）→ 代码仓库完整性（git submodule status）→ 编译安装状态（build/ 目录与编译产物）→ 环境变量（TL_ROOT、PYTHONPATH、ACL_OP_INIT_MODE），并说明前置步骤 0-1 只检查不修复、检查完统一汇总结果告知用户。\n2. 回复应说明发现问题时按依赖顺序修复：子模块不完整时先告知用户问题，再调用 tilelang-submodule-pull 拉取子模块，然后必须重新编译（bash install_ascend.sh），最后 source set_env.sh；且即使之前存在编译产物也必须重新编译，因为旧产物基于不完整代码生成。\n3. 回复应说明仅编译产物缺失时执行 bash install_ascend.sh 后 source set_env.sh、仅环境变量缺失时只需 source set_env.sh（无需重拉子模块或重新编译），并说明修复前先告知用户问题存在、修复后告知修复结果（包括会被自动修复的问题也要打印给用户）。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "自动修复策略与依赖顺序",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "环境检查发现子模块不完整怎么办？修复子模块后还需要做什么操作？",
+      "expected_output": "回复应说明发现子模块不完整时，先告知用户问题存在，自动调用 tilelang-submodule-pull skill 拉取子模块，完成后告知用户修复结果。由于子模块更新，必须重新执行编译（bash install_ascend.sh），然后设置环境变量（source set_env.sh），最后运行测试验证。强调修复前必须告知用户问题，修复后告知结果，所有提示都要打印给用户。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "环境脚本必须从 Skill 绝对路径调用",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我在业务项目目录直接执行 bash scripts/check_env.sh，提示 No such file。正确的仓库和脚本定位方式是什么？",
+      "expected_output": "回复应说明检查对象是含 install_ascend.sh、3rdparty、build、set_env.sh 的 TileLang-Ascend 仓库；先定位本 SKILL.md 所在 <SKILL_DIR>，用 bash <SKILL_DIR>/scripts/check_env.sh。目标仓按 TILELANG_DIR、当前目录向上、./tilelang-ascend 顺序定位，不能假设 scripts 在当前目录。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "Python 与 CANN 前置项只报告不自动修复",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "检测到 torch=2.5、torch_npu 缺失且 CANN=8.2。env-check 会自动升级这些前置依赖吗？",
+      "expected_output": "回复应说明 torch/torch_npu 最低 2.6.0、CANN 最低 8.3；步骤0-1只检查并汇总问题，不自动安装或升级。存在问题时先明确告知并询问是否继续后续仓库检查，不能把前置失败伪装成已修复。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "submodule 状态前缀的判定",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "git submodule status 的条目前缀分别是 '-'、'+' 和无前缀时，env-check 应怎样判断？",
+      "expected_output": "回复应说明 '-' 表示未初始化，'+' 表示当前 commit 与索引不一致、可能不完整，目录存在但为空也不完整；无前缀且目录有内容才判完整。发现异常要先告知用户，再调用 tilelang-submodule-pull。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "旧编译产物不能跨子模块修复复用",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "build/ 和 .so 已存在，但刚刚修复了缺失子模块。能否跳过重新编译，只 source set_env.sh？",
+      "expected_output": "回复应拒绝：旧产物基于不完整源码生成，子模块修复后必须重新运行 bash install_ascend.sh，再 source set_env.sh，最后做 quick_verify；不能因 build 目录存在就复用旧产物。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "仅环境变量缺失时执行最小修复",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请先加载 tilelang-env-check 技能（可 Read 其 SKILL.md）。沙箱内没有对应的 TileLang-Ascend 工程，不需要实际执行命令。假设有一个环境：仓库和子模块完整、编译产物有效，只是 TL_ROOT、PYTHONPATH、ACL_OP_INIT_MODE 未生效。按该技能的依赖关系与自动修复策略，这种情况还需要重拉子模块和重新编译吗？应做哪些最小修复、修复前后要怎样向用户报告、最后怎样验证？",
+      "expected_output": "1. 回复应说明这属于「仅环境变量未设置」场景，最小修复链是 source set_env.sh 设置并复查 TL_ROOT、PYTHONPATH、ACL_OP_INIT_MODE，随后运行 quick_verify.py 验证环境是否可用。\n2. 回复应明确无需重拉子模块、也无需重新编译：只有子模块缺失或不完整时才必须重新编译，编译安装只需执行一次，除非代码有更新，环境变量缺失不构成重编译理由。\n3. 回复应说明报告要求：修复前先告知用户问题存在，修复后告知修复结果与验证结论，不能跳过报告或把结论停留在「编译进行中」。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "tilelang-env-check"
+}

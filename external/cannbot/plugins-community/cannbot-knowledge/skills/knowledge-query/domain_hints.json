@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "description": "Default knowledge-need hints for engineering knowledge bases. Override with KNOWLEDGE_ROOT/search/knowledge-query-hints.json, KNOWLEDGE_ROOT/.cannbot/knowledge-query-hints.json, or CANNBOT_KNOWLEDGE_QUERY_HINTS_PATH.",
+  "triggers": [
+    {
+      "name": "api_semantics",
+      "priority": 72,
+      "if_any": [
+        "api", "interface", "接口", "函数", "方法", "参数", "签名", "语义", "约束",
+        "macro", "宏", "class", "header", "头文件", "调用", "usage"
+      ],
+      "queries": ["API usage", "interface constraints", "reference"]
+    },
+    {
+      "name": "design_implementation",
+      "priority": 68,
+      "if_any": [
+        "design", "implementation", "implement", "coding", "code", "architecture",
+        "方案", "设计", "实现", "开发", "代码", "架构", "范式", "模式",
+        "operator", "算子", "kernel", "内核", "tiling", "调度", "切分"
+      ],
+      "queries": ["implementation pattern", "design guide", "similar example"]
+    },
+    {
+      "name": "parallel_partitioning",
+      "priority": 70,
+      "if_any": [
+        "tiling", "tile", "partition", "parallel", "block dim", "blockdim",
+        "split", "chunk", "core", "并行", "切分", "分块", "分核", "核数",
+        "多核", "尾块", "尾核", "调度"
+      ],
+      "queries": ["tiling strategy", "parallel partitioning", "block dimension", "core number"]
+    },
+    {
+      "name": "debugging",
+      "priority": 76,
+      "if_any": [
+        "error", "exception", "fail", "failed", "failure", "crash", "debug",
+        "build", "compile", "runtime", "log", "trace", "diagnose",
+        "错误", "报错", "异常", "失败", "崩溃", "调试", "诊断", "日志",
+        "构建", "编译", "运行"
+      ],
+      "queries": ["debugging guide", "known issue", "implementation trap"]
+    },
+    {
+      "name": "performance",
+      "priority": 74,
+      "if_any": [
+        "performance", "optimize", "optimization", "profiling", "profile",
+        "latency", "throughput", "bandwidth", "memory", "性能", "优化",
+        "调优", "耗时", "吞吐", "带宽", "内存"
+      ],
+      "queries": ["performance tuning", "optimization practice", "profiling"]
+    },
+    {
+      "name": "testing_validation",
+      "priority": 62,
+      "if_any": [
+        "test", "verify", "validation", "acceptance", "accuracy", "precision",
+        "coverage", "regression", "测试", "验证", "验收", "精度", "覆盖",
+        "回归"
+      ],
+      "queries": ["test example", "validation checklist", "accuracy issue"]
+    },
+    {
+      "name": "migration_compatibility",
+      "priority": 62,
+      "if_any": [
+        "migration", "migrate", "version", "compatibility", "upgrade",
+        "porting", "platform", "hardware", "迁移", "版本", "兼容",
+        "升级", "适配", "平台", "硬件"
+      ],
+      "queries": ["migration guide", "version compatibility", "platform constraint"]
+    }
+  ]
+}

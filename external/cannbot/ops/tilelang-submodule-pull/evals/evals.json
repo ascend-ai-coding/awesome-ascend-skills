@@ -1,0 +1,92 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "子模块和三方库拉取",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "TileLang 的子模块拉取失败了，请帮我重新拉取代码仓库和第三方依赖。",
+      "expected_output": "1. 回复应说明自动拉取流程的两个核心操作及其执行位置：在 TileLang 仓库根目录执行 git submodule update --init --recursive（拉取/初始化子模块）与 git pull --recurse-submodules（拉取主仓及子模块最新代码）。\n2. 回复应说明 git 镜像加速源配置：git config --global url.\"https://ghfast.top/https://github.com/\".insteadOf \"https://github.com/\"。\n3. 回复应说明 auto_pull.sh 的运行方式与日志/停止行为：支持前台 bash scripts/auto_pull.sh 或后台 nohup scripts/auto_pull.sh &；输出同时写终端并记录到 logs/git_pull.log；两条命令均无错误才打印成功并停止脚本，任一失败则等待 3600 秒后重试整轮。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "错误检测与自动重试机制",
+      "config": {
+        "max_tokens": 80000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "网络不稳定导致子模块拉取失败了，脚本会怎么处理？会不会一直重试到永远？",
+      "expected_output": "回复应说明脚本会自动检测关键词（Could not access、error、fatal、Failed to clone、unable to access），发现错误后等待 1 小时（3600 秒）自动重试。有超时保护机制：后台运行超过 10 小时（36000 秒）自动停止并记录日志，防止忘记关闭。重试过程持续输出到终端和日志文件，方便用户查看进度。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "两个拉取命令都成功才停止",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "git submodule update 成功，但 git pull --recurse-submodules 输出 fatal。脚本能否把本轮判成功并退出？",
+      "expected_output": "回复应说明不能：每轮依次执行两条命令并分别扫描错误关键词，任一失败都记录 Pull failed，等待 3600 秒后重试整轮；只有两条都无错误才打印全部拉取成功并停止。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "前台后台运行与日志跟踪命令",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我想先前台观察拉取，之后改后台并跟日志。请加载并使用 tilelang-submodule-pull 技能回答：分别用什么命令？",
+      "expected_output": "1. 回复应给出前台命令 bash scripts/auto_pull.sh 与后台命令 nohup scripts/auto_pull.sh &。\n2. 回复应给出用 tail -f logs/git_pull.log 跟踪日志。\n3. 回复应说明脚本行为：所有输出同时写入终端和日志文件，全部拉取成功后自动停止；后台运行超过 10 小时（36000 秒）自动停止。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "脚本自动定位项目根目录",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "auto_pull.sh 运行时需要手工 cd 到每个 third-party 子仓分别拉取吗？",
+      "expected_output": "1. 回复应说明不需要逐个子仓手工 cd：脚本会自动定位 TileLang 项目根目录，并在根目录执行 git submodule update --init --recursive 与 git pull --recurse-submodules，递归覆盖所有子模块。\n2. 回复应说明项目根目录由脚本自身路径推导（SKILL_DIR → PROJECT_DIR，非手工配置），日志目录 $SKILL_DIR/logs 也由脚本 mkdir -p 自动创建；若项目布局与脚本预期不符，应先核对脚本的路径推导，而不是逐个子仓手工拉取。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "错误检测基于固定输出关键词",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "拉取命令退出后脚本根据什么判断失败？只检查 exit code 吗？",
+      "expected_output": "回复应说明脚本捕获两条命令的完整输出，检测 Could not access、error、fatal、Failed to clone、unable to access 等关键词，并将结果记录到日志；命中任一错误即进入重试，不是只看最后一行或仅靠人工观察。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "tilelang-submodule-pull"
+}

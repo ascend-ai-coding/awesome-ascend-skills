@@ -1,0 +1,27 @@
+# Example kernels — debug practice (DEBUG_GUIDEBOOK.md §8)
+
+This section consolidates notes from re-deriving runnable kernels under **`examples/`** (blind scratch tree **`custom/debug_scratch_examples/`** vs official scripts). It complements the **error-codes** playbook (`error-codes.md` §1–§7); run examples per **`examples/README.md`** (`--list`, `--run_mode sim`, **`TILE_FWK_DEVICE_ID`** for NPU). Error routing remains **`https://raw.gitcode.com/cann/pypto/raw/master/docs/zh/trouble_shooting/README.md`**.
+
+## 8.1 Global patterns (deduplicated)
+
+- **Run mode and decorators:** Most examples set `global_run_mode = pypto.RunMode.NPU` then override from **`_peek_run_mode_from_argv`** so module-level `@pypto.frontend.jit(runtime_options={"run_mode": global_run_mode})` sees **`sim`** when `python3 script.py --run_mode sim`. Parsing **`--run_mode`** only inside **`main()`** leaves the decorator bound to import-time mode — wrong or surprising behavior. When **`--run_mode sim` seems ignored**, compare your pattern to **`examples/README.md`** and the **`_peek_run_mode_from_argv`** idiom in beginner examples.
+- **Vector tile before AIV / implicit copy:** Call **`pypto.set_vec_tile_shapes`** with positive integers as required by your PyPTO version's `https://raw.gitcode.com/cann/pypto/raw/master/docs/zh/api/config/pypto-set_vec_tile_shapes.md` before ops that may trigger AIV / **`REGISTER_COPY`** (see `error-codes.md` §4 / **`F21004`** in `https://raw.gitcode.com/cann/pypto/raw/master/docs/zh/trouble_shooting/function.md`). When expanding shapes or hitting cryptic vec-tile errors, consult the documentation for your version and **skill `pypto-orchestration-manual`'s `references/rules.md`** rule 16.
+- **`pypto.loop` vs host `for`:** Graph iteration belongs in **`pypto.loop`**; do not drive tile/batch work with plain Python **`for range`** inside the traced kernel in ways that violate layout rules (see **skill `pypto-orchestration-manual`'s `references/rules.md`** / **skill `pypto-orchestration-manual`'s `references/rules.md`** Prohibition B). Official transform/loop examples nest **`pypto.loop`** and use **`view` / `assemble`**.
+- **`out.move(...)` vs slicing assign:** Many kernels use **`out.move(pypto.op(...))`** instead of **`out[:] = ...`**. Both appear in-tree; when debugging shape/dtype mismatches, check which pattern the reference uses and match it.
+- **Cube vs vec:** **`set_cube_tile_shapes`** for matmul-like cube ops; still set vec tiles when vector ops or compiler-inserted copies participate.
+- **Error routing:** Map **`Errcode: F2…`** → `https://raw.gitcode.com/cann/pypto/raw/master/docs/zh/trouble_shooting/function.md`, **`F4/F5`** → `pass.md`, **`F9`** → `simulation.md`, etc. (`https://raw.gitcode.com/cann/pypto/raw/master/docs/zh/trouble_shooting/README.md` table).
+- **Multi-output and large scripts:** Use **`extract_pypto_calls.py`** on the failing file (see `error-codes.md` §3 step 2 for path) to see op ordering at a glance.
+- **Environment / exit codes:** If **`import pypto`** fails, fix the install per **`https://raw.gitcode.com/cann/pypto/raw/master/docs/zh/install/build_and_install.md`** before treating kernel logic as broken. When capturing whether a script failed, remember a shell pipeline can mask Python's exit code unless you use **`set -e`**, **`set -o pipefail`**, or **`python3 ...; echo $?`** without masking.
+- **Golden reference implementation patterns:** Golden functions (used for precision verification) can adopt **two equivalent strategies**:
+  - **Full computation:** Process the entire input tensor at once (default, simpler).
+  - **Tiled computation:** Split input into small tiles, compute each tile independently, and concatenate results. Tiled golden is closer to how PyPTO kernels actually execute (tile-by-tile), making it better for verifying boundary handling, accumulation logic, and tile-size effects on numerical precision. See **skill `pypto-golden-generate` (SKILL.md auto-loads)** → **§4 実装策略：全量 vs 分块** for patterns and when to use each.
+
+## 8.2 Example inventory and recurring failures
+
+- **Scope (typical tree):** **23** runnable example kernel **`*.py`** files under **`examples/`** (excluding **`validate_examples.py`** / harness scripts). Optional scratch mirrors live under **`custom/debug_scratch_examples/<sanitized_path>/`**.
+- **Top recurring failure families** when PyPTO is available: (1) **Invalid / missing vec tile** → **`F21004` / REGISTER_COPY**; (2) **`run_mode` / decorator binding** vs **`--run_mode sim`**; (3) **Cube vs vec** tiling confusion on matmul; (4) **Pass / stitch** on large fused graphs (**`F4` / `F5`**); (5) **View/assemble + dynamic** shape mismatches.
+
+## 8.3 Integration tracks (examples vs ACL / cost model)
+
+- **`examples/03_advanced/aclgraph/aclgraph.py`:** Uses **`@pypto.frontend.jit()`** with **Torch Dynamo** **`@allow_in_graph`** and **`FakeTensor`** guards — a different integration path from scripts that only pass **`runtime_options={"run_mode": ...}`**. See **`https://raw.gitcode.com/cann/pypto/raw/master/docs/zh/tutorials/network_integration/pytorch_integration.md`** for return/assign patterns compatible with graph capture.
+- **`examples/03_advanced/cost_model/cost_model.py`:** Uses **`runtime_options`** such as **`stitch_cfgcache_size`** and **`run_mode: pypto.RunMode.SIM`**; swimlane / JSON artifacts may appear under **`./output`**. If "cost model produced nothing", verify SIM options and output paths before blaming the softmax math.

@@ -1,0 +1,17 @@
+strategy_id: P93
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "Matmul|matmul|Mmad|mmad"
+    min_count: 1
+    fail_msg: "未检测到 Matmul 调用 → 不适用 P93。"
+  - type: grep_count
+    path: shared/original/op_host
+    pattern: "block_dim|blockIdx|core_num|coreNum|GetBlockNum|SplitCore"
+    min_count: 1
+    fail_msg: "未检测到多核分核逻辑 → 非多核 Matmul，不适用 P93（单核无 GM 地址冲突）。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "CFG_MDL"
+    min_count: 1
+    fail_msg: "未检测到 CFG_MDL 模板 → P93 仅支持 MDL 模板，CFG_NBuffer33 等不兼容 enableKdimReorderLoad。检查 P64 或 P58。"

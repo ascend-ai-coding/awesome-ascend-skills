@@ -383,7 +383,7 @@ PipeBarrier<PIPE_ALL>();  // 若结果正确则确认是同步问题
 DataCopy(indicesGm, indicesLocal, 2);  // 2 * 4 = 8B
 
 // ✅ 正确：使用 DataCopyPad
-DataCopyExtParams p{1, rowsThisCore * sizeof(int32_t), 0, 0};
+DataCopyExtParams p{1, rowsThisCore * sizeof(int32_t), 0, 0, 0};
 DataCopyPad(indicesGm, indicesLocal, p);
 ```
 
@@ -398,7 +398,7 @@ outGm.SetValue(0, 10);
 // ✅ 推荐
 LocalTensor<T> tmp = buf.Get<T>();
 tmp.SetValue(0, value);
-DataCopyPad(dstGm, tmp, {1, sizeof(T), 0, 0});
+DataCopyPad(dstGm, tmp, {1, sizeof(T), 0, 0, 0});
 ```
 
 ### 诊断流程
@@ -431,6 +431,51 @@ DataCopyPad(dstGm, tmp, {1, sizeof(T), 0, 0});
 
 ---
 
+## 陷阱10：MX 块量化格式 Cast 公式 floor 偏移导致 NaN
+
+### 症状
+
+- 算子输出张量出现大量 NaN（典型 50-80%）
+- NaN 集中在某些行的连续区域（对应量化时 amax 较大的行）
+- 切换到 mxfp8 / mxfp4 等 MX 块量化格式后出现
+- 把 scale 替换为常量（如 e8m0 = 0x7F，decoded scale = 1.0）后 NaN 减少但不消失（说明问题不在 scale 路径）
+
+### 原因
+
+E8M0 scale 编码使用了 floor 偏移而不是 ceil 偏移：
+
+```cpp
+// ❌ floor 偏移
+e8m0_byte = biased_exp_amax - emax_quant_dtype;
+```
+
+floor 偏移下 `amax / decoded_scale` 可能落在 `[quant_dtype_max, 2 × quant_dtype_max)` 区间（对 e4m3 = `[448, 896)`）。`Cast<量化 dtype, fp32, RINT>` 对超过 dtype_max 的输入会产出 NaN（对 fp8_e4m3 为 `0x7F`）。
+
+### 解决方案
+
+改用 ceil 偏移：
+
+```cpp
+// ✅ ceil 偏移
+e8m0_byte = (biased_exp_amax - emax_quant_dtype) + 1;
+```
+
+ceil 偏移确保 `amax / decoded_scale ≤ quant_dtype_max`，Cast 不溢出。
+
+### 排查流程
+
+1. 检查 NaN 是否分布在特定行 → 是 → 怀疑量化路径数值公式
+2. 用 stub scale = 中性常量（0x7F = 1.0）替换原 scale 重跑
+   - 若 NaN 消失 → 根因在 scale 路径（layout / 索引等）
+   - 若 NaN 仍在 → 根因在 Cast 数值公式（本陷阱）
+3. 在量化 Cast 前后插 `AscendC::printf` 采样
+   - Cast 前 fp32 数值正常 + Cast 后出现 NaN 字节 → 确认 Cast 溢出
+4. 检查 E8M0 生成代码，选用 ceil 偏移
+
+参数对照：`emax_quant_dtype` 取值见 [api-precision.md MX 块量化格式精度路径](../../ascendc-api-best-practices/references/api-precision.md)。
+
+---
+
 ## 陷阱排查清单
 
 当遇到精度问题时，按顺序检查：
@@ -444,3 +489,4 @@ DataCopyPad(dstGm, tmp, {1, sizeof(T), 0, 0});
 - [ ] 是否有除法？（检查除零保护）
 - [ ] 是否满足硬件约束？（对齐、最小元素数）
 - [ ] 类型转换是否合理？（避免不必要转换）
+- [ ] **MX 块量化格式 Cast 公式是否用 ceil 偏移？**（floor 偏移会让 amax/scale 超 dtype max 导致 NaN）

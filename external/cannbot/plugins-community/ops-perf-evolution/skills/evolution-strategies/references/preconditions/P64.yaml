@@ -1,0 +1,17 @@
+strategy_id: P64
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "GetBlockIdx|GetBlockNum|BLOCK_DIM|coreNum"
+    min_count: 1
+    fail_msg: "未检测到多核并行逻辑 → 无 GM 地址冲突风险，不适用 P64。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "DataCopy|CopyIn|CopyOut|Fixpipe|GM|gm"
+    min_count: 1
+    fail_msg: "未检测到 GM 访问操作 → 无地址冲突优化空间，不适用 P64。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "bus_contention|地址冲突|conflict|bank"
+    min_count: 0
+    fail_msg: "已存在地址冲突规避逻辑 → 可能冗余，优先验证现有策略效果。"

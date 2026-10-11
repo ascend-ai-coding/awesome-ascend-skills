@@ -4,8 +4,8 @@ description: 自定义算子入图完整指南。覆盖从零开发、Eager 算�
   / torch.library.Library）、Meta 推导函数编写等全流程。适用于两种纯 Python 自定义算子注册场景。关键词：custom_op、torch.library.Library、register_fake、meta、mutates_args。
 original-name: torch-custom-ops-guide
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-26'
-synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
+synced-date: '2026-10-11'
+synced-commit: 34920ba29ef88355bf9190b526e59970d95f696c
 license: UNKNOWN
 ---
 
