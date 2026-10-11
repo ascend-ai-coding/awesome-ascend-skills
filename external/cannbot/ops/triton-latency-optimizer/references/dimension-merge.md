@@ -274,3 +274,34 @@ for i in range(N):
 - 合并连续、独立的维度
 - 利用 contiguous 内存布局
 - 减少循环开销和重复计算
+
+
+
+---
+
+## 来自 SKILL.md 的原始描述（优化点 8：维度合并优化）
+
+**适用条件**：代码中存在多层嵌套循环处理连续维度，且维度间无依赖关系
+
+**典型代码特征**：
+```python
+# 问题代码：3层循环处理 NCHW 布局
+for n in range(N):           # 64 次
+    for h in range(H):       # 512 次
+        for w_start in range(0, W, BLOCK_SIZE):  # 循环层数过多
+            base_offset = n * stride_n + c * stride_c + h * stride_h
+            data = tl.load(input_ptr + base_offset + ...)
+```
+
+**判断逻辑**：
+- 检查是否存在多层嵌套循环（3层及以上）
+- 检查循环维度是否为连续内存布局（如 NCHW 的 H×W）
+- 检查维度间是否有依赖关系
+- 如果存在多层循环且维度连续、无依赖 → 涉及
+- 如果循环层数较少，或维度间有依赖 → 不涉及，跳过
+
+**命中条件**：代码中存在多层嵌套循环处理连续维度，且可合并
+
+**参考文档**：`references/dimension-merge.md`
+
+---

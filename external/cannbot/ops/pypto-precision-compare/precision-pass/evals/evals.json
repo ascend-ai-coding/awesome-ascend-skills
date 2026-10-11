@@ -1,0 +1,82 @@
+{
+  "skill_name": "precision-pass",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "Pass 精度校验工作流",
+      "config": {
+        "max_tokens": 120000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 150000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "请介绍 PyPTO 算子 Pass 精度校验的完整工作流程和方法。",
+      "expected_output": "回复应覆盖：PreCheck/PostCheck 全链路 Pass 校验机制、通过 pass 校验定位报错 Pass 的方法、pass_compare 逐 Op 对比定位具体问题 Op、动态 shape 上板数据打印验证、IR 图分析辅助定位。同时应包含错误码速查表（如 0xB4001U→前端问题、0xB200FU→OP 错误→IR 图分析）。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "错误码诊断与定位",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "PyPTO 算子精度校验报错 0xB4001U，这个错误是什么意思？怎么定位？",
+      "expected_output": "1. 回复应说明 0xB4001U 对应 VERIFY_RESULT_MISMATCH（校验结果不匹配），并区分两类来源：tensor_graph Verify FAIL 属前端问题（应转 precision-verify），带具体 Pass 名的 0xB4001U 属 Pass 精度问题。\n2. 回复应给出 Pass 精度问题的定位路径：在算子中通过 verify_options 开启 enable_pass_verify / pass_verify_pass_filter / pass_verify_save_tensor，并在 tile_fwk_config.json 中开启 pre_check / post_check，以最后一个 Pass（CodegenPreproc）是否 PASS 作为判断标准。\n3. 回复应说明 CodegenPreproc FAIL 时用 pass_compare.py（--p 传问题 Pass 与 golden Pass、--verify_path 传 verify 数据目录）逐 Op 对比定位问题 Op，并至少提及另一个常见错误码（如 0xB200FU = RUNTIME_EXCEPTION）的含义。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "环境配置与执行",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "如何配置 PyPTO 的 Pass 精度校验环境？需要设置哪些环境变量和配置选项？",
+      "expected_output": "1. 回复应给出 Pass 精度校验环境变量的设置方法与示例：ASCEND_WORK_PATH（组件日志输出目录）、ASCEND_GLOBAL_LOG_LEVEL（建议设为 0/DEBUG）、TILE_FWK_DEVICE_ID（NPU 设备 ID）。\n2. 回复应给出 verify_options 的配置示例与参数说明：enable_pass_verify、pass_verify_pass_filter、pass_verify_save_tensor。\n3. 回复应给出 tile_fwk_config.json 中 pre_check / post_check（可含 print_graph / dump_graph）的配置方式与示例，并说明配置后编译运行（python3 -m pip install . --verbose、python3 your_test_case.py）、以 CodegenPreproc 是否 PASS 判断结果，以及 FAIL 时用 pass_compare.py 继续定位问题 Op。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 4,
+      "title": "信息不足场景：追问精度错误信息",
+      "config": {
+        "max_tokens": 80000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 100000
+        },
+        "ascend_platforms": ["A2"]
+      },
+      "prompt": "PyPTO 精度校验报错了，帮我看看什么问题。",
+      "expected_output": "1. 回复应主动向用户索取报错原文/日志与具体错误码（是 0xB4001U 还是 0xB200FU 等），以便按错误码选择处理流程。\n2. 回复应主动索取定位所需的算子上下文：校验的是哪个算子/测试用例、测试脚本或 PyPTO 工程路径，并确认报错来自 tensor_graph Verify FAIL 还是带具体 Pass 名的 0xB4001U。\n3. 回复在拿到上述信息前不应直接给出具体配置方法，而应说明拿到信息后的排查路径（配置 PreCheck/PostCheck → 看 CodegenPreproc 是否 PASS → 用 pass_compare.py 定位问题 Op）。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 5,
+      "title": "正向看护：区分精度校验技能",
+      "config": {
+        "max_tokens": 120000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 150000
+        },
+        "ascend_platforms": ["A2"],
+        "distractor_skills": ["precision-binary-search", "precision-verify", "ops-precision-standard"]
+      },
+      "prompt": "PyPTO 算子在做 Pass 校验时报了 0xB200FU 错误，怎么用 Pass 校验定位具体的问题 Op？",
+      "expected_output": "回复应聚焦 Pass 精度校验方法：使用 PreCheck/PostCheck 全链路校验和 pass_compare 逐 Op 对比定位，结合 IR 图分析辅助排查。区别于二分定位法和文件保存对比法。",
+      "files": [],
+      "expectations": []
+    }
+  ]
+}

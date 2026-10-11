@@ -1,0 +1,30 @@
+strategy_id: P78
+description: 片上缓存加速 Matmul 适用性检查 — 算子为 Matmul 且从 GM 加载，当前未使用 TSCM/L1 Carry 路径
+checks:
+  - id: has_matmul_gm
+    type: grep_count
+    pattern: "Matmul|matmul|GM|gm|TPosition::GM|SetAType|SetBType"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无 Matmul GM 加载 → P78 不适用"
+
+  - id: has_large_matmul
+    type: grep_count
+    pattern: "headDim|M|N|K|矩阵规模|matmul.*size"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子 Matmul 规模小 → P78 收益低"
+
+  - id: no_tscm_yet
+    type: grep_count
+    pattern: "TSCM|Tscm|tscm|L1.*Carry|Carry.*path|OnChip"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已使用 TSCM → P78 已应用"
+
+  - id: not_pure_validation
+    type: grep_count
+    pattern: "OP_CHECK|shape.*check|dim.*check|validation"
+    files: [kernel, header]
+    expected: "<= 3"
+    fail_msg: "纯 Host 侧 shape 校验 → P78 解决的是片上缓存优化"

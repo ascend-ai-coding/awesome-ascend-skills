@@ -1,0 +1,112 @@
+# 初始化后编辑 .cannbot/gitcode-issue-handler/config/classify_config.yaml。
+# 常用项在上，低频和兼容参数在下；未填写的字段沿用本模板默认值。
+# 以下文件路径均相对于脚本运行目录；运行数据默认不纳入 Git。
+
+# ---------- 常用配置：仓库、处理范围与响应方式 ----------
+
+# 例：repo: "cann/ops-math"
+# 非空时直接使用；留空则从显式目标或唯一 GitCode remote 仓库推导并保存。
+# 无法推导或存在歧义时 Agent 会询问用户，确认后保存并继续。
+repo: ""
+
+# 每条范围写成自然语言，助手结合代码证据判断，不是关键词匹配。
+responsibility:
+  # handle：正常处理，不按芯片或问题类型限制；closed 仍按入口规则跳过。
+  handle:
+    - 所有非 Roadmap、路线图、规划汇总等纯规划类的 open Issue
+  # list-only：仅统计并在仍需关注时列举一行。
+  list-only: []
+  # ignore：忽略，不逐项展示；具体缺陷或需求不因提及 Roadmap 而被忽略。
+  ignore:
+    - Roadmap、路线图、规划汇总等纯规划类 Issue
+
+# 精确忽略当前 repo 的 Issue 编号；脚本直接匹配，无需模型判断。
+# 与 responsibility.ignore 的自然语言规则分开，避免重复范围核查；不按作者扩展。
+# 不指定编号：ignored_issue_ids: []
+# 忽略单项：ignored_issue_ids: [296]
+# 忽略多项：ignored_issue_ids: [296, 301, 315]
+# 填正整数编号，不填 URL 或带 # 的字符串；这些示例编号不会自动启用。
+ignored_issue_ids: []
+
+# 自动首响与明确负责人转交：false 先保留回复稿供审核；true 直接响应。
+# 两种模式都保存回复稿；当前会话明确要求直接回复时可覆盖 false。
+# 开启后，首响回查即指派给已明确的 owner；处理前已有有效修复 PR 时指派给其作者，
+# 即使 auto-assign 为 false 也执行；自提自修仍豁免，多个作者有歧义时待确认。
+auto-response: false
+
+# 自动推断责任人的准确性有限，请谨慎使用。
+# 仅负责 owner 尚不明确的情况：首响后临时指派给最可能的一位候选，仍提醒确认。
+# true 要求上面的 auto-response 也为 true；false 不影响候选调查与报告。
+# 用户也可在会话中单独要求自动选择并指派，无需修改这两个开关。
+auto-assign: false
+
+# ---------- 低频业务设置：兜底指派与跟进 ----------
+# 例：auto-assign-fallback-user: "songkai111"（GitCode 账号，不填昵称或 URL）。
+# 仅 auto-assign: true 且调查后没有任何候选时生效；留空则不指派。
+# 账号须经 API 验证；仅作兜底接收人，仍需人工确认真正负责人，请谨慎使用。
+auto-assign-fallback-user: ""
+
+# 等待提出者补充信息或已转交责任人时记录跟进；新回复触发后续处理。
+# 等待责任人不进入静默自动关闭；以下时间用于跟进记录，不会启动后台定时任务。
+follow_up:
+  # 无跟进游标时按更新时间回看 30 天；已有游标优先，非 Issue 创建时间限制。
+  # fetch_pages 为查询页数上限；不完整扫描不会被记为完成。
+  lookback_days: 30
+  fetch_pages: 10
+  # 下次检查间隔（小时）。
+  poll_hours: 24
+  # 等待提出者的记录过期阈值（小时）；不代表到期直接关闭。
+  stale_hours: 48
+  state_file: .cannbot/gitcode-issue-handler/data/followup-watch.json
+
+# ---------- 独立维护命令：已答复咨询闭环 ----------
+# 仅 auto_close_stale_issues.py 使用；正常批量处理不会自动启动此命令。
+# auto_close_stale_issues.py 默认 dry-run，获授权后传 --apply 才评论并关闭。
+auto_close:
+  # 无新活动的最短时长（小时）。
+  inactive_hours: 48
+  # 用于识别咨询的标签及标题片段；每行一个字符串。
+  question_labels:
+    - question
+    - 问题咨询
+    - 咨询
+  question_title_markers:
+    - "[Question|"
+    - "[Question]"
+    - 问题咨询
+    - 咨询
+    - 请问
+  # 关闭前发送的评论正文。
+  comment: 您好，当前问题已经解决，我们计划关闭此issue，后续您如果还有疑问，欢迎重新给我们提issue，我们会继续提供问题支撑
+
+  # 关闭前 PR 排查的最大页数、额外关联查询次数；排查不完整不关闭。
+  pr_fetch_pages: 5
+  pr_linkage_api_budget: 10
+
+# ---------- 低频运行调优：通常保持默认 ----------
+# GitCode API v5 地址；仅自托管服务需要修改。
+gitcode_api: https://api.gitcode.com/api/v5
+
+# 评论和原生 PR 关联缓存；Issue/PR 更新后自动失效。
+cache_dir: .cannbot/gitcode-issue-handler/cache/issues
+# 分类报告，每次运行覆盖。
+report_file: .cannbot/gitcode-issue-handler/reports/classification.txt
+
+# 近期 PR 列表和单个 Issue 原生关联 PR 列表各自最多读取的页数。
+# 近期列表可在增量窗口外停止；Issue 定向关联补查不受时间窗口限制。
+pr_fetch_pages: 5
+# ambiguous：先本地解析明确链接，只对含歧义编号的 PR 查询原生关联。
+# all：逐个查询原生关联；下项仅限制这类 PR→Issue 补查，不限制 Issue 定向读取。
+pr_linkage_scan_mode: ambiguous
+pr_linkage_api_budget: 3
+
+# ---------- 兼容参数：直接调用 classify_issues.py 时使用 ----------
+# 默认 issue_pipeline.py resume 使用全量扫描与独立游标，不受以下 7 天窗口限制。
+# 直接分类且无历史检查记录、无显式时间范围时，按更新时间从 7 天前零点回看。
+# 已有 last_check_file 记录时以记录时间为准；单项或 --ignore-last-check 不使用此窗口。
+lookback_days: 7
+# 兼容分类器的检查进度；流水线进度单独保存在 data/pipeline-state.json。
+last_check_file: .cannbot/gitcode-issue-handler/data/last_check.json
+
+# Token 只通过 GITCODE_TOKEN 环境变量提供，不写入配置。
+# 两开关只控制首响和临时指派，不授权改状态、修代码、提交或创建 PR。

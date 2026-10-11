@@ -1,0 +1,17 @@
+strategy_id: P59
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "DataCopy|CopyOut|Fixpipe"
+    min_count: 1
+    fail_msg: "未检测到 DataCopy 输出操作 → 无转置融合空间，不适用 P59。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "Transpose|transpose|转置|Permute|permute"
+    min_count: 1
+    fail_msg: "未检测到 Transpose 操作 → 无需融合转置，不适用 P59。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "stride|Stride|srcStride|dstStride"
+    min_count: 1
+    fail_msg: "未检测到 stride 参数使用 → 无法通过 DataCopy stride 实现转置，不适用 P59。"

@@ -1,0 +1,17 @@
+strategy_id: P44
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "Transpose|transpose|转置|Permute"
+    min_count: 1
+    fail_msg: "未检测到 Transpose 操作 → 无转置 buffer 常驻需求，不适用 P44。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "for.*iter|numIters|迭代|loop"
+    min_count: 1
+    fail_msg: "未检测到迭代循环结构 → 无跨迭代复用场景，不适用 P44。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "TBuf|VECCALC|常驻|resident"
+    min_count: 0
+    fail_msg: "已存在 TBuf 常驻逻辑 → 可能冗余，优先验证现有策略效果。"

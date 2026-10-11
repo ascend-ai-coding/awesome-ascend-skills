@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "tool": "msobjdump",
+  "provenance": {
+    "asc_tools_commit": "d06e515",
+    "generated_by": "tools/npu-objdump-toolkit/scripts/gen_interface.py",
+    "note": "接口面语义快照（参数、字段映射、跟踪文案）。变更需重新生成并随 PR 评审；不做整文件哈希，无关重构不触发。"
+  },
+  "commands": {
+    "primary": "npu-objdump",
+    "compat": "msobjdump",
+    "module": "python3 -m msobjdump",
+    "note": "安装包主命令为 npu-objdump，msobjdump 为兼容软链，参数与行为一致；旧安装（如 CANN 9.2.0）只有 msobjdump。"
+  },
+  "cli": {
+    "prog": "msobjdump",
+    "options": [
+      {
+        "names": [
+          "-d",
+          "--dump-elf"
+        ],
+        "kind": "primary",
+        "takes_value": true
+      },
+      {
+        "names": [
+          "-V",
+          "--verbose"
+        ],
+        "kind": "modifier",
+        "takes_value": false
+      },
+      {
+        "names": [
+          "-e",
+          "--extract-elf"
+        ],
+        "kind": "primary",
+        "takes_value": true
+      },
+      {
+        "names": [
+          "-l",
+          "--list-elf"
+        ],
+        "kind": "primary",
+        "takes_value": true
+      },
+      {
+        "names": [
+          "--sass"
+        ],
+        "kind": "primary",
+        "takes_value": true,
+        "optional_capability": true
+      },
+      {
+        "names": [
+          "-o",
+          "--out-dir"
+        ],
+        "kind": "modifier",
+        "takes_value": true
+      }
+    ],
+    "exit_codes": {
+      "0": "成功；仍需结合 stdout/stderr 与实际产物判断",
+      "1": "运行错误（新版起向上传播）",
+      "2": "参数错误（argparse：互斥组合、输入不存在等）"
+    }
+  },
+  "fields": {
+    "binary_meta": {
+      "0": "VERSION",
+      "1": "DEBUG",
+      "2": "DYNAMIC_PARAM",
+      "3": "OPTIONAL_PARAM",
+      "4": "RUNTIME_IMPLICIT_INFO"
+    },
+    "kernel_meta": {
+      "1": "KERNEL_TYPE",
+      "2": "CROSS_CORE_SYNC",
+      "3": "MIX_TASK_RATION",
+      "11": "ENABLE_EARLY_START",
+      "13": "DETERMINISTIC_INFO",
+      "14": "FUNCTION_ENTRY",
+      "15": "BLOCK_NUM"
+    },
+    "kernel_type": {
+      "1": "AICORE",
+      "2": "AIC",
+      "3": "AIV",
+      "4": "MIX_AIC_MAIN",
+      "5": "MIX_AIV_MAIN",
+      "6": "AIC_ROLLBACK",
+      "7": "AIV_ROLLBACK"
+    },
+    "cross_core_sync": {
+      "0": "NO_USE_SYNC",
+      "1": "USE_SYNC"
+    },
+    "runtime_implicit_info": {
+      "1": "SIMD Printf Flag",
+      "2": "Hardware Sync Flag",
+      "3": "L2Cache Hint Flag",
+      "4": "SIMT Printf Flag",
+      "5": "SIMD Assert Flag"
+    }
+  },
+  "tracked_messages": [
+    "The kernel meta information cannot be found.",
+    "nothing to list in single op elf file",
+    "nothing to extra in single op elf file",
+    "llvm-objcopy is not available",
+    "llvm-objdump is not available",
+    "no device ELF found in input",
+    "thin archive is not supported",
+    "llvm-objdump produced no valid instruction lines",
+    "llvm-objdump produced no usable device instructions",
+    "llvm-objdump output contains unknown instructions",
+    "cannot be combined with"
+  ]
+}

@@ -1,0 +1,11 @@
+# 测试 PR 列表
+# 每行一个 PR URL，# 开头的行为注释
+https://gitcode.com/cann/ops-transformer/pull/0086
+https://gitcode.com/cann/ops-transformer/pull/6534
+https://gitcode.com/cann/ops-transformer/pull/3212
+https://gitcode.com/cann/ops-transformer/pull/4046
+https://gitcode.com/cann/ops-transformer/pull/4037
+https://gitcode.com/cann/ops-transformer/pull/5399
+https://gitcode.com/cann/ops-transformer/pull/3540
+https://gitcode.com/cann/ops-transformer/pull/4099
+https://gitcode.com/cann/ops-transformer/pull/4699

@@ -1,0 +1,17 @@
+strategy_id: P54
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "Scalar|scalar|标量|Init|初始化|head|overhead"
+    min_count: 1
+    fail_msg: "未检测到标量初始化逻辑 → 无头开销优化空间，不适用 P54。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "struct.*LocalVars|栈变量|stack|local.*var"
+    min_count: 1
+    fail_msg: "未检测到栈变量/局部变量 → 无栈访问优化空间，不适用 P54。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "成员变量|member|class.*var|寄存器|register"
+    min_count: 0
+    fail_msg: "已存在成员变量/寄存器优化 → 可能冗余，优先验证现有策略效果。"

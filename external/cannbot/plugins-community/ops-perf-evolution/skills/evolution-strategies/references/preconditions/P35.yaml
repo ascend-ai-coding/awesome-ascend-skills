@@ -1,0 +1,17 @@
+strategy_id: P35
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "TBuf|TPosition::VECCALC|VECCALC| resident"
+    min_count: 0
+    fail_msg: "已存在 TBuf VECCALC 常驻逻辑 → 可能冗余，优先验证现有策略效果。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "UB|ub|LocalTensor|AllocTensor"
+    min_count: 1
+    fail_msg: "未检测到 UB/LocalTensor 使用 → 无 TBuf 优化空间，不适用 P35。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "累加|accumul|Add|Sum|累加器|accumulator"
+    min_count: 1
+    fail_msg: "未检测到累加操作 → 无累加器常驻需求，不适用 P35。"

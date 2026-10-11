@@ -1,0 +1,132 @@
+{
+  "skill_name": "pypto-op-plan",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "非结构化需求的规划起点",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "disabled": false
+      },
+      "prompt": "我要用 pypto-op-plan 规划一个新算子开发，需求比较零散，第一步该做什么？",
+      "expected_output": "规划新算子第一步是需求规划：需求零散时先把任务整理成 SPEC.md 作为任务摘要；然后用 pypto-docs-search 搜索结构相似的已有 kernel 的参考实现与 golden 用法，也可用 grep 扫描当前工作树 custom/ 目录找范本。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "参考样例与生产约束冲突",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "disabled": false
+      },
+      "prompt": "搜到的参考实现 golden 里用了 pypto.Tensor([]) 这类简化写法，可以直接照抄到生产实现里吗？",
+      "expected_output": "不能直接照抄。golden/参考实现只是 API 用法参考，不是生产实现标准，其简化形式（如 pypto.Tensor([])）可能违反生产编码约束/门禁；当样例与约束冲突时约束优先，不能引用该样例来合理化偏离。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "结构化需求直接进入示例搜索",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ]
+      },
+      "prompt": "我的算子需求已经整理好了，接下来规划阶段做什么？",
+      "expected_output": "需求已结构化则直接进入结构相似示例搜索：用 pypto-docs-search 搜对应 kernel 类型的算子参考实现与 golden 用法，为后续设计找范本，不需要再把需求重写进别的文件。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 4,
+      "title": "扫描工作树找结构相似 kernel",
+      "config": {
+        "max_tokens": 1250000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 1300000
+        },
+        "ascend_platforms": [
+          "A2"
+        ]
+      },
+      "prompt": "我想在当前代码库里找有没有结构相似的 PyPTO kernel 可以参考，怎么搜？",
+      "expected_output": "可用 grep 在当前工作树 custom/ 下按 kernel 类型搜索，结合 pypto-docs-search 搜算子参考实现与 golden 用法；找到的样例只作 API 用法参考，不直接照抄生产实现。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 5,
+      "title": "环境异常不应擅自终止或忽略规划",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "规划阶段发现当前机器没有可用 NPU。pypto-op-plan 应直接终止，还是假装环境正常继续？",
+      "expected_output": "回复应把环境问题告知调用方并确认是否忽略该问题、继续只做规划；不能擅自终止，也不能隐瞒或假装环境已通过。环境检查不是在规划阶段编造执行证据。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "任务摘要仍以 SPEC.md 为准",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "规划新算子时，是否应该新建 MEMORY.md 来存任务摘要和零散需求？",
+      "expected_output": "回复应说明规划阶段的任务摘要放在 SPEC.md，需求未结构化时先整理 SPEC.md；不要在此阶段创建 MEMORY.md 作为另一份需求真值，MEMORY.md 属于后续实现阶段。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "按计算结构而非仅算子名称找范本",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "新算子名字在仓库里完全搜不到，还能做规划吗？应该怎样找可复用范本？",
+      "expected_output": "回复应按 kernel 的计算结构和模式搜索，而不局限于同名算子：用 pypto-docs-search 查结构相似的生产实现与 golden 用法，也可 grep 当前工作树 custom/。记录可复用 API/数据流模式和与目标的差异。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 8,
+      "title": "生产参考优先于 golden 简化用法",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "一个 production kernel 和一个 golden example 都结构相似，但写法不一致。规划时应该优先相信哪一个？",
+      "expected_output": "回复应优先把生产算子实现作为可落地范本；golden/用法只帮助理解 API。任何样例与生产编码约束或门禁冲突时都以约束为准，不能用简化 example 为偏离规则背书。",
+      "expectations": [],
+      "files": []
+    }
+  ]
+}

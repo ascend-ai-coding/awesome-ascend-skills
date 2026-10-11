@@ -1,0 +1,30 @@
+strategy_id: P61
+description: L2 Cache 优化适用性检查 — 算子为 PageAttention 场景且当前关闭 L2 Cache，未开启 KV 缓存
+checks:
+  - id: has_l2_cache_config
+    type: grep_count
+    pattern: "l2Cache|L2Cache|L2.*cache|cache|Cache"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子无 L2 Cache 相关配置 → P61 不适用。检查硬件是否支持 L2 Cache"
+
+  - id: has_page_attention
+    type: grep_count
+    pattern: "PageAttention|page.*attention|page.*table|KV.*page|paged"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子非 PageAttention 场景 → P61 收益低。L2 Cache 优化主要针对 KV 缓存"
+
+  - id: no_l2_optimization_yet
+    type: grep_count
+    pattern: "l2CacheOffFlag.*false|l2Cache.*enable|cache.*on|enable.*L2"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已开启 L2 Cache → P61 已应用"
+
+  - id: not_pure_validation
+    type: grep_count
+    pattern: "OP_CHECK|shape.*check|dim.*check|validation"
+    files: [kernel, header]
+    expected: "<= 3"
+    fail_msg: "纯 Host 侧 shape 校验 → P61 解决的是 L2 Cache 配置"

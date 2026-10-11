@@ -1,0 +1,30 @@
+strategy_id: P49
+description: 硬件加速反量化适用性检查 — 算子包含反量化计算，且当前未使用 AscendDequant/Brcb 硬件指令
+checks:
+  - id: has_dequantization
+    type: grep_count
+    pattern: "dequant|Dequant|Cast.*int32|Mul.*scale|tokenScale"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无反量化 → P49 不适用"
+
+  - id: has_software_loop
+    type: grep_count
+    pattern: "for.*subBlockM|for.*scale|Mul.*fp32|Cast.*fp32"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子反量化已是硬件指令 → P49 收益低"
+
+  - id: no_ascenddequant_yet
+    type: grep_count
+    pattern: "AscendDequant|Brcb|SetQuantVector|硬件.*反量化"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已使用 AscendDequant → P49 已应用"
+
+  - id: not_pure_validation
+    type: grep_count
+    pattern: "OP_CHECK|shape.*check|dim.*check|validation"
+    files: [kernel, header]
+    expected: "<= 3"
+    fail_msg: "纯 Host 侧 shape 校验 → P49 解决的是反量化指令优化"

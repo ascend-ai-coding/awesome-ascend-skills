@@ -1,0 +1,31 @@
+strategy_id: P30
+description: PipeBarrier 密集插入适用性检查 — 算子必须是纯 Vector 递推链，且当前缺少或过度同步
+
+checks:
+  - id: has_recursive_chain
+    type: grep_count
+    pattern: "y.*=.*y|recurs|depend|chain|y0|y1|y2|y3|prev|next"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无递推依赖链 → PipeBarrier 密集插入无收益。检查是否为独立 elementwise"
+
+  - id: pure_vector_pipeline
+    type: grep_count
+    pattern: "Mmad|Cube|L0A|L0B|L0C|A1Buf|B1Buf|C1Buf"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子含 Cube/Matmul → 不是纯 Vector 流水。考虑 P28 HardEvent 或 P20 三缓冲"
+
+  - id: no_pipebarrier_v_yet
+    type: grep_count
+    pattern: "PipeBarrier.*PIPE_V|PipeBarrier<PIPE_V>"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已使用 PipeBarrier<PIPE_V> → P30 已应用"
+
+  - id: has_vector_sequence
+    type: grep_count
+    pattern: "Add\\s*\\(|Mul\\s*\\(|Sub\\s*\\(|Div\\s*\\(|Exp\\s*\\(|Log\\s*\\(|Sqrt\\s*\\("
+    files: [kernel]
+    expected: ">= 2"
+    fail_msg: "算子 Vector 指令序列过短 → 同步开销占比高。考虑 A3 Rounding Mode"

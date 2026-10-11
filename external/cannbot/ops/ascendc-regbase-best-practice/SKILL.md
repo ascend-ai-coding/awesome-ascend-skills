@@ -3,8 +3,8 @@ name: external-cannbot-ops-ascendc-regbase-best-practice
 description: 当需要为 DAV_3510 RegBase 算子确认 API 约束、实现结构、排查常见陷阱或选择真实参考算子时使用。
 original-name: ascendc-regbase-best-practice
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-26'
-synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
+synced-date: '2026-10-11'
+synced-commit: 34920ba29ef88355bf9190b526e59970d95f696c
 license: UNKNOWN
 ---
 
@@ -30,12 +30,13 @@ license: UNKNOWN
 - API 约束和签名：`references/api/index.md`
 - 陷阱和精度风险：`references/pitfalls/index.md`
 - 工程经验和路线判断：`references/dev-experience/index.md`
+- 算子范式设计：`references/paradigms/`，每个范式以自身 `patterns.md` 为入口，按需渐进展开更深层参考、示例和模板。
 - 真实参考实现：`references/reference-ops/open_source_operator_table.md`
 
 ## 按阶段选择
 
 - 方案决策：`references/regbase_development_guide.md`、`references/dev-experience/index.md`
-- 设计：`references/regbase_development_guide.md`、`references/api/index.md`
+- 设计：`references/regbase_development_guide.md`、`references/api/index.md`、按范式名路由的 `references/paradigms/<paradigm>/patterns.md`
 - 实现：`references/api/index.md`、`references/dev-experience/regbase_programming_notes.md`、`references/reference-ops/open_source_operator_table.md`
 - 审查：`references/pitfalls/index.md`、`references/dev-experience/index.md`
 - 修复和调试：`references/pitfalls/symptom_to_cause.md`、`references/dev-experience/index.md`

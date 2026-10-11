@@ -1,0 +1,30 @@
+strategy_id: P52
+description: L2 Cache Hint 优化适用性检查 — 算子为多核竞争场景且 blockDimM==1，当前未用 SetL2CacheHint 控制缓存
+checks:
+  - id: has_multi_core
+    type: grep_count
+    pattern: "blockDim|GetBlockNum|coreNum|多核|multi.*core"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子非多核 → P52 不适用"
+
+  - id: has_l2_cache
+    type: grep_count
+    pattern: "l2Cache|L2Cache|CacheMode|cache"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子无 L2 Cache 相关 → P52 收益低"
+
+  - id: no_cache_hint_yet
+    type: grep_count
+    pattern: "SetL2CacheHint|CACHE_MODE_DISABLE|cache.*hint"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已使用 L2 Cache Hint → P52 已应用"
+
+  - id: not_pure_validation
+    type: grep_count
+    pattern: "OP_CHECK|shape.*check|dim.*check|validation"
+    files: [kernel, header]
+    expected: "<= 3"
+    fail_msg: "纯 Host 侧 shape 校验 → P52 解决的是缓存控制"

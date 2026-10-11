@@ -1,0 +1,56 @@
+{
+  "skill": "evolution-world-model",
+  "version": "1.0",
+  "description": "World model 决策树工具和 schema 文档",
+  "entries": [
+    {
+      "source_key": "evolution-world-model#schema",
+      "kind": "schema",
+      "title": "world_model.json 完整 JSON Schema 定义",
+      "doc_path": "schema.md"
+    },
+    {
+      "source_key": "evolution-world-model#operations",
+      "kind": "operations",
+      "title": "四大操作框架 (Init / Select / Refine / Analyze)",
+      "doc_path": "operations.md"
+    },
+    {
+      "source_key": "evolution-world-model#state_schema",
+      "kind": "state_schema",
+      "title": "state.json 运行时游标 schema",
+      "doc_path": "state_schema.md"
+    }
+  ],
+  "scripts": [
+    {
+      "name": "wm_ops.py",
+      "purpose": "CLI 工具：节点选择/验证/摘要/深度 profiling",
+      "subcommands": ["select", "validate", "summary", "deep-profiling", "refine"]
+    },
+    {
+      "name": "profiling_evidence.py",
+      "purpose": "瓶颈分析 → 策略映射（Phase B 将拆为 extract_facts + match_strategies_by_labels）"
+    },
+    {
+      "name": "solution_db.py",
+      "purpose": "JSONL 谱系追踪"
+    },
+    {
+      "name": "state_ops.py",
+      "purpose": "state.json 读写 (hook + wm_ops 私有账本)"
+    },
+    {
+      "name": "transcript_audit.py",
+      "purpose": "SubagentStop hook 调用，audit partial 是否调了 evaluation/build 脚本"
+    },
+    {
+      "name": "check_round_artifacts.py",
+      "purpose": "Stop hook 调用，校验本轮 artifact 完整性"
+    },
+    {
+      "name": "session_anchor.py",
+      "purpose": "session 锚定"
+    }
+  ]
+}

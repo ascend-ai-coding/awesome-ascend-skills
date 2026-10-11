@@ -16,7 +16,7 @@
 | **矩阵计算**（MatMul/Conv等） | `ACL_DEV_ATTR_CUBE_CORE_NUM` | 使用 Cube Core 数量 |
 | **混合计算** | `ACL_DEV_ATTR_AICORE_CORE_NUM` | 使用 AI Core 数量 |
 
-**910B3 芯片核数参考**：
+**Ascend910B3 芯片核数参考**：
 - AI Core: 20
 - Cube Core: 20
 - Vector Core: 40（每个 AI Core 有 2 个 Vector Core）
@@ -127,8 +127,3 @@ int32_t main() {
 }
 ```
 
----
-
-## 4. 相关文档
-
-- **代码审查检查项**：[code-review-checklist.md](../../ascendc-kernel-develop-workflow/references/code-review-checklist.md) §0.2.1

@@ -1,0 +1,101 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "从 PyTorch 代码中提取算子任务文件",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请说明使用 triton-task-extractor 把一个 PyTorch 算子实现（例如含 matmul_with_bias 函数的模型文件）提取为标准算子任务文件的完整流程与产物规范：输出文件的结构、生成后如何验证、验证通过后如何收尾。",
+      "expected_output": "1. 回复应说明单 case 输出为单一自包含 Python 文件，只包含 import 区、class Model(nn.Module)（待优化算子逻辑在 Model.forward()，初始化状态在 Model.__init__()）、def get_inputs() 与 def get_init_inputs() 四部分，import 只允许 torch / torch.nn / 标准库，依赖的自定义函数必须内联。\n2. 回复应说明生成后必须用本 skill 自带的 scripts/validate_task.py 做静态检查（class Model / forward / get_init_inputs，且 get_inputs 或 get_input_groups 至少存在其一）与运行时检查（exec 后实际执行 forward），并以退出码 0 与 [VALID] 为准。\n3. 回复应说明验证通过后、结束该 skill 前必须用 question 工具把完整任务文件展示给用户并请求确认，普通文本询问不能替代 question 工具调用。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "单 case 与多 case 模式的选择",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "triton-task-extractor 的两种模式（单 case 和多 case）有什么区别？什么情况下用哪种模式？源文件有多个 shape 需要测试时应该如何处理？",
+      "expected_output": "回复应说明单 case 模式适用于单一自包含 .py 文件，get_inputs 返回单组输入；多 case 模式适用于 .py + 同名 .json 配对，get_input_groups 返回多组输入。判定规则为：如果源 .py 已定义 get_input_groups() 函数，或同目录存在同名 .json 文件，则走多 case 模式，否则走单 case 模式。多 case 模式的核心原则是原样透传、不改写源码，禁止将多 case 源降级为单 case 输出来通过验证。源文件有多 shape 需要测试时应使用多 case 模式。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "多 case 模式优先级不可降级",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "源 .py 同时有 get_inputs() 和 get_input_groups()，旁边还有同名 JSON。为了简单能否只提取 get_inputs 的一组？",
+      "expected_output": "回复应按优先级判定为多 case 模式，原样保留 get_input_groups 并复制同名 JSON；下游会优先调用 get_input_groups，无需追加 get_inputs 兼容层，更不能降级成单 case。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "多 case 文件对必须同名同目录",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "多 case 源的 op.py 通过 __file__ 找 op.json。提取时能否把 JSON 改名后放进 configs 子目录？",
+      "expected_output": "回复应说明不能；.py 与 .json 必须字节级复制到工作目录并保持同名同目录，验证脚本会用源文件真实路径作为 __file__。不得通过重写 Python 或路径逻辑改变这一约定。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "验证必须包含运行时检查",
+      "config": {
+        "max_tokens": 110000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "任务文件 py_compile 和静态 AST 检查都通过了，可以跳过 validate_task.py 的运行时执行吗？",
+      "expected_output": "回复应说明不可以；必须使用 skill 自带 validate_task.py 完成静态和运行时检查。单 case 要实际执行 Model(*get_init_inputs())(*get_inputs())，多 case 要运行全部 groups，并以退出码 0、[VALID] 及 cases_tested/cases_passed 为准。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "源基线有 bug 时不得篡改",
+      "config": {
+        "max_tokens": 110000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "源 benchmark 的 __init__ 参数和 get_init_inputs 不匹配。为了让提取验证通过，可以直接修源文件再复制吗？",
+      "expected_output": "回复应禁止编辑 npu_benchmark/ascendc-kernelgen-data 等源路径，也禁止在复制时悄悄修正；应使用字节级复制保留基线，在 report.md 标注 baseline_buggy: true 并失败退出。基线 anchor 一旦生成也不得重写。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "验证后必须取得用户确认",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "任务提取和 validate_task.py 已全通过。此时可以直接结束并交给 coding 吗？",
+      "expected_output": "1. 回复应说明不能直接结束：validate_task.py 全通过只是必要条件，Step 4.5 基线冻结与 Step 5 用户确认都是标为必须执行、禁止跳过的步骤。\n2. 回复应说明用户确认前必须先用 freeze_baseline.py 锚定工作目录中 {op_name}.py 的哈希（mode=user 需传 --source_path），并指出退出码 5（副本 sha 与源 sha 不一致）时不得绕过，应在 report.md 标注 baseline_buggy: true 失败退出。\n3. 回复应说明结束该 skill 前必须用 question 工具把完整任务文件展示给用户、提供确认与需要修改两个选项并取得确认，普通文本询问不能替代 question 工具调用。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "triton-task-extractor"
+}

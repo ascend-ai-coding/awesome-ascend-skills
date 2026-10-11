@@ -1,0 +1,30 @@
+strategy_id: P69
+description: UB 融合连续 Vector 计算适用性检查 — 算子包含多次连续 Vector 计算，且中间结果当前经 GM 往返
+checks:
+  - id: has_vector_chain
+    type: grep_count
+    pattern: "Add\\s*\\(|Mul\\s*\\(|Sub\\s*\\(|Div\\s*\\(|Exp\\s*\\(|Abs\\s*\\(|Sqrt\\s*\\(|Max\\s*\\("
+    files: [kernel]
+    expected: ">= 2"
+    fail_msg: "算子无连续 Vector 计算链 → P69 不适用。至少需要 2 次 Vector 操作"
+
+  - id: has_gm_roundtrip
+    type: grep_count
+    pattern: "CopyIn|CopyOut|DataCopy.*GM|Fixpipe|fixpipe|GM.*UB|UB.*GM"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无 GM 搬运 → P69 收益低。中间结果已在 UB 上则无需优化"
+
+  - id: no_ub_fusion_yet
+    type: grep_count
+    pattern: "VECCALC|VecCalc|vecCalc|UB.*融合|中间.*UB|inPlace|inplace"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已有 UB 融合链 → P69 已应用"
+
+  - id: not_pure_validation
+    type: grep_count
+    pattern: "OP_CHECK|shape.*check|dim.*check|validation"
+    files: [kernel, header]
+    expected: "<= 3"
+    fail_msg: "纯 Host 侧 shape 校验 → P69 解决的是 Kernel 内 Vector 链融合"

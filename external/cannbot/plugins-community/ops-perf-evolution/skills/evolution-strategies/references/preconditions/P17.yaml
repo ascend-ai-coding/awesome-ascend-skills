@@ -1,0 +1,17 @@
+strategy_id: P17
+checks:
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "Cube.*Vector|Vector.*Cube|CV|ExecuteTask|SyncAll"
+    min_count: 1
+    fail_msg: "未检测到 Cube+Vector 融合执行模式 → 非 CV 融合算子，不适用 P17。检查 P51 或 P73。"
+  - type: grep_count
+    path: shared/original/op_kernel
+    pattern: "mBaseSize|s2BaseSize|baseSize|BLOCK_SIZE"
+    min_count: 1
+    fail_msg: "未检测到基本块大小定义 → 无 CV 块大小调优空间，不适用 P17。"
+  - type: grep_count
+    path: shared/original/op_host
+    pattern: "Tiling|CalcBaseSize|tileSize"
+    min_count: 1
+    fail_msg: "未检测到 Host 侧 Tiling 逻辑 → 无法调整块大小，不适用 P17。"

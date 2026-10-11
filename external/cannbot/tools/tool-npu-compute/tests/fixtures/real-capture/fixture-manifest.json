@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "device": {
+    "chip_info": "Ascend950PR_9599 V100",
+    "arch_info": "3510"
+  },
+  "excluded_files": [
+    ".hardware_info.lock"
+  ],
+  "files": [
+    {
+      "name": "ArithmeticUtilization.csv",
+      "kind": "section-csv",
+      "size": 956,
+      "sha256": "b636c1519e4d7ba95a6b7eb4e6b4e4a4334c57f86a41f276b2002ea7fd9dc910"
+    },
+    {
+      "name": "HardwareInfo.jsonl",
+      "kind": "hardware-info",
+      "size": 593,
+      "sha256": "605f818e6b0e66ea51d44d2294a4c9c765dc3a3ff53a8f4dfef2d0876176cbfa"
+    },
+    {
+      "name": "PipeUtilization.csv",
+      "kind": "section-csv",
+      "size": 2011,
+      "sha256": "68c9b57d77afa34cd4931dcd63daf5da94c1f3a390721ec982aef83bf0052232"
+    },
+    {
+      "name": "PipeTrace.json",
+      "kind": "pipeline-trace",
+      "size": 32096,
+      "sha256": "8cc58f05cadd9d380bd528cf57a874226d8b5ff6be6038d28fc4f6f4f21be189"
+    },
+    {
+      "name": "ResourceConflictRatio.csv",
+      "kind": "section-csv",
+      "size": 1058,
+      "sha256": "6d213a62ebfb5fe59cde4145747414189af8410c68511bef467b82691404f308"
+    },
+    {
+      "name": "summary.jsonl",
+      "kind": "summary",
+      "size": 4713,
+      "sha256": "c7379e9a015cb6212ba299db13ccccf62b29928871cb35d8b5884db655eef9d5"
+    },
+    {
+      "name": "Memory.csv",
+      "kind": "section-csv",
+      "size": 2156,
+      "sha256": "6957dcf56ef82e42ab358a0b24f989728a57493ea90152a37803a0d2379d292e"
+    },
+    {
+      "name": "MemoryL0.csv",
+      "kind": "section-csv",
+      "size": 611,
+      "sha256": "d88e00e6c532a1fad458152490ebb4a4b323029390f075f3b0504b665d881954"
+    },
+    {
+      "name": "MemoryUB.csv",
+      "kind": "section-csv",
+      "size": 668,
+      "sha256": "544635178d09c33b33929381258b87ad5493d009354ec5d9f125b97343dfa5ff"
+    },
+    {
+      "name": "L2Cache.csv",
+      "kind": "section-csv",
+      "size": 1588,
+      "sha256": "185303f57de04d6bd6bb0813b8c220095e07d956ae27a83ad7c72c1af5afe319"
+    }
+  ]
+}
