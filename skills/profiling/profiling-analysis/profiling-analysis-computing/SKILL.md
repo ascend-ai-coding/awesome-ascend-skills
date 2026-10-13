@@ -1,11 +1,13 @@
 ---
 name: profiling-analysis-computing
-description: 用于分析Ascend NPU系统中计算性能瓶颈的技能，专注于算子效率和计算优化
+description: 用于分析Ascend NPU计算性能瓶颈：高耗时算子筛选、指令占比透视、形状解析，以及对 kernel_details.csv 中 aic_mac_ratio≥80% 的算力瓶颈算子做 Roofline 理论/实际耗时核对并给出是否需优化与排查方向。当用户提到计算瓶颈、算子分析、aic_mac_ratio、理论耗时、Roofline、kernel_details 算力核对时使用。
 keywords:
     - profiling
     - 计算瓶颈
     - 算子分析
     - Ascend NPU
+    - aic_mac_ratio
+    - Roofline
 ---
 
 # Profiling 计算瓶颈分析 Skill
@@ -18,11 +20,13 @@ keywords:
 1. **高耗时算子筛选**：从op_statistic_*.csv、op_summary_*.csv或kernel_details.csv文件中筛选Top-N高耗时算子
 2. **数据透视表分析**：基于高耗时算子列表，生成性能数据透视表，分析各类型指令占比和瓶颈
 3. **算子形状解析**：提取MatMul等常用算子的输入形状，提供更直观的性能分析视角
+4. **算力瓶颈 Roofline 核对**：对 `kernel_details.csv` 中 `aic_mac_ratio≥80%` 的算子，比较理论耗时与实际耗时，判断是否需要优化并给出初步排查方向
 
 ### 脚本组成
 - **op_high_time_selector.py**：高耗时算子筛选脚本
 - **op_pivot_table_analyzer.py**：数据透视表分析脚本
 - **extract_op_shapes.py**：算子形状解析脚本
+- **kernel_roofline_compute_check.py**：算力瓶颈算子理论/实际耗时核对脚本
 - **op_perf_analysis_combine.py**：整合脚本，自动执行完整分析流程（主技能调用时使用）
 
 
@@ -54,6 +58,11 @@ keywords:
 | --html-file | string | 否       | 可选的HTML文件路径，用于将解析后的形状替换到HTML报告中        |
 | --pattern  | string | 否       | 可选的额外文件名匹配模式，可重复指定                         |
 
+### 算力瓶颈 Roofline 核对脚本 (kernel_roofline_compute_check.py)
+
+必填：`--csv` 或 `--input-path`，以及 `--flops`（FP16/BF16 Cube TFLOPS）、`--bandwidth`（配合 `--bw-unit`，如 `--bandwidth 1.2 --bw-unit TB/s`）。  
+可选：`--mac-threshold`（默认 0.80）、`--output-path`/`--out`、`--top`。缺失算力/带宽时先向用户询问，不要猜测。
+
 ## 使用方式
 
 ### 1. 由主分析Skill自动调用
@@ -63,8 +72,9 @@ keywords:
 1. **高耗时算子筛选**：自动筛选Top-5高耗时算子
 2. **数据透视表分析**：生成性能数据透视表，分析各类型指令占比
 3. **算子形状解析**：自动解析MatMul等算子的形状信息
+4. **算力瓶颈 Roofline 核对**（需提供 `--flops` 与 `--bandwidth`）：对 `aic_mac_ratio≥80%` 算子比较理论/实际耗时并给出是否需优化建议
 
-无需手动执行后续步骤，系统会自动完成从筛选到分析的全流程。
+若用户未提供 NPU 峰值算力与带宽，整合脚本会跳过第 4 步；Agent 应主动询问后再补跑。
 
 ### 2. 单独使用（分步骤）
 
@@ -96,9 +106,22 @@ python scripts/op_perf_analysis_combine.py --input-path "./p-perf-huawei-05_1104
 
 # 指定分析前5个高耗时算子
 python scripts/op_perf_analysis_combine.py --input-path "./p-perf-huawei-05_110439_20250728062428118_ascend_pt" --output-path "./output" --top-n 5
+
+# 同时做算力瓶颈 Roofline 核对（需真实规格）
+python scripts/op_perf_analysis_combine.py --input-path "./p-perf-huawei-05_110439_20250728062428118_ascend_pt" --output-path "./output" --top-n 5 --flops 313 --bandwidth 1.2 --bw-unit TB/s
 ```
 
-### 4. 专项算子分析
+### 4. 算力瓶颈 Roofline 核对（单独使用）
+
+当透视表显示 `aic_mac_ratio` 偏高，或需要判断算力瓶颈算子是否已打满峰值时：
+
+```bash
+python scripts/kernel_roofline_compute_check.py --input-path "./p-perf-huawei-05_110439_20250728062428118_ascend_pt" --flops 313 --bandwidth 1.2 --bw-unit TB/s --output-path "./output"
+```
+
+解读规则见 [算力瓶颈 Roofline 核对](./reference/kernel_roofline_compute_check.md)。
+
+### 5. 专项算子分析
 
 如果在分析结果（如 `op_total_duration.csv` 或 `op_analysis_details.csv`）中识别到了特定的算子（例如 `MatMul`、`FIA` 或 `RmsNorm`），请按照以下步骤进行深入的维度提取分析：
 
@@ -125,6 +148,7 @@ python scripts/extract_op_shapes.py --input "./p-perf-huawei-05_110439_202507280
 - **识别高耗时算子**：识别计算耗时最高的N个算子（N=3或由用户指定）
 - **统计高耗时算子瓶颈**：根据筛选出的高耗时算子，分析各类型指令占比和瓶颈
 - **解析常用算子形状**：提取MatMul等常用算子的输入形状
+- **算力瓶颈理论/实际核对**：对 `aic_mac_ratio≥80%` 算子计算理论耗时，判断是否需优化并给出排查方向
 
 ## 准备工作
 
@@ -195,12 +219,17 @@ python scripts/extract_op_shapes.py --input "./p-perf-huawei-05_110439_202507280
    - 原始形状：`16384,1024;1024,1024`
    - 替换后：`M=16384, K=1024, N=1024`（以MatMul为例）
 
+### 4. 算力瓶颈 Roofline 核对
+
+确认 NPU 峰值算力与带宽后，对 `aic_mac_ratio≥80%` 的 kernel 比较理论/实际耗时，判断是否需优化。口径、判据与排查方向见 [算力瓶颈 Roofline 核对](./reference/kernel_roofline_compute_check.md)。
+
 ## 输出结果
 
 - **算子耗时统计表**：op_total_duration.csv - 按耗时排序的算子列表
 - **高耗时算子指令占比透视表**：op_analysis_details.csv - 各算子在不同输入形状下的指令占比
 - **算子性能数据透视表**：op_analysis_combined.html - 带可视化标记的算子性能数据透视表，包含支持形状解析的算子的解析结果
 - **算子形状解析表**：<op_type>_shapes.csv - 各支持形状解析的算子的维度解析结果
+- **算力瓶颈 Roofline 明细**：kernel_roofline_compute_check.csv - 理论/实际耗时、效率、是否需优化（提供算力与带宽时生成）
 
 ## 参考文档
 
@@ -209,6 +238,7 @@ python scripts/extract_op_shapes.py --input "./p-perf-huawei-05_110439_202507280
 | 算子类型 | 参考文档 | 描述 |
 |---------|---------|------|
 | MatMul/MatMulV2/MatMulV3 | [MatMul Shape 提取](./reference/matmul_shape_extraction.md) | MatMul系列算子的M、N、K维度解析规则和示例 |
+| 算力瓶颈 Roofline | [算力瓶颈 Roofline 核对](./reference/kernel_roofline_compute_check.md) | aic_mac_ratio≥80% 理论/实际核对与是否需优化判据 |
 
 **官方文档**：
 - [性能数据文件参考/op_summary（算子详细信息）](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/81RC1alpha001/devaids/devtools/profiling/atlasprofiling_16_0067.html)

@@ -3,18 +3,21 @@
 """
 算子性能分析整合脚本（完整版本）
 
-实际功能由以下三个独立脚本实现：
+实际功能由以下独立脚本实现：
 1. op_high_time_selector.py - 高耗时算子筛选
 2. op_pivot_table_analyzer.py - 数据透视表分析与瓶颈定位
 3. extract_op_shapes.py - 算子形状解析（如MatMul系列）
+4. kernel_roofline_compute_check.py - 算力瓶颈算子理论/实际耗时核对（需 --flops/--bandwidth）
 
 用法：
     python op_perf_analysis_combine.py --input-path <input_path> --output-path <output_dir> --top-n <number>
+    python op_perf_analysis_combine.py --input-path <input_path> --output-path <output_dir> --flops 313 --bandwidth 1.2 --bw-unit TB/s
 
 参数：
     --input-path - profiling文件路径，包含PROF_*目录的根路径
     --output-path - 输出结果目录，用于保存生成的分析报告和CSV文件
     --top-n - 选取的高耗时算子数量，默认3
+    --flops / --bandwidth / --bw-unit - 提供后启用算力瓶颈 Roofline 核对
 """
 
 import os
@@ -29,6 +32,15 @@ def main():
     parser.add_argument('--input-path', required=True, help='profiling文件路径，包含PROF_*目录的根路径')
     parser.add_argument('--output-path', required=False, help='输出结果目录，用于保存生成的分析报告和CSV文件')
     parser.add_argument('--top-n', type=int, default=3, help='选取的高耗时算子数量，默认3')
+    parser.add_argument('--flops', type=float, default=None,
+                        help='FP16/BF16 Cube峰值(TFLOPS)；提供后启用算力瓶颈Roofline核对')
+    parser.add_argument('--bandwidth', type=float, default=None,
+                        help='内存带宽数值；配合 --bw-unit')
+    parser.add_argument('--bw-unit', default='GB/s', help='带宽单位：GB/s（默认）或 TB/s')
+    parser.add_argument('--mac-threshold', type=float, default=0.80,
+                        help='算力瓶颈 aic_mac_ratio 阈值，默认0.80')
+    parser.add_argument('--int8-scale', type=float, default=2.0,
+                        help='INT8/FP8 Cube相对 --flops 倍率，默认2')
 
     args = parser.parse_args()
 
@@ -121,6 +133,34 @@ def main():
     if result3.returncode != 0:
         print("算子形状解析失败，但不影响整体分析结果")
         # 形状解析失败不影响整体流程，继续执行
+
+    # 构建第四个脚本命令（算力瓶颈 Roofline 核对，需提供算力与带宽）
+    if args.flops is not None and args.bandwidth is not None:
+        roofline_script = os.path.join(script_dir, "kernel_roofline_compute_check.py")
+        roofline_cmd = [
+            sys.executable, roofline_script,
+            "--input-path", args.input_path,
+            "--flops", str(args.flops),
+            "--bandwidth", str(args.bandwidth),
+            "--bw-unit", args.bw_unit,
+            "--mac-threshold", str(args.mac_threshold),
+            "--int8-scale", str(args.int8_scale),
+            "--output-path", output_dir,
+        ]
+        print("\n" + "=" * 50)
+        print("执行算力瓶颈 Roofline 核对...")
+        print("=" * 50)
+        result4 = subprocess.run(roofline_cmd, capture_output=True, text=True)
+        print(result4.stdout)
+        if result4.stderr:
+            print("错误输出:", result4.stderr)
+        if result4.returncode != 0:
+            print("算力瓶颈 Roofline 核对失败，但不影响前面的分析结果")
+    else:
+        print("\n" + "=" * 50)
+        print("跳过算力瓶颈 Roofline 核对（未提供 --flops 与 --bandwidth）")
+        print("向用户确认 NPU Cube 峰值与 HBM 带宽后可补跑 kernel_roofline_compute_check.py")
+        print("=" * 50)
 
     print("\n" + "=" * 50)
     print("完整分析流程完成！")

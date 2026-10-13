@@ -128,7 +128,7 @@ profiling-analysis 包含以下子技能，用于不同类型的性能分析。�
 | 子技能名称 | 功能描述 | 适用场景 |
 |---------|---------|---------|
 | **profiling-analysis** | 主分析技能，识别性能瓶颈类型 | 首次分析Profiling数据，快速定位主要瓶颈 |
-| **profiling-analysis-computing(.\profiling-analysis-computing\SKILL.md)** | 计算瓶颈分析，包含：<br>- 高耗时算子筛选（Top-N算子）<br>- 算子性能数据透视表分析<br>- 关键算子（如MatMul系列）形状解析与优化建议 | 计算占比过高时，深入分析具体的高耗时算子及其性能特征 |
+| **profiling-analysis-computing(.\profiling-analysis-computing\SKILL.md)** | 计算瓶颈分析，包含：<br>- 高耗时算子筛选（Top-N算子）<br>- 算子性能数据透视表分析<br>- 关键算子（如MatMul系列）形状解析与优化建议<br>- 对 aic_mac_ratio≥80% 算子做 Roofline 理论/实际核对与是否需优化判断 | 计算占比过高时，深入分析具体的高耗时算子及其性能特征 |
 | **profiling-analysis-communication(.\profiling-analysis-communication\SKILL.md)** | 通信瓶颈分析，分析集合通信性能 | 通信占比过高时，分析通信操作的性能 |
 | **profiling-analysis-hostbound(.\profiling-analysis-hostbound\SKILL.md)** | 下发瓶颈分析，分析Host侧性能问题 | 空闲占比过高时，分析Host侧的下发问题 |
 
