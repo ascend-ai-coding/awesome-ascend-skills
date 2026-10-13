@@ -432,6 +432,7 @@
         "./skills/profiling/profiling-analysis/profiling-analysis-hostbound",
         "./skills/profiling/profiling-analysis/profiling-analysis-computing",
         "./skills/profiling/profiling-analysis/profiling-analysis-communication",
+        "./skills/profiling/profiling-analysis/profiling-analysis-roofline",
         "./skills/profiling/mindspeed-llm-train-profiler",
         "./skills/profiling/mindspeed-mm-train-profiler",
         "./skills/profiling/pytorch-profiling-collection",
@@ -658,7 +659,8 @@
         "./skills/profiling/profiling-analysis",
         "./skills/profiling/profiling-analysis/profiling-analysis-hostbound",
         "./skills/profiling/profiling-analysis/profiling-analysis-computing",
-        "./skills/profiling/profiling-analysis/profiling-analysis-communication"
+        "./skills/profiling/profiling-analysis/profiling-analysis-communication",
+        "./skills/profiling/profiling-analysis/profiling-analysis-roofline"
       ],
       "category": "profiling",
       "categories": [

@@ -145,7 +145,7 @@ npx skills add https://github.com/ascend-ai-coding/awesome-ascend-skills -s '*'
 
 `ascend-profiling` 和 `ascend-ops` 的区别：
 
-- 选 `ascend-profiling`：你已经有模型/训练任务，重点是**采集 Profiling、定位性能瓶颈、分析 hostbound / computing / communication**。
+- 选 `ascend-profiling`：你已经有模型/训练任务，重点是**采集 Profiling、定位性能瓶颈、分析 hostbound / computing / communication / roofline**。
 - 选 `ascend-ops`：你要做的是**算子开发、算子迁移、op-plugin 接入、Triton-Ascend 改写或算子级调优**。
 
 ### 领域技能包

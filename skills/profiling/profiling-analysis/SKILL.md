@@ -119,6 +119,9 @@ profiling-analysis 技能通过以下流程自动完成性能分析：
 
 # 分析下发瓶颈
 调用 skill "profiling-analysis-hostbound" 分析 "input_path" 中的Host侧问题
+
+# 算力瓶颈 Roofline 核对
+调用 skill "profiling-analysis-roofline" 分析 "kernel_details.csv"（需提供 NPU 峰值算力与带宽）
 ```
 
 ## 子技能介绍
@@ -131,6 +134,7 @@ profiling-analysis 包含以下子技能，用于不同类型的性能分析。�
 | **profiling-analysis-computing(.\profiling-analysis-computing\SKILL.md)** | 计算瓶颈分析，包含：<br>- 高耗时算子筛选（Top-N算子）<br>- 算子性能数据透视表分析<br>- 关键算子（如MatMul系列）形状解析与优化建议<br>- 对 aic_mac_ratio≥80% 算子做 Roofline 理论/实际核对与是否需优化判断 | 计算占比过高时，深入分析具体的高耗时算子及其性能特征 |
 | **profiling-analysis-communication(.\profiling-analysis-communication\SKILL.md)** | 通信瓶颈分析，分析集合通信性能 | 通信占比过高时，分析通信操作的性能 |
 | **profiling-analysis-hostbound(.\profiling-analysis-hostbound\SKILL.md)** | 下发瓶颈分析，分析Host侧性能问题 | 空闲占比过高时，分析Host侧的下发问题 |
+| **profiling-analysis-roofline(.\profiling-analysis-roofline\SKILL.md)** | 算力瓶颈 Roofline 核对：对 aic_mac_ratio≥80% 算子比较理论/实际耗时，并给出是否需优化建议 | 需要判断算力瓶颈算子是否打满峰值、是否值得做单 kernel 优化时 |
 
 ## 支持的数据格式
 
