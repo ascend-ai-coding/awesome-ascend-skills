@@ -1,0 +1,12 @@
+/* Materialize as conv3ddw_stream_k_launch.h; host-only, no device/registry dependency. */
+#ifndef CONV3DDW_STREAM_K_LAUNCH_H
+#define CONV3DDW_STREAM_K_LAUNCH_H
+#include <cstdint>
+#include "conv3ddw_stream_k_tiling.h"
+// X/dY: contiguous NCDHW, matching input dtype. dW: FP32 [Co,Ci,Kd,Kh,Kw].
+// workspace: user device buffer >= tiling.workspaceBytes; nullptr iff size==0.
+// No system-workspace prefix. stream is an ACL/torch_npu stream on dav-3510.
+// Returns ACL status (0 success). Dispatch sets schedule mode 1 for global flags.
+extern "C" int32_t launch_conv3ddw_sk(void* x,void* dy,void* dw,void* workspace,
+                                     const Conv3ddwSkCase& tiling,void* stream);
+#endif

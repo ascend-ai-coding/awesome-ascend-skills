@@ -64,4 +64,4 @@ output = o_proj(output)
 | 环节 | Prefill | Decode |
 |------|---------|--------|
 | FA 的 KV 输入 | 当前 batch 的 k/v（非 cache） | 完整 past_key/past_value（cache） |
-| FA 参数 | `sparse_mode=3`（causal mask，推荐） | 无 `sparse_mode`，传 `actual_seq_lengths_kv` |
+| FA 参数 | 无滑窗用 `sparse_mode=3`（causal mask，推荐）；滑窗用 `sparse_mode=4 + pre_tokens` | full attention 可不传 `sparse_mode`，传 `actual_seq_lengths_kv`；滑窗 Decode 仍需 `sparse_mode=4 + pre_tokens` |

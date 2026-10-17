@@ -1,0 +1,55 @@
+strategy_id: P104
+description: Matmul 多核切分扩展适用性检查 — 必须存在 MatmulApiTiling Host 切分逻辑，且尚未进行多核扩展
+
+strategy_meta:
+  id: "P104"
+  slug: "P104_matmul_multi_core_tiling_expansion"
+  title: "P104: Matmul 多核切分扩展（Multi-Core Tiling Expansion）"
+  bottlenecks: [parallelism_underutil, tiling_imbalance]
+  op_families: [matmul]
+  conflicts_with: [P72]
+  synergizes_with: [P4, P105, P107]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p104_matmul_multi_core_tiling_expansion.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p104_matmul_multi_core_tiling_expansion.md"
+  playbook_slug: "P104_matmul_multi_core_tiling_expansion"
+checks:
+  - id: has_matmul_api_tiling
+    type: grep_count
+    pattern: 'MatmulApiTiling|GetTiling|TCubeTiling'
+    files: [host]
+    expected: '>= 1'
+    fail_msg: '未检测到 MatmulApiTiling / GetTiling Host 切分逻辑 → P104 不适用（非 MatmulImpl 路径）。'
+
+  - id: has_single_core_fields
+    type: grep_count
+    pattern: 'singleCoreM|singleCoreN'
+    files: [host]
+    expected: '>= 1'
+    fail_msg: '未检测到 singleCoreM / singleCoreN 字段 → 无切分扩展空间。'
+
+  - id: has_core_count_and_total_block
+    type: grep_count
+    pattern: 'GetCoreNumAic|usedCoreNum|totalBlock'
+    files: [host]
+    expected: '>= 1'
+    fail_msg: '未检测到核数 / totalBlock 计算 → 无法判断是否需要扩展。'
+
+  - id: kernel_uses_block_dispatch
+    type: grep_count
+    pattern: 'GetBlockIdx|SetSingleShape'
+    files: [kernel, header]
+    expected: '>= 1'
+    fail_msg: 'Kernel 端无 blockIdx 分发或 SetSingleShape → 多核扩展后无对应执行路径。'
+
+  - id: no_existing_expansion
+    type: grep_count
+    pattern: 'singleCoreM\s*=\s*std::max\(baseM|singleCoreN\s*=\s*std::max\(baseN'
+    files: [host]
+    expected: '== 0'
+    fail_msg: '已存在 singleCoreM/N 的 std::max(baseM/baseN) 扩展逻辑 → P104 可能已应用。'

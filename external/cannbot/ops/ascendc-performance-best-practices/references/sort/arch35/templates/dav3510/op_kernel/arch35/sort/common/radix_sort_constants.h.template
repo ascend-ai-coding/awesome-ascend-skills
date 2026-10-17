@@ -1,0 +1,55 @@
+#ifndef RADIX_SORT_CONSTANTS_H
+#define RADIX_SORT_CONSTANTS_H
+
+#include "kernel_operator.h"
+#include "op_kernel/platform_util.h"
+
+namespace RadixSortCommon {
+
+using namespace AscendC;
+
+const int32_t VF_LEN_B32 = Ops::Base::GetVRegSize() / sizeof(int32_t);
+const int32_t VF_LEN_B16 = Ops::Base::GetVRegSize() / sizeof(int16_t);
+const int32_t VF_LEN_B8 = Ops::Base::GetVRegSize() / sizeof(int8_t);
+const int32_t VF_LEN_B64 = Ops::Base::GetVRegSize() / sizeof(int64_t);
+
+// 基数排序正负0优化
+const uint16_t TWIDDLED_MINUS_ZERO_BITS_FP16 = 0x7fff;
+const uint16_t TWIDDLED_ZERO_BITS_FP16 = 0x8000;
+const uint32_t TWIDDLED_MINUS_ZERO_BITS_FP32 = 0x7fffffff;
+const uint32_t TWIDDLED_ZERO_BITS_FP32 = 0x80000000;
+
+const uint16_t LOWEST_KEY_VALUE_B16 = uint16_t(-1);
+const uint32_t LOWEST_KEY_VALUE_B32 = uint32_t(-1);
+const uint16_t XOR_OP_VALUE_B16 = (uint16_t(1) << 15);
+const uint32_t ZERO_VALUE_FLAG_B32 = 0;
+const uint16_t ZERO_VALUE_FLAG_B16 = 0;
+const uint32_t SHIFT_BIT_NUM = 8;
+const uint32_t HIST_MASK_OUT_LEN = 8;
+const uint64_t XOR_OP_VALUE_B64 = 0x8000000000000000;
+const uint32_t RADIX_SORT_NUM = 256;
+const uint32_t RADIX_HIST_BUFFER_NUM = 2;
+const uint32_t INT64_INDEX_SCALE = sizeof(int64_t) / sizeof(uint32_t);
+const uint8_t XOR_OP_VALUE_B8 = (uint8_t(1) << 7);
+const uint32_t XOR_OP_VALUE = 0x80000000;
+const int16_t STATE_BIT_SHF_VALUE = 30;
+const int16_t STATE_BIT_SHF_VALUE_B64 = 62;
+// Soft-sync state bits stored in the top two bits of each histogram/prefix value.
+const int32_t AGGREGATE_READY_FLAG = 1;
+const int32_t PREFIX_READY_FLAG = 2;
+const uint32_t NOT_INIT_MODE = 0;
+const uint32_t AGG_READY_MODE = 1;
+const uint32_t PREFIX_READY_MODE = 2;
+const uint32_t NOT_INIT_COUNT_INDEX = 0;
+const uint32_t AGG_READY_COUNT_INDEX = 8;
+const uint32_t PREFIX_READY_COUNT_INDEX = 16;
+const uint32_t THREAD_DIM_NUM = 1024;
+const uint32_t AGGREGATE_READY_MASK = 0x40000000;
+const uint64_t AGGREGATE_READY_MASK_B64 = 0x4000000000000000;
+const uint32_t PREFIX_READY_MASK = 0x80000000;
+const uint64_t PREFIX_READY_MASK_B64 = 0x8000000000000000;
+const uint32_t VALUE_MASK = 0x3fffffff;
+const uint64_t VALUE_MASK_B64 = 0x3fffffffffffffff;
+} // namespace RadixSortCommon
+
+#endif

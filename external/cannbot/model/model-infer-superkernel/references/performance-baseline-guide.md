@@ -79,26 +79,23 @@ export PYTHONPATH=/path/to/cann-recipes-infer:$PYTHONPATH
 修改 `config.yaml`：
 
 ```yaml
-exe_mode: "ge_graph"              # 保持图模式
 model_config:
-  enable_superkernel: False       # 禁用 SuperKernel
-  enable_multi_streams: False     # 禁用其他优化
+  exe_mode: "ge_graph"            # 保持图模式
   enable_cache_compile: False
+  custom_params:
+    enable_superkernel: False     # 禁用 SuperKernel
+    enable_multi_streams: False   # 禁用其他优化
 ```
 
 #### 2.2 配置测试参数
 
 ```yaml
-# 推理配置
-batch_size: 1                     # 固定 batch size
-max_new_tokens: 100               # 固定生成长度
-temperature: 0.0                  # 固定采样参数（确保可复现）
-top_p: 1.0
-top_k: 1
+scheduler_config:
+  batch_size: 1                   # 固定 batch size
+  max_new_tokens: 100             # 固定生成长度
 
-# 数据集配置
-dataset: "custom"                 # 使用固定的测试数据
-prompt: "请介绍一下人工智能的发展历史。"  # 固定 prompt
+data_config:
+  dataset: "default"              # 使用 cann-recipes-infer/dataset/default_prompt.json 中的固定 prompt
 ```
 
 #### 2.3 准备测试脚本
@@ -114,12 +111,9 @@ source /usr/local/Ascend/ascend-toolkit/latest/bin/setenv.bash
 # 进入模型目录
 cd cann-recipes-infer/models/${MODEL_NAME}
 
-# 运行基线测试
+# 运行基线测试（按部署模式选用推理入口：框架部署走模型目录下 `bash infer.sh`（wrapper 内 source 上游 cann-recipes-infer/executor/scripts/function.sh）；独立部署走模型自带的 `python -u infer.py --yaml_file_path config.yaml`）
 echo "=== Running Baseline Test ==="
-python -u cann-recipes-infer/models/runner_*.py \
-    --config config.yaml \
-    --output baseline_output.json \
-    2>&1 | tee baseline.log
+bash infer.sh 2>&1 | tee baseline.log
 
 # 提取性能数据
 python ../../scripts/extract_performance.py baseline.log > baseline_performance.json
@@ -251,10 +245,11 @@ else:
 修改 `config.yaml`：
 
 ```yaml
-exe_mode: "ge_graph"
 model_config:
-  enable_superkernel: True        # 启用 SuperKernel
-  # 其他配置保持与基线一致
+  exe_mode: "ge_graph"
+  custom_params:
+    enable_superkernel: True      # 启用 SuperKernel
+    # 其他配置保持与基线一致
 ```
 
 ### 步骤 2：运行优化测试

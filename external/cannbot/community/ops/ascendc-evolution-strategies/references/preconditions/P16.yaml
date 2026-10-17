@@ -1,0 +1,40 @@
+strategy_id: P16
+
+strategy_meta:
+  id: "P16"
+  slug: "P16_cost_driven_core_partition"
+  title: "P16: Cost-Driven Core Partition (基于代价模型的多粒度分核优化)"
+  bottlenecks: [tiling_imbalance]
+  op_families: [cv_fusion, flash_attention]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p16_cost_driven_core_partition.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p16_cost_driven_core_partition.md"
+  playbook_slug: "P16_cost_driven_core_partition"
+checks:
+  - id: has_getblocknum
+    type: grep_count
+    pattern: "GetBlockNum|BLOCK_DIM|coreNum|SplitCore"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到多核分块逻辑（GetBlockNum/BLOCK_DIM/coreNum）→ 非多核算子，不适用 P16。检查 P5 或 P14。"
+
+  - id: has_tiling
+    type: grep_count
+    pattern: "Tiling|tileSize|ubFactor"
+    files: [host]
+    expected: ">= 1"
+    fail_msg: "未检测到 Host 侧 Tiling 逻辑 → 无分核调度空间，不适用 P16。"
+
+  - id: no_tiling_imbalance
+    type: grep_count
+    pattern: "tiling_imbalance|load_unbalance|不均衡"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "已存在负载均衡优化 → 可能冗余，优先验证现有策略效果。"

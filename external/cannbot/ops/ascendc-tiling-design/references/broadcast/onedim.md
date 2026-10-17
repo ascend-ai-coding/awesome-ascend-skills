@@ -116,7 +116,7 @@ __aicore__ inline void Process()
                          ? ubTail : ubFormer;
 
         // CopyIn：非标量输入用 DataCopyPad
-        DataCopyPad(input0Local, input0Gm[offset], {1, curLen * sizeof(T), 0, 0});
+        DataCopyPad(input0Local, input0Gm[offset], {1, curLen * sizeof(T), 0, 0, 0});
 
         // Compute：标量输入优先用 TensorScalar 接口
         if (scalarFlag & (1 << 1)) {
@@ -126,12 +126,12 @@ __aicore__ inline void Process()
             // Duplicate<T>(input1Local, scalar1, curLen);
             // CustomOp(outputLocal, input0Local, input1Local, curLen);
         } else {
-            DataCopyPad(input1Local, input1Gm[offset], {1, curLen * sizeof(T), 0, 0});
+            DataCopyPad(input1Local, input1Gm[offset], {1, curLen * sizeof(T), 0, 0, 0});
             Add(outputLocal, input0Local, input1Local, curLen);
         }
 
         // CopyOut
-        DataCopyPad(outputGm[offset], outputLocal, {1, curLen * sizeof(T), 0, 0});
+        DataCopyPad(outputGm[offset], outputLocal, {1, curLen * sizeof(T), 0, 0, 0});
 
         offset += ubFormer;
     }

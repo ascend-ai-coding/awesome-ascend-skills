@@ -1,0 +1,53 @@
+/*!
+ * \file sort_tiling_data.h
+ * \brief sort_tiling_data.h
+ */
+
+#ifndef _SORT_REGBASE_TILING_DATA_H_
+#define _SORT_REGBASE_TILING_DATA_H_
+
+struct SortRegBaseTilingData {
+    uint32_t numTileDataSize;     // h轴ub一次处理个数
+    uint32_t unsortedDimParallel; // b轴使用的核数
+    uint32_t lastDimTileNum;      // h轴循环次数
+    uint32_t sortLoopTimes;       // b轴循环次数
+    uint32_t lastDimNeedCore;     // h轴需要的核数
+    // keyParamsxxx 预留参数
+    // radix: globalHistGmWk_ 使用核数
+    // radix_one_core: inqueX 的 ub 大小
+    // merge sort: 一次处理几个 h
+    uint32_t keyParams0;
+    // radix: 清零 excusiveBinsGmWk_ 的核
+    // radix_one_core: y2OutQue 需要的 ub 大小
+    // merge: xQue ub 大小
+    uint32_t keyParams1;
+    // radix: 清零的一次 ub 数据量
+    // radix_one_core: 输出 int64 时，一半的 ub 偏移
+    // merge: y2OutQue 的 ub 大小
+    // small-axis two-stage: rank-inverse 标志
+    uint32_t keyParams2;
+    // radix: 清零 globalHistGmWk_ ub 循环次数
+    // radix_one_core: 队列 buffer 数
+    // merge: 32 个数对齐的 alginH
+    // small-axis insertion/two-stage: non-last-axis flag
+    uint32_t keyParams3;
+    // radix: 清零 chunk 大小
+    // merge_sort(sch0): 队列 buffer 数
+    // intra_core(sch4): extract chunk 大小
+    uint32_t keyParams4;
+    uint32_t keyParams5;    // radix：清零chunk大小；intra_core(sch4)：最大归并迭代次数
+    uint32_t tmpUbSize;     // sort高级api需要的临时ub大小
+    int64_t lastAxisNum;    // h轴大小
+    int64_t unsortedDimNum; // b轴大小
+    // Non-last small-axis fields describe the original [outer, axis, inner] GM layout
+    // and the aligned UB row strides used by tile-local transpose schedules.
+    int64_t outerSize;
+    int64_t innerSize;
+    uint32_t innerLoopNum;
+    uint32_t innerChunk;
+    uint32_t inputRowBytes;
+    uint32_t valueAxisBytes;
+    uint32_t indexAxisBytes;
+    uint32_t outputIndexRowBytes;
+};
+#endif

@@ -1,0 +1,19 @@
+strategy_id: P6
+description: "P6: Multi-Algorithm Adaptive Selection (多算法自适应选择)"
+
+strategy_meta:
+  id: "P6"
+  slug: "P6_multi_algo_selection"
+  title: "P6: Multi-Algorithm Adaptive Selection (多算法自适应选择)"
+  bottlenecks: [ub_memory_pressure]
+  op_families: [datapath]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L0"
+  deprecated: true
+  deprecated_reason: "Title 'Multi-Algorithm Adaptive Selection' mismatches content (Welford algorithm = A2 duplicate)."
+  has_preconditions: false
+  has_playbook: false
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p6_multi_algo_selection.md"

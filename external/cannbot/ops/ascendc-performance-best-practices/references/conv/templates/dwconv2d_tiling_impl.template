@@ -1,0 +1,869 @@
+/**
+ * Automatic host-side tiling for depthwise Conv2D (groups == cin == cout).
+ *
+ * Port of the ops-nn arch35 conv2d_v2 fast-tiling path, restricted to the
+ * OPT_SIMPLIFIED_GROUP_CONV template that op_kernel/dwconv2d_kernel.h
+ * implements. Shape follows conv/conv2d_new/op_host/conv2d_tiling.cpp: core
+ * split first, then a constrained L0/L1 search under ValidateAll.
+ *
+ * Three algorithms, as in the mainline:
+ *   BASIC_BLOCK  conv2d_v2_base_tiling_basic_block.cpp
+ *   M_MODE       conv_base_numblocks_decision.cpp::NumBlocksDecisionMsplitMode
+ *   HW_MODE      see kHwModeNote at DecideAl1()
+ *
+ * Depends on nothing but the C++ standard library: this file is compiled with
+ * plain g++ -std=c++17 into the torch plugin translation unit.
+ */
+
+/*!
+ * \file dwconv2d_tiling.cpp
+ * \brief Depthwise 自动 tiling（M_MODE / BASIC_BLOCK + DecideAl1）。见 dwconv2d_mix.md。
+ *
+ * ── 集成说明：落地为 dwconv2d_tiling.cpp，加入 PLUGIN 源（g++）。────────────────
+ */
+
+#include "dwconv2d_tiling.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <limits>
+#include <set>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
+namespace dwconv2d {
+namespace {
+
+// ops-nn conv_template_utils.h.
+constexpr uint64_t kMinL2BandWidth = 128;
+constexpr double kSweetPointAiFp16 = 144.0;
+
+// The opt-group weight is not simply streamed: it goes GM -> UB, is transposed
+// to NZ by the vector side, is copied UB -> BL1, and both ends are fenced by a
+// CrossCore handshake. HANDOVER.md 7.1/N2 measures that fixed cost dominating
+// on the cases where a core walks several opt-groups, so the model charges the
+// weight far more than its byte count plus a flat per-group term.
+constexpr uint64_t kWeightTransformCoeff = 4;
+constexpr uint64_t kGroupSyncCost = 64;
+
+// Idle cores are worth more than the traffic model's own resolution:
+// HANDOVER.md 7.1 has several cases that lost over 10% from leaving four cores
+// unused. Each idle core is therefore charged this many times its share of the
+// work, which lets utilisation override a moderate traffic win. Calibrated on
+// the reference set - this is the lowest weight at which no reference tiling
+// ends up with more busy cores than the automatic one.
+constexpr double kIdleCorePenalty = 1.5;
+
+uint32_t CeilDiv(uint32_t a, uint32_t b) { return b ? (a + b - 1) / b : 0; }
+uint32_t AlignUp(uint32_t a, uint32_t b) { return CeilDiv(a, b) * b; }
+uint32_t AlignDown(uint32_t a, uint32_t b) { return b ? (a / b) * b : 0; }
+
+uint32_t Gcd(uint32_t a, uint32_t b)
+{
+    while (b) {
+        uint32_t t = a % b;
+        a = b;
+        b = t;
+    }
+    return a;
+}
+
+uint32_t Lcm(uint32_t a, uint32_t b) { return (a && b) ? a / Gcd(a, b) * b : 0; }
+
+// ops-nn ConvCalcCommFactor: divisors of `num` no larger than `numMax`.
+std::vector<uint32_t> CommFactors(uint32_t num, uint32_t numMax)
+{
+    std::vector<uint32_t> res;
+    for (uint32_t i = 1; static_cast<uint64_t>(i) * i <= num; ++i) {
+        if (num % i != 0) continue;
+        if (i <= numMax) res.push_back(i);
+        const uint32_t other = num / i;
+        if (other != i && other <= numMax) res.push_back(other);
+    }
+    if (res.empty()) res.push_back(1);
+    std::sort(res.begin(), res.end());
+    return res;
+}
+
+// ops-nn ConvNumBlocksFactorMix: fold the core-count factors into a dim range.
+void FactorMix(uint32_t orgDim, std::vector<uint32_t>& range, const std::vector<uint32_t>& mix)
+{
+    std::set<uint32_t> merged(range.begin(), range.end());
+    for (uint32_t v : mix) {
+        if (v <= orgDim) merged.insert(v);
+    }
+    range.assign(merged.begin(), merged.end());
+}
+
+// --- Problem geometry ------------------------------------------------------
+
+struct Geom {
+    uint32_t hout = 0, wout = 0;
+    uint32_t m = 0, k = 0, n = 0;
+    uint32_t k0 = 16, bytes = 2;
+    uint32_t enlarge = 1, groupOpt = 1, cinOpt = 1, coutOpt = 1, cinAligned = 1;
+    uint32_t weightNz = 0; // BL1 bytes for one opt-group
+    uint32_t biasL1 = 0;   // L1 bytes reserved for the bias table
+};
+
+// enlargeCap is the retry lever: 0 means "use the natural packing".
+bool BuildGeom(const DwTilingIn& in, uint32_t enlargeCap, Geom& g)
+{
+    if (in.n == 0 || in.c == 0 || in.kh == 0 || in.kw == 0 || in.hi == 0 || in.wi == 0 ||
+        in.strideH == 0 || in.strideW == 0 || in.dilationH == 0 || in.dilationW == 0) {
+        return false;
+    }
+    const uint32_t khDil = in.dilationH * (in.kh - 1) + 1;
+    const uint32_t kwDil = in.dilationW * (in.kw - 1) + 1;
+    if (in.hi + 2 * in.padH < khDil || in.wi + 2 * in.padW < kwDil) return false;
+    g.hout = (in.hi + 2 * in.padH - khDil) / in.strideH + 1;
+    g.wout = (in.wi + 2 * in.padW - kwDil) / in.strideW + 1;
+    if (g.hout == 0 || g.wout == 0) return false;
+
+    g.k0 = CubeK0(in.dtype);
+    g.bytes = DTypeBytes(in.dtype);
+    // Depthwise means ciPerGroup == coPerGroup == 1, so the ops-nn opt-group
+    // packing degenerates to Lcm(k0, n0) == 16 channels per Mmad, capped by the
+    // group count. enlargeLimit forces it down (only needed to keep the
+    // block-diagonal zero padding from producing 0 * inf).
+    uint32_t enlarge = std::min(Lcm(g.k0, CubeN0()), in.c);
+    if (in.enlargeLimit != 0) enlarge = std::min(enlarge, in.enlargeLimit);
+    if (enlargeCap != 0) enlarge = std::min(enlarge, enlargeCap);
+    if (enlarge == 0) return false;
+
+    g.enlarge = enlarge;
+    g.groupOpt = CeilDiv(in.c, enlarge);
+    g.cinOpt = enlarge;
+    g.coutOpt = enlarge;
+    g.cinAligned = AlignUp(g.cinOpt, g.k0);
+    g.m = g.hout * g.wout;
+    g.k = g.cinAligned * in.kh * in.kw;
+    g.n = AlignUp(g.coutOpt, CubeN0());
+    g.weightNz = CeilDiv(g.k, g.k0) * CeilDiv(g.coutOpt, CubeN0()) * CubeN0() * g.k0 * g.bytes;
+    g.biasL1 = AlignUp(g.coutOpt * g.bytes, kL1AlignBytes);
+    return g.m != 0 && g.k != 0;
+}
+
+// Real (non-pad) input rows the M range [mStart, mStart + len) reads. Mirrors
+// LoadAL1(): the kernel derives curHiLoadL1_ exactly this way.
+uint32_t InputRows(const DwTilingIn& in, const Geom& g, uint32_t mStart, uint32_t len)
+{
+    if (len == 0) return 1;
+    const uint32_t hoStart = mStart / g.wout;
+    const uint32_t hoEnd = (mStart + len - 1) / g.wout;
+    const int64_t hiStart = static_cast<int64_t>(hoStart) * in.strideH - static_cast<int64_t>(in.padH);
+    const int64_t hiEnd = static_cast<int64_t>(hoEnd) * in.strideH +
+                          static_cast<int64_t>(in.dilationH) * (in.kh - 1) - static_cast<int64_t>(in.padH);
+    const int64_t lo = std::max<int64_t>(hiStart, 0);
+    const int64_t hi = std::min<int64_t>(hiEnd, static_cast<int64_t>(in.hi) - 1);
+    return hi >= lo ? static_cast<uint32_t>(hi - lo + 1) : 1U;
+}
+
+uint32_t MaxMPerCore(uint32_t m, uint32_t hoDim) { return AlignUp(CeilDiv(m, hoDim), CubeM0()); }
+
+// --- Core split ------------------------------------------------------------
+
+struct CoreSplit {
+    uint32_t batchDim = 1, groupDim = 1, hoDim = 1;
+};
+
+uint32_t BlockDim(const CoreSplit& s) { return s.batchDim * s.groupDim * s.hoDim; }
+
+// Both decompositions can leave trailing blocks with nothing to do: Init()
+// retires a core whose groupIdx or mIdxStart runs past the problem. Drop those
+// blocks instead of launching them, so blockDim means "cores doing work".
+void DropIdleBlocks(const Geom& g, CoreSplit& s)
+{
+    for (uint32_t used = CeilDiv(g.groupOpt, CeilDiv(g.groupOpt, s.groupDim)); used < s.groupDim;
+         used = CeilDiv(g.groupOpt, CeilDiv(g.groupOpt, s.groupDim))) {
+        s.groupDim = used;
+    }
+    for (uint32_t used = CeilDiv(g.m, MaxMPerCore(g.m, s.hoDim)); used < s.hoDim;
+         used = CeilDiv(g.m, MaxMPerCore(g.m, s.hoDim))) {
+        s.hoDim = used;
+    }
+}
+
+// Worst core's input row span, i.e. the fmap rows one core streams per
+// (batch, opt-group). An M split pays the kernel's row overlap once per core,
+// which is what makes over-splitting M expensive.
+uint32_t WorstCoreRows(const DwTilingIn& in, const Geom& g, uint32_t hoDim)
+{
+    const uint32_t coreM = MaxMPerCore(g.m, hoDim);
+    uint32_t rows = 1;
+    for (uint32_t c = 0; c < hoDim; ++c) {
+        const uint32_t start = c * coreM;
+        if (start >= g.m) break;
+        rows = std::max(rows, InputRows(in, g, start, std::min(coreM, g.m - start)));
+    }
+    return rows;
+}
+
+// ops-nn CalcTotalCostMsplitMode, specialised for this kernel:
+//   - nDim / doDim / woDim are pinned to 1,
+//   - the fmap term counts real rows instead of AlignB(hi*wi, m0)/mDim, and
+//   - the weight term is not multiplied by the per-core batch count, because
+//     the kernel's group loop is outside the batch loop: one weight transform
+//     serves every batch the core owns (HANDOVER.md 7.1, cases 6/13/18).
+double SplitCost(const DwTilingIn& in, const Geom& g, const CoreSplit& s)
+{
+    const uint32_t coreM = MaxMPerCore(g.m, s.hoDim);
+    const uint32_t batchPer = CeilDiv(in.n, s.batchDim);
+    const uint32_t groupPer = CeilDiv(g.groupOpt, s.groupDim);
+    const uint32_t ci1 = CeilDiv(g.cinOpt, g.k0);
+    const uint32_t co1 = CeilDiv(g.coutOpt, CubeN0());
+    const uint64_t rows = WorstCoreRows(in, g, s.hoDim);
+
+    const uint64_t fmap = static_cast<uint64_t>(batchPer) * groupPer * rows * in.wi * ci1 * g.k0 * g.bytes;
+    const uint64_t weight = static_cast<uint64_t>(groupPer) * ci1 * g.k0 * in.kh * in.kw * g.bytes;
+    const uint64_t out = static_cast<uint64_t>(batchPer) * groupPer * co1 * CubeN0() * coreM * g.bytes;
+    const uint64_t cube = static_cast<uint64_t>(batchPer) * groupPer * co1 * ci1 * in.kh * in.kw *
+                          CeilDiv(coreM, CubeM0());
+
+    const uint64_t total = (fmap + weight * kWeightTransformCoeff + out) / kMinL2BandWidth + cube +
+                           static_cast<uint64_t>(groupPer) * kGroupSyncCost;
+    return static_cast<double>(total);
+}
+
+struct Scored {
+    CoreSplit split;
+    double score = std::numeric_limits<double>::max();
+    double cost = 0.0;
+    bool valid = false;
+};
+
+Scored ScoreSplit(const DwTilingIn& in, const Geom& g, CoreSplit s)
+{
+    Scored r;
+    if (s.batchDim == 0 || s.groupDim == 0 || s.hoDim == 0) return r;
+    if (BlockDim(s) > in.aicoreNum) return r;
+    if (s.batchDim > in.n || s.groupDim > g.groupOpt || s.hoDim > CeilDiv(g.m, CubeM0())) return r;
+    DropIdleBlocks(g, s);
+    r.split = s;
+    r.cost = SplitCost(in, g, s);
+    const double idle = 1.0 - static_cast<double>(BlockDim(s)) / in.aicoreNum;
+    r.score = r.cost * (1.0 + kIdleCorePenalty * idle);
+    r.valid = true;
+    return r;
+}
+
+// Strict order so the search result does not depend on enumeration order.
+bool Better(const Scored& a, const Scored& b)
+{
+    if (!b.valid) return a.valid;
+    if (!a.valid) return false;
+    if (a.score != b.score) return a.score < b.score;
+    if (BlockDim(a.split) != BlockDim(b.split)) return BlockDim(a.split) > BlockDim(b.split);
+    return a.split.batchDim > b.split.batchDim;
+}
+
+// --- M mode: formulaic, exhaustive over the ops-nn factor ranges -----------
+
+Scored DecideMMode(const DwTilingIn& in, const Geom& g)
+{
+    const std::vector<uint32_t> aicRange = CommFactors(in.aicoreNum, in.aicoreNum);
+
+    std::vector<uint32_t> batchRange = CommFactors(in.n, in.aicoreNum);
+    if (in.n >= 2 * in.aicoreNum) {
+        batchRange = aicRange;
+    } else {
+        FactorMix(in.n, batchRange, aicRange);
+    }
+    std::vector<uint32_t> groupRange = CommFactors(g.groupOpt, in.aicoreNum);
+    FactorMix(g.groupOpt, groupRange, aicRange);
+    std::vector<uint32_t> mRange = CommFactors(CeilDiv(g.m, CubeM0()), in.aicoreNum);
+    FactorMix(CeilDiv(g.m, CubeM0()), mRange, aicRange);
+
+    Scored best;
+    for (uint32_t bd : batchRange) {
+        for (uint32_t gd : groupRange) {
+            if (bd * gd > in.aicoreNum) break;
+            for (uint32_t md : mRange) {
+                const Scored cur = ScoreSplit(in, g, CoreSplit{bd, gd, md});
+                if (Better(cur, best)) best = cur;
+            }
+        }
+    }
+    return best;
+}
+
+// --- Basic block ------------------------------------------------------------
+
+using Pair = std::pair<uint32_t, uint32_t>;
+
+// ops-nn GenerateSingleCandidateCase.
+void AddNear(uint32_t cores, uint64_t cut1, uint32_t cut2, double candidateCut, std::set<Pair>& cands)
+{
+    const std::vector<uint32_t> facs = CommFactors(cores, cores);
+    auto upper = std::upper_bound(facs.begin(), facs.end(), static_cast<uint32_t>(candidateCut));
+    auto lower = std::lower_bound(facs.begin(), facs.end(), static_cast<uint32_t>(candidateCut));
+    for (auto it : {upper, lower}) {
+        if (it == facs.end()) continue;
+        const uint32_t dim = static_cast<uint32_t>(std::min<uint64_t>(*it, cut1));
+        if (dim == 0 || cores / dim > cut2) continue;
+        cands.emplace(dim, std::min(cores / dim, cut2));
+    }
+}
+
+// ops-nn GenerateCandidates.
+std::set<Pair> GenerateCandidates(uint32_t cores, uint64_t cut1, uint32_t cut2, double calCut1, double calCut2)
+{
+    std::set<Pair> cands;
+    if (cores == 0 || cut1 == 0 || cut2 == 0) return cands;
+    AddNear(cores, cut1, cut2, calCut1, cands);
+    AddNear(cores, cut1, cut2, calCut2, cands);
+
+    // Gcd(cores, cut1) with cut1 possibly wider than 32 bit.
+    const uint32_t gcdCut1 = Gcd(cores, static_cast<uint32_t>(cut1 % cores));
+    const uint32_t gcdCut2 = Gcd(cores, cut2);
+    if (gcdCut1 == 0 || gcdCut2 == 0) return cands;
+
+    cands.emplace(gcdCut1, std::min<uint32_t>(cut2, cores / gcdCut1));
+    cands.emplace(static_cast<uint32_t>(std::min<uint64_t>(cut1, cores / gcdCut2)), gcdCut2);
+    if (gcdCut1 == 1) {
+        const uint32_t d = static_cast<uint32_t>(std::min<uint64_t>(cut1, cores));
+        if (d != 0) cands.emplace(d, cores / d);
+    }
+    if (gcdCut2 == 1) {
+        const uint32_t d = std::min(cut2, cores);
+        if (d != 0) cands.emplace(cores / d, d);
+    }
+    if (gcdCut1 == cores || gcdCut2 == cores) {
+        AddNear(cores, cut1, cut2, std::sqrt(static_cast<double>(cores)), cands);
+    }
+    return cands;
+}
+
+struct BasicBlockTile {
+    uint32_t mTile = 0, nTile = 0;
+};
+
+// ops-nn GetInitBasicBlockMN. Keyed off the original co, which for depthwise is
+// the group count, not the packed coutOpt.
+void GetInitBasicBlockMN(const DwTilingIn& in, const Geom& g, uint32_t& bm, uint32_t& bn)
+{
+    if (in.c <= 64) {
+        bm = 1024;
+        bn = 64;
+    } else if (in.c <= 128) {
+        bm = 512;
+        bn = 128;
+    } else if (g.m <= 64) {
+        bm = 64;
+        bn = 1024;
+    } else if (g.m <= 128) {
+        bm = 128;
+        bn = 512;
+    } else {
+        bm = 256;
+        bn = 256;
+    }
+}
+
+// ops-nn CmpFirstAdjustMnTile, OPT_GROUP_CONV branch.
+bool CmpFirstAdjustMnTile(const DwTilingIn& in, const Geom& g, uint32_t bm, uint32_t bn, BasicBlockTile& tile)
+{
+    const int64_t biasSize = in.hasBias ? static_cast<int64_t>(g.bytes) * in.c : 0;
+    const int64_t avail = static_cast<int64_t>(kL1Bytes) - biasSize;
+    if (avail <= 0) return false;
+    const int64_t maxHiWi = avail / g.bytes / g.k0 / 2;
+    if (maxHiWi <= 0) return false;
+    const int64_t maxHi = maxHiWi / static_cast<int64_t>(in.wi);
+    if (maxHi <= 2) return false;
+    const int64_t hoMax =
+        (maxHi - static_cast<int64_t>(in.dilationH) * (in.kh - 1) - 1) / static_cast<int64_t>(in.strideH) + 1 - 2;
+    if (hoMax <= 0) return false;
+
+    const int64_t maxHoWo = hoMax * static_cast<int64_t>(g.wout);
+    const int64_t cmpM = static_cast<int64_t>(g.m);
+    const int64_t cmpN = avail / g.bytes / 2 / g.k0 / in.kh / in.kw;
+
+    int64_t mTile = static_cast<int64_t>(AlignUp(g.m, CubeM0())) <= std::min<int64_t>(bm, maxHoWo)
+                        ? static_cast<int64_t>(AlignUp(g.m, CubeM0()))
+                        : std::min(std::min(cmpM, maxHoWo), static_cast<int64_t>(bm));
+    int64_t nTile = std::min(std::min(static_cast<int64_t>(in.c), cmpN), static_cast<int64_t>(bn));
+    nTile = nTile / static_cast<int64_t>(in.c) * static_cast<int64_t>(g.enlarge);
+
+    mTile = mTile / CubeM0() * CubeM0();
+    nTile = nTile / CubeN0() * CubeN0();
+    if (mTile < CubeM0() || nTile < CubeN0()) return false;
+    tile.mTile = static_cast<uint32_t>(mTile);
+    tile.nTile = static_cast<uint32_t>(nTile);
+    return true;
+}
+
+// ops-nn BasicBlockBoundMode: arithmetic intensity against the fp16 sweet spot.
+bool BasicBlockBoundCube(const DwTilingIn& in, const Geom& g, uint32_t mCut, uint32_t nCut)
+{
+    const double denom = static_cast<double>(in.n) * in.wi * in.hi * nCut +
+                         static_cast<double>(in.kh) * in.kw * g.coutOpt * mCut;
+    if (denom <= 0.0) return false;
+    const double inAi =
+        2.0 * in.n * g.wout * g.hout * g.coutOpt * in.kh * in.kw / denom / g.bytes;
+    const double outAi = 2.0 * g.cinOpt * in.kh * in.kw / g.bytes;
+    // HF32 doubles the Cube's fp32 rate, so the shape has to be twice as
+    // arithmetically intense before it counts as cube-bound.
+    const double fp32Div = in.enableHf32 ? 2.0 : 4.0;
+    const double sweet = in.dtype == DwDType::FP32 ? kSweetPointAiFp16 / fp32Div : kSweetPointAiFp16;
+    return std::min(inAi, outAi) > sweet;
+}
+
+// ops-nn BasicBlockGroupDecision + BasicBlockFWDimDecision +
+// BasicBlockBatchMDimDecision. The (fDim, nDim) stage collapses to fDim == fwDim
+// because this kernel template pins nDim to 1.
+bool DecideBasicBlockSplit(const DwTilingIn& in, const Geom& g, const BasicBlockTile& tile, CoreSplit& out)
+{
+    const uint32_t cores = in.aicoreNum;
+    const uint32_t mCut = CeilDiv(g.m, tile.mTile);
+    if (mCut == 0) return false;
+
+    uint32_t fwDim = cores;
+    uint32_t groupDim = 1;
+    if (in.c != 1) {
+        const uint64_t fwCut = static_cast<uint64_t>(in.n) * mCut * CeilDiv(in.c, tile.nTile);
+        const uint32_t groupCut = g.groupOpt;
+        const double cal1 = std::sqrt(static_cast<double>(cores) * groupCut / static_cast<double>(fwCut));
+        const double cal2 = std::sqrt(static_cast<double>(cores) * fwCut / static_cast<double>(groupCut));
+        const std::set<Pair> cands = GenerateCandidates(cores, fwCut, groupCut, cal1, cal2);
+        uint64_t minCost = std::numeric_limits<uint64_t>::max();
+        for (const Pair& c : cands) {
+            if (c.first == 0 || c.second == 0 || c.first * c.second > cores) continue;
+            const uint64_t cost = CeilDiv(groupCut, c.second) * ((fwCut + c.first - 1) / c.first);
+            if (cost < minCost || (cost == minCost && c.first < fwDim)) {
+                minCost = cost;
+                fwDim = c.first;
+                groupDim = c.second;
+            }
+        }
+        if (minCost == std::numeric_limits<uint64_t>::max()) return false;
+    }
+
+    const uint32_t fDim = fwDim;
+    const uint32_t batchCut = in.n;
+    const double cal1 = std::sqrt(static_cast<double>(fDim) * batchCut / static_cast<double>(mCut));
+    const double cal2 = std::sqrt(static_cast<double>(fDim) * mCut / static_cast<double>(batchCut));
+    const std::set<Pair> cands = GenerateCandidates(fDim, mCut, batchCut, cal1, cal2);
+    double minCost = std::numeric_limits<double>::max();
+    uint32_t mDim = 1, batchDim = 1;
+    for (const Pair& c : cands) {
+        if (c.first == 0 || c.second == 0 || c.first * c.second > fDim || c.second > in.n) continue;
+        const double cost = static_cast<double>(CeilDiv(batchCut, c.second) * CeilDiv(mCut, c.first)) +
+                            1.0 / static_cast<double>(c.second);
+        if (cost < minCost) {
+            minCost = cost;
+            mDim = c.first;
+            batchDim = c.second;
+        }
+    }
+    if (minCost == std::numeric_limits<double>::max()) return false;
+
+    out.batchDim = std::min(batchDim, in.n);
+    out.groupDim = std::min(groupDim, g.groupOpt);
+    out.hoDim = std::max(1U, std::min(mDim, CeilDiv(g.m, CubeM0())));
+    while (BlockDim(out) > cores && out.hoDim > 1) --out.hoDim;
+    while (BlockDim(out) > cores && out.groupDim > 1) --out.groupDim;
+    while (BlockDim(out) > cores && out.batchDim > 1) --out.batchDim;
+    return BlockDim(out) != 0 && BlockDim(out) <= cores;
+}
+
+// ops-nn SelectMModeAlgorithm: basic block only when the initial block grid
+// already oversubscribes the cores and the first m/n tile fits in L1.
+bool SelectBasicBlock(const DwTilingIn& in, const Geom& g, BasicBlockTile& tile)
+{
+    if (in.hi <= 2) return false;
+    uint32_t bm = 0, bn = 0;
+    GetInitBasicBlockMN(in, g, bm, bn);
+    const uint64_t mCut = CeilDiv(g.m, bm);
+    const uint64_t nCut = CeilDiv(g.coutOpt, bn);
+    if (mCut * nCut * in.n * g.groupOpt <= in.aicoreNum) return false;
+    return CmpFirstAdjustMnTile(in, g, bm, bn, tile);
+}
+
+// --- L0 / L1 fill ----------------------------------------------------------
+
+struct L0L1 {
+    uint32_t hoL1 = 0, hoL0 = 0, kL0 = 0, nL0 = 0, aL1SpaceSize = 0;
+    uint8_t l1PingPong = 0;
+    bool rowAligned = false;
+};
+
+// Traffic a given (hoDim, hoL1) pair generates: the largest AL1 tile decides
+// aL1SpaceSize, the sum decides how often the fmap is re-read from GM.
+struct Al1Traffic {
+    uint32_t maxRows = 1;
+    uint64_t totalRows = 0;
+};
+
+Al1Traffic MeasureAl1(const DwTilingIn& in, const Geom& g, uint32_t hoDim, uint32_t hoL1)
+{
+    Al1Traffic r;
+    const uint32_t coreM = MaxMPerCore(g.m, hoDim);
+    for (uint32_t c = 0; c < hoDim; ++c) {
+        const uint32_t start = c * coreM;
+        if (start >= g.m) break;
+        const uint32_t count = std::min(coreM, g.m - start);
+        for (uint32_t off = 0; off < count; off += hoL1) {
+            const uint32_t rows = InputRows(in, g, start + off, std::min(hoL1, count - off));
+            r.maxRows = std::max(r.maxRows, rows);
+            r.totalRows += rows;
+        }
+    }
+    return r;
+}
+
+uint32_t Al1Bytes(const DwTilingIn& in, const Geom& g, uint32_t rows)
+{
+    return AlignUp(rows * in.wi * g.cinAligned * g.bytes, kL1AlignBytes);
+}
+
+// kHwModeNote: the mainline's third algorithm splits Ho and Wo separately.
+// This kernel cannot consume that - it forces woDim to 1 and tiles a flattened
+// M - so HW mode is never emitted as a core split. The one part of it that does
+// transfer is how it sizes AL1: by whole output rows rather than by an M count.
+// A tile that starts and ends mid-row needs one extra input row over a
+// row-aligned tile of the same size, which is the AL1 read amplification lever
+// from HANDOVER.md 7.1. So HW mode is implemented here as an hoL1 refinement
+// over whichever core split won, and out.algo reports HW_MODE when the
+// row-aligned candidate beats the plain M-count one.
+bool DecideAl1(const DwTilingIn& in, const Geom& g, uint32_t hoDim, uint32_t hoL0, bool allowRowAligned,
+               uint32_t& hoL1, uint32_t& aL1SpaceSize, uint8_t& l1PingPong, uint64_t& traffic)
+{
+    const uint32_t coreM = MaxMPerCore(g.m, hoDim);
+    // Geometric ladder plus the two extremes: the winner is nearly always the
+    // largest affordable tile, so a full enumeration would only cost time.
+    std::set<uint32_t> cands;
+    cands.insert(coreM);
+    cands.insert(AlignDown(coreM, hoL0) >= hoL0 ? AlignDown(coreM, hoL0) : hoL0);
+    for (uint32_t t = hoL0; t <= coreM; t *= 2) cands.insert(t);
+    if (allowRowAligned && g.wout <= coreM) {
+        cands.insert(AlignDown(coreM, g.wout));
+        for (uint32_t t = g.wout; t <= coreM; t *= 2) cands.insert(t);
+    }
+
+    // L1 ping-pong is a hard preference: with l1PingPong == 0 the kernel lets
+    // only vector core 0 transform weights, serialising every opt-group.
+    for (uint8_t pp : {uint8_t{3}, uint8_t{0}}) {
+        const uint32_t buffers = (pp & 1U) ? 2U : 1U;
+        const uint32_t weightBuffers = (pp & 2U) ? 2U : 1U;
+        const uint32_t reserved = weightBuffers * g.weightNz + g.biasL1;
+        if (reserved >= kL1Bytes) continue;
+        const uint32_t al1Budget = (kL1Bytes - reserved) / buffers;
+
+        bool found = false;
+        uint64_t bestTraffic = 0;
+        uint32_t bestHoL1 = 0, bestBytes = 0;
+        for (uint32_t cand : cands) {
+            if (cand < hoL0) continue;
+            const Al1Traffic t = MeasureAl1(in, g, hoDim, cand);
+            const uint32_t bytes = Al1Bytes(in, g, t.maxRows);
+            if (bytes > al1Budget) continue;
+            if (!found || t.totalRows < bestTraffic || (t.totalRows == bestTraffic && cand > bestHoL1)) {
+                found = true;
+                bestTraffic = t.totalRows;
+                bestHoL1 = cand;
+                bestBytes = bytes;
+            }
+        }
+        if (found) {
+            hoL1 = bestHoL1;
+            aL1SpaceSize = bestBytes;
+            l1PingPong = pp;
+            traffic = bestTraffic;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool FillL0L1(const DwTilingIn& in, const Geom& g, const CoreSplit& s, L0L1& out)
+{
+    const uint32_t coreM = MaxMPerCore(g.m, s.hoDim);
+    const uint32_t nL0 = g.n; // N is never split: coutOpt <= 16
+    if (nL0 == 0 || coreM == 0) return false;
+
+    // kL0 must be a multiple of k0; keeping it a divisor of K avoids a short
+    // tail Mmad on every K walk.
+    std::vector<uint32_t> kCands;
+    for (uint32_t k = g.k0; k <= g.k; k += g.k0) {
+        if (g.k % k != 0) continue;
+        if (static_cast<uint64_t>(nL0) * k * g.bytes > kL0BHalfBytes) continue;
+        kCands.push_back(k);
+    }
+    if (kCands.empty()) return false;
+    // L0A is the binding constraint on hoL0 * kL0, so a K step below one full
+    // 16-deep reduction buys no extra hoL0 in practice; it only gives the Cube
+    // a rank-8 update. Only relevant for FP32, where k0 is 8.
+    const uint32_t kFloor = std::min(g.k, CubeN0());
+    if (kCands.back() >= kFloor) {
+        kCands.erase(std::remove_if(kCands.begin(), kCands.end(), [&](uint32_t k) { return k < kFloor; }),
+                     kCands.end());
+    }
+
+    // HANDOVER.md 7.1 priority 4: fewer, larger Mmad tiles. hoL0 drives both the
+    // fixpipe count and how often BL1 is re-read into L0B, so it comes first;
+    // kL0 only breaks ties, because the measurements explicitly refute the
+    // "kL0 == 16 is always slow" prior (cases 4/17/20 are fast with kL0 == 16).
+    uint32_t hoL0 = 0, kL0 = 0;
+    for (uint32_t k : kCands) {
+        uint32_t cap = std::min(kL0AHalfBytes / (k * g.bytes), kL0CHalfBytes / (nL0 * 4U));
+        cap = AlignDown(std::min(cap, coreM), CubeM0());
+        if (cap < CubeM0()) continue;
+        if (cap > hoL0 || (cap == hoL0 && k > kL0)) {
+            hoL0 = cap;
+            kL0 = k;
+        }
+    }
+    if (hoL0 == 0) return false;
+
+    uint32_t mHoL1 = 0, mBytes = 0, rHoL1 = 0, rBytes = 0;
+    uint8_t mPp = 0, rPp = 0;
+    uint64_t mTraffic = 0, rTraffic = 0;
+    if (!DecideAl1(in, g, s.hoDim, hoL0, false, mHoL1, mBytes, mPp, mTraffic)) return false;
+    const bool hasRow = DecideAl1(in, g, s.hoDim, hoL0, true, rHoL1, rBytes, rPp, rTraffic);
+
+    out.hoL0 = hoL0;
+    out.kL0 = kL0;
+    out.nL0 = nL0;
+    if (hasRow && rPp >= mPp && rTraffic < mTraffic) {
+        out.hoL1 = rHoL1;
+        out.aL1SpaceSize = rBytes;
+        out.l1PingPong = rPp;
+        out.rowAligned = true;
+    } else {
+        out.hoL1 = mHoL1;
+        out.aL1SpaceSize = mBytes;
+        out.l1PingPong = mPp;
+        out.rowAligned = false;
+    }
+    return true;
+}
+
+// --- Assembly ---------------------------------------------------------------
+
+void Emit(const DwTilingIn& in, const Geom& g, const CoreSplit& s, const L0L1& l, DwTilingAlgo algo, DwTiling& out)
+{
+    out = DwTiling{};
+    out.hin = in.hi;
+    out.win = in.wi;
+    out.hout = g.hout;
+    out.wout = g.wout;
+    out.batch = in.n;
+    out.cin = in.c;
+    out.cout = in.c;
+    out.kh = in.kh;
+    out.kw = in.kw;
+    out.groups = in.c;
+    out.enlarge = g.enlarge;
+    out.cinOpt = g.cinOpt;
+    out.coutOpt = g.coutOpt;
+    out.groupOpt = g.groupOpt;
+    out.batchDim = s.batchDim;
+    out.groupDim = s.groupDim;
+    out.nDim = 1;
+    out.hoDim = s.hoDim;
+    out.woDim = 1;
+    out.singleCoreGroupOpt = CeilDiv(g.groupOpt, s.groupDim);
+    out.aL1SpaceSize = l.aL1SpaceSize;
+    out.hoL1 = l.hoL1;
+    out.hoL0 = l.hoL0;
+    out.kL0 = l.kL0;
+    out.nL0 = l.nL0;
+    out.strideH = in.strideH;
+    out.strideW = in.strideW;
+    out.dilationH = in.dilationH;
+    out.dilationW = in.dilationW;
+    out.padTop = in.padH;
+    out.padBottom = in.padH;
+    out.padLeft = in.padW;
+    out.padRight = in.padW;
+    out.hasBias = in.hasBias ? 1U : 0U;
+    out.hf32Enable = (in.dtype == DwDType::FP32 && in.enableHf32) ? 1U : 0U;
+    // Mainline hardcodes nearest-even (Conv2dTiling::SetHF32(isHF32, false)).
+    out.hf32TransMode = 0;
+    out.blockDim = BlockDim(s);
+    out.l1PingPong = l.l1PingPong;
+    out.dtype = in.dtype;
+    out.algo = algo;
+    // ValidateAll checks the derived block too, so fill it before any caller
+    // can look at the candidate.
+    FinalizeDerived(out);
+}
+
+bool TryBuild(const DwTilingIn& in, const Geom& g, const CoreSplit& s, DwTilingAlgo algo, DwTiling& out)
+{
+    L0L1 l;
+    if (!FillL0L1(in, g, s, l)) return false;
+    Emit(in, g, s, l, l.rowAligned ? DwTilingAlgo::HW_MODE : algo, out);
+    return ValidateAll(out);
+}
+
+// Last resort: one core, the smallest legal Mmad tile. AL1 is what usually
+// binds here - one input row of a wide fp32 fmap is tens of KB - so a single
+// output row is tried first: it needs only the dilated kernel height, while an
+// M-count tile that straddles a row boundary needs strideH rows more.
+bool BuildMinimal(const DwTilingIn& in, const Geom& g, DwTiling& out)
+{
+    const CoreSplit s;
+    L0L1 l;
+    l.hoL0 = std::min(CubeM0(), AlignUp(g.m, CubeM0()));
+    l.kL0 = g.k0;
+    l.nL0 = g.n;
+
+    std::vector<uint32_t> cands;
+    if (g.wout >= l.hoL0) cands.push_back(g.wout);
+    cands.push_back(l.hoL0);
+    for (uint8_t pp : {uint8_t{3}, uint8_t{0}}) {
+        for (uint32_t cand : cands) {
+            l.hoL1 = cand;
+            l.l1PingPong = pp;
+            l.aL1SpaceSize = Al1Bytes(in, g, MeasureAl1(in, g, 1, cand).maxRows);
+            Emit(in, g, s, l, DwTilingAlgo::M_MODE, out);
+            if (ValidateAll(out)) return true;
+        }
+    }
+    return false;
+}
+
+bool Solve(const DwTilingIn& in, const Geom& g, DwTiling& out)
+{
+    const Scored mMode = DecideMMode(in, g);
+
+    BasicBlockTile tile;
+    Scored basic;
+    DwTilingAlgo basicAlgo = DwTilingAlgo::BASIC_BLOCK;
+    if (SelectBasicBlock(in, g, tile)) {
+        CoreSplit bb;
+        if (DecideBasicBlockSplit(in, g, tile, bb)) {
+            basic = ScoreSplit(in, g, bb);
+            // boundType only feeds the mainline's FW ranking, which collapses
+            // here; keep the call so the classification stays visible.
+            (void)BasicBlockBoundCube(in, g, CeilDiv(g.m, tile.mTile), CeilDiv(g.coutOpt, tile.nTile));
+        }
+    }
+
+    // The mainline predicate above says which algorithm owns the shape; the
+    // measured cost model then arbitrates, because HANDOVER.md 7.1 shows the
+    // basic-block grids for the large cases were re-tuned onto the finer,
+    // fully-populated M-mode grid. Ties go to the predicate's choice.
+    const Scored* first = &mMode;
+    const Scored* second = &basic;
+    DwTilingAlgo firstAlgo = DwTilingAlgo::M_MODE;
+    DwTilingAlgo secondAlgo = basicAlgo;
+    if (basic.valid && !Better(mMode, basic)) {
+        first = &basic;
+        second = &mMode;
+        firstAlgo = basicAlgo;
+        secondAlgo = DwTilingAlgo::M_MODE;
+    }
+
+    if (first->valid && TryBuild(in, g, first->split, firstAlgo, out)) return true;
+    if (second->valid && TryBuild(in, g, second->split, secondAlgo, out)) return true;
+    return BuildMinimal(in, g, out);
+}
+
+} // namespace
+
+void FinalizeDerived(DwTiling& t)
+{
+    t.maxMPerCore = AlignUp(CeilDiv(static_cast<uint32_t>(t.hout * t.wout), t.hoDim), CubeM0());
+    t.batchCount = CeilDiv(t.batch, t.batchDim);
+    t.enlargeTail = t.enlarge ? t.groups % t.enlarge : 0;
+    t.woLocal = DwWoLocal(t);
+    t.al1HalfSize = Al1HalfElems(t);
+}
+
+bool DwConv2dDoTiling(const DwTilingIn& in, DwTiling& out)
+{
+    if (in.aicoreNum == 0) return false;
+    Geom g;
+    if (!BuildGeom(in, 0, g)) return false;
+    if (Solve(in, g, out)) return true;
+
+    // Nothing legal at the natural packing. The usual reason is AL1: a wide
+    // fp32 fmap needs win * cinAligned * 4 bytes per input row and a tile
+    // spans at least the dilated kernel height, which can exceed L1 outright.
+    // Narrowing the opt-group is the only lever left - for fp32 it halves
+    // cinAligned, and with it the bytes per row. It wastes Cube throughput (N
+    // stays padded to 16 either way), so it is a last resort, not a candidate.
+    for (uint32_t cap = g.enlarge / 2; cap >= 1; cap /= 2) {
+        Geom narrow;
+        if (BuildGeom(in, cap, narrow) && Solve(in, narrow, out)) return true;
+        if (cap == 1) break;
+    }
+    return false;
+}
+
+namespace {
+
+// Field-wise rather than a memcmp of the struct: DwTilingIn has padding around
+// `dtype`/`hasBias`, and a caller that builds one by assignment rather than
+// value-initialising it would leave that padding holding stale bytes.
+struct TilingInKey {
+    uint32_t n, c, hi, wi, kh, kw, strideH, strideW, padH, padW, dilationH, dilationW;
+    uint32_t aicoreNum, enlargeLimit;
+    uint32_t dtype, hasBias, enableHf32;
+
+    bool operator==(const TilingInKey& o) const
+    {
+        return n == o.n && c == o.c && hi == o.hi && wi == o.wi && kh == o.kh && kw == o.kw &&
+               strideH == o.strideH && strideW == o.strideW && padH == o.padH && padW == o.padW &&
+               dilationH == o.dilationH && dilationW == o.dilationW && aicoreNum == o.aicoreNum &&
+               enlargeLimit == o.enlargeLimit && dtype == o.dtype && hasBias == o.hasBias &&
+               enableHf32 == o.enableHf32;
+    }
+};
+
+TilingInKey MakeKey(const DwTilingIn& in)
+{
+    return TilingInKey{in.n,   in.c,        in.hi,        in.wi,         in.kh,
+                       in.kw,  in.strideH,  in.strideW,   in.padH,       in.padW,
+                       in.dilationH,        in.dilationW, in.aicoreNum,  in.enlargeLimit,
+                       static_cast<uint32_t>(in.dtype),   static_cast<uint32_t>(in.hasBias),
+                       static_cast<uint32_t>(in.enableHf32)};
+}
+
+struct TilingInKeyHash {
+    size_t operator()(const TilingInKey& k) const
+    {
+        // FNV-1a over the field list. The fields are small and highly
+        // correlated, so a plain xor-shift mix collides badly on shape sweeps.
+        const uint32_t* p = &k.n;
+        size_t h = 1469598103934665603ULL;
+        for (size_t i = 0; i < sizeof(TilingInKey) / sizeof(uint32_t); ++i) {
+            h = (h ^ p[i]) * 1099511628211ULL;
+        }
+        return h;
+    }
+};
+
+struct TilingCacheEntry {
+    DwTiling tiling;
+    bool ok;
+};
+
+} // namespace
+
+bool DwConv2dGetTiling(const DwTilingIn& in, DwTiling& out)
+{
+    // thread_local rather than a mutex-guarded shared map: the op is called from
+    // whichever thread runs the model, the entries are a few hundred bytes, and
+    // a lock on this path would partly undo the point of caching.
+    static thread_local std::unordered_map<TilingInKey, TilingCacheEntry, TilingInKeyHash> cache;
+
+    const TilingInKey key = MakeKey(in);
+    auto it = cache.find(key);
+    if (it != cache.end()) {
+        out = it->second.tiling;
+        return it->second.ok;
+    }
+
+    TilingCacheEntry entry{};
+    entry.ok = DwConv2dDoTiling(in, entry.tiling);
+    cache.emplace(key, entry);
+    out = entry.tiling;
+    return entry.ok;
+}
+
+} // namespace dwconv2d

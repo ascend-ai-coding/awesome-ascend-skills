@@ -1,0 +1,40 @@
+strategy_id: P17
+
+strategy_meta:
+  id: "P17"
+  slug: "P17_cv_parallel_block_sizing"
+  title: "P17: CV Parallel Block Sizing (CV并行基本块大小设计)"
+  bottlenecks: [tiling_imbalance]
+  op_families: [cv_fusion, flash_attention, matmul]
+  conflicts_with: []
+  synergizes_with: [P14]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p17_cv_parallel_block_sizing.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p17_cv_parallel_block_sizing.md"
+  playbook_slug: "P17_cv_parallel_block_sizing"
+checks:
+  - id: has_cube
+    type: grep_count
+    pattern: "Cube.*Vector|Vector.*Cube|CV|ExecuteTask|SyncAll"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 Cube+Vector 融合执行模式 → 非 CV 融合算子，不适用 P17。检查 P51 或 P73。"
+
+  - id: has_mbasesize
+    type: grep_count
+    pattern: "mBaseSize|s2BaseSize|baseSize|BLOCK_SIZE"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到基本块大小定义 → 无 CV 块大小调优空间，不适用 P17。"
+
+  - id: has_tiling
+    type: grep_count
+    pattern: "Tiling|CalcBaseSize|tileSize"
+    files: [host]
+    expected: ">= 1"
+    fail_msg: "未检测到 Host 侧 Tiling 逻辑 → 无法调整块大小，不适用 P17。"

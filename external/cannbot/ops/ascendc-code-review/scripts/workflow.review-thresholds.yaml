@@ -1,0 +1,58 @@
+# 检视模式阈值与指导 — 单一来源,scripts/workflow.review_mode.py 读取
+# code-fetch / file-review 入口调 review_mode.py 拿 mode+routing+guidance
+# 调阈值或档位指导改本文件,不改提示词
+
+# ─── 统计口径（行数）— 唯一真源 ────────────────────────────────────
+# 「代码行数」「变更行数」如何统计定义在此，file-review 入口与 code-fetch 共用。
+# 主 Agent 与子 Agent 一律按本段执行，禁止各自实现——各自实现必然得出不同数字，
+# 破坏同一检视内数字的可比性。
+#
+# 统计对象（两者都排除注释行与空行）：
+#   - 文件检视：file_input 内所有代码文件的行数
+#   - PR 检视：  diff 中「新增 + 删除」的行数。排除 diff 结构行本身
+#                （`+++` / `---` 文件头、`@@` 块头、`\ No newline at end of file`），
+#                不含上下文行
+#
+# 排除规则（按文件扩展名分派，勿一刀切）：
+#   C/C++ 族（.c/.cc/.cpp/.cxx/.h/.hh/.hpp/.hxx/.inl/.ipp/.tpp/.asc/.cce；
+#             扩展名大小写不敏感）
+#     - 行首（去空白后）为 // 或 /* 或 */                  → 排除
+#     - 处于未闭合 /* 块注释内的行（含以 * 开头的续行）    → 排除
+#     - #include / #define / #if / #ifdef 等预处理指令     → 计入
+#       （它们是预处理指令、不是注释。一刀切按 # 排除会系统性漏掉
+#         Ascend C 每文件常有的十几到几十行，严重低估规模）
+#   脚本/构建族（.py/.sh/.cmake/CMakeLists.txt/Makefile）
+#     - 行首（去空白后）为 #                              → 排除
+#   通用
+#     - 空白行（去空白后为空）                            → 排除
+#     - 以 \ 结尾的宏续行                                 → 计入（与首行同属一条指令）
+#
+# 本口径是启发式，不解析字符串字面量（如 "http://x" 中的 // 不视为注释起始）。
+# 判档阈值对几十行偏差不敏感，无需追求精确——但**同一检视内必须只用一套口径**。
+
+# 检视模式分档（按变更行数；oversized 需同时满足文件数条件）
+review_modes:
+  minimal:
+    max_lines: 100            # 变更行数 < 100
+    routing: pr-review        # 走标准 PR 流程
+    guidance: "极简模式：只发射一个波次，≤6 个子 agent 并行检视。红线(red-line)/topK 必进第一波，独立成组不参与 Step 6.2 合并。cpp-style 专项并入第一波。"
+  compact:
+    max_lines: 300            # 100 <= lines < 300
+    routing: pr-review
+    guidance: "紧凑模式：正常合并，优先挤在同一波；≤6 组单波，超过分波。红线/topK 必进第一波，独立成组。cpp-style 专项并入第一波。"
+  standard:
+                             # lines >= 300（且未达 oversized 双高条件）
+    routing: pr-review
+    guidance: "标准模式：直接用 Step 6 合并结果。侧别标签：全[适用:Kernel]→[仅Kernel]；全[适用:Host]→[仅Host]；含[适用:All]或混合→[全部]。优先级：1.数值安全+内存安全+输入验证 2.API使用+数据搬运 3.领域规则 4.性能 5.通用规范。每波 ≤6 组。红线/topK 必进第一波，独立成组。cpp-style 专项并入第一波。"
+
+# 超大 PR 触发（双高，轻易不触发）。命中后不切换流程——routing 仍为 pr-review，
+# 只在 pr-review 阶段0 向用户输出「本地手工拆分」建议（不阻断），并让 plan-design
+# 按下方 guidance 收紧编排。
+oversized:
+  # min_files：超大 PR 判定的变更文件数下限（files > 本值）。唯一消费者是
+  #            scripts/workflow.review_mode.py 的判档逻辑，调整它会改变哪些 PR
+  #            触发拆分建议与从严编排。
+  min_files: 20
+  min_lines: 3000             # 且 变更行数 ≥
+  routing: pr-review          # 仍走标准 PR 流程——不再有流程切换
+  guidance: "超大 PR：仍走标准 PR 流程，不切换 workflow。编排从严：① 合并从严——Step 6.1 跨文档同类合并不执行、6.2 只保留「同一代码位置」的同根因合并，同类别条款宁可分列多组；② 打包从严——每组条款数取各来源文件 <检视负载> 容量的最小值，不得为压缩波次而放宽；③ 分波从严——按标准模式的优先级排序，红线/topK 独立成组必进第一波，组多就分多波，不并波；④ 筛查从严——Step 5 只保留 diff 变更行命中的条款，概要缺项一律 diff grep 兜底，禁止因概要不全整条跳过或整体降级为仅核对。"

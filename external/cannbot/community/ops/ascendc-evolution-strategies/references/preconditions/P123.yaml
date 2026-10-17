@@ -1,0 +1,47 @@
+strategy_id: P123
+description: Causal/Sparse KV 跳过 + 边界 mask 特化适用性检查 — attention 类算子支持 causal/sparse，但 KV 循环跑满全量、mask 逐元素兜底，未做循环界裁剪与编译期分发。
+strategy_meta:
+  id: "P123"
+  slug: "P123_causal_kv_skip_boundary_mask"
+  title: "P123: Causal/Sparse KV 范围跳过 + 边界 Tile Mask 特化 + dtype×mask 编译期分发"
+  bottlenecks: [compute_bound, cube_bound]
+  op_families: [attention, flash_attention]
+  conflicts_with: []
+  synergizes_with: [D2, P118, P119, P120]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p123_causal_kv_skip_boundary_mask.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p123_causal_kv_skip_boundary_mask.md"
+  playbook_slug: "P123_causal_kv_skip_boundary_mask"
+checks:
+  - id: has_causal_semantics
+    type: grep_count
+    pattern: "causal|caus|isCausal|sparseMode|mask"
+    files: [kernel, header, host]
+    expected: ">= 1"
+    fail_msg: "算子无 causal/mask 语义（纯 nomask）→ P123 不适用。"
+
+  - id: has_elementwise_mask_fallback
+    type: grep_count
+    pattern: 'Duplicate\\(.*NEG|Duplicate\\(.*-1e30|Duplicate\\(.*-3e38|SetValue'
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到逐元素 mask 填充证据 → 确认 mask 应用方式后再决定（可能已是边界 tile 特化）。"
+
+  - id: no_kv_range_skip
+    type: grep_count
+    pattern: "noSkipKvS|triUp|triDown|skipKv|kvSLoopNum"
+    files: [kernel, header]
+    expected: "== 0"
+    fail_msg: "已实现 KV 范围跳过（noSkipKvS/triUp）→ P123 主要价值已发挥，转向 P118 mask 预生成或 P122 堆叠。"
+
+  - id: no_compiletime_mask_dispatch
+    type: grep_count
+    pattern: "MaskType|MASK_CAUSAL|if constexpr.*[Mm]ask"
+    files: [kernel, header]
+    expected: "== 0"
+    fail_msg: "已按 MaskType 编译期分发 → 检查是否缺少空范围 InitOutWhenZero 兜底即可，无需重构。"
