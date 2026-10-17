@@ -1,0 +1,85 @@
+/**
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * CANN Open Software License Agreement Version 2.0. THIS SOFTWARE IS PROVIDED "AS IS".
+ */
+
+/*!
+ * \file scan_tiling.template  (使用时改名为 scan_tiling.h)
+ * \brief Scan 族流式模板的 host 侧 tiling。
+ *
+ * 输入：融合 (M, R, N) 与平台参数（UB 字节、AIV 核数）。
+ * 输出：填充 ScanTilingData，返回需要的 blockDim（usedCoreNums）。
+ *
+ * 选块思路（流式模板，target 向量宽 W_TARGET）：
+ *   - N 较大：mBlk=1，按 nTileLen 切 N；
+ *   - N 较小（含 N=1 的 last-dim）：nTileLen=N，用 mBlk 把多行凑成向量宽；
+ *   - work-item 太少（< 核数）时缩小分块，尽量用满核。
+ *
+ * 大 R + M×N 极小（切块仍 totalWork ≪ coreNum）→ 应改走 core_partition_scan（跨核借 R）。
+ */
+#ifndef SCAN_TILING_H
+#define SCAN_TILING_H
+
+#include <cstdint>
+#include <cstring>
+#include "scan_tiling_data.h"
+
+namespace scan_tiling {
+
+struct PlatformParam {
+    int64_t ubSize;
+    int64_t numBlocks;
+    int64_t blockSize = 32;
+    int64_t vl = 64;  // 256B / 4B
+};
+
+// 融合形状 (M, R, N)，dtypeCode: 0=FP32,1=FP16,2=BF16,3=INT32
+struct CaseShape { int64_t m; int64_t r; int64_t n; int dtypeCode; };
+
+inline int64_t CeilDiv(int64_t a, int64_t b) { return b == 0 ? a : (a + b - 1) / b; }
+
+inline int64_t TilingScan(const CaseShape& s, const PlatformParam& p, ScanTilingData& td) {
+    std::memset(&td, 0, sizeof(td));
+    const int64_t W_TARGET = 1024;
+
+    int64_t mBlk = 1, nTileLen = 1;
+    if (s.n >= W_TARGET) {
+        mBlk = 1; nTileLen = W_TARGET;
+    } else {
+        nTileLen = s.n;
+        mBlk = W_TARGET / (s.n > 0 ? s.n : 1);
+        if (mBlk < 1) mBlk = 1;
+        if (mBlk > s.m) mBlk = s.m;
+    }
+    int64_t mOuter = CeilDiv(s.m, mBlk);
+    int64_t nOuter = CeilDiv(s.n, nTileLen);
+    int64_t items = mOuter * nOuter;
+
+    // 并行度补偿：work-item 太少时缩小分块以用满核
+    if (items < p.numBlocks) {
+        if (s.n >= W_TARGET) {
+            int64_t nOuterTarget = CeilDiv(p.numBlocks, mOuter);
+            nTileLen = CeilDiv(s.n, nOuterTarget);
+            if (nTileLen < p.vl) nTileLen = p.vl;
+            nTileLen = CeilDiv(nTileLen, p.vl) * p.vl;   // 对齐 VL
+            if (nTileLen > s.n) nTileLen = s.n;
+        } else {
+            int64_t mOuterTarget = CeilDiv(p.numBlocks, nOuter);
+            mBlk = CeilDiv(s.m, mOuterTarget);
+            if (mBlk < 1) mBlk = 1;
+        }
+        mOuter = CeilDiv(s.m, mBlk);
+        nOuter = CeilDiv(s.n, nTileLen);
+        items = mOuter * nOuter;
+    }
+
+    td.M = s.m; td.R = s.r; td.N = s.n;
+    td.mBlk = mBlk; td.nTileLen = nTileLen;
+    td.mOuter = mOuter; td.nOuter = nOuter; td.totalWork = items;
+
+    int64_t used = items < p.numBlocks ? items : p.numBlocks;
+    return used < 1 ? 1 : used;
+}
+
+}  // namespace scan_tiling
+#endif  // SCAN_TILING_H

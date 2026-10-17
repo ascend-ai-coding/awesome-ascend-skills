@@ -1,0 +1,19 @@
+strategy_id: R1
+description: "R1: VF 函数融合"
+
+strategy_meta:
+  id: "R1"
+  slug: "R1_vf_fusion"
+  title: "R1: VF 函数融合"
+  bottlenecks: []
+  op_families: [datapath]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L1"
+  deprecated: true
+  deprecated_reason: "Uses fictional APIs (__simd_vf__, RegTensor) not present in AscendC. Overlaps with P-series. Zero references in operator lookup tables."
+  has_preconditions: false
+  has_playbook: false
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/r1_vf_fusion.md"

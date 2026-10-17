@@ -1,0 +1,57 @@
+# reviewer_bench 项目 .gitignore
+
+# === 敏感信息 ===
+.env
+.env.local
+.claude/settings.local.json
+
+# === 开发环境 ===
+.opencode/
+*.pyc
+__pycache__/
+*.egg-info/
+.eggs/
+dist/
+build/
+.coverage
+.pytest_cache/
+
+# === 临时文件 ===
+*.log
+*.tmp
+.DS_Store
+review-config-bench.json
+.repos/
+bench_data/
+bench_data_*/
+eval-config.json
+reports/
+eval-reports/
+
+# === 本地实验产物 ===
+review-config-e2e*.json
+review-config-bundle*.json
+review-config-ocr-*.json
+review-config-pr*.json
+review-config-redline*.json
+review-config-routed*.json
+review-config-solo-*.json
+review-config-round*.json
+review-config-light*.json
+review-config-host-*.json
+manifest_*.json
+routing_*.json
+run_*.ps1
+run_*.bat
+run_*.sh
+_tmp_*
+
+# === 防止 settings.json（含明文 API Key）意外提交 ===
+**/settings.json
+
+# === 编译产物 ===
+a.out
+*.o
+*.so
+*.dylib
+.claude/

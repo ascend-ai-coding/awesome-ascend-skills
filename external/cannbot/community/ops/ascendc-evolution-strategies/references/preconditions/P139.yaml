@@ -1,0 +1,41 @@
+strategy_id: P139
+description: 多槽（预发射）流水 workspace 是否只初始化部分槽/漏初始化 padded 行 — 防 NaN 随机崩溃的适用性判断
+strategy_meta:
+  id: "P139"
+  slug: "P139_multi_slot_workspace_zero_init"
+  title: "P139: 多槽流水 workspace 全槽零初始化（防 padded 行 NaN → 偶发崩溃）"
+  bottlenecks: [near_optimal]
+  op_families: [flash_attention, attention, elementwise]
+  conflicts_with: []
+  synergizes_with: [P14, P40, P137]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p139_multi_slot_workspace_zero_init.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p139_multi_slot_workspace_zero_init.md"
+  playbook_slug: "P139_multi_slot_workspace_zero_init"
+  quantified_gain: [{"shape": "SparseFlashAttention 20-case 910c（同 kernel 连续复测）", "baseline_us": 0, "optimized_us": 0, "speedup": 1.0, "source": "cannbench-evo round_6 verify_1/2/3：偶发 NaN/崩溃 → 连续 3 轮 20/20 稳定"}]
+checks:
+  - id: has_multi_slot_pipeline
+    type: grep_count
+    pattern: 'kPreloadNum|BUFFER_NUM\\s*=\\s*2|preload\\s*=\\s*2|double.*buffer|pingpong'
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未发现多槽/双缓冲流水 → P139（多槽零初始化）不适用"
+
+  - id: has_workspace_pad_read
+    type: grep_count
+    pattern: "validCount|padded|laneBegin|laneEnd|memset|ZeroWorkspace|Zero.*Rows|SetValue.*0"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未发现紧凑写+整块读的 workspace（validCount/padded/零初始化）→ 确认 P139 是否有落点"
+
+  - id: zero_init_all_slots
+    type: grep_count
+    pattern: 'for\\s*\\(.*slot.*kPreloadNum|slot\\s*<\\s*kPreloadNum|Zero.*\\[slot\\]'
+    files: [kernel, header]
+    expected: "== 0"
+    fail_msg: "已发现遍历全部槽的零初始化（slot<kPreloadNum）→ P139 可能已应用"

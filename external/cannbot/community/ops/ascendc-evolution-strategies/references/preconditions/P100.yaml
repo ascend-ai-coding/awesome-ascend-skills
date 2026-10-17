@@ -1,0 +1,48 @@
+strategy_id: P100
+description: GatherMask 替代逐元素 SetValue/GetValue 适用性检查 — 必须存在逐元素解交织循环，且无已有 GatherMask
+
+strategy_meta:
+  id: "P100"
+  slug: "P100_gathermask_replacement"
+  title: "P100: GatherMask 替代逐元素 SetValue/GetValue (GatherMask Replacement)"
+  bottlenecks: [scalar_compute, scalar_loading, compute_bound]
+  op_families: [elementwise, special, index_scatter, attention]
+  conflicts_with: []
+  synergizes_with: [P97, P95, P101]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p100_gathermask_replacement.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p100_gathermask_replacement.md"
+  playbook_slug: "P100_gathermask_replacement"
+checks:
+  - id: has_setvalue_getvalue_loop
+    type: grep_count
+    pattern: 'for\s*\([^)]*\+\+[^)]*\).*SetValue.*GetValue'
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未检测到逐元素 SetValue/GetValue 循环 → P100 无改造对象。考虑 P97 零拷贝切片。"
+
+  - id: has_deinterleave_pattern
+    type: grep_count
+    pattern: '2\s*\*\s*i\s*\+|even.*odd|odd.*even|interleave|deinterleave'
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未检测到解交织/奇偶分拆模式 → GatherMask 的固定间隔采集场景不存在。"
+
+  - id: no_existing_gathermask
+    type: grep_count
+    pattern: 'GatherMask\s*\('
+    files: [kernel, header]
+    expected: "== 0"
+    fail_msg: "算子已使用 GatherMask → 解交织已向量化的，P100 主要价值已发挥。"
+
+  - id: has_gather_source_local_tensor
+    type: grep_count
+    pattern: 'LocalTensor\s*<|TBuf\s*<'
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未检测到 UB LocalTensor → GatherMask 需要在 UB 上操作，不适用。"

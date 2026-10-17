@@ -1,0 +1,19 @@
+strategy_id: P62
+description: "P62: Draft: Sparse/Dense Dual-Path Dispatch by Reachable Coverage（按可达覆盖度切换 sparse/dense 双路径，草稿）"
+
+strategy_meta:
+  id: "P62"
+  slug: "P62_sparse_dense_dual_path_dispatch_dra"
+  title: "P62: Draft: Sparse/Dense Dual-Path Dispatch by Reachable Coverage（按可达覆盖度切换 sparse/dense 双路径，草稿）"
+  bottlenecks: [tiling_imbalance]
+  op_families: [flash_attention]
+  conflicts_with: []
+  synergizes_with: [P76, P80]
+  requires: []
+  complexity: "L1"
+  deprecated: true
+  deprecated_reason: "Explicitly marked Draft in title. Insufficient evidence width for general application."
+  has_preconditions: false
+  has_playbook: false
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p62_sparse_dense_dual_path_dispatch_dra.md"

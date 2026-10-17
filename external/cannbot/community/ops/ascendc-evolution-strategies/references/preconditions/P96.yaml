@@ -1,0 +1,48 @@
+strategy_id: P96
+description: 硬件排序引擎替代标量排序适用性检查 — 必须存在嵌套排序循环或 selection topK，且无已有 Sort API
+
+strategy_meta:
+  id: "P96"
+  slug: "P96_hardware_sort_replacement"
+  title: "P96: 硬件排序引擎替代标量排序/选择 (Hardware Sort Engine Replacement)"
+  bottlenecks: [scalar_compute, compute_bound]
+  op_families: [special, index_scatter]
+  conflicts_with: []
+  synergizes_with: [P1, P7, P67]
+  requires: []
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p96_hardware_sort_replacement.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p96_hardware_sort_replacement.md"
+  playbook_slug: "P96_hardware_sort_replacement"
+checks:
+  - id: has_nested_sort_loop
+    type: grep_count
+    pattern: 'for\s*\([^)]*\+\+[^)]*\)\s*for.*(swap|SWAP|compare|Compare|max_val|maxVal|min_val|minVal)'
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未检测到嵌套排序循环或 selection topK → P96 无改造对象。考虑 P94 归约或 P55 BlockReduceMax。"
+
+  - id: no_existing_sort_api
+    type: grep_count
+    pattern: '\b(AscendC::Sort|Sort32|MrgSort|CreateVecIndex)\b'
+    files: [kernel, header]
+    expected: "== 0"
+    fail_msg: "算子已使用 Sort32/MrgSort → 硬件排序已应用，P96 主要价值已发挥。"
+
+  - id: has_sortable_dtype
+    type: grep_count
+    pattern: '\b(float|half|int32_t|uint32_t)\b'
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未检测到常见可排序 dtype（float/half/int32/uint32）→ 请确认 AscendC Sort API 是否支持当前 dtype。"
+
+  - id: has_sort_dimension
+    type: grep_count
+    pattern: "rowLength|sort.*size|M|topK|k_value"
+    files: [kernel, header, tiling]
+    expected: ">= 1"
+    fail_msg: "未检测到排序维度 / topK 参数 → P96 无法判断数据规模，不适用。"

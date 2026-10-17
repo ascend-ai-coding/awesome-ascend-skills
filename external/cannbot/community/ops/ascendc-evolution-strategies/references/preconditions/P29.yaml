@@ -1,0 +1,40 @@
+strategy_id: P29
+
+strategy_meta:
+  id: "P29"
+  slug: "P29_crosscore_aic_aiv_sync"
+  title: "P29: 跨核同步（AIC-AIV CrossCore Sync）"
+  bottlenecks: [no_overlap, partial_overlap]
+  op_families: [cv_fusion, flash_attention]
+  conflicts_with: []
+  synergizes_with: [P14, P30, P5, P87]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p29_crosscore_aic_aiv_sync.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p29_crosscore_aic_aiv_sync.md"
+  playbook_slug: "P29_crosscore_aic_aiv_sync"
+checks:
+  - id: has_cube
+    type: grep_count
+    pattern: "Cube.*Vector|Vector.*Cube|CV|MIX"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 Cube+Vector 融合模式 → 无需跨核同步，不适用 P29。检查 P14 或 P30。"
+
+  - id: has_crosscoresetflag
+    type: grep_count
+    pattern: "CrossCoreSetFlag|CrossCoreWaitFlag|SetFlag|WaitFlag"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到跨核同步原语 → 当前同步机制不足，不适用 P29。检查 P5 或 P14。"
+
+  - id: has_syncall
+    type: grep_count
+    pattern: "SyncAll|PipeBarrier"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到粗粒度同步（SyncAll/PipeBarrier）→ 无同步优化空间，不适用 P29。"

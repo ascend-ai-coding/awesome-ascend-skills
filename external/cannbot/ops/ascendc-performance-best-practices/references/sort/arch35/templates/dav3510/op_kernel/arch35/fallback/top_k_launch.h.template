@@ -1,0 +1,64 @@
+/*!
+ * \file top_k_launch.h
+ * \brief Shared launch parameter struct and launch function declarations (g++ and bisheng).
+ *
+ * 设计参考 operators/top_k/docs/DESIGN.md：
+ *  - 分支 L (branch=0): inner==1，行在 GM 连续，逐行 DataCopyPad 搬入
+ *  - 分支 S (branch=1): inner>1，行跨步，2D DataCopyPad(Compact) + Gather 装配
+ */
+
+#ifndef TOP_K_LAUNCH_H
+#define TOP_K_LAUNCH_H
+
+#include <cstdint>
+#ifndef GM_ADDR
+#define GM_ADDR void*
+#endif
+
+// dtype id，plugin (g++) 与 kernel host 侧 (bisheng) 共用
+enum TopKDtypeId : int64_t {
+    TOPK_DTYPE_INT8 = 0,
+    TOPK_DTYPE_UINT8 = 1,
+    TOPK_DTYPE_INT32 = 2,
+    TOPK_DTYPE_INT64 = 3,
+    TOPK_DTYPE_FP16 = 4,
+    TOPK_DTYPE_FP32 = 5,
+    TOPK_DTYPE_BF16 = 6,
+};
+
+// 分支编号
+enum TopKBranchId : int64_t {
+    TOPK_BRANCH_L = 0,  // inner == 1，连续行
+    TOPK_BRANCH_S = 1,  // inner > 1，跨步行
+};
+
+struct TopKLaunchParams {
+    int64_t outer = 0;       // dim 之前各维乘积
+    int64_t dimLen = 0;      // D：排序轴长度
+    int64_t inner = 0;       // dim 之后各维乘积
+    int64_t rows = 0;        // outer * inner
+    int64_t k = 0;           // topk 的 k
+    int64_t isLargest = 1;   // 1: 取最大 k 个；0: 取最小 k 个
+    int64_t branch = 0;      // TopKBranchId
+    int64_t usedCores = 1;   // 使用的 AIV 核数（host 动态计算）
+    int64_t rowsPerCore = 0; // 分支 L/S：每核行数（ceil 均分）
+    int64_t g = 1;           // 行组大小（TopK 的 outter）
+    int64_t dChunk = 0;      // 排序轴 chunk 长度（元素数，32 的倍数，<= 4000）
+    int64_t kPad = 0;        // k 按 value dtype 向上 32B 对齐
+    int64_t kIdxPad = 0;     // k 按 int32 向上 32B 对齐（8 的倍数）
+    int64_t mergePad = 0;    // pad32(2 * kPad)，归并 TopK 的 inner
+    int64_t tmpSize = 0;     // TopK tmpLocal 字节数（GetTopKMaxMinTmpSize）
+};
+
+extern "C" {
+// Host 侧 tiling 计算（在 bisheng 编译的 kernel 源文件中实现，可调用 GetTopKMaxMinTmpSize / 平台核数）。
+// 返回 0 成功，非 0 失败（参数非法或 UB 预算不可满足）。
+int32_t calc_topk_params(int64_t outer, int64_t dimLen, int64_t inner, int64_t k, int64_t isLargest,
+                         int64_t dtypeId, int64_t coreNum, TopKLaunchParams* out);
+
+// Kernel 启动（bisheng 编译），按 dtypeId 分发模板实例
+void launch_topk(GM_ADDR x, GM_ADDR y, GM_ADDR idx, int64_t dtypeId, const TopKLaunchParams& params,
+                 void* stream);
+}
+
+#endif // TOP_K_LAUNCH_H

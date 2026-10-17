@@ -1,0 +1,48 @@
+strategy_id: P112
+description: Elementwise 向量化 Tile 尺寸适用性检查 — 算子为 elementwise 语义，输入输出 shape 相同，且 tile 计算可优化。
+
+strategy_meta:
+  id: "P112"
+  slug: "P112_elementwise_vectorized_tile_sizing"
+  title: "P112: Elementwise 向量化 Tile 尺寸设计"
+  bottlenecks: [vec_underutilization, mte2_stall, tail_block]
+  op_families: [elementwise]
+  conflicts_with: []
+  synergizes_with: [P1, P5, P10, P69]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p112_elementwise_vectorized_tile_sizing.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p112_elementwise_vectorized_tile_sizing.md"
+  playbook_slug: "P112_elementwise_vectorized_tile_sizing"
+checks:
+  - id: has_elementwise_semantics
+    type: grep_count
+    pattern: "Add|Mul|Sub|Div|Relu|Sigmoid|Sin|Cos|Exp|Log|Sqrt"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 elementwise 运算 → P112 不适用。"
+
+  - id: same_shape
+    type: grep_count
+    pattern: "inputShape|outputShape|sameShape|shape.*=="
+    files: [header]
+    expected: ">= 1"
+    fail_msg: "未检测到 shape 相同判定逻辑 → 若 shape 不同应走 P113 Broadcast。"
+
+  - id: no_maxelemnum
+    type: grep_count
+    pattern: "maxElemNum|ubFormer|blockFormer"
+    files: [kernel, header]
+    expected: "== 0"
+    fail_msg: "算子已实现 maxElemNum / ubFormer 切分 → P112 主要价值已发挥。"
+
+  - id: has_vector_unit
+    type: grep_count
+    pattern: "AI_VECTOR_CORE|TaskType::AI_VECTOR|aiv"
+    files: [all]
+    expected: ">= 1"
+    fail_msg: "未检测到 AIV-only kernel → P112 面向 Vector 单元。"

@@ -1,0 +1,24 @@
+/*!
+ * \file dwconv2d_launch.h
+ * \brief Depthwise launch 声明（g++ 可见）。见 usage_guide.md。
+ *
+ * ── 集成说明：去掉 .template 后缀落地为 dwconv2d_launch.h ──────────────────────
+ */
+
+#ifndef DWCONV2D_LAUNCH_H
+#define DWCONV2D_LAUNCH_H
+
+#include <cstdint>
+
+#include "../op_host/dwconv2d_tiling.h"
+
+// The host-side plugin includes this from a plain C++ translation unit, where
+// the ASC GM_ADDR spelling does not exist.
+#ifndef GM_ADDR
+#define GM_ADDR void*
+#endif
+
+extern "C" void launch_dwconv2d(GM_ADDR x, GM_ADDR weight, GM_ADDR bias, GM_ADDR y,
+                                const dwconv2d::DwTiling& tiling, void* stream);
+
+#endif

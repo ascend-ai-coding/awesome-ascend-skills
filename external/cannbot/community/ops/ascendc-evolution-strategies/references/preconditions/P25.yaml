@@ -1,0 +1,40 @@
+strategy_id: P25
+
+strategy_meta:
+  id: "P25"
+  slug: "P25_datacopy_pad_alignment"
+  title: "P25: DataCopyPad 带 Padding 的搬运"
+  bottlenecks: [undersize_transfer]
+  op_families: [datapath]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p25_datacopy_pad_alignment.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p25_datacopy_pad_alignment.md"
+  playbook_slug: "P25_datacopy_pad_alignment"
+checks:
+  - id: has_datacopy
+    type: grep_count
+    pattern: "DataCopy|DataCopyPad|CopyIn|CopyOut"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 DataCopy 操作 → 无 Pad 对齐优化空间，不适用 P25。"
+
+  - id: has_align
+    type: grep_count
+    pattern: "Align|对齐|pad|Pad|padding"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到对齐/Pad 相关逻辑 → 无 DataCopyPad 需求，不适用 P25。"
+
+  - id: has_datacopypadextparams
+    type: grep_count
+    pattern: "DataCopyPadExtParams|padParams|DataCopyPad"
+    files: [kernel]
+    expected: ">= 0"
+    fail_msg: "已存在 DataCopyPad 优化 → 可能冗余，优先验证现有策略效果。"

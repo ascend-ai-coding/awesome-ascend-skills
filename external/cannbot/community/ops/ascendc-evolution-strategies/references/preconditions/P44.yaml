@@ -1,0 +1,40 @@
+strategy_id: P44
+
+strategy_meta:
+  id: "P44"
+  slug: "P44_transpose_buffer_resident"
+  title: "P44: Transpose Buffer 常驻复用"
+  bottlenecks: [undersize_transfer]
+  op_families: [matmul, flash_attention]
+  conflicts_with: []
+  synergizes_with: [P22]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p44_transpose_buffer_resident.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p44_transpose_buffer_resident.md"
+  playbook_slug: "P44_transpose_buffer_resident"
+checks:
+  - id: has_transpose
+    type: grep_count
+    pattern: "Transpose|transpose|转置|Permute"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 Transpose 操作 → 无转置 buffer 常驻需求，不适用 P44。"
+
+  - id: has_iter
+    type: grep_count
+    pattern: "for.*iter|numIters|迭代|loop"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到迭代循环结构 → 无跨迭代复用场景，不适用 P44。"
+
+  - id: has_tbuf
+    type: grep_count
+    pattern: "TBuf|VECCALC|常驻|resident"
+    files: [kernel]
+    expected: ">= 0"
+    fail_msg: "已存在 TBuf 常驻逻辑 → 可能冗余，优先验证现有策略效果。"
