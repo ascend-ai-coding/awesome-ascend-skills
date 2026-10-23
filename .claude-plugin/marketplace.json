@@ -9,6 +9,18 @@
   },
   "plugins": [
     {
+      "name": "deepseek-fused-op-integration",
+      "description": "Analyze and integrate fused operators into DeepSeek models in MindSpeed-LLM. Use when locating operator insertion points, analyzing tensor contracts, choosing monkeypatch or direct replacement, implementing Ascend NPU fused operator integration, or validating operator correctness.",
+      "source": "./skills/ops/deepseek-fused-op-integration",
+      "category": "ops",
+      "categories": [
+        "ops",
+        "leaf-skill",
+        "operator-development",
+        "pytorch-npu"
+      ]
+    },
+    {
       "name": "npu-smi",
       "description": "Huawei Ascend NPU npu-smi command reference. Use for device queries (health, temperature, power, memory, processes, ECC), configuration (thresholds, modes, fan), firmware upgrades (MCU, bootloader, VRD), virtualization (vNPU), and certificate management.",
       "source": "./skills/base/npu-smi",
