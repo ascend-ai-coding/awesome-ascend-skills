@@ -1,0 +1,40 @@
+strategy_id: P24
+
+strategy_meta:
+  id: "P24"
+  slug: "P24_nd2nz_format_copy"
+  title: "P24: ND↔NZ 格式转换搬运"
+  bottlenecks: [no_overlap]
+  op_families: [matmul]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p24_nd2nz_format_copy.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p24_nd2nz_format_copy.md"
+  playbook_slug: "P24_nd2nz_format_copy"
+checks:
+  - id: has_datacopy
+    type: grep_count
+    pattern: "DataCopy|CopyIn|CopyOut|TransData|transpose"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 DataCopy/TransData 操作 → 无格式转换优化空间，不适用 P24。"
+
+  - id: has_nd2nz
+    type: grep_count
+    pattern: "ND|NZ|nd2nz|Nz2Nd|format|Format"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 ND/NZ 格式相关逻辑 → 无格式转换需求，不适用 P24。"
+
+  - id: has_nd2nzparams
+    type: grep_count
+    pattern: "Nd2NzParams|TransData|ScatterUpdateNZ"
+    files: [kernel]
+    expected: ">= 0"
+    fail_msg: "已存在 ND↔NZ 转换优化 → 可能冗余，优先验证现有策略效果。"

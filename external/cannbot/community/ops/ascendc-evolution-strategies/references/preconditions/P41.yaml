@@ -1,0 +1,40 @@
+strategy_id: P41
+
+strategy_meta:
+  id: "P41"
+  slug: "P41_gamma_scale_resident"
+  title: "P41: gamma/scale/offset 常驻 UB"
+  bottlenecks: [mte2_stall]
+  op_families: [normalization]
+  conflicts_with: []
+  synergizes_with: [P34]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p41_gamma_scale_resident.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p41_gamma_scale_resident.md"
+  playbook_slug: "P41_gamma_scale_resident"
+checks:
+  - id: has_gamma
+    type: grep_count
+    pattern: "gamma|Gamma|scale|Scale|offset|Offset|RmsNorm|LayerNorm"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 gamma/scale/offset/RmsNorm 相关数据 → 无常驻复用对象，不适用 P41。"
+
+  - id: has_datacopy
+    type: grep_count
+    pattern: "DataCopy|CopyIn|CopyOut|Cast"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到数据搬运/Cast 操作 → 无优化空间，不适用 P41。"
+
+  - id: has_reinterpretcast
+    type: grep_count
+    pattern: "ReinterpretCast|常驻|resident|reuse"
+    files: [kernel]
+    expected: ">= 0"
+    fail_msg: "已存在常驻复用逻辑 → 可能冗余，优先验证现有策略效果。"

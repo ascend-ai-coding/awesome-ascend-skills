@@ -1,0 +1,40 @@
+strategy_id: P118
+description: Causal mask 独立 AIV kernel 并行预生成适用性检查 — 算子使用 causal/atten mask，且 mask 尚未由独立 kernel 预生成（在主路径内逐元素构造或使用通用大压缩表）。
+strategy_meta:
+  id: "P118"
+  slug: "P118_mask_precompute_parallel_aiv"
+  title: "P118: Causal Mask 独立 AIV Kernel 并行预生成（按需 Dense 替代通用压缩表）"
+  bottlenecks: [no_overlap, mte2_stall]
+  op_families: [attention, flash_attention, broadcast_mask]
+  conflicts_with: []
+  synergizes_with: [P14, P116]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p118_mask_precompute_parallel_aiv.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p118_mask_precompute_parallel_aiv.md"
+  playbook_slug: "P118_mask_precompute_parallel_aiv"
+checks:
+  - id: has_causal_mask
+    type: grep_count
+    pattern: "causal|attenMask|atten_mask|isCausal"
+    files: [kernel, host, header]
+    expected: ">= 1"
+    fail_msg: "算子无 causal/atten mask → P118 不适用。"
+
+  - id: no_standalone_mask_kernel
+    type: grep_count
+    pattern: "mask_kernel|MaskKernel|launch.*mask|maskOffset"
+    files: [kernel, host]
+    expected: "== 0"
+    fail_msg: "mask 已由独立 kernel 预生成 → P118 主要价值已发挥，转向 P14 CV 流水或 P119 online softmax。"
+
+  - id: mask_on_critical_path
+    type: grep_count
+    pattern: "causal.*continue|ComputeMask|CreateMask|mask.*Duplicate|2048|COMPRESS"
+    files: [kernel, host]
+    expected: ">= 1"
+    fail_msg: "未检测到 mask 占用主路径或通用压缩表证据 → 确认 mask 生成方式后再决定。"

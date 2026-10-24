@@ -1,0 +1,416 @@
+/*!
+ * \file top_k_transpose_kernel.cpp
+ * \brief TopK-private transpose host code, kernel launch, and tiling.
+ *
+ * Implements DESIGN.md: PATH_NDDMA (NDDMA transpose copy-in + strided
+ * DataCopyPad write-back) and PATH_COPY (identity perm, 1D DataCopyPad).
+ */
+
+#include <algorithm>
+#include <cmath>
+#include <cstring>
+#include "kernel_operator.h"
+
+#include "platform/platform_ascendc.h"
+#include "top_k_transpose_launch.h"
+
+namespace topk_transpose {
+
+constexpr static int64_t PIPELINE_DEPTH = 2;
+
+template <typename T>
+class KernelTranspose {
+public:
+    __aicore__ inline KernelTranspose() {}
+
+    __aicore__ inline void Init(GM_ADDR x, GM_ADDR y, const TransposeTiling& t)
+    {
+        tiling_ = t;
+        xGm_.SetGlobalBuffer((__gm__ T *)x);
+        yGm_.SetGlobalBuffer((__gm__ T *)y);
+        // single tile queue, double buffered; shared by NDDMA copy-in and
+        // DataCopyPad copy-out (DataCopyPad supports VECIN -> GM)
+        pipe_.InitBuffer(tileQue_, PIPELINE_DEPTH, tiling_.tileBytes);
+    }
+
+    __aicore__ inline void Process()
+    {
+        if (tiling_.path == TRANSPOSE_PATH_COPY) {
+            ProcessCopy();
+        } else {
+            ProcessNdDma();
+        }
+    }
+
+private:
+    // Synchronization scheme (TPipe-TQue with an MTE3 consumer on a VECIN
+    // queue, which the framework's auto-sync does NOT cover -- verified
+    // empirically on Ascend 950PR, see PLAN.md):
+    //   - MTE2 -> MTE3 (NDDMA/DataCopyPad GM->UB  =>  DataCopyPad UB->GM):
+    //     explicit SetFlag/WaitFlag<MTE2_MTE3> per double-buffer slot.
+    //   - MTE3 -> MTE2 (buffer reuse: MTE3 still reading UB while the next
+    //     NDDMA overwrites it): explicit SetFlag/WaitFlag<MTE3_MTE2> per
+    //     double-buffer slot; the wait is skipped for the first
+    //     PIPELINE_DEPTH tiles per core (buffers not yet used).
+    // Event IDs: slot parity 0/1 -> MTE2_MTE3: EVENT_ID0/1,
+    //                             MTE3_MTE2: EVENT_ID2/3.
+    static __aicore__ inline int32_t Mte2Mte3Event(int32_t slotParity)
+    {
+        return slotParity == 0 ? EVENT_ID0 : EVENT_ID1;
+    }
+    static __aicore__ inline int32_t Mte3Mte2Event(int32_t slotParity)
+    {
+        return slotParity == 0 ? EVENT_ID2 : EVENT_ID3;
+    }
+
+    // PATH_NDDMA: per-core contiguous tile range; transpose is done inside
+    // the NDDMA GM->UB copy, write-back is strided DataCopyPad per row.
+    __aicore__ inline void ProcessNdDma()
+    {
+        const int64_t startTile = static_cast<int64_t>(AscendC::GetBlockIdx()) * tiling_.tilesPerCore;
+        int64_t endTile = startTile + tiling_.tilesPerCore;
+        if (endTile > tiling_.totalTiles) endTile = tiling_.totalTiles;
+        int64_t localIdx = 0;
+        for (int64_t tileId = startTile; tileId < endTile; ++tileId, ++localIdx) {
+            // tileId -> (g, rt, ct), tile order: g-major, then rt, then ct
+            const int64_t ct = tileId % tiling_.cTiles;
+            const int64_t tmp = tileId / tiling_.cTiles;
+            const int64_t rt = tmp % tiling_.rTiles;
+            int64_t g = tmp / tiling_.rTiles;
+            // expand g over the G dims, accumulating input/output batch offsets
+            int64_t gIn = 0, gOut = 0;
+            for (int64_t k = tiling_.gNum - 1; k >= 0; --k) {
+                const int64_t idx = g % tiling_.gSizes[k];
+                g = g / tiling_.gSizes[k];
+                gIn += idx * tiling_.gInStrides[k];
+                gOut += idx * tiling_.gOutStrides[k];
+            }
+            // tail-block clipping
+            int64_t curR = tiling_.R - rt * tiling_.tileR;
+            if (curR > tiling_.tileR) curR = tiling_.tileR;
+            int64_t curC = tiling_.C - ct * tiling_.tileC;
+            if (curC > tiling_.tileC) curC = tiling_.tileC;
+            const int64_t srcOff = gIn + rt * tiling_.tileR * tiling_.S + ct * tiling_.tileC * tiling_.sigmaC;
+            const int64_t dstOff = gOut + rt * tiling_.tileR * tiling_.sigmaR + ct * tiling_.tileC * tiling_.S;
+            const int32_t slotParity = static_cast<int32_t>(localIdx & 1);
+            CopyIn(srcOff, curR, curC, slotParity, localIdx >= PIPELINE_DEPTH);
+            CopyOut(dstOff, curR, curC, slotParity);
+        }
+    }
+
+    // PATH_COPY: identity perm, 1D contiguous DataCopyPad pipeline
+    __aicore__ inline void ProcessCopy()
+    {
+        const int64_t offset = static_cast<int64_t>(AscendC::GetBlockIdx()) * tiling_.copyBlockLength;
+        int64_t len = tiling_.totalLength - offset;
+        if (len > tiling_.copyBlockLength) len = tiling_.copyBlockLength;
+        if (len <= 0) return;
+        const int64_t tileNum = (len + tiling_.copyTileElems - 1) / tiling_.copyTileElems;
+        for (int64_t i = 0; i < tileNum; ++i) {
+            int64_t cnt = len - i * tiling_.copyTileElems;
+            if (cnt > tiling_.copyTileElems) cnt = tiling_.copyTileElems;
+            const int64_t off = offset + i * tiling_.copyTileElems;
+            const int32_t slotParity = static_cast<int32_t>(i & 1);
+            AscendC::DataCopyExtParams copyParams{1, static_cast<uint32_t>(cnt * sizeof(T)), 0, 0, 0};
+            AscendC::DataCopyPadExtParams<T> padParams{false, 0, 0, 0};
+            auto xLocal = tileQue_.AllocTensor<T>();
+            // MTE3 -> MTE2 buffer-reuse guard (see class comment above)
+            if (i >= PIPELINE_DEPTH) {
+                AscendC::WaitFlag<AscendC::HardEvent::MTE3_MTE2>(Mte3Mte2Event(slotParity));
+            }
+            AscendC::DataCopyPad(xLocal, xGm_[off], copyParams, padParams);
+            // MTE2 (GM->UB) -> MTE3 (UB->GM) dependency: TQue<VECIN>
+            // EnQue/DeQue does NOT cover an MTE3 consumer, explicit flags.
+            AscendC::SetFlag<AscendC::HardEvent::MTE2_MTE3>(Mte2Mte3Event(slotParity));
+            tileQue_.EnQue(xLocal);
+            auto t2 = tileQue_.DeQue<T>();
+            AscendC::WaitFlag<AscendC::HardEvent::MTE2_MTE3>(Mte2Mte3Event(slotParity));
+            AscendC::DataCopyPad(yGm_[off], t2, copyParams);
+            AscendC::SetFlag<AscendC::HardEvent::MTE3_MTE2>(Mte3Mte2Event(slotParity));
+            tileQue_.FreeTensor(t2);
+        }
+    }
+
+    // CopyIn: NDDMA GM -> UB with the transpose applied by the DMA itself.
+    // UB tile layout: [curR rows][pitchElems], each row holds curC * S elems.
+    __aicore__ inline void CopyIn(int64_t srcOff, int64_t curR, int64_t curC, int32_t slotParity, bool waitReuse)
+    {
+        auto tile = tileQue_.AllocTensor<T>();
+        // MTE3 -> MTE2 buffer-reuse guard: the buffer was read by DataCopyPad
+        // (MTE3) PIPELINE_DEPTH tiles ago; TQue<VECIN> FreeTensor does not
+        // track an MTE3 consumer, so wait for that MTE3 read explicitly.
+        if (waitReuse) {
+            AscendC::WaitFlag<AscendC::HardEvent::MTE3_MTE2>(Mte3Mte2Event(slotParity));
+        }
+        // NDDMA cache refresh: official constraint requires calling NdDmaDci
+        // before EVERY NDDMA DataCopy; otherwise multi-core reads of the same
+        // GM region may return stale data (REVIEW round 0 M1).
+        AscendC::NdDmaDci();
+        if (tiling_.S == 1) {
+            // 2D NDDMA, official 2D Transpose form:
+            // src (r, c): addr = r * 1 + c * sigmaC; dst (r, c): addr = r * pitchElems + c
+            AscendC::NdDmaLoopInfo<2> loop{
+                {1ULL, static_cast<uint64_t>(tiling_.sigmaC)},
+                {static_cast<uint32_t>(tiling_.pitchElems), 1U},
+                {static_cast<uint32_t>(curR), static_cast<uint32_t>(curC)},
+                {0, 0}, {0, 0}};
+            AscendC::NdDmaParams<T, 2> params{loop, 0};
+            AscendC::DataCopy<T, 2>(tile, xGm_[srcOff], params);
+        } else {
+            // 3D NDDMA, dims (s, r, c) innermost first:
+            // src addr = s * 1 + r * S + c * sigmaC
+            // dst addr = s * 1 + r * pitchElems + c * S
+            AscendC::NdDmaLoopInfo<3> loop{
+                {1ULL, static_cast<uint64_t>(tiling_.S), static_cast<uint64_t>(tiling_.sigmaC)},
+                {1U, static_cast<uint32_t>(tiling_.pitchElems), static_cast<uint32_t>(tiling_.S)},
+                {static_cast<uint32_t>(tiling_.S), static_cast<uint32_t>(curR), static_cast<uint32_t>(curC)},
+                {0, 0, 0}, {0, 0, 0}};
+            AscendC::NdDmaParams<T, 3> params{loop, 0};
+            AscendC::DataCopy<T, 3>(tile, xGm_[srcOff], params);
+        }
+        // MTE2 (NDDMA GM->UB) -> MTE3 (DataCopyPad UB->GM) dependency:
+        // TQue<VECIN> EnQue/DeQue does not cover an MTE3 consumer.
+        AscendC::SetFlag<AscendC::HardEvent::MTE2_MTE3>(Mte2Mte3Event(slotParity));
+        tileQue_.EnQue(tile);
+    }
+
+    // CopyOut: UB rows -> GM strided rows via DataCopyPad (unaligned safe).
+    // UB addressing semantics (official UBToGM doc, fig.2): next UB block
+    // starts at AlignUp32(blockLen) + srcStride * 32B, so the srcStride
+    // baseline is AlignUp32(blockLen), NOT blockLen itself.
+    __aicore__ inline void CopyOut(int64_t dstOff, int64_t curR, int64_t curC, int32_t slotParity)
+    {
+        auto t2 = tileQue_.DeQue<T>();
+        AscendC::WaitFlag<AscendC::HardEvent::MTE2_MTE3>(Mte2Mte3Event(slotParity));
+        const uint32_t blockLenB = static_cast<uint32_t>(curC * tiling_.S * sizeof(T));
+        const uint32_t pitchBytes = static_cast<uint32_t>(tiling_.pitchElems * sizeof(T));
+        const uint32_t alignBlockLenB = (blockLenB + 31) / 32 * 32;
+        AscendC::DataCopyExtParams cp{
+            static_cast<uint16_t>(curR),              // blockCount = row count (<= 4095 by tiling)
+            blockLenB,                                // bytes per row (unaligned, dummy-padded by HW)
+            (pitchBytes - alignBlockLenB) / 32,       // srcStride in 32B dataBlocks
+            static_cast<uint32_t>((tiling_.sigmaR - curC * tiling_.S) * sizeof(T)), // dstStride bytes
+            0};
+        AscendC::DataCopyPad(yGm_[dstOff], t2, cp);
+        // mark the buffer's MTE3 read point so the next reuse of this slot
+        // (PIPELINE_DEPTH tiles later) waits for it (see class comment).
+        AscendC::SetFlag<AscendC::HardEvent::MTE3_MTE2>(Mte3Mte2Event(slotParity));
+        tileQue_.FreeTensor(t2);
+    }
+
+    AscendC::TPipe pipe_;
+    AscendC::GlobalTensor<T> xGm_, yGm_;
+    AscendC::TQue<AscendC::TPosition::VECIN, PIPELINE_DEPTH> tileQue_;
+    TransposeTiling tiling_;
+};
+
+template <typename T>
+__global__ __aicore__ __vector__ void transpose_kernel(GM_ADDR x, GM_ADDR y, TransposeTiling t)
+{
+    // Official NDDMA sample (data_copy_gm2ub_nddma) calls InitSocState at
+    // kernel entry; retained as the established pattern for NDDMA kernels
+    // (round-0 full test suite verified with this sequence in place).
+    AscendC::InitSocState();
+    KernelTranspose<T> op;
+    op.Init(x, y, t);
+    op.Process();
+    // Official NDDMA sample ends the kernel with PipeBarrier<PIPE_ALL>;
+    // retained for the same reason (drains MTE2/MTE3 before kernel exit).
+    AscendC::PipeBarrier<PIPE_ALL>();
+}
+
+// Host-side tiling calculation (DESIGN.md section 2.5).
+//
+// Reduces any perm to the (G, R, C, S) batched 2D-transpose model:
+//   input offset  = gIn + r * S + c * sigmaC + s
+//   output offset = gOut + r * sigmaR + c * S + s
+// and derives tile geometry + multi-core split. All strides/offsets are in
+// elements; GM byte offsets are computed in kernel via sizeof(T).
+TransposeTiling calc_transpose_tiling_params_with_core_num(int64_t ndim, const int64_t* shape, const int64_t* perm,
+                                                           int64_t sizeofT, int64_t coreNum, int64_t ubBytes)
+{
+    constexpr int64_t UB_RESERVE_BYTES = 24 * 1024;      // queue and runtime overhead
+    constexpr int64_t NDDMA_LOOP_LIMIT = 1LL << 20;      // NDDMA loopSize / loopDstStride upper bound
+    constexpr int64_t SEG_TARGET_BYTES = 512;            // perf goal: GM read/write segment >= 512B when shape allows
+    constexpr int64_t MAX_COPY_TILE_ELEMS = 8192;        // PATH_COPY performance cap
+    constexpr int64_t MIN_ELEMS_PER_CORE = 1024;         // PATH_COPY anti-oversubscription
+    constexpr int64_t MAX_BLOCK_COUNT = 4095;            // DataCopyPad blockCount limit
+
+    TransposeTiling t;
+    std::memset(&t, 0, sizeof(t));
+    if (coreNum <= 0 || (sizeofT != 1 && sizeofT != 2 && sizeofT != 4 && sizeofT != 8) ||
+        ubBytes <= UB_RESERVE_BYTES + 64) return t;
+    const int64_t ubTileBudgetBytes = ((ubBytes - UB_RESERVE_BYTES) / (2 * 32)) * 32;
+    if (ubTileBudgetBytes < 64) return t;
+
+    // input/output row-major strides (elements); yShape[i] = shape[perm[i]]
+    int64_t inStrides[8], outStrides[8], yShape[8];
+    int64_t totalLength = 1;
+    for (int64_t i = 0; i < ndim; ++i) {
+        yShape[i] = shape[perm[i]];
+        totalLength *= shape[i];
+    }
+    inStrides[ndim - 1] = 1;
+    for (int64_t i = ndim - 2; i >= 0; --i) inStrides[i] = inStrides[i + 1] * shape[i + 1];
+    outStrides[ndim - 1] = 1;
+    for (int64_t i = ndim - 2; i >= 0; --i) outStrides[i] = outStrides[i + 1] * yShape[i + 1];
+    t.totalLength = totalLength;
+
+    // length of the identity suffix of perm: perm[ndim-k .. ndim-1] == [ndim-k .. ndim-1]
+    int64_t k = 0;
+    while (k < ndim && perm[ndim - 1 - k] == ndim - 1 - k) ++k;
+
+    if (k == ndim) {
+        // PATH_COPY: identity perm, 1D contiguous copy
+        t.path = TRANSPOSE_PATH_COPY;
+        t.numBlocks = std::min(coreNum, (totalLength + MIN_ELEMS_PER_CORE - 1) / MIN_ELEMS_PER_CORE);
+        t.numBlocks = std::max(t.numBlocks, static_cast<int64_t>(1));
+        t.copyBlockLength = (totalLength + t.numBlocks - 1) / t.numBlocks;
+        t.copyTileElems = std::min(MAX_COPY_TILE_ELEMS, ubTileBudgetBytes / sizeofT);
+        t.copyTileElems = (t.copyTileElems / (32 / sizeofT)) * (32 / sizeofT);
+        if (t.copyTileElems == 0) return TransposeTiling{};
+        t.tileBytes = t.copyTileElems * sizeofT;
+        return t;
+    }
+
+    // S = product of the identity-suffix dims, capped so that NDDMA
+    // loopSize/loopDstStride (< 2^20) and the UB tile budget hold. Shrinking
+    // k only trades performance, never correctness (S = 1 always feasible).
+    int64_t S = 1;
+    for (int64_t i = 1; i <= k; ++i) S *= shape[ndim - i];
+    int64_t kk = k;
+    while (kk > 0 && (S >= NDDMA_LOOP_LIMIT || S * sizeofT > ubTileBudgetBytes)) {
+        S /= shape[ndim - kk];
+        --kk;
+    }
+
+    // Remaining m = ndim - kk dims (m >= 2 for any non-identity perm).
+    const int64_t m = ndim - kk;
+    t.path = TRANSPOSE_PATH_NDDMA;
+    t.S = S;
+    // R: input dim right before the suffix; its input stride is exactly S.
+    t.R = shape[ndim - kk - 1];
+    // j: output position of the R dim (j <= m - 2 always, else it would have
+    // been folded into the identity suffix).
+    int64_t j = 0;
+    for (int64_t p = 0; p < m; ++p) {
+        if (perm[p] == ndim - kk - 1) { j = p; break; }
+    }
+    t.sigmaR = outStrides[j];
+    // C: last of the remaining output dims.
+    t.C = shape[perm[m - 1]];
+    t.sigmaC = inStrides[perm[m - 1]];
+    // G: the other m - 2 output dims (0 <= m - 2 <= 6).
+    t.gNum = 0;
+    for (int64_t p = 0; p < m; ++p) {
+        if (p == j || p == m - 1) continue;
+        t.gSizes[t.gNum] = yShape[p];
+        t.gInStrides[t.gNum] = inStrides[perm[p]];
+        t.gOutStrides[t.gNum] = outStrides[p];
+        ++t.gNum;
+    }
+
+    // ---- tile geometry (DESIGN.md section 2.2, constraints 1~6) ----
+    const int64_t alignElems = 32 / sizeofT;              // 32B in elements
+    const int64_t budgetElems = ubTileBudgetBytes / sizeofT;
+    const int64_t sBytes = S * sizeofT;
+    const int64_t segElems = (SEG_TARGET_BYTES + sBytes - 1) / sBytes; // elems for a >=512B segment
+    const int64_t wantC = std::min(t.C, segElems);
+    const int64_t wantR = std::min(t.R, segElems);
+
+    // initial tileC: budget split by the R:C ratio (tileR * tileC * S ~ budgetElems)
+    int64_t tileC = static_cast<int64_t>(
+        std::sqrt(static_cast<double>(budgetElems) * static_cast<double>(t.C) /
+                  (static_cast<double>(t.R) * static_cast<double>(S))));
+    if (tileC < wantC) tileC = wantC;
+    if (tileC > t.C) tileC = t.C;
+    if (tileC < 1) tileC = 1;
+
+    int64_t pitchElems = 0;
+    int64_t tileR = 0;
+    for (;;) {
+        pitchElems = ((tileC * S + alignElems - 1) / alignElems) * alignElems;
+        tileR = budgetElems / pitchElems;
+        if (tileR >= 1 || tileC == 1) break;
+        tileC = tileC / 2 > 0 ? tileC / 2 : 1; // shrink until at least one row fits
+    }
+    // with tileC == 1: pitchElems = AlignUp(S, alignElems), and the S cap
+    // (S * sizeofT <= ubTileBudgetBytes) guarantees tileR >= 1.
+    // rebalance: enlarge the read segment while C has room to give
+    while (tileR < wantR && tileC > wantC) {
+        tileC = std::max(wantC, tileC / 2);
+        pitchElems = ((tileC * S + alignElems - 1) / alignElems) * alignElems;
+        tileR = budgetElems / pitchElems;
+    }
+    if (tileR > t.R) tileR = t.R;
+    if (tileR > MAX_BLOCK_COUNT) tileR = MAX_BLOCK_COUNT;
+
+    t.tileR = tileR;
+    t.tileC = tileC;
+    t.pitchElems = pitchElems;
+    t.rTiles = (t.R + tileR - 1) / tileR;
+    t.cTiles = (t.C + tileC - 1) / tileC;
+    int64_t gTotal = 1;
+    for (int64_t i = 0; i < t.gNum; ++i) gTotal *= t.gSizes[i];
+    t.totalTiles = gTotal * t.rTiles * t.cTiles;
+    // multi-core split: dynamic core count, no empty-core placeholders
+    t.numBlocks = std::min(coreNum, t.totalTiles);
+    t.numBlocks = std::max(t.numBlocks, static_cast<int64_t>(1));
+    t.tilesPerCore = (t.totalTiles + t.numBlocks - 1) / t.numBlocks;
+    t.tileBytes = tileR * pitchElems * sizeofT;
+    return t;
+}
+
+TransposeTiling calc_transpose_tiling_params(int64_t ndim, const int64_t* shape, const int64_t* perm, int64_t sizeofT)
+{
+    auto ascendcPlatform = platform_ascendc::PlatformAscendCManager::GetInstance();
+    if (ascendcPlatform == nullptr) return TransposeTiling{};
+    uint64_t ubBytes = 0;
+    ascendcPlatform->GetCoreMemSize(platform_ascendc::CoreMemType::UB, ubBytes);
+    return calc_transpose_tiling_params_with_core_num(ndim, shape, perm, sizeofT,
+                                                       ascendcPlatform->GetCoreNumAiv(), static_cast<int64_t>(ubBytes));
+}
+
+void launch_transpose_kernel_float(GM_ADDR x, GM_ADDR y, TransposeTiling t, void* stream)
+{
+    if (t.numBlocks <= 0) return;
+    transpose_kernel<float><<<t.numBlocks, nullptr, stream>>>(x, y, t);
+}
+
+void launch_transpose_kernel_half(GM_ADDR x, GM_ADDR y, TransposeTiling t, void* stream)
+{
+    if (t.numBlocks <= 0) return;
+    transpose_kernel<half><<<t.numBlocks, nullptr, stream>>>(x, y, t);
+}
+
+void launch_transpose_kernel_bfloat16(GM_ADDR x, GM_ADDR y, TransposeTiling t, void* stream)
+{
+    if (t.numBlocks <= 0) return;
+    transpose_kernel<bfloat16_t><<<t.numBlocks, nullptr, stream>>>(x, y, t);
+}
+
+void launch_transpose_kernel_int8(GM_ADDR x, GM_ADDR y, TransposeTiling t, void* stream)
+{
+    if (t.numBlocks <= 0) return;
+    transpose_kernel<int8_t><<<t.numBlocks, nullptr, stream>>>(x, y, t);
+}
+
+void launch_transpose_kernel_int16(GM_ADDR x, GM_ADDR y, TransposeTiling t, void* stream)
+{
+    if (t.numBlocks <= 0) return;
+    transpose_kernel<int16_t><<<t.numBlocks, nullptr, stream>>>(x, y, t);
+}
+
+void launch_transpose_kernel_int32(GM_ADDR x, GM_ADDR y, TransposeTiling t, void* stream)
+{
+    if (t.numBlocks <= 0) return;
+    transpose_kernel<int32_t><<<t.numBlocks, nullptr, stream>>>(x, y, t);
+}
+
+void launch_transpose_kernel_int64(GM_ADDR x, GM_ADDR y, TransposeTiling t, void* stream)
+{
+    if (t.numBlocks <= 0) return;
+    transpose_kernel<int64_t><<<t.numBlocks, nullptr, stream>>>(x, y, t);
+}
+
+} // namespace topk_transpose

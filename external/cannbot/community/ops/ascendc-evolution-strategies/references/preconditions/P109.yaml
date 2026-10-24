@@ -1,0 +1,48 @@
+strategy_id: P109
+description: Reduction 多轴 Tiling 适用性检查 — 算子必须是多维归约语义，且未完整实现 A/R 合轴与 AR/ARA 路由。
+
+strategy_meta:
+  id: "P109"
+  slug: "P109_reduction_multi_axis_tiling"
+  title: "P109: Reduction 多轴 Tiling 系统化设计"
+  bottlenecks: [tiling_mismatch, scalar_compute]
+  op_families: [reduction, normalization, softmax]
+  conflicts_with: []
+  synergizes_with: [P110, P68, A2]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p109_reduction_multi_axis_tiling.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p109_reduction_multi_axis_tiling.md"
+  playbook_slug: "P109_reduction_multi_axis_tiling"
+checks:
+  - id: has_reduction_semantics
+    type: grep_count
+    pattern: "reduce|Reduce|sum|max|mean|variance|softmax"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未检测到归约语义 → P109 不适用。"
+
+  - id: has_shape_or_axes
+    type: grep_count
+    pattern: "shape|axes|axis|dim"
+    files: [header]
+    expected: ">= 1"
+    fail_msg: "未检测到 shape/axes 字段 → 无法执行多轴合轴。"
+
+  - id: no_ar_ara_routing
+    type: grep_count
+    pattern: "Pattern::Reduce::RA|isARA|A0|arFlags|CollapseShape"
+    files: [kernel, header]
+    expected: "== 0"
+    fail_msg: "算子已实现 AR/ARA 路由或多轴合轴 → P109 主要价值已发挥。"
+
+  - id: has_multi_dim_loop
+    type: grep_count
+    pattern: 'for\\s*\\(.*for\\s*\\('
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到多维循环 → 多轴 Tiling 收益有限。"

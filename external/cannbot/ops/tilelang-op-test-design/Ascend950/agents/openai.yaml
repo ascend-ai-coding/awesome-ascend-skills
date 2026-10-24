@@ -1,0 +1,4 @@
+interface:
+  display_name: "TileLang 算子 ST"
+  short_description: "从零生成、治理并验收可信的当前仓库算子系统测试"
+  default_prompt: "使用 $tilelang-op-test-design 为当前算子执行从零 ST 交付、存量覆盖治理，或给出可复现的交付验收结论。"

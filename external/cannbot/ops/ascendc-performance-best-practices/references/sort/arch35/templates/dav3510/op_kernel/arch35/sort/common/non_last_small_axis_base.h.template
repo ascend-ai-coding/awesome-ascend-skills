@@ -1,0 +1,238 @@
+/*!
+ * \file non_last_small_axis_base.h
+ * \brief CRTP base class and constants shared by sort and kth_value non_last_small_axis kernels.
+ */
+
+#ifndef NON_LAST_SMALL_AXIS_BASE_H
+#define NON_LAST_SMALL_AXIS_BASE_H
+
+#include <type_traits>
+
+#include "kernel_operator.h"
+#include "kernel_tiling/kernel_tiling.h"
+#include "op_kernel/platform_util.h"
+#include "simt_api/asc_simt.h"
+#include "util_type_simd.h"
+
+namespace SmallAxisCommon {
+using namespace AscendC;
+
+constexpr uint32_t NON_LAST_TRANSPOSE_THREAD_NUM = 1024;
+constexpr uint32_t NON_LAST_MERGE_SORT_ALIGN = 32;
+
+/**
+ * @brief CRTP base class for non-last-axis small-axis kernels.
+ *        Contains the shared load, transpose, cast, and row-wise sort pipeline used by sort and kth_value.
+ *        Derived classes provide output extraction/copy-out behavior.
+ * @tparam Derived CRTP derived type
+ * @tparam T Input/output storage data type
+ * @tparam SortT Data type used by the Sort API
+ * @tparam RangeType Reg register index arithmetic type
+ * @tparam IdxType Reg gather index type
+ * @tparam CastType Reg register data type used during transpose
+ * @tparam IsDescend Sort order: true for descending, false for ascending
+ * @tparam UseMergeSort Whether to use MERGE_SORT instead of RADIX_SORT for row sorting
+ * @tparam IsBf16Merge Whether bf16 input needs an intermediate cast buffer for merge-sort path
+ */
+template <typename Derived, typename T, typename SortT, typename RangeType, typename IdxType, typename CastType,
+          bool IsDescend, bool UseMergeSort, bool IsBf16Merge>
+class NonLastSmallAxisBase {
+public:
+    __aicore__ inline void Process()
+    {
+        if (this->blockIdx_ >= this->blockDim_ || this->axisLen_ == 0 || this->innerChunk_ == 0 ||
+            this->innerLoopNum_ == 0) {
+            return;
+        }
+        uint64_t tileCount = static_cast<uint64_t>(this->outerSize_) * static_cast<uint64_t>(this->innerLoopNum_);
+        uint64_t tilesPerCore = Ops::Base::CeilDiv(tileCount, static_cast<uint64_t>(this->blockDim_));
+        uint64_t startTile = static_cast<uint64_t>(this->blockIdx_) * tilesPerCore;
+        uint64_t endTile = startTile + tilesPerCore;
+        if (endTile > tileCount) {
+            endTile = tileCount;
+        }
+        for (uint64_t tileId = startTile; tileId < endTile; ++tileId) {
+            uint64_t outerId = tileId / this->innerLoopNum_;
+            uint32_t innerTileId = static_cast<uint32_t>(tileId - outerId * static_cast<uint64_t>(this->innerLoopNum_));
+            uint32_t curInnerChunk = this->GetCurrentInnerChunk(innerTileId);
+            if (curInnerChunk == 0) {
+                continue;
+            }
+            int64_t innerStart = static_cast<int64_t>(innerTileId) * static_cast<int64_t>(this->innerChunk_);
+            int64_t inputOffset = static_cast<int64_t>(outerId) * static_cast<int64_t>(this->axisLen_) *
+                                      this->innerSize_ +
+                                  innerStart;
+            int64_t outputOffset = static_cast<int64_t>(outerId) * this->innerSize_ + innerStart;
+            this->LoadTile(inputOffset, curInnerChunk);
+            this->TransposeToSortMajor(curInnerChunk);
+            this->SortRows(curInnerChunk);
+            static_cast<Derived*>(this)->StoreTile(inputOffset, outputOffset, curInnerChunk);
+        }
+    }
+
+protected:
+    static constexpr SortConfig sortConfig_{UseMergeSort ? SortType::MERGE_SORT : SortType::RADIX_SORT, IsDescend};
+
+    TPipe* pipe_ = nullptr;
+
+    GlobalTensor<T> inputGm_;
+
+    TBuf<TPosition::VECCALC> inputTileBuf_;
+    TBuf<TPosition::VECCALC> inputCastBuf_;
+    TBuf<TPosition::VECCALC> sortInputBuf_;
+    TBuf<TPosition::VECCALC> sortedValueBuf_;
+    TBuf<TPosition::VECCALC> sortedIndexBuf_;
+    TBuf<TPosition::VECCALC> tmpBuf_;
+
+    LocalTensor<T> inputTile_;
+    LocalTensor<T> inputCast_;
+    LocalTensor<SortT> sortInput_;
+    LocalTensor<SortT> sortedValue_;
+    LocalTensor<uint32_t> sortedIndex_;
+    LocalTensor<uint8_t> tmp_;
+
+    uint32_t blockIdx_ = 0;
+    uint32_t blockDim_ = 0;
+    uint32_t axisLen_ = 0;
+    int64_t outerSize_ = 0;
+    int64_t innerSize_ = 0;
+    uint32_t innerLoopNum_ = 0;
+    uint32_t innerChunk_ = 0;
+    uint32_t inputRowBytes_ = 0;
+    uint32_t inputValueAxisBytes_ = 0;
+    uint32_t valueAxisBytes_ = 0;
+    uint32_t indexAxisBytes_ = 0;
+    uint32_t inputRowElems_ = 0;
+    uint32_t inputValueAxisElems_ = 0;
+    uint32_t valueAxisElems_ = 0;
+    uint32_t indexAxisElems_ = 0;
+    uint32_t sortCount_ = 0;
+    uint32_t tmpUbSize_ = 0;
+
+    __aicore__ inline RangeType ToRangeScalar(uint32_t value) const
+    {
+        if constexpr (std::is_same_v<RangeType, int16_t>) {
+            uint32_t valueU16 = value & 0xFFFFU;
+            int32_t signedValue = (valueU16 <= 32767U) ? static_cast<int32_t>(valueU16) :
+                                                         static_cast<int32_t>(valueU16) - 65536;
+            return static_cast<int16_t>(signedValue);
+        } else {
+            return static_cast<RangeType>(value);
+        }
+    }
+
+    __aicore__ inline uint32_t GetCurrentInnerChunk(uint32_t innerTileId) const
+    {
+        int64_t start = static_cast<int64_t>(this->innerChunk_) * static_cast<int64_t>(innerTileId);
+        int64_t remain = this->innerSize_ - start;
+        if (remain <= 0) {
+            return 0;
+        }
+        if (remain >= static_cast<int64_t>(this->innerChunk_)) {
+            return this->innerChunk_;
+        }
+        return static_cast<uint32_t>(remain);
+    }
+
+    __aicore__ inline void LoadTile(int64_t baseOffset, uint32_t curInnerChunk)
+    {
+        uint32_t curBytes = curInnerChunk * sizeof(T);
+        uint32_t curAlignedBytes = ROUND_UP_AGLIN(curBytes);
+        uint32_t dstStride = (this->inputRowBytes_ > curAlignedBytes) ?
+                                 (this->inputRowBytes_ - curAlignedBytes) / UB_BLOCK_SIZE :
+                                 0;
+        uint32_t rightPadding = this->inputRowElems_ > curInnerChunk ? this->inputRowElems_ - curInnerChunk : 0;
+        int64_t gmStride = (this->innerSize_ - static_cast<int64_t>(curInnerChunk)) * static_cast<int64_t>(sizeof(T));
+        DataCopyExtParams copyParam{static_cast<uint16_t>(this->axisLen_), curBytes, gmStride, dstStride, 0};
+        DataCopyPadExtParams<T> padParam{true, 0, static_cast<uint8_t>(rightPadding), static_cast<T>(0)};
+        DataCopyPad(this->inputTile_, this->inputGm_[baseOffset], copyParam, padParam);
+        event_t eventId = static_cast<event_t>(this->pipe_->FetchEventID(HardEvent::MTE2_V));
+        SetFlag<HardEvent::MTE2_V>(eventId);
+        WaitFlag<HardEvent::MTE2_V>(eventId);
+    }
+
+    __aicore__ inline void TransposeToSortMajor(uint32_t curInnerChunk)
+    {
+        if constexpr (UseMergeSort) {
+            SortT defaultValue = IsDescend ? static_cast<SortT>(-INFINITY) : static_cast<SortT>(NAN);
+            Duplicate(this->sortInput_, defaultValue, curInnerChunk * this->valueAxisElems_);
+            if constexpr (IsBf16Merge) {
+                Duplicate(this->inputCast_, static_cast<T>(defaultValue), curInnerChunk * this->inputValueAxisElems_);
+            }
+        }
+        TransposeTileByGather(curInnerChunk);
+        if constexpr (IsBf16Merge) {
+            for (uint32_t inner = 0; inner < curInnerChunk; ++inner) {
+                Cast(this->sortInput_[inner * this->valueAxisElems_],
+                     this->inputCast_[inner * this->inputValueAxisElems_], RoundMode::CAST_NONE,
+                     this->inputValueAxisElems_);
+            }
+        }
+    }
+
+    // Transpose a tile via gather: convert row-major layout to column-major (or vice versa).
+    // The following 4x4 tile illustrates the transpose when inputRowElems_ is 4.
+    //   Input (row-major):          Output (column-major):
+    //   [0  1  2  3 ]               [0  4  8  12]
+    //   [4  5  6  7 ]    ------>    [1  5  9  13]
+    //   [8  9  10 11]               [2  6  10 14]
+    //   [12 13 14 15]               [3  7  11 15]
+    // Gather indices for axisBase=0: [0, 4, 8, 12] (stride=inputRowElems_)
+    // Gather indices for axisBase=1: [1, 5, 9, 13]
+    __aicore__ inline void TransposeTileByGather(uint32_t curInnerChunk)
+    {
+        constexpr uint16_t vlSize = static_cast<uint16_t>(Ops::Base::GetVRegSize() / sizeof(CastType));
+        __ubuf__ T* inputAddr = (__ubuf__ T*)this->inputTile_.GetPhyAddr();
+        __ubuf__ T* outputAddr = (__ubuf__ T*)(IsBf16Merge ? this->inputCast_.GetPhyAddr() :
+                                                             this->sortInput_.GetPhyAddr());
+        uint32_t outputValueAxisElems = IsBf16Merge ? this->inputValueAxisElems_ : this->valueAxisElems_;
+        __VEC_SCOPE__
+        {
+            AscendC::Reg::RegTensor<CastType> dataReg;
+            AscendC::Reg::RegTensor<RangeType> baseIdxReg;
+            AscendC::Reg::RegTensor<RangeType> idxReg;
+            AscendC::Reg::MaskReg idxMask = AscendC::Reg::CreateMask<RangeType, AscendC::Reg::MaskPattern::ALL>();
+
+            AscendC::Reg::Arange(baseIdxReg, 0);
+            AscendC::Reg::Muls(baseIdxReg, baseIdxReg, ToRangeScalar(this->inputRowElems_), idxMask);
+            for (uint16_t axisBase = 0; axisBase < this->axisLen_;
+                 axisBase = static_cast<uint16_t>(axisBase + vlSize)) {
+                uint32_t curCount = this->axisLen_ - axisBase;
+                if (curCount > vlSize) {
+                    curCount = vlSize;
+                }
+                AscendC::Reg::MaskReg dataMask = AscendC::Reg::UpdateMask<CastType>(curCount);
+                AscendC::Reg::Adds(idxReg, baseIdxReg, ToRangeScalar(axisBase * this->inputRowElems_), idxMask);
+                for (uint16_t inner = 0; inner < curInnerChunk; ++inner) {
+                    // Gather: read data from inputAddr using transpose indices in idxReg
+                    AscendC::Reg::Gather(dataReg, inputAddr + inner, (AscendC::Reg::RegTensor<IdxType>&)idxReg,
+                                                 dataMask);
+                    if constexpr (sizeof(T) != 1) {
+                        // Non-int8: write directly to UB output address
+                        AscendC::Reg::StoreAlign(outputAddr + inner * outputValueAxisElems + axisBase, dataReg, dataMask);
+                    } else {
+                        // int8: pack into b16 for compact UB write
+                        __ubuf__ CastType* outputAddrB16 = reinterpret_cast<__ubuf__ CastType*>(
+                            outputAddr + inner * outputValueAxisElems + axisBase);
+                        AscendC::Reg::StoreAlign<CastType, AscendC::Reg::StoreDist::DIST_PACK_B16>(outputAddrB16, dataReg,
+                                                                                                 dataMask);
+                    }
+                }
+            }
+        }
+    }
+
+    __aicore__ inline void SortRows(uint32_t curInnerChunk)
+    {
+        for (uint32_t inner = 0; inner < curInnerChunk; ++inner) {
+            LocalTensor<SortT> src = this->sortInput_[inner * this->valueAxisElems_];
+            LocalTensor<SortT> dst = this->sortedValue_[inner * this->valueAxisElems_];
+            LocalTensor<uint32_t> dstIndex = this->sortedIndex_[inner * this->indexAxisElems_];
+            AscendC::Sort<SortT, true, sortConfig_>(dst, dstIndex, src, this->tmp_, this->sortCount_);
+        }
+    }
+};
+
+} // namespace SmallAxisCommon
+
+#endif

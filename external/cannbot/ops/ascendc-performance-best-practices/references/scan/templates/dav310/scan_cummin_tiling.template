@@ -1,0 +1,224 @@
+/**
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * CANN Open Software License Agreement Version 2.0. THIS SOFTWARE IS PROVIDED "AS IS".
+ */
+
+/*!
+ * \file scan_cummin_tiling.template  (使用时改名为 scan_cummin_tiling.h)
+ * \brief Cummin/cummax 算子的 host 侧 tiling 计算。
+ *
+ * 输入：融合形状 (M, R, N) + 元素字节数 + 平台参数（UB 字节、AIV 核数）。
+ * 输出：mode 选择 + 各 mode 所需的 tiling 参数 + blockDim + workspace 大小。
+ *
+ * mode 选择决策树：
+ *   N == 1（dim=-1，扫描轴在 GM 上连续）:
+ *     R <= rChunkKs（整行装得下 UB）→ mode 5（行批处理 + ping-pong 双缓冲 + lane 并行/KS）
+ *     M*2 < coreNum 且 R >= 2*MIN_SEG → mode 3/4（跨核借 R，单次 launch + SyncAll）
+ *     否则 → mode 1（Kogge-Stone 逐行，R 分块）
+ *   N > 1（dim 非末维，扫描轴跨步）:
+ *     → mode 0（tile 常驻扫描 + ping-pong 双缓冲）
+ *
+ * ⚠️ UB 预算计算必须与 kernel 侧 Init 的 InitBuffer 一致，否则溢出。
+ *    ping-pong 下各 buffer 翻倍，rChunk 相应减半——这正是流水需要的，不必回调。
+ *
+ * 完整实现见 cummin 参考工程 op_kernel/cummin_kernel.cpp 的 CalcTiling()。
+ */
+#ifndef SCAN_CUMMIN_TILING_H
+#define SCAN_CUMMIN_TILING_H
+
+#include <cstdint>
+#include <cstring>
+#include <cstdlib>
+#include "platform/platform_ascendc.h"
+
+struct CumminScanTilingData {
+    int64_t M;
+    int64_t R;
+    int64_t N;
+    int64_t nLen;        // 每个 n-tile 的列数
+    int64_t nOuter;      // ceil(N / nLen)
+    int64_t mFold;       // mode 0：折叠进 lane 维度的 M 行数；mode 5：行批处理大小上限
+    int64_t rChunk;      // 每次搬进 UB 的 R 长度
+    int64_t rowGroups;   // ceil(M / mFold)
+    int64_t totalWork;   // rowGroups * nOuter
+    int64_t mode;        // 0=N-lane tile 常驻; 1=KS 逐行; 2=SIMT; 3/4=跨核借R; 5=行批处理+双缓冲
+    int64_t wsSegs;      // 跨核借 R 的段数
+};
+
+struct CumminTilingParams {
+    int64_t blockDim = 1;
+    int64_t nLen = 1;
+    int64_t nOuter = 1;
+    int64_t mFold = 1;
+    int64_t rChunk = 1;
+    int64_t rowGroups = 1;
+    int64_t totalWork = 1;
+    int64_t mode = 0;
+    int64_t wsSegs = 0;
+};
+
+namespace cummin_tiling {
+
+inline int64_t CeilDivHost(int64_t a, int64_t b) { return b == 0 ? a : (a + b - 1) / b; }
+inline int64_t CeilAlignHost(int64_t a, int64_t b) { return CeilDivHost(a, b) * b; }
+
+// 与 kernel 侧 GsSegLen 必须一致，否则 UB 预算算错
+inline int64_t GsSegLenHost(int64_t r, int64_t lanes, int64_t cBytes)
+{
+    int64_t s = CeilDivHost(r, lanes);
+    return (s * cBytes % 16 == 0) ? (s | 1) : s;
+}
+
+// ---------------------------------------------------------------------------
+// mode 5（行批处理）的 UB 预算计算
+//
+// perRow = 2 * (xStride * elemBytes                           // x 双份
+//             + (vStride + GUARD) * cBytes                     // val 双份（含哨兵）
+//             + oStride * 8)                                    // int64 输出区双份
+//         + (vStride + GUARD) * cBytes                          // idx 暂存单份
+//
+// k (mFold) = UB_BUDGET / perRow，受 rowsPerCore 上限
+// ---------------------------------------------------------------------------
+inline int64_t CalcMode5MFold(int64_t R, int64_t elemBytes, int64_t M, int64_t coreNum, int64_t ubBudget)
+{
+    const int64_t UB_BLK = 32;
+    const int64_t cBytes = 4;  // 比较类型字节数（16 位一律升 fp32）
+    const int64_t GUARD = 256 / cBytes;  // 64
+
+    int64_t gsS = R > 2 * GUARD ? GsSegLenHost(R, GUARD, cBytes) : 0;
+    int64_t vData = gsS > 0 ? GUARD * gsS : R;
+    int64_t vStride = GUARD + CeilAlignHost(vData, UB_BLK / cBytes);
+    int64_t xStride = CeilAlignHost(R, UB_BLK / elemBytes);
+    int64_t oStride = CeilAlignHost(R, 4);  // int64 每行按 32B 对齐，元素数 = 32B/8B * (32B/4B) ... 实际 CeilAlign(R, 32/8)=CeilAlign(R,4)
+
+    int64_t perRow = 2 * (xStride * elemBytes + (vStride + GUARD) * cBytes + oStride * 8)
+                   + (vStride + GUARD) * cBytes;
+    int64_t k = ubBudget / (perRow > 0 ? perRow : 1);
+    int64_t rowsPerCore = CeilDivHost(M, coreNum);
+    if (k > rowsPerCore) k = rowsPerCore;
+    if (k < 1) k = 1;
+    return k;
+}
+
+// ---------------------------------------------------------------------------
+// mode 0（N > 1 tile 常驻）的 UB 预算计算
+//
+// bytesPerR = computeLen * (2*eb + 2*eb + 4 + 2*8)
+//                              x双份   val双份  int32扫描区  int64输出区双份
+// rChunk = UB_BUDGET / bytesPerR
+// ---------------------------------------------------------------------------
+inline CumminTilingParams CalcTiling(int64_t M, int64_t R, int64_t N, int64_t elemBytes)
+{
+    auto ascendcPlatform = platform_ascendc::PlatformAscendCManager::GetInstance();
+    int64_t coreNum = ascendcPlatform->GetCoreNumAiv();
+    if (coreNum <= 0) coreNum = 1;
+    uint64_t ubSize = 0;
+    ascendcPlatform->GetCoreMemSize(platform_ascendc::CoreMemType::UB, ubSize);
+    // 平台查询失败时不能用固定容量继续生成可能越界的 tiling。
+    if (ubSize <= 8 * 1024) return {};
+    int64_t UB_BUDGET = static_cast<int64_t>(ubSize) - 8 * 1024;
+    const int64_t UB_BLK = 32;
+
+    int64_t nLen = N;
+    int64_t mFold = 1;
+
+    if (N == 1) {
+        // ---- N == 1（dim=-1）：行在 GM 上连续 ----
+        const int64_t KS_CHUNK_CAP = 8192;
+        int64_t rChunkKs = UB_BUDGET / (elemBytes + 4 + 8);  // x + val(P) + idx(int32+int64叠用)
+        if (rChunkKs > KS_CHUNK_CAP) rChunkKs = KS_CHUNK_CAP;
+        if (rChunkKs > R) rChunkKs = R;
+        if (rChunkKs < 1) rChunkKs = 1;
+
+        CumminTilingParams ks;
+        ks.blockDim = M < coreNum ? M : coreNum;
+        if (ks.blockDim < 1) ks.blockDim = 1;
+        ks.nLen = 1; ks.nOuter = 1; ks.mFold = 1;
+        ks.rChunk = rChunkKs; ks.rowGroups = M; ks.totalWork = M;
+        ks.mode = 1; ks.wsSegs = 0;
+
+        // 整行一次装得下 → mode 5（行批处理 + 双缓冲）
+        if (R <= rChunkKs) {
+            int64_t k = CalcMode5MFold(R, elemBytes, M, coreNum, UB_BUDGET);
+            if (k >= 1) {
+                ks.mode = 5;
+                ks.mFold = k;
+                return ks;
+            }
+        }
+
+        // 行数喂不饱核而 R 又足够长 → mode 3/4（跨核借 R）
+        const int64_t MIN_SEG = 8192;
+        if (M * 2 < coreNum && R >= MIN_SEG * 2) {
+            int64_t segs = coreNum / (M > 0 ? M : 1);
+            int64_t capBySeg = R / MIN_SEG;
+            if (segs > capBySeg) segs = capBySeg;
+            if (segs > 1) {
+                int64_t segLen = CeilDivHost(R, segs);
+                segs = CeilDivHost(R, segLen);
+                ks.mode = 3;
+                ks.wsSegs = segs;
+                ks.blockDim = M * segs;
+                if (ks.rChunk > segLen) ks.rChunk = segLen;
+            }
+        }
+        return ks;
+    }
+
+    // ---- N > 1（dim 非末维）: mode 0 ----
+    if (N * elemBytes >= UB_BLK) {
+        // N 足够宽：mFold=1，按核数把 N 切成若干 n-tile
+        int64_t nOuterTarget = CeilDivHost(coreNum, M > 0 ? M : 1);
+        if (nOuterTarget < 1) nOuterTarget = 1;
+        nLen = CeilDivHost(N, nOuterTarget);
+        int64_t alignElems = UB_BLK / elemBytes;
+        nLen = CeilAlignHost(nLen, alignElems);
+        if (nLen > N) nLen = N;
+        if (nLen < alignElems) nLen = alignElems > N ? N : alignElems;
+        const int64_t LANE_CAP = 2048;
+        if (nLen > LANE_CAP) nLen = LANE_CAP;
+    } else {
+        // N 很窄：借 M 轴。每行槽位被 32B 对齐撑开，用 mFold 行折叠填满向量宽度
+        nLen = N;
+        int64_t slotT = CeilAlignHost(N * elemBytes, UB_BLK) / elemBytes;
+        int64_t foldTarget = CeilDivHost(128, slotT);
+        if (foldTarget < 1) foldTarget = 1;
+        int64_t foldByCore = CeilDivHost(M, coreNum);
+        mFold = foldTarget < foldByCore ? foldTarget : foldByCore;
+        if (mFold < 1) mFold = 1;
+        if (mFold > M) mFold = M;
+    }
+
+    int64_t slotT = CeilAlignHost(nLen * elemBytes, UB_BLK) / elemBytes;
+    int64_t computeLen = mFold * slotT;
+    // x / val / int64 输出区各开两份做 ping-pong，int32 扫描区一份（不能再和输出区叠用）
+    int64_t bytesPerR = computeLen * (2 * elemBytes + 2 * elemBytes + 4 + 2 * 8);
+    int64_t rChunk = UB_BUDGET / (bytesPerR > 0 ? bytesPerR : 1);
+    if (rChunk < 1) rChunk = 1;
+    if (rChunk > R) rChunk = R;
+
+    int64_t rowGroups = CeilDivHost(M, mFold);
+    int64_t nOuter = CeilDivHost(N, nLen);
+    int64_t items = rowGroups * nOuter;
+    int64_t usedCores = items < coreNum ? items : coreNum;
+    if (usedCores < 1) usedCores = 1;
+
+    CumminTilingParams p;
+    p.blockDim = usedCores;
+    p.nLen = nLen; p.nOuter = nOuter; p.mFold = mFold;
+    p.rChunk = rChunk; p.rowGroups = rowGroups; p.totalWork = items;
+    p.mode = 0; p.wsSegs = 0;
+    return p;
+}
+
+// workspace 大小（mode 3/4 跨核借 R 时需要）
+inline int64_t WorkspaceBytes(int64_t M, const CumminTilingParams& tp)
+{
+    if (tp.wsSegs <= 0) return 0;
+    constexpr int64_t WS_SLOT_I32 = 8;
+    return M * tp.wsSegs * WS_SLOT_I32 * (int64_t)sizeof(int32_t);
+}
+
+}  // namespace cummin_tiling
+
+#endif  // SCAN_CUMMIN_TILING_H

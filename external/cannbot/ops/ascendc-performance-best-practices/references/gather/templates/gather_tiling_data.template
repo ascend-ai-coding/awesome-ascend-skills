@@ -1,0 +1,232 @@
+/**
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
+
+/*!
+ * \file gather_tiling_data.h
+ * \brief Gather 族算子多套模板的 TilingData 结构定义（host 与 device 共用，packed 布局保持一致）。
+ *
+ * 本文件集中定义多套独立的 TilingData 结构体，分别对应 Gather 的各高性能 Kernel 模板：
+ *   - GatherTilingData            → dav310/gather_simt.h             (SIMT 标量并行，通用兜底)
+ *                                    dav310/gather_simd_row_copy.h   (SIMD 行拷贝，DataCopyPad 跨 stride)
+ *                                    dav310/gather_full_load.h       (全载 UB + SIMT gather from UB)
+ *   - GatherLastTilingData        → dav310/gather_simd_last_gather.h (SIMD 末轴 Gather)
+ *   - GatherGaAllLoadTilingData   → dav310/gather_ga_all_load.h      (GA 全载 UB + VF/Gather)
+ *   - GatherSimtTilingData        → dav310/gather_simt_two_dim.h     (SIMT 两维，batchSize==1 outerSize==1)
+ *
+ * 三维模型统一为 [outerSize, gatherDimSize, innerSize]，索引张量按 [outerSize, gatherSize, innerSize]。
+ * 模板之间互不依赖，使用者只需 include 本文件和对应模板头文件即可独立实例化。
+ *
+ * 所有结构体使用 #pragma pack(1)，确保 Host 与 Device 内存布局一致。
+ */
+
+#ifndef GATHER_TILING_DATA_H
+#define GATHER_TILING_DATA_H
+
+#include <cstdint>
+
+#pragma pack(1)
+
+// ============================================================================
+// SIMT / Scalar 通用路径 — 对应模板 GatherSimt (dav310/gather_simt.h)
+//
+// 适用场景：所有 Gather 场景（含散点读 torch.gather dim=0），无连续性假设。
+//          2048 SIMT 线程并行，每线程直接 GM 标量读 index + x，写 y。
+// 字段说明：
+//   needCoreNum         — 实际使用的核数（<= coreNumAiv），单位：核
+//   threadNum           — 每核 SIMT 线程数（asc_vf_call 的 dim3.x），单位：线程
+//   batchSize           — batch_dims 之前的维度乘积（TF GatherV2），单位：元素数
+//   outerSize           — gather 轴之前的维度乘积（不含 batch），单位：元素数
+//   gatherDimSize       — x 沿 gather 轴的长度，单位：元素数
+//   gatherSize          — index 沿 gather 轴的长度，单位：元素数
+//   innerSize           — gather 轴之后的维度乘积（sliceSize），单位：元素数
+//   perCoreElements     — 主核处理的输出元素数，单位：元素数
+//   lastCoreElements    — 尾核处理的输出元素数，单位：元素数
+//   negativeIndexSupport— 是否支持负索引补偿（0=否，1=是），单位：标志
+//   dtypeSize           — X_T 单元素字节数（用于 dtype improve 折叠判定），单位：字节
+//
+// Host 侧生成约束：
+//   - perCoreElements = CeilDiv(outputTotalSize, needCoreNum)
+//   - lastCoreElements = outputTotalSize - perCoreElements * (needCoreNum - 1)
+//   - threadNum 取 2048（搬运类算子，带宽受限，更多线程隐藏延迟）；INDEX_SIZE_T=uint64_t 时可降到 1024
+//   - outputTotalSize = batchSize * outerSize * gatherSize * innerSize
+//   - maxElement = (ubSize - reservedUb) / ubBlockSize / dtypeSize / bufferNum
+//   - indiceUbSize = index UB 缓存窗口字节预算（滑动窗口大小）
+// ============================================================================
+// 该结构同时被以下模板使用：
+//   - GatherSimdRowCopy (dav310/gather_simd_row_copy.h)：SIMD 行拷贝，DataCopyPad 跨 stride DMA
+//   - GatherFullLoad    (dav310/gather_full_load.h)：全载 UB + SIMT gather from UB
+// 两者均访问 maxElement / dtypeSize / indiceUbSize 等字段控制 UB 切分。
+struct GatherTilingData {
+    int32_t needCoreNum;
+    int32_t threadNum;
+    int64_t batchSize;
+    int64_t outerSize;
+    int64_t gatherDimSize;
+    int64_t gatherSize;
+    int64_t innerSize;
+    int64_t xSize;
+    int64_t indicesSize;
+    int64_t ySize;
+    int64_t perCoreElements;
+    int64_t lastCoreElements;
+    int64_t maxElement;
+    int64_t indiceUbSize;
+    int8_t  negativeIndexSupport;
+    int8_t  dtypeSize;
+};
+
+// ============================================================================
+// SIMD 末轴 Gather — 对应模板 GatherSimdLastGather (dav310/gather_simd_last_gather.h)
+//
+// 适用场景：innerSize==1（末轴 gather）+ gatherDimSize 可全载 UB + batchSize==1。
+//          x 一行全载入 UB，用 Reg::Gather 向量化 gather 多个索引。
+// 字段说明：
+//   needCoreNum    — 实际使用的核数，单位：核
+//   indicesNum     — Host 预留的索引 buffer 数量，单位：个
+//   inputUbSize    — 单个输入 buffer 的预算，单位：字节
+//   outUbSize      — 单个输出 buffer 的预算，单位：字节
+//   indiceUbSize   — 单个原始索引 buffer 的预算，单位：字节
+//   indiceCastUbSize — 索引转换 scratch 预算，单位：字节
+//   ubCols / ubRows — Host 输出 tile 的列数/行数，单位：元素/行
+//   gatherDimSize  — x 行长度，单位：元素
+//   gatherSize     — 每行输出索引数，单位：元素
+//   blockFactor    — 每个行分组负责的 outer 行数，单位：行
+//   tailBlockFactor — 最后一个行分组的行数，单位：行
+//   gFactor        — 每个列分组负责的索引数，单位：元素
+//   coreInCols     — 一个行分组内的列分组数量，单位：个
+//
+// Host 侧生成约束：见 LastGatherTiling / LastGatherUbTiling。
+//   - blockFactor = CeilDiv(outerSize, coreNumAiv)
+//   - needCoreNum = 行分组数 * coreInCols
+//   - inputNum*inputUbSize + 2*outUbSize + indicesNum*indiceUbSize
+//       + indiceCastUbSize <= 平台查询的 ubSize（包含 Host 对齐预留）
+// ============================================================================
+struct GatherLastTilingData {
+    int32_t needCoreNum;
+    int64_t indicesNum;
+    int64_t inputUbSize;
+    int64_t outUbSize;
+    int64_t indiceUbSize;
+    int32_t ubCols;
+    int32_t ubRows;
+    int64_t gatherDimSize;
+    int64_t gatherSize;
+    int64_t blockFactor;
+    int32_t gFactor;
+    int32_t coreInCols;
+    int16_t splitIndices;
+    int16_t inputNum;
+    int16_t splitMode;
+    int32_t indiceCastUbSize;
+    int64_t tailBlockFactor;
+};
+
+// ============================================================================
+// SIMT 两维 — 对应模板 GatherSimtTwoDim (dav310/gather_simt_two_dim.h)
+//
+// 适用场景：batchSize==1 且 outerSize==1（二维 Gather），innerSize 可任意。
+//          SIMT 线程直接 GM 散点读，yIndex → gatherI (fast-div by innerSize) → innerI。
+// 字段说明：
+//   needCoreNum         — 实际使用的核数，单位：核
+//   threadNum           — 每核 SIMT 线程数，单位：线程
+//   negativeIndexSupport— 是否支持负索引补偿（0=否，1=是），单位：标志
+//   gatherDimSize       — x 沿 gather 轴的长度，单位：元素数
+//   innerSize           — gather 轴之后的维度乘积，单位：元素数
+//   perCoreElements     — 主核处理的输出元素数，单位：元素数
+//   lastCoreElements    — 尾核处理的输出元素数，单位：元素数
+//
+// Host 侧生成约束：
+//   - perCoreElements = CeilDiv(gatherSize * innerSize, needCoreNum)
+//   - lastCoreElements = gatherSize * innerSize - perCoreElements * (needCoreNum - 1)
+//   - threadNum = 2048（uint32_t）/ 1024（uint64_t）
+//   - fast-div magic 由 device 侧 GetUintDivMagicAndShift(m0, shift0, innerSize) 计算，不入 TilingData
+// ============================================================================
+struct GatherSimtTilingData {
+    int32_t needCoreNum;
+    int32_t threadNum;
+    int8_t  negativeIndexSupport;
+    int64_t gatherDimSize;
+    int64_t innerSize;
+    int64_t perCoreElements;
+    int64_t lastCoreElements;
+};
+
+// ============================================================================
+// SIMD 两维 — Host 侧 tiling 参考（对应 tiling 模式 TILING_SIMD_TWO_DIM）
+//
+// 适用场景：batchSize==1 且 outerSize==1，innerSize >= SIMD 阈值。
+//          核间按 blockFactor 切分 gatherSize，每核处理一段索引。
+// 字段说明：
+//   needCoreNum         — 实际使用的核数，单位：核
+//   negativeIndexSupport— 是否支持负索引补偿（0=否，1=是），单位：标志
+//   indiceFactor        — index UB 缓存元素数（INDICES_SIZE / indicesDtypeSize），单位：元素数
+//   dtypeSize           — 提升后单元素字节数，单位：字节
+//   gatherDimSize       — x 沿 gather 轴的长度，单位：元素数
+//   gatherSize          — index 沿 gather 轴的长度，单位：元素数
+//   innerSize           — gather 轴之后的维度乘积，单位：元素数
+//   blockFactor         — 主核处理的索引数，单位：元素数
+//   tailBlockFactor     — 尾核处理的索引数，单位：元素数
+//   maxElement          — UB 容量（元素数），单位：元素数
+// ============================================================================
+struct GatherSimdTwoDimTilingData {
+    int32_t needCoreNum;
+    int8_t  negativeIndexSupport;
+    int32_t indiceFactor;
+    int8_t  dtypeSize;
+    int64_t gatherDimSize;
+    int64_t gatherSize;
+    int64_t innerSize;
+    int64_t blockFactor;
+    int64_t tailBlockFactor;
+    int64_t maxElement;
+};
+
+// ============================================================================
+// GA 全载 — 对应模板 GatherGaAllLoad (dav310/gather_ga_all_load.h)
+//
+// 适用场景：innerSize 适中（>32 且 <2048），gatherDimSize × innerSize 可全载 UB，
+//          batchSize==1 且 gatherSize/gatherDimSize > 1（索引重复访问 x 行）。
+//          2D 多核切分：[pOuter(outer split), indicesOuter(gather split)]。
+// 字段说明：
+//   gSize               — gatherDimSize（x 沿 gather 轴长度），单位：元素数
+//   aSize               — innerSize × improveDtypeSize（一行 slice 字节数），单位：字节
+//   aSizeAligned        — aSize 按 ubBlockSize 对齐后字节数（规避 gather bank 冲突时 +32B），单位：字节
+//   indicesSize         — gatherSize（索引总数 = 输出沿 gather 轴长度），单位：元素数
+//   usedCoreNum         — pOuter × indicesOuter（实际使用核数），单位：核
+//   indicesOuter        — gather 轴方向核切分数，单位：核
+//   normalCoreIndicesNum— 主核处理的索引数，单位：元素数
+//   tailCoreIndicesNum  — 尾核处理的索引数，单位：元素数
+//   pOuter              — outer 轴方向核切分数，单位：核
+//   normalCoreGaNum     — 主核处理的 GA block 数，单位：block
+//   tailCoreGaNum       — 尾核处理的 GA block 数，单位：block
+//   xBufferSize         — x UB 缓冲字节（全载或部分载），单位：字节
+//   indicesBufferSize   — index UB 缓冲字节，单位：字节
+//   yBufferSize         — y UB 双 buffer 单块字节，单位：字节
+// ============================================================================
+struct GatherGaAllLoadTilingData {
+    int64_t gSize;
+    int64_t aSize;
+    int64_t aSizeAligned;
+    int64_t indicesSize;
+    int64_t usedCoreNum;
+    int64_t indicesOuter;
+    int64_t normalCoreIndicesNum;
+    int64_t tailCoreIndicesNum;
+    int64_t pOuter;
+    int64_t normalCoreGaNum;
+    int64_t tailCoreGaNum;
+    int64_t xBufferSize;
+    int64_t indicesBufferSize;
+    int64_t yBufferSize;
+};
+
+#pragma pack()
+
+#endif  // GATHER_TILING_DATA_H

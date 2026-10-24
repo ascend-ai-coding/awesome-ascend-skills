@@ -1,0 +1,30 @@
+{
+  "engine": "claude",
+  "key_pool": [
+    {
+      "env": "ANTHROPIC_API_KEY_1",
+      "base_url": "https://api.deepseek.com/anthropic"
+    },
+    {
+      "env": "ANTHROPIC_API_KEY_2",
+      "base_url": "https://api.deepseek.com/anthropic"
+    },
+    {
+      "env": "ANTHROPIC_API_KEY_3",
+      "base_url": "https://api.deepseek.com/anthropic"
+    }
+  ],
+  "review": {
+    "skill_prompt": "使用 ascendc-code-review skill 检视 {pr_url}。PR 检视模式。",
+    "model": "deepseek-v4-flash",
+    "timeout_sec": 6000,
+    "idle_timeout_sec": 6000,
+    "format": "text"
+  },
+  "execution": {
+    "max_parallel": 3,
+    "retry_on_failure": 1,
+    "retry_delay_sec": 30,
+    "output_dir": "./reports"
+  }
+}

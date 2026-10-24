@@ -1,0 +1,40 @@
+strategy_id: P92
+
+strategy_meta:
+  id: "P92"
+  slug: "P92_matmul_block_compute_ratio"
+  title: "P92: Matmul 基本块计算访存比优化 (Matmul Base Block Compute-to-Memory Ratio)"
+  bottlenecks: [mte2_stall, compute_bound]
+  op_families: [matmul, cv_fusion]
+  conflicts_with: []
+  synergizes_with: [P46, P86, P93]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p92_matmul_block_compute_ratio.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p92_matmul_block_compute_ratio.md"
+  playbook_slug: "P92_matmul_block_compute_ratio"
+checks:
+  - id: has_matmul
+    type: grep_count
+    pattern: "Matmul|matmul|Mmad|mmad"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 Matmul 调用 → 不适用 P92。检查其他 MTE2 优化策略如 P1、P2。"
+
+  - id: has_setfixsplit
+    type: grep_count
+    pattern: "SetFixSplit|baseM|baseN|baseK|FixSplit"
+    files: [host]
+    expected: ">= 1"
+    fail_msg: "未检测到 SetFixSplit 或 baseM/baseN 参数 → Matmul 基本块由框架自动选择，不适用 P92。"
+
+  - id: has_cfg_mdl
+    type: grep_count
+    pattern: "CFG_MDL|CFG_NORM|CFG_IBShare|CFG_NBuffer33"
+    files: [all]
+    expected: ">= 1"
+    fail_msg: "未检测到 Matmul 配置模板 → 非 Matmul 算子，不适用 P92。"

@@ -1,0 +1,396 @@
+[
+  {
+    "id": "F-1",
+    "stage": "frontend",
+    "prior_gain": 0.9,
+    "delta": "increase task granularity (larger Matmul M/N tiling / more rows per task)"
+  },
+  {
+    "id": "F-2",
+    "stage": "frontend",
+    "prior_gain": 0.9,
+    "delta": "increase per-loop compute via larger tiling or loop_unroll"
+  },
+  {
+    "id": "F-3",
+    "stage": "frontend",
+    "prior_gain": 0.9,
+    "delta": "reduce loop count by increasing tile size / chunking"
+  },
+  {
+    "id": "F-4",
+    "stage": "frontend",
+    "prior_gain": 0.9,
+    "delta": "hoist reshape(inplace=True) globally; fold squeeze/unsqueeze; combine axes"
+  },
+  {
+    "id": "F-5",
+    "stage": "frontend",
+    "prior_gain": 0.6,
+    "delta": "replace pypto.loop over a static axis with a Python for"
+  },
+  {
+    "id": "F-6",
+    "stage": "frontend",
+    "prior_gain": 0.6,
+    "delta": "merge independent loops that have no data dependency"
+  },
+  {
+    "id": "F-7",
+    "stage": "frontend",
+    "prior_gain": 0.6,
+    "delta": "chunk the outer dynamic axis to increase task count. Pairs with F-8, which applies this chunk itself when it is absent. Chunking alone raises granularity without raising parallelism, so on its own this often regresses and is reverted; prefer F-8 unless the axis is already chunked."
+  },
+  {
+    "id": "F-8",
+    "stage": "frontend",
+    "prior_gain": 0.6,
+    "delta": "set inner-loop unroll_list. The values are PARALLEL BLOCK SIZES in descending priority order, not unroll counts: [8,4,2,1] asks for 8 blocks in parallel and falls back through 4, 2, 1. Innermost pypto.loop only -- on an outer loop the option is refused, for the reason F-23 records -- and no value above that loop's trip count. The rewrite is bit-exact. Each value costs one compilation path, so length is paid in wall clock. Pairs with F-7: chunk the outer axis for task granularity, then unroll the inner one for parallelism -- neither alone reaches what the two do together, so apply the F-7 chunk in THIS delta when the outer axis is not already chunked. The search keeps only candidates that beat the running best, so a chunk submitted on its own is reverted before the unroll that pays for it is ever tried."
+  },
+  {
+    "id": "F-9",
+    "stage": "frontend",
+    "prior_gain": 0.6,
+    "delta": "set Cube TileShape to the recommended config. Cube sites only -- the tile lever will not touch a Vector tile under this action. Shares one study with S-11 per program structure, so the two do not re-explore the same space.",
+    "requires": [
+      "has_cube_op"
+    ]
+  },
+  {
+    "id": "F-10",
+    "stage": "frontend",
+    "prior_gain": 0.6,
+    "delta": "set Vector tile shapes (set_vec_tile_shapes). Vector sites only -- the tile lever will not touch a Cube tile under this action. Shares one study with S-12 per program structure, so the two do not re-explore the same space."
+  },
+  {
+    "id": "F-11",
+    "stage": "frontend",
+    "prior_gain": 0.3,
+    "delta": "tune constant config (BLOCK_SIZE etc.)"
+  },
+  {
+    "id": "F-12",
+    "stage": "frontend",
+    "prior_gain": 0.3,
+    "delta": "use NZ format for large weight matrices",
+    "requires": [
+      "has_cube_op"
+    ]
+  },
+  {
+    "id": "F-13",
+    "stage": "frontend",
+    "prior_gain": 0.3,
+    "delta": "optimize transpose fused with matmul",
+    "requires": [
+      "has_cube_op"
+    ]
+  },
+  {
+    "id": "F-14",
+    "stage": "frontend",
+    "prior_gain": 0.3,
+    "delta": "eliminate redundant concat/assemble data movement"
+  },
+  {
+    "id": "F-15",
+    "stage": "frontend",
+    "prior_gain": 0.3,
+    "delta": "combine trailing broadcast axis (combine_axis)",
+    "requires": [
+      "has_broadcast"
+    ]
+  },
+  {
+    "id": "F-17",
+    "stage": "frontend",
+    "prior_gain": 0.9,
+    "delta": "cut GM traffic by materializing less -- recompute cheap intermediates on demand instead of storing them, or store fewer / smaller cache tensors (store-vs-recompute tradeoff). Highest-leverage lever on memory-bound kernels. Applies only to kernels that write large intermediates / caches to GM; N/A when nothing large is materialized",
+    "requires": [
+      "materializes_large_intermediate"
+    ]
+  },
+  {
+    "id": "F-18",
+    "stage": "frontend",
+    "prior_gain": 0.6,
+    "delta": "store internal tensors / carried state in BF16 while accumulating in FP32 (cast->compute->cast) to halve storage and data-movement traffic. Suited to precision-tolerant kernels whose spec tolerance allows reduced-precision storage"
+  },
+  {
+    "id": "F-19",
+    "stage": "frontend",
+    "prior_gain": 0.6,
+    "delta": "retune the chunked-scan granularity (chunk size bt): larger amortizes per-chunk dispatch and cuts the number of serial recurrence steps, smaller fits on-chip; regenerate the chunk-constant matrices and re-tile to match. Applies only to kernels with a chunked scan / loop over a bt constant; N/A to kernels without chunking",
+    "requires": [
+      "has_chunked_scan"
+    ]
+  },
+  {
+    "id": "S-1",
+    "stage": "swimlane",
+    "prior_gain": 0.9,
+    "delta": "analyze core usage (analyze_core_usage.py) to guide balancing"
+  },
+  {
+    "id": "S-2",
+    "stage": "swimlane",
+    "prior_gain": 0.9,
+    "delta": "increase task count by shrinking L0/L1 tiles to fill cores"
+  },
+  {
+    "id": "S-3",
+    "stage": "swimlane",
+    "prior_gain": 0.9,
+    "delta": "rebalance load: sort subgraphs by total(us) and fix the bottleneck"
+  },
+  {
+    "id": "S-4",
+    "stage": "swimlane",
+    "prior_gain": 0.9,
+    "delta": "manually merge vector subgraphs (sg_set_scope)"
+  },
+  {
+    "id": "S-5",
+    "stage": "swimlane",
+    "prior_gain": 0.6,
+    "delta": "auto-merge short AIV tasks (nbuffer)",
+    "directive": true
+  },
+  {
+    "id": "S-20",
+    "stage": "swimlane",
+    "prior_gain": 0.6,
+    "counterpart_of": "S-5",
+    "delta": "REMOVE vec_nbuffer_setting, or narrow its key set from the all-subgraphs {-1: N} form to a targeted {index: N}. FORM and GRANULARITY are separable axes and conflating them is expensive: the all-subgraphs form loses time on a heterogeneous vector pipeline, whose sites carry several distinct tile shapes, while the same depth applied to one homogeneous scope gains. Count the DISTINCT TILE SHAPES the pipeline governs before choosing the form: {-1: N} is a candidate only when that count is 1."
+  },
+  {
+    "id": "S-6",
+    "stage": "swimlane",
+    "prior_gain": 0.6,
+    "delta": "enable Cube L1Reuse to remove repeated loads",
+    "requires": [
+      "has_cube_op"
+    ],
+    "directive": true
+  },
+  {
+    "id": "S-18",
+    "stage": "swimlane",
+    "prior_gain": 0.6,
+    "counterpart_of": "S-6",
+    "requires": [
+      "has_cube_op"
+    ],
+    "delta": "REMOVE a cube_l1_reuse_setting entry, or drop the option entirely. The optimum is not always a positive depth: for some matmuls NO ENTRY beats every depth. The mechanism is structural rather than empirical -- that matmul's B operand supplies the K REDUCTION axis and is consumed exactly once per iteration, so no depth can amortize the GM->L1 fill. Depth pays only where the operand is streamed against a small M tile."
+  },
+  {
+    "id": "S-7",
+    "stage": "swimlane",
+    "prior_gain": 0.6,
+    "delta": "merge homogeneous short cube subgraphs (CubeNBuffer)",
+    "requires": [
+      "has_cube_op"
+    ],
+    "directive": true
+  },
+  {
+    "id": "S-19",
+    "stage": "swimlane",
+    "prior_gain": 0.6,
+    "counterpart_of": "S-7",
+    "requires": [
+      "has_cube_op"
+    ],
+    "delta": "REMOVE cube_nbuffer_setting, or drop a subgraph from its key set. Merge granularity is UNIMODAL, not monotone: both too little and too much merging cost time, and the lowest granularity can sit inside the unset kernel's own band, so sweep the ladder rather than raise the value."
+  },
+  {
+    "id": "S-8",
+    "stage": "swimlane",
+    "prior_gain": 0.3,
+    "delta": "combine L1Reuse + CubeNBuffer",
+    "requires": [
+      "has_cube_op"
+    ]
+  },
+  {
+    "id": "S-9",
+    "stage": "swimlane",
+    "prior_gain": 0.3,
+    "delta": "tune stitch (stitch_function_max_num)"
+  },
+  {
+    "id": "S-10",
+    "stage": "swimlane",
+    "prior_gain": 0.3,
+    "delta": "adjust scheduling (device_sched_mode)"
+  },
+  {
+    "id": "S-11",
+    "stage": "swimlane",
+    "prior_gain": 0.6,
+    "delta": "deep-tune Cube TileShape (reduce reloads / K-axis split). Cube sites only. Shares one study with F-9 per program structure; select it when the structure has moved since F-9 ran, or when F-9 was never reached.",
+    "requires": [
+      "has_cube_op"
+    ]
+  },
+  {
+    "id": "S-12",
+    "stage": "swimlane",
+    "prior_gain": 0.6,
+    "delta": "deep-tune Vector TileShape aligned to up/downstream (swimlane-driven). Vector sites only. Shares one study with F-10 per program structure; select it when the structure has moved since F-10 ran, or when F-10 was never reached."
+  },
+  {
+    "id": "S-13",
+    "stage": "swimlane",
+    "prior_gain": 0.6,
+    "delta": "optimize matmul core layout to raise L2 hit rate",
+    "requires": [
+      "has_cube_op"
+    ]
+  },
+  {
+    "id": "S-14",
+    "stage": "swimlane",
+    "prior_gain": 0.9,
+    "delta": "fuse adjacent producer->consumer ops so the intermediate stays on-chip (L1/UB), eliminating the copy_out->copy_in Global-Memory round-trip"
+  },
+  {
+    "id": "S-15",
+    "stage": "swimlane",
+    "prior_gain": 0.9,
+    "delta": "pipeline / double-buffer so MTE data-movement overlaps Cube and Vec compute -- copy, cube, and vec run concurrently to fill the idle bubble"
+  },
+  {
+    "id": "S-16",
+    "stage": "swimlane",
+    "prior_gain": 0.9,
+    "delta": "tune JIT runtime_options stitch memory pools: raise stitch_function_inner_memory and stitch_function_outcast_memory (e.g. 128->1024) and optionally stitch_function_num_initial (128->256) -- larger inner/outcast lets the runtime pack more work per root-function / device-task (more fusion, fewer launches) on heavy multi-subgraph kernels. Distinct from S-9 (stitch_function_max_num)"
+  },
+  {
+    "id": "S-17",
+    "stage": "swimlane",
+    "prior_gain": 0.9,
+    "delta": "fuse adjacent modules so the intermediate stays on-chip (no GM round-trip between modules) -- a design-level merge beyond the op-level fusion of S-14. Applies only when there are >=2 adjacent fusable modules (L1 multi-module kernels); N/A to single-module (L0) kernels",
+    "requires": [
+      "module_count >= 2"
+    ]
+  },
+  {
+    "id": "I-1",
+    "stage": "incore",
+    "prior_gain": 0.9,
+    "delta": "Vector-preprocess (reshape) a small-shape matmul",
+    "requires": [
+      "has_cube_op"
+    ]
+  },
+  {
+    "id": "I-2",
+    "stage": "incore",
+    "prior_gain": 0.6,
+    "delta": "set large weights NONE_CACHEABLE (batch for fused ops)",
+    "requires": [
+      "has_cube_op"
+    ],
+    "directive": true
+  },
+  {
+    "id": "I-13",
+    "stage": "incore",
+    "prior_gain": 0.6,
+    "counterpart_of": "I-2",
+    "requires": [
+      "has_cube_op"
+    ],
+    "delta": "clear NONE_CACHEABLE from a tensor that carries it. The hint costs nothing to set and is therefore easy to leave on a tensor that is in fact reused, where it defeats the cache it was meant to bypass. No measurement on this axis yet -- it is here so the axis is two-directional, not because removal is expected to win."
+  },
+  {
+    "id": "I-3",
+    "stage": "incore",
+    "prior_gain": 0.6,
+    "delta": "duplicate data to break a dependency and free redundant compute"
+  },
+  {
+    "id": "I-4",
+    "stage": "incore",
+    "prior_gain": 0.6,
+    "delta": "grow the tail axis (concat/transpose) for 32B alignment"
+  },
+  {
+    "id": "I-5",
+    "stage": "incore",
+    "prior_gain": 0.3,
+    "delta": "review TileOperation impl against Ascend C"
+  },
+  {
+    "id": "I-6",
+    "stage": "incore",
+    "prior_gain": 0.6,
+    "delta": "fix non-contiguous TileOperation inputs (reshape/transpose)"
+  },
+  {
+    "id": "I-7",
+    "stage": "incore",
+    "prior_gain": 0.6,
+    "delta": "gather via cube_tile (HBM->L1), scatter via assemble (L1->HBM)",
+    "requires": [
+      "has_cube_op"
+    ]
+  },
+  {
+    "id": "I-8",
+    "stage": "incore",
+    "prior_gain": 0.6,
+    "delta": "set submit_before_loop=True to overlap compute and data movement",
+    "directive": true
+  },
+  {
+    "id": "I-12",
+    "stage": "incore",
+    "prior_gain": 0.6,
+    "counterpart_of": "I-8",
+    "delta": "clear or REMOVE submit_before_loop from the loop that carries it. This directive is NOT monotonically good and the evidence points both ways: on one kernel removing it entirely was a large gain, the compiler's own pipelining taking over, and on another setting it was a heavy regression with core utilisation collapsing. Try removal wherever I-8 is already satisfied. If no loop carries the directive this edit is a no-op and the duplicate cache rejects it for free."
+  },
+  {
+    "id": "I-9",
+    "stage": "incore",
+    "prior_gain": 0.6,
+    "delta": "mark valid_shape to avoid tail zero-pad compute"
+  },
+  {
+    "id": "I-10",
+    "stage": "incore",
+    "prior_gain": 0.9,
+    "delta": "compute-once-and-reuse: remove redundant / recomputed intermediates to cut total op count",
+    "requires": [
+      "materializes_large_intermediate"
+    ]
+  },
+  {
+    "id": "F-20",
+    "stage": "frontend",
+    "prior_gain": 0.6,
+    "conversion": true,
+    "delta": "replace a vector reduction (sum / amax over an axis) with a matmul against a ones vector so the reduction runs on the Cube pipe instead of Vector -- Cube throughput on Ascend is far higher, and this also unlocks the cube-tiling actions for a kernel that had no matmul. Applies to kernels with a large reduction axis; N/A when the reduction is already a matmul or the axis is tiny"
+  },
+  {
+    "id": "F-23",
+    "stage": "frontend",
+    "prior_gain": 0.6,
+    "conversion": true,
+    "requires": [
+      "has_nested_pypto_loop"
+    ],
+    "delta": "INTERLEAVE N iterations of an outer pypto.loop into an inner one, so N independent chains run concurrently instead of one after another. Replicate every loop-carried accumulator N times, fold the outer axis in with `for j in range(N)` and index it as `outer*N + j`, and divide the outer loop's trip count by N. Raises the number of independent work items without changing the total work, which is the lever when the profile says the pipes are idle and waiting on each other rather than saturated. THIS MUST BE A SOURCE REWRITE. The directive that would express it, F-8's unroll_list, cannot reach an outer loop: it is confined to the innermost pypto.loop, because an outer unroll_list causes exponential compile-path growth AND a register-copy pass defect that corrupts precision (pypto-precision-debug #223, #341). Do not attempt to lift that restriction. THE TRAP, and it is silent: raising N WITHOUT replicating the accumulators leaves N independent chains sharing one running state. The kernel still compiles and still runs. Replicate first, then raise N. N must divide the outer trip count. Often pairs with F-5, because the inner loop has to become a Python `for` before the bodies can be interleaved at all."
+  },
+  {
+    "id": "I-11",
+    "stage": "incore",
+    "prior_gain": 0.3,
+    "conversion": true,
+    "requires": [
+      "has_cube_op"
+    ],
+    "delta": "move a small matmul onto the Vector pipe when the Cube tile is mostly padding -- the inverse of I-1, for shapes where cube occupancy is so low that the fixed cost dominates. Applies only when a matmul's M or N is far below the cube tile granularity"
+  }
+]

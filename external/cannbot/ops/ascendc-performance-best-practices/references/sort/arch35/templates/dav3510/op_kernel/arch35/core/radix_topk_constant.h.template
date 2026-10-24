@@ -1,0 +1,32 @@
+/*!
+ * \file radix_topk_constant.h
+ * \brief radix_topk_constant impl
+ */
+#ifndef RADIX_TOP_K_CONSTANT_H
+#define RADIX_TOP_K_CONSTANT_H
+const int64_t  INT_64_MAX_VALUE = 9223372036854775807;
+const int64_t  INT_64_MIN_VALUE = 0x8000000000000000LL;
+const uint64_t UINT_64_MAX_VALUE = 0xFFFFFFFFFFFFFFFFULL;
+const uint64_t UINT_64_MIN_VALUE = 0;
+const int32_t  INT_32_MAX_VALUE = 2147483647;
+const int32_t  INT_32_MIN_VALUE = -2147483648;
+const uint32_t UINT_32_MAX_VALUE = 4294967295;
+const uint32_t UINT_32_MIN_VALUE = 0;
+const int16_t INT_16_MAX_VALUE = 32767;
+const int16_t INT_16_MIN_VALUE = -32768;
+const uint16_t UINT_16_MAX_VALUE = 65535;
+const uint16_t UINT_16_MIN_VALUE = 0;
+const int8_t INT_8_MAX_VALUE = 127;
+const int8_t INT_8_MIN_VALUE =  -128;
+const uint8_t UINT_8_MAX_VALUE = 255;
+const uint8_t UINT_8_MIN_VALUE = 0;
+const float FLOAT_MAX_VALUE = 3.402823466e+38f;
+const float FLOAT_MIN_VALUE = -16777215;
+const half HALF_MAX_VALUE = 65504;
+const half HALF_MIN_VALUE = -32768;
+const bfloat16_t BFLOAT_16_MAX_VALUE = (bfloat16_t)3.38953139e38f;
+const bfloat16_t BFLOAT_16_MIN_VALUE = -32768;
+const uint32_t SUPPORT_SORT_MAX_SIZE = 2000;
+const uint32_t SUPPORT_SORT_MAX_BYTE_SIZE = 8000;
+const uint32_t REDUCE_CUMSUM_OUT_LEN = 8;
+#endif

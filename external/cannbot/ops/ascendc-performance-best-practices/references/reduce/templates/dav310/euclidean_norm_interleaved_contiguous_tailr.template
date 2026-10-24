@@ -1,0 +1,476 @@
+/**
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
+
+/*!
+ * \file euclidean_norm_interleaved_contiguous_tailr.h
+ * \brief EuclideanNorm 交错连续载入-两段式模板（路径 A）：针对交错 A-R 布局（偶数轴
+ *        ARARAR...AR，tail-R）的 MTE2 连续大 burst 优化。对应说明文档
+ *        templates/euclidean_norm_interleaved_contiguous_tailr.md。
+ *
+ * ── 集成说明（使用前必读）─────────────────────────────────────────────────────
+ *   1. 本文件为参考模板，去掉 .template 后缀落地为 dav310/
+ *      euclidean_norm_interleaved_contiguous_tailr.h 后使用。
+ *   2. 依赖 euclidean_norm_tiling_data.h（提供 EuclideanNormTilingData / MAX_PATTERN_RANK，
+ *      见 templates/euclidean_norm_tiling_data.template）与 host 侧门控
+ *      TryComputeFastTiling（见 templates/euclidean_norm_tiling.template）。
+ *   3. 依赖 CANN 的 adv_api/reduce/reduce.h（ReduceSum + Pattern::Reduce::AR）与 kernel_operator.h。
+ *   4. kernel 入口示例见 .md 第 10 节；本模板支持 fp32/fp16/bf16（载入即升 fp32，输出即降回）。
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * 背景（交错布局普通规约的瓶颈）：
+ *   交错 pattern（A/R 严格交替）的 CopyIn 为了把 R 聚拢做"边搬边转置"，最内 burst 只有
+ *   sizeof(最内 R 轴)×dtype 字节（代表 case = 2 元素 × 2/4B = 4~8B），MTE2 完全受限
+ *   （ratio≈0.995，有效带宽仅 ~145 GB/s）。
+ *
+ * 本模板核心：平方和可交换 → 直接按内存物理连续顺序做大 burst 载入（16~64KB），把 A/R 分离
+ *   从"昂贵的 HBM 碎读"搬到"廉价的 UB 内规约"。
+ *
+ * 几何（命中 host 门控的偶数轴 ARARAR...AR，tail-R，内块 = 末 4 轴 [A,R,A,R]）：
+ *   - 内块 innerBlock = 轴[S..N-1]（S=fastInnerStart=axisNum-4，连续物理布局），
+ *     结构固定 [A,R,A,R] = [szA0,szR0,szA1,szR1]，UB 内保留 (szA0,szA1)、规约 (szR0,szR1)。
+ *   - rows 轴 = 轴[S-1]（R，stride==innerElems，与内块连续）：多核切分 + 连续大 burst 载入。
+ *   - 外层轴[0..S-2]：外层 A 轴 → 分组（groupIdx，与输出 dense 序一致）；
+ *                     外层 R 轴 → 核内 for 循环累加。
+ *
+ * dtype：fp32 直通；fp16/bf16 载入即升 fp32（DIST_UNPACK_B16 + Cast），全程 fp32 累加/规约，
+ *   输出 sqrt 后 Cast 回 D_T（DIST_PACK_B32）。workspace 恒为 fp32（部分和精度）。
+ *
+ * 数据流：
+ *   Phase1: xGm ─(MTE2 连续大 burst)→ inQ(D_T) ─(VF Cast+平方+累加)→ acc[innerElems](fp32)
+ *           ─(两步 AR 规约)→ part[outLanes](fp32) ─(MTE3)→ workspace[group, coreInGroup, outLanes]
+ *   SyncAll
+ *   Phase2: 每组 coreInGroup==0 的核：workspace 组内求和 → Sqrt → Cast→D_T → yGm[groupIdx*outLanes]
+ *   （coresPerGroup==1 时省去 workspace 两段式，直接 sqrt→yGm，见 Process）
+ *
+ * arch35 约束：ReduceSum 只支持 AR/RA 两级 pattern（多维 ARAR 会编译报错），故内块规约拆成
+ *   两步 AR 链式规约（step1 规约最内 R1；step2 逐 (a0,a1) 沿 R0 标量累加，不用 adv_api ReduceSum
+ *   ——其 AR 规约在 dimR==vlSize(64) 边界处结果偏大，实测 szR0=64 的 case 高估 ~4.5%）。
+ */
+#ifndef OPS_NORM_EUCLIDEAN_NORM_INTERLEAVED_CONTIGUOUS_TAILR_H_
+#define OPS_NORM_EUCLIDEAN_NORM_INTERLEAVED_CONTIGUOUS_TAILR_H_
+
+#include "kernel_operator.h"
+#include "adv_api/reduce/reduce.h"
+#include "euclidean_norm_tiling_data.h"
+
+namespace NsEuclideanNorm {
+
+using namespace AscendC;
+
+// fast 模板：内块固定 4 轴 [A,R,A,R]，计算全程 fp32；输入 D_T ∈ {float, half, bfloat16_t}。
+template <typename DType>
+class EuclideanNormFastKernel {
+public:
+    using D_T = DType;
+
+    static constexpr bool kIsFp32 = std::is_same_v<D_T, float>;
+    static constexpr bool kIsB16 = (sizeof(D_T) == 2); // fp16 / bf16
+
+    static constexpr AscendC::Reg::CastTrait kCastTraitToFp32{
+        AscendC::Reg::RegLayout::ZERO, AscendC::Reg::SatMode::UNKNOWN, AscendC::Reg::MaskMergeMode::ZEROING,
+        AscendC::RoundMode::CAST_NONE};
+    static constexpr AscendC::Reg::CastTrait kCastTraitFromFp32{
+        AscendC::Reg::RegLayout::ZERO, AscendC::Reg::SatMode::NO_SAT, AscendC::Reg::MaskMergeMode::ZEROING,
+        AscendC::RoundMode::CAST_RINT};
+
+    __aicore__ inline EuclideanNormFastKernel() {}
+
+    __aicore__ inline void Init(GM_ADDR x, GM_ADDR y, GM_ADDR workspace, const EuclideanNormTilingData* td)
+    {
+        axisNum_ = td->axisNum;
+        for (int32_t i = 0; i < MAX_PATTERN_RANK; ++i) {
+            axisShape_[i] = td->axisShape[i];
+            axisStride_[i] = td->axisStride[i];
+        }
+        S_ = static_cast<int32_t>(td->fastInnerStart);
+        groupCnt_ = td->fastGroupCnt;
+        coresPerGroup_ = td->fastCoresPerGroup;
+        rowsAxisIdx_ = static_cast<int32_t>(td->fastRowsAxisIdx);
+        rowsPerLoad_ = td->fastRowsPerLoad;
+        usedCoreNum_ = td->usedCoreNum;
+
+        // 内块 4 轴 [A,R,A,R]
+        szA0_ = axisShape_[S_];
+        szR0_ = axisShape_[S_ + 1];
+        szA1_ = axisShape_[S_ + 2];
+        szR1_ = axisShape_[S_ + 3];
+        chunkA0_ = td->fastInnerChunkA0;                 // 内块 A0 分块大小（不分块时 = szA0_）
+        if (chunkA0_ <= 0 || chunkA0_ > szA0_) chunkA0_ = szA0_;
+        innerElems_ = szA0_ * szR0_ * szA1_ * szR1_;     // 整个内块元素数
+        chunkElems_ = chunkA0_ * szR0_ * szA1_ * szR1_;  // 一个 A0-chunk 的内块切片元素数
+        outLanes_ = szA0_ * szA1_;
+        rowsSize_ = axisShape_[rowsAxisIdx_];
+        rowsStride_ = axisStride_[rowsAxisIdx_]; // == innerElems_
+
+        xGm_.SetGlobalBuffer(reinterpret_cast<__gm__ D_T*>(x));
+        yGm_.SetGlobalBuffer(reinterpret_cast<__gm__ D_T*>(y));
+        wsGm_.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(workspace));
+
+        // 一次载入 = rowsPerLoad 个 row，每 row 只取本 A0-chunk 的切片 chunkElems（D_T 精度）
+        pipe_.InitBuffer(inQ_, /*bufNum=*/2, rowsPerLoad_ * chunkElems_ * sizeof(D_T));
+        pipe_.InitBuffer(accBuf_, (chunkElems_ + kPadElems) * sizeof(float));         // acc = 一个 chunk 切片（fp32）
+        pipe_.InitBuffer(tmpBuf_, 16 * 1024);                                        // ReduceSum(step1) shared tmp
+        pipe_.InitBuffer(redBuf_, (chunkA0_ * szR0_ * szA1_ + kPadElems) * sizeof(float)); // step1 out [cA0,R0,A1]
+        pipe_.InitBuffer(partBuf_, CeilAlign32(outLanes_) * sizeof(float));            // part[outLanes]（全 lane）
+        pipe_.InitBuffer(outQ_, /*bufNum=*/1, CeilAlign32(outLanes_) * sizeof(D_T));
+        // Phase2 workspace 读回（fp32，coresPerGroup 份 part 一次载入）
+        pipe_.InitBuffer(wsInQ_, /*bufNum=*/1, coresPerGroup_ * CeilAlign32(outLanes_) * sizeof(float));
+    }
+
+    __aicore__ inline void Process()
+    {
+        const int64_t blk = static_cast<int64_t>(GetBlockIdx());
+        if (blk >= usedCoreNum_) {
+            return;
+        }
+        const int64_t g = blk / coresPerGroup_;   // group = 外层 A 坐标（= 输出 slab 号）
+        const int64_t c = blk % coresPerGroup_;    // core-in-group：切 rows 轴
+
+        // ─── group idx → 外层 A 轴坐标 → GM 偏移 ───
+        int64_t gmOffA = UnravelGroupToGmOff(g);
+
+        // ─── rows 轴多核切分（CeilDiv + 尾核兜底）───
+        int64_t rowsPerCore = CeilDiv(rowsSize_, coresPerGroup_);
+        int64_t rowStart = c * rowsPerCore;
+        int64_t rowEnd = rowStart + rowsPerCore;
+        if (rowEnd > rowsSize_) rowEnd = rowsSize_;
+
+        // ─── Phase1: 沿内块 A0 分块，逐 chunk 流式规约 → part（不同 lane 段）───
+        auto part = partBuf_.Get<float>();
+        for (int64_t a0c = 0; a0c < szA0_; a0c += chunkA0_) {
+            int64_t curA0 = (a0c + chunkA0_ <= szA0_) ? chunkA0_ : (szA0_ - a0c);
+            auto acc = accBuf_.Get<float>();
+            ZeroAcc(acc, curA0);
+            if (rowStart < rowEnd) {
+                AccumulateOuterR(acc, gmOffA, rowStart, rowEnd, a0c, curA0);
+            }
+            ReduceInnerBlock(acc, part, a0c, curA0);
+        }
+
+        // coresPerGroup==1：本核独占整个 group（rows 轴不跨核切分），无需 workspace 两段式，
+        //   直接 sqrt(part) → yGm。避免 WritePart→SyncAll→Phase2 的跨阶段同步（实测在
+        //   coresPerGroup==1 时该 workspace 往返存在竞态，偶发结果偏大）。
+        if (coresPerGroup_ == 1) {
+            WriteOutDirect(part, g);
+            return;
+        }
+
+        // coresPerGroup>1：组内多核切 rows，需两段式跨核求和。
+        WritePartToWorkspace(part, g, c);
+        SyncAll();
+        if (c == 0) {
+            Phase2(g);
+        }
+    }
+
+private:
+    __aicore__ inline int64_t CeilDiv(int64_t a, int64_t b) const { return (a + b - 1) / b; }
+    __aicore__ inline int64_t CeilAlign32(int64_t n) const { return (n + 7) / 8 * 8; }
+
+    // group idx unravel 到外层 A 轴（idx < rowsAxisIdx_ 且为偶数）坐标，返回 GM 偏移。
+    // 外层 A 轴按 axis 序（外→内）编码，与输出 dense 序一致 → groupIdx 即输出 slab 号。
+    __aicore__ inline int64_t UnravelGroupToGmOff(int64_t g) const
+    {
+        int64_t gmOff = 0;
+        int64_t rem = g;
+        // 从内到外遍历外层 A 轴做 unravel
+        for (int32_t i = rowsAxisIdx_ - 1; i >= 0; --i) {
+            if (i % 2 == 0) { // A 轴
+                const int64_t sz = axisShape_[i];
+                const int64_t ix = rem % sz;
+                rem /= sz;
+                gmOff += ix * axisStride_[i];
+            }
+        }
+        return gmOff;
+    }
+
+    __aicore__ inline void ZeroAcc(AscendC::LocalTensor<float>& acc, int64_t curA0)
+    {
+        __ubuf__ float* p = reinterpret_cast<__ubuf__ float*>(acc.GetPhyAddr());
+        const uint32_t total = static_cast<uint32_t>(curA0 * szR0_ * szA1_ * szR1_);
+        const uint16_t rep = static_cast<uint16_t>((total + 63) / 64);
+        __VEC_SCOPE__
+        {
+            AscendC::Reg::RegTensor<float> z;
+            AscendC::Reg::Duplicate(z, 0.0f);
+            AscendC::Reg::MaskReg m;
+            uint32_t rem = total;
+            for (uint16_t i = 0; i < rep; ++i) {
+                m = AscendC::Reg::UpdateMask<float>(rem);
+                AscendC::Reg::StoreAlign(p + static_cast<int32_t>(i) * 64, z, m);
+            }
+        }
+    }
+
+    // 遍历所有外层 R 轴（idx < rowsAxisIdx_ 且为奇数）的组合，每个组合对本核 rows 段做连续载入累加。
+    // a0c/curA0 = 当前内块 A0-chunk 的起始/长度。
+    __aicore__ inline void AccumulateOuterR(AscendC::LocalTensor<float>& acc, int64_t gmOffA, int64_t rowStart,
+                                            int64_t rowEnd, int64_t a0c, int64_t curA0)
+    {
+        // 外层 R 轴组合数 = ∏ 外层 R 轴 size
+        int64_t outerRCnt = 1;
+        for (int32_t i = 0; i < rowsAxisIdx_; ++i) {
+            if (i % 2 == 1) outerRCnt *= axisShape_[i];
+        }
+        for (int64_t rc = 0; rc < outerRCnt; ++rc) {
+            // unravel rc → 外层 R 坐标 → GM 偏移
+            int64_t gmOffR = 0;
+            int64_t rem = rc;
+            for (int32_t i = rowsAxisIdx_ - 1; i >= 0; --i) {
+                if (i % 2 == 1) {
+                    const int64_t sz = axisShape_[i];
+                    const int64_t ix = rem % sz;
+                    rem /= sz;
+                    gmOffR += ix * axisStride_[i];
+                }
+            }
+            const int64_t base = gmOffA + gmOffR;
+            AccumulateRows(acc, base, rowStart, rowEnd, a0c, curA0);
+        }
+    }
+
+    // 本核 rows 段 [rowStart,rowEnd) 连续大 burst 载入本 A0-chunk 切片 + (Cast) 平方累加到 acc(fp32)。
+    // 内块布局 [A0,R0,A1,R1]，A0 是最外轴 → 切片 [a0c:a0c+curA0] 在每 row 内连续，
+    //   起点 = a0c*sliceStride，长度 = curA0*sliceStride（sliceStride = R0*A1*R1）。
+    __aicore__ inline void AccumulateRows(AscendC::LocalTensor<float>& acc, int64_t base, int64_t rowStart,
+                                          int64_t rowEnd, int64_t a0c, int64_t curA0)
+    {
+        const int64_t sliceStride = szR0_ * szA1_ * szR1_;      // 一个 A0 面的元素数
+        const int64_t chunkSlice = curA0 * sliceStride;         // 本 chunk 切片元素数
+        const int64_t a0Off = a0c * sliceStride;                // chunk 在内块内的起始偏移
+        __ubuf__ float* ap = reinterpret_cast<__ubuf__ float*>(acc.GetPhyAddr());
+        const uint16_t rep = static_cast<uint16_t>((chunkSlice + 63) / 64);
+        // 门控保证 chunkA0==szA0（内块整块）⟹ chunkSlice==innerElems，a0Off==0，相邻 row 在 GM
+        //   完全连续（rowsStride==innerElems）。故一次 rowsPerLoad 个 row = rows*chunkSlice 连续元素，
+        //   直接用 DataCopy 连续大 burst 载入（与 fast-RARA 一致），避免 DataCopyPad 在
+        //   大 blockLen（如 32KB）多 block 下的搬运异常。
+        for (int64_t r = rowStart; r < rowEnd; r += rowsPerLoad_) {
+            int64_t rows = (r + rowsPerLoad_ <= rowEnd) ? rowsPerLoad_ : (rowEnd - r);
+            int64_t n = rows * chunkSlice;
+            auto in = inQ_.AllocTensor<D_T>();
+            DataCopy(in, xGm_[base + r * rowsStride_ + a0Off], static_cast<uint32_t>(n));  // 连续
+            inQ_.EnQue(in);
+            auto din = inQ_.DeQue<D_T>();
+            __ubuf__ D_T* sp = reinterpret_cast<__ubuf__ D_T*>(din.GetPhyAddr());
+            for (int64_t rr = 0; rr < rows; ++rr) {
+                __ubuf__ D_T* s = sp + rr * chunkSlice;
+                __VEC_SCOPE__
+                {
+                    AscendC::Reg::RegTensor<float> xr, ar;
+                    AscendC::Reg::MaskReg m;
+                    uint32_t rem = static_cast<uint32_t>(chunkSlice);
+                    for (uint16_t i = 0; i < rep; ++i) {
+                        int32_t off = static_cast<int32_t>(i) * 64;
+                        m = AscendC::Reg::UpdateMask<float>(rem);
+                        if constexpr (kIsFp32) {
+                            AscendC::Reg::LoadAlign(xr, s + off);
+                        } else { // fp16 / bf16：解包升 fp32
+                            AscendC::Reg::RegTensor<D_T> b16Reg;
+                            AscendC::Reg::LoadAlign<D_T, AscendC::Reg::LoadDist::DIST_UNPACK_B16>(b16Reg, s + off);
+                            AscendC::Reg::Cast<float, D_T, kCastTraitToFp32>(xr, b16Reg, m);
+                        }
+                        AscendC::Reg::Mul(xr, xr, xr, m);
+                        AscendC::Reg::LoadAlign(ar, ap + off);
+                        AscendC::Reg::Add(ar, ar, xr, m);
+                        AscendC::Reg::StoreAlign(ap + off, ar, m);
+                    }
+                }
+            }
+            inQ_.FreeTensor(din);
+        }
+    }
+
+    // 内块 chunk 切片 acc[cA0,R0,A1,R1] → part[a0c+cA0, A1]（两步 AR 规约，全 fp32）
+    __aicore__ inline void ReduceInnerBlock(AscendC::LocalTensor<float>& acc, AscendC::LocalTensor<float>& part,
+                                            int64_t a0c, int64_t curA0)
+    {
+        auto tmp = tmpBuf_.Get<uint8_t>();
+        auto red = redBuf_.Get<float>(); // [cA0,R0,A1]
+        // step1: AR 规约最内 R1：src[cA0*R0*A1, R1] → dst[cA0*R0*A1]
+        {
+            uint32_t sh[2] = {static_cast<uint32_t>(curA0 * szR0_ * szA1_), static_cast<uint32_t>(szR1_)};
+            ReduceSum<float, Pattern::Reduce::AR, false>(red, acc, tmp, sh, false);
+        }
+        AscendC::PipeBarrier<PIPE_ALL>();
+        // step2: red[cA0,R0,A1] → part[(a0c+a0),A1]，逐 (a0,a1) 沿 R0 标量累加。
+        //   不用 adv_api ReduceSum：其 AR 规约在 dimR==vlSize(64) 边界处结果偏大（实测 szR0=64
+        //   的 6 轴 case SS 高估 ~4.5%）。step2 非 MTE2 热点（每核每 A0-chunk 仅一次，
+        //   curA0*szA1*szR0 次标量加），标量规约既正确又开销可忽略。
+        __ubuf__ float* redp = reinterpret_cast<__ubuf__ float*>(red.GetPhyAddr());
+        __ubuf__ float* partp = reinterpret_cast<__ubuf__ float*>(part.GetPhyAddr());
+        for (int64_t a1 = 0; a1 < szA1_; ++a1) {
+            for (int64_t a0 = 0; a0 < curA0; ++a0) {
+                float s = 0.0f;
+                for (int64_t r0 = 0; r0 < szR0_; ++r0) {
+                    s += redp[a0 * szR0_ * szA1_ + r0 * szA1_ + a1];
+                }
+                partp[(a0c + a0) * szA1_ + a1] = s;
+            }
+        }
+        AscendC::PipeBarrier<PIPE_ALL>();
+    }
+
+    // coresPerGroup==1：直接 sqrt(part[outLanes]) → (Cast→D_T) → yGm[g*outLanes]，无 workspace。
+    __aicore__ inline void WriteOutDirect(AscendC::LocalTensor<float>& part, int64_t g)
+    {
+        AscendC::PipeBarrier<PIPE_ALL>();
+        auto oq = outQ_.AllocTensor<D_T>();
+        __ubuf__ float* pp = reinterpret_cast<__ubuf__ float*>(part.GetPhyAddr());
+        __ubuf__ D_T* oqp = reinterpret_cast<__ubuf__ D_T*>(oq.GetPhyAddr());
+        const uint16_t rep = static_cast<uint16_t>((outLanes_ + 63) / 64);
+        __VEC_SCOPE__
+        {
+            AscendC::Reg::RegTensor<float> v;
+            AscendC::Reg::MaskReg m;
+            uint32_t rem = static_cast<uint32_t>(outLanes_);
+            for (uint16_t i = 0; i < rep; ++i) {
+                int32_t off = static_cast<int32_t>(i) * 64;
+                m = AscendC::Reg::UpdateMask<float>(rem);
+                AscendC::Reg::LoadAlign(v, pp + off);
+                AscendC::Reg::Sqrt(v, v, m);
+                if constexpr (kIsFp32) {
+                    AscendC::Reg::StoreAlign(oqp + off, v, m);
+                } else {
+                    AscendC::Reg::RegTensor<D_T> b16Reg;
+                    AscendC::Reg::Cast<D_T, float, kCastTraitFromFp32>(b16Reg, v, m);
+                    AscendC::Reg::StoreAlign<D_T, AscendC::Reg::StoreDist::DIST_PACK_B32>(oqp + off, b16Reg, m);
+                }
+            }
+        }
+        outQ_.EnQue(oq);
+        auto oqd = outQ_.DeQue<D_T>();
+        DataCopyExtParams op;
+        op.blockLen = static_cast<uint32_t>(outLanes_ * sizeof(D_T));
+        op.blockCount = 1;
+        op.srcStride = 0;
+        op.dstStride = 0;
+        DataCopyPad(yGm_[g * outLanes_], oqd, op);
+        outQ_.FreeTensor(oqd);
+    }
+
+    __aicore__ inline void WritePartToWorkspace(AscendC::LocalTensor<float>& part, int64_t g, int64_t c)
+    {
+        int64_t wsoff = (g * coresPerGroup_ + c) * outLanes_;
+        AscendC::PipeBarrier<PIPE_ALL>();
+        DataCopyExtParams ep;
+        ep.blockLen = static_cast<uint32_t>(outLanes_ * sizeof(float));
+        ep.blockCount = 1;
+        ep.srcStride = 0;
+        ep.dstStride = 0;
+        DataCopyPad(wsGm_[wsoff], part, ep);
+        AscendC::PipeBarrier<PIPE_ALL>();
+    }
+
+    __aicore__ inline void Phase2(int64_t g)
+    {
+        DataCopyExtParams ip;
+        ip.blockLen = static_cast<uint32_t>(outLanes_ * sizeof(float));
+        ip.blockCount = static_cast<uint16_t>(coresPerGroup_);
+        ip.srcStride = 0;
+        ip.dstStride = 0;
+        DataCopyPadExtParams<float> pad{false, 0, 0, 0.0f};
+        auto p2q = wsInQ_.AllocTensor<float>();
+        DataCopyPad(p2q, wsGm_[g * coresPerGroup_ * outLanes_], ip, pad);
+        wsInQ_.EnQue(p2q);
+        auto p2d = wsInQ_.DeQue<float>();
+        auto outb = redBuf_.Get<float>();
+        __ubuf__ float* pp = reinterpret_cast<__ubuf__ float*>(p2d.GetPhyAddr());
+        __ubuf__ float* ob = reinterpret_cast<__ubuf__ float*>(outb.GetPhyAddr());
+        const uint16_t rep = static_cast<uint16_t>((outLanes_ + 63) / 64);
+        __VEC_SCOPE__
+        {
+            AscendC::Reg::RegTensor<float> s, t;
+            AscendC::Reg::MaskReg m;
+            uint32_t rem = static_cast<uint32_t>(outLanes_);
+            for (uint16_t i = 0; i < rep; ++i) {
+                int32_t off = static_cast<int32_t>(i) * 64;
+                uint32_t r2 = rem;
+                m = AscendC::Reg::UpdateMask<float>(r2);
+                AscendC::Reg::LoadAlign(s, pp + off);
+                for (uint16_t k = 1; k < static_cast<uint16_t>(coresPerGroup_); ++k) {
+                    AscendC::Reg::LoadAlign(t, pp + static_cast<int32_t>(k) * static_cast<int32_t>(outLanes_) + off);
+                    AscendC::Reg::Add(s, s, t, m);
+                }
+                AscendC::Reg::Sqrt(s, s, m);
+                AscendC::Reg::StoreAlign(ob + off, s, m);
+                rem -= (rem >= 64) ? 64 : rem;
+            }
+        }
+        wsInQ_.FreeTensor(p2d);
+        AscendC::PipeBarrier<PIPE_ALL>();
+        auto oq = outQ_.AllocTensor<D_T>();
+        __ubuf__ D_T* oqp = reinterpret_cast<__ubuf__ D_T*>(oq.GetPhyAddr());
+        __ubuf__ float* obs = reinterpret_cast<__ubuf__ float*>(outb.GetPhyAddr());
+        // outb 是 VECCALC 常驻 buf；用 VF 拷到 outQ（DIST 直通/PACK）避免标量搬运可见性问题
+        {
+            const uint16_t rep2 = static_cast<uint16_t>((outLanes_ + 63) / 64);
+            __VEC_SCOPE__
+            {
+                AscendC::Reg::RegTensor<float> v;
+                AscendC::Reg::MaskReg m;
+                uint32_t rem = static_cast<uint32_t>(outLanes_);
+                for (uint16_t i = 0; i < rep2; ++i) {
+                    int32_t off = static_cast<int32_t>(i) * 64;
+                    m = AscendC::Reg::UpdateMask<float>(rem);
+                    AscendC::Reg::LoadAlign(v, obs + off);
+                    if constexpr (kIsFp32) {
+                        AscendC::Reg::StoreAlign(oqp + off, v, m);
+                    } else { // fp16 / bf16：Cast + 打包存回
+                        AscendC::Reg::RegTensor<D_T> b16Reg;
+                        AscendC::Reg::Cast<D_T, float, kCastTraitFromFp32>(b16Reg, v, m);
+                        AscendC::Reg::StoreAlign<D_T, AscendC::Reg::StoreDist::DIST_PACK_B32>(oqp + off, b16Reg, m);
+                    }
+                }
+            }
+        }
+        outQ_.EnQue(oq);
+        auto oqd = outQ_.DeQue<D_T>();
+        DataCopyExtParams op;
+        op.blockLen = static_cast<uint32_t>(outLanes_ * sizeof(D_T));
+        op.blockCount = 1;
+        op.srcStride = 0;
+        op.dstStride = 0;
+        DataCopyPad(yGm_[g * outLanes_], oqd, op);
+        outQ_.FreeTensor(oqd);
+    }
+
+    // tilingdata 镜像
+    int32_t axisNum_ = 0;
+    int64_t axisShape_[MAX_PATTERN_RANK] = {0};
+    int64_t axisStride_[MAX_PATTERN_RANK] = {0};
+    int32_t S_ = 0;
+    int64_t groupCnt_ = 0;
+    int64_t coresPerGroup_ = 0;
+    int32_t rowsAxisIdx_ = 0;
+    int64_t rowsPerLoad_ = 0;
+    int64_t usedCoreNum_ = 0;
+
+    int64_t szA0_ = 0, szR0_ = 0, szA1_ = 0, szR1_ = 0;
+    int64_t innerElems_ = 0, outLanes_ = 0, rowsSize_ = 0, rowsStride_ = 0;
+    int64_t chunkA0_ = 0, chunkElems_ = 0;
+
+    GlobalTensor<D_T> xGm_, yGm_;
+    GlobalTensor<float> wsGm_;
+    TPipe pipe_;
+    TQue<QuePosition::VECIN, 2> inQ_;   // D_T 输入（Phase1）
+    TQue<QuePosition::VECIN, 1> wsInQ_; // fp32 workspace 读回（Phase2）
+    TQue<QuePosition::VECOUT, 1> outQ_; // D_T 输出（Phase2）
+    TBuf<QuePosition::VECCALC> accBuf_, tmpBuf_, redBuf_, partBuf_;
+
+    // adv_api ReduceSum 以整 VL（64 float）粒度做 LoadAlign/StoreUnAlign，会在源/目的末尾
+    //   多读/多写最多一个 VL。故所有参与 ReduceSum 的 UB buffer 末尾各留 1 个 VL 余量，
+    //   避免越界写入相邻 buffer（否则 UB 布局一变结果就变，表现为随 tmp 尺寸漂移的错误）。
+    static constexpr int64_t kPadElems = 64;
+};
+
+} // namespace NsEuclideanNorm
+
+#endif // OPS_NORM_EUCLIDEAN_NORM_INTERLEAVED_CONTIGUOUS_TAILR_H_

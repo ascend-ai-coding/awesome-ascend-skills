@@ -1,0 +1,121 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "代码格式检查与修复流程",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请介绍 tilelang-review 技能的核心工作流：代码格式检查和修复的顺序是什么？检查和修复为什么要分离？需要用到哪些工具？不需要执行任何工具调用。",
+      "expected_output": "回复应说明代码格式检查和修复的工作流程：先运行检查工具生成报告，再询问用户是否执行修复，只有用户确认后才进行修复。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "检查和修复分离原则",
+      "config": {
+        "max_tokens": 80000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "代码格式检查的核心原则是什么？为什么检查阶段不能自动修复？",
+      "expected_output": "回复应说明核心原则是\"检查和修复分离\"：检查阶段只运行检查脚本生成报告，不修改任何文件。修复前必须用醒目方式询问用户，经用户明确同意后才执行修复。这是为了防止未授权的代码修改，保证一致性，让用户了解所有问题后再决定是否修复。AskUserQuestion 工具的使用必须严格遵循固定格式，不能私自添加额外选项。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "任何检查前先确定范围",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "用户只说“帮我 lint”，还没指定范围。能否直接扫描全仓？修改文件和全部文件分别怎样传参？",
+      "expected_output": "回复应先询问仅修改文件或全部文件，推荐仅修改文件。仅修改文件通过 git status --porcelain 获取已修改、暂存和未跟踪文件，脚本不带 --all；全部文件才传 --all。未确认前不能默认全仓扫描。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "缺少格式工具可安装但仍不得自动修复",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "ruff 和 clang-format 都没安装。自动安装工具是否也授权安装后立即格式化代码？",
+      "expected_output": "回复应说明可以按技能自动安装缺失的 ruff/clang-format，然后仅运行 check-python.sh/check-cpp.sh 生成 JSON 结果和报告；安装工具不等于授权改代码，仍需单独醒目询问用户是否修复。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "修复确认必须保持固定二选一",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text",
+        "timeout": 1800
+      },
+      "prompt": "格式问题同时含 Python 和 C++，修复确认时能否提供“只修 Python”“只修 C++”两个额外选项？",
+      "expected_output": "1. 回复应说明修复确认必须严格只问“是否进行代码格式修复？”，只提供“是 / 同意 / Y - 执行自动修复”与“否 / 拒绝 / N - 跳过修复”两个选项，不得私自添加“仅修复 Python”“仅修复 C++”等语言分支选项或修改选项描述。\n2. 回复应指出若用户需要单独修复 Python 或 C++，可在选择“否”后手动执行对应脚本（bash ./scripts/fix-python.sh 或 bash ./scripts/fix-cpp.sh --all）。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "无变更或工具失败也必须生成真实报告",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "仅修改文件模式没有检测到 Python/C++ 变更，是否可以直接结束而不写报告？",
+      "expected_output": "1. 回复应说明不能直接结束：所有场景都必须生成报告到 .agents/reports/format-report-{YYYYMMDD_HHMMSS}.md，包括无变更文件、有变更无问题和工具安装失败。\n2. 回复应指出“无变更文件”场景的报告内容为“未检测到变更文件（Python/C++），跳过检查”（检查摘要全 0），而不是跳过报告。\n3. 回复应说明结束前必须检查报告是否生成（如 ls -la .agents/reports/format-report-*.md），未生成时重新生成对应报告，并禁止在报告未生成时输出虚假路径。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "修复沿用检查范围并追加验证证据",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "用户同意修复，之前检查范围是全部文件。修复后报告需要怎样更新？",
+      "expected_output": "回复应给 fix-python.sh --all 和 fix-cpp.sh --all，保持与检查阶段相同范围；随后重跑 lint/format check，向原报告追加逐文件修复前后、命令与验证结果的“修复结果”章节，而不是覆盖初始问题报告。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 8,
+      "prompt": "当前平台为 Ascend950，请检查我提供的 src/example.py 的代码格式，不要修改文件。先说明需要读取的技能正文与检查范围。",
+      "expected_output": "读取 tilelang-review/Ascend950/instructions.md 和 workflows/file-review.md，只检视用户指定的 src/example.py；按阶段完成代码概要、计划、格式与适用条例检视、结果完整性检查和真实报告生成。skill_base 指向 Ascend950 分支，产物默认位于用户项目的 operators/<检视标识>/；不加载其他平台，不修改源码，格式修复须报告完成后用户明确同意。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 9,
+      "prompt": "Ascend950，请 review 远程 PR #123，我没有提供本地文件。",
+      "expected_output": "当前只支持本地文件检视，先取得可确定的本地文件；不声称已获得 PR 源码，不调用不存在的 PR workflow，也不自行扩大到整个仓库。",
+      "files": [],
+      "expectations": []
+    }
+  ],
+  "skill_name": "tilelang-review"
+}

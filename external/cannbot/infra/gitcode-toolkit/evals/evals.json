@@ -1,0 +1,240 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "GitCode API Token 获取方式",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请加载并使用 gitcode-toolkit 技能回答：我需要在自动化脚本中调用 GitCode API，按该技能的 Token 配置约定，access_token 的获取优先级是什么？有哪几种传递写法？创建 Issue 时对 token 权限有什么最低要求？",
+      "expected_output": "1. 回复应说明 token 获取优先级：用户直接在消息中提供 → 环境变量 GITCODE_TOKEN → 询问用户。\n2. 回复应提及两种认证写法：PRIVATE-TOKEN header 方式与 URL 的 access_token 参数方式。\n3. 回复应说明 token 需至少 reporter 以上权限才能创建 Issue。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "从 fork 仓库创建 PR 的完整流程",
+      "config": {
+        "max_tokens": 150000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 180000,
+          "glm-5": 160000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我们有一个 fork 仓库 hello_simida/cannbot-skills，现在想往上游 cann/cannbot-skills 的 master 分支提 PR。请问完整的操作流程是什么？涉及哪些 git 命令和 API 调用？",
+      "expected_output": "回复应说明从 fork 仓库创建 PR 到上游的完整流程。关键步骤包括：获取分支信息和 commit 历史、推送分支到远程、调用 GitCode API 创建 PR（POST /api/v5/repos/{owner}/{repo}/pulls，head 参数格式为 {username}:{branch}）。应包含 git push、git remote 等核心命令及 PR 模板的结构。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "GitCode PR 分支检出与 diff",
+      "config": {
+        "max_tokens": 120000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 140000,
+          "glm-5": 130000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我需要审查一个 PR（https://gitcode.com/cann/ops-math/merge_requests/1564），如何拉取这个 PR 的代码到本地？如何查看 PR 相比 master 的变更？",
+      "expected_output": "回复应说明 PR 分支的检出方法：通过 git fetch 拉取 PR 分支后再切换。应说明如何对比 PR 与目标分支的变更差异，包括查看文件变更列表和具体 diff 内容。应包含 git fetch、git diff 等命令的使用方式。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 4,
+      "title": "Git URL 格式识别",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "GitCode 上 PR 和 Issue 的 URL 格式是什么样的？如何从 URL 中提取项目路径（owner/repo）？",
+      "expected_output": "回复应说明 GitCode 的 URL 格式：\n- PR 格式：/pull/{n}、/pulls/{n}、/merge_requests/{n}\n- Issue 格式：/issues/{n}\n应说明从 URL 提取项目路径的方法：sed 正则提取 gitcode.com/{owner}/{repo} 部分，以及克隆 URL（https://gitcode.com/{owner}/{repo}.git）和 API URL 的格式。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 5,
+      "title": "Issue 创建流程与模板",
+      "config": {
+        "max_tokens": 120000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 140000,
+          "glm-5": 130000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我需要通过 API 在 cann/ops-math 仓库创建一个 Bug Report Issue，请问完整的操作流程是什么？API 参数需要注意什么？",
+      "expected_output": "回复应说明通过 GitCode API 或 MCP 工具创建 Issue 的方法和流程，包括 API 参数（title、body、labels）和注意事项。应提及创建 Issue 所需的权限等级和 labels 参数的特殊要求（字符串格式而非 JSON 数组）。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 6,
+      "title": "环境预检流程",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "GitCode 协作类 skill 在执行前需要做哪些环境检查？检查顺序是什么？",
+      "expected_output": "回复应说明 GitCode 协作类 skill 在执行前需要做的环境检查，包括但不限于：Token 配置检查、Git 环境检查、临时目录可用性等。应说明检查失败时的处理方式。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 7,
+      "title": "正向看护-多 GitCode skill 环境下正确触发",
+      "config": {
+        "max_tokens": 120000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 140000,
+          "glm-5": 130000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "distractor_skills": [
+          "gitcode-issue-gen",
+          "gitcode-pr-handler",
+          "gitcode-issue-handler",
+          "cannbot-skill-reviewer"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我想了解 GitCode 上 PR 的完整创建流程：从 fork 仓库推送到上游仓库的全部步骤，包括 git 操作和 API 调用。请参考 gitcode-toolkit 内部参考 skill 来回答。",
+      "expected_output": "回复应基于 gitcode-toolkit 的 PR 创建工作流给出完整指导，涵盖 8 个步骤：获取信息、获取 PR 模板、分析填充、用户确认、校验身份、推送分支、API 创建、记录日志。即使在多个 GitCode skill 同时可用的环境下，也应正确激活 gitcode-toolkit skill 来提供参考信息。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 8,
+      "title": "GitCode 外部写操作的精确授权",
+      "config": {
+        "max_tokens": 120000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 140000,
+          "glm-5": 130000
+        },
+        "eval_mode": "text"
+      },
+      "prompt": "一个 GitCode 协作 skill 已经拿到 Token，用户也笼统地说过“帮我处理这个 PR”。它现在想 PATCH PR 描述并 push 一个新 commit，这些条件是否已经足够授权？",
+      "expected_output": "1. 应说明 Token 只表示具备接口凭据，宽泛任务描述（如“帮我处理这个 PR”）不能替代写前对本次操作的精确认可。\n2. 应说明 PATCH PR 描述与 push 新 commit 属于对外写操作，写前须向用户展示并确认将要写入的具体内容（新的 PR 描述文本、将要提交的改动与 commit message）后再执行。\n3. 应说明写前确认须绑定精确目标（仓库/PR/remote/分支）、操作类型与将要写入的完整内容或 commit SHA，运行平台的工具审批同样不能替代；目标、内容或操作发生实质变化时原授权失效，应停在写操作前并保留已完成的只读分析。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 9,
+      "title": "Issue 评论幂等检查与写后回查",
+      "config": {
+        "max_tokens": 120000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 140000,
+          "glm-5": 130000
+        },
+        "eval_mode": "text"
+      },
+      "prompt": "我要向一个 GitCode Issue 发送已经获得用户确认的长评论。如何避免重复评论，并确认 POST 返回成功后平台上的内容真的完整写入了？",
+      "expected_output": "应在 POST 前 GET 近期评论并以完整正文做幂等比对，已存在相同内容时复用而不重复提交。POST 后必须再 GET，优先用评论 ID，否则结合当前用户、时间窗和完整正文回查；结果未知时先重新 GET，不立即再 POST。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 10,
+      "title": "push 后的远程 SHA 验证",
+      "config": {
+        "max_tokens": 120000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 140000,
+          "glm-5": 130000
+        },
+        "eval_mode": "text"
+      },
+      "prompt": "只说明流程，不执行 Git 操作：已获确认的提交通过 git push -u origin feature-x 推送，命令返回成功。请依据 gitcode-toolkit 的 PR 创建流程，说明能否据此认定远程分支已就绪、还需要哪些只读验证、满足什么条件才算完成，以及验证失败或不匹配时如何处理。",
+      "expected_output": "1. 不能仅凭 push 退出码认定远程分支已就绪；应使用 git ls-remote --heads origin feature-x 或等价的只读查询核对指定远端分支。2. 校验远端分支的 SHA 与本次已确认的本地 commit SHA 一致，不能只确认分支存在。3. 回查失败、结果为空、分支或 SHA 不匹配时不得标记完成或继续创建 PR。4. 沿用已确认的 remote 和分支，不得为绕过验证失败而自动改换目标。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 11,
+      "title": "GitCode API 429 有界限流恢复",
+      "config": {
+        "max_tokens": 120000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 140000,
+          "glm-5": 130000
+        },
+        "eval_mode": "text"
+      },
+      "prompt": "GitCode API 返回 429，响应里给了 Retry-After。为了尽快完成协作任务，是否应该让每个调用方各自立即重试，直到请求成功？",
+      "expected_output": "1. 回复应说明收到 429 时应遵守响应中的 Retry-After 或服务端 reset 窗口，等到该窗口后再重试，而不是忽略该信号立即重试。\n2. 回复应指出不应让每个调用方各自并发无界重试，而应设置共享 cooldown（统一 pace 控制）来协调调用方，避免惊群和无效重试。\n3. 回复应说明重试受调用方预算约束：通用 API 参考为总计最多 3 次 attempt，超出预算时应返回限流状态而不是继续重试。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 12,
+      "title": "浅克隆下 merge-base 缺失的恢复",
+      "config": {
+        "max_tokens": 120000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 140000,
+          "glm-5": 130000
+        },
+        "eval_mode": "text"
+      },
+      "prompt": "用浅克隆拉取 GitCode PR 后，git merge-base base_branch pr_2170 找不到共同祖先。可以直接用 base_branch 与 PR 分支做 double-dot diff 代替吗？",
+      "expected_output": "1. 应指出 git diff base_branch pr_2170 这类 double-dot diff 不需要共同祖先，但它给出的是 base 分支 tip 与 PR head 的净差异、会夹带 base 分支自身的新提交，不能当作 PR 的真实变更。\n2. 应给出恢复共同祖先的优先步骤：先 git fetch --deepen=500 加深历史并重算 git merge-base base_branch pr_2170，仍找不到时再退回全量克隆。\n3. 得到共同祖先后应使用 git diff $MERGE_BASE pr_2170 或等价的 triple-dot git diff base_branch...pr_2170 查看 PR 变更。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "gitcode-toolkit"
+}

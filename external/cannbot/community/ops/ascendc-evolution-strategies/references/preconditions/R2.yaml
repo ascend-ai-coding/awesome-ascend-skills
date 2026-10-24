@@ -1,0 +1,19 @@
+strategy_id: R2
+description: "R2: 寄存器复用"
+
+strategy_meta:
+  id: "R2"
+  slug: "R2_register_reuse"
+  title: "R2: 寄存器复用"
+  bottlenecks: []
+  op_families: [datapath]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L1"
+  deprecated: true
+  deprecated_reason: "Uses fictional RegTensor API. Register allocation is compiler-managed, not a manual kernel optimization strategy."
+  has_preconditions: false
+  has_playbook: false
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/r2_register_reuse.md"

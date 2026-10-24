@@ -1,0 +1,89 @@
+/**
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * CANN Open Software License Agreement Version 2.0. THIS SOFTWARE IS PROVIDED "AS IS".
+ */
+
+/*!
+ * \file cum_oneway_sklansky.template  (使用时改名为 cum_oneway_sklansky.h)
+ * \brief One-way Sklansky UB 内并行前缀扫描（arch35 / dav-3510）。
+ *        提取自 cumsum op_kernel/arch35/cumsum_base/cumsum_oneway_sklansky.h。
+ *
+ * 适用：单行扫描轴 R 很长（串行延迟成为瓶颈），R 全量入 UB。
+ * 思想：把 R 个前缀节点做成 ceil(log2(R)) 层；每层对整行向量载荷（alignN×mFold 元素）
+ *       做一次结合律 combine（Cumsum=Add）。深度 O(log R) 而非 O(R) 串行。
+ *
+ * combine 替换指引：
+ *   Cumsum  -> Add(dst, anchor, target)
+ *   Cumprod -> Mul(dst, anchor, target)
+ *   Cummax/Cummin（无索引变体）-> Max/Min(dst, anchor, target)
+ *   带索引（Cummin/Cummax argmin/argmax）-> 用 cum_streaming_scan（Sklansky 不直接适配索引传播）
+ *
+ * 布局：UB 内驻留 [rFactor, alignN(×mFold)] 的行主序数据（已 Cast 升 fp32）。
+ */
+#ifndef CUM_ONEWAY_SKLANSKY_H
+#define CUM_ONEWAY_SKLANSKY_H
+
+#include "scan_base.h"
+
+namespace ScanOps {
+using namespace AscendC;
+
+// P：促进类型（float 或 int32_t）。dataUb：UB 内 [rFactor, nAddFactor] 行主序，nAddFactor=alignN×mFold。
+template <typename P>
+class CumOnewaySklansky {
+public:
+    __aicore__ inline CumOnewaySklansky() {}
+
+    // rFactor：本次扫描的 R 行数；nAddFactor：每行向量宽（alignN×mFold，按 VL 对齐）。
+    __aicore__ inline void BaseProcess(const LocalTensor<P>& dataUb, int32_t rFactor, int32_t nAddFactor) {
+        int32_t levels = CalLog2(rFactor);      // ceil(log2)
+        for (int32_t k = 0; k < levels; k++) {
+            ComputeLevel(dataUb, k, rFactor, nAddFactor);
+        }
+    }
+
+private:
+    // 第 k 层：半组宽=2^k、组宽=2^(k+1)。正向锚点=组内第 2^k-1 行，combine 到其后 2^k 行。
+    __aicore__ inline void ComputeLevel(const LocalTensor<P>& dataUb, int32_t k,
+                                        int32_t rFactor, int32_t nAddFactor) {
+        int32_t half = CalPow2(k);              // 2^k
+        int32_t group = CalPow2(k + 1);         // 2^(k+1)
+        int32_t groups = rFactor / group;       // 完整组数
+        __ubuf__ P* base = (__ubuf__ P*)dataUb.GetPhyAddr();
+        // 每个完整组：锚点行 = groupStart + half - 1；目标行 = 锚点后 half 行
+        for (int32_t g = 0; g < groups; g++) {
+            int32_t anchorRow = g * group + half - 1;
+            for (int32_t t = 0; t < half; t++) {
+                int32_t targetRow = anchorRow + 1 + t;
+                CombineRow(base + (int64_t)anchorRow * nAddFactor,
+                           base + (int64_t)targetRow * nAddFactor, nAddFactor);
+            }
+        }
+        // 尾组沿用同一锚点；只有存在右半组时才需要合并。
+        int32_t tailAnchor = groups * group + half - 1;
+        for (int32_t targetRow = tailAnchor + 1; targetRow < rFactor; targetRow++) {
+            CombineRow(base + (int64_t)tailAnchor * nAddFactor,
+                       base + (int64_t)targetRow * nAddFactor, nAddFactor);
+        }
+    }
+
+    // 整行向量 combine：target = combine(anchor, target)。Cumsum=Add。
+    __aicore__ inline void CombineRow(__ubuf__ P* anchor, __ubuf__ P* target, int32_t nAddFactor) {
+        uint16_t loops = static_cast<uint16_t>(CeilDiv(nAddFactor, VL_FP32));
+        __VEC_SCOPE__ {
+            AscendC::Reg::RegTensor<P> a, b;
+            AscendC::Reg::MaskReg mask;
+            uint32_t cnt = nAddFactor;
+            for (uint16_t j = 0; j < loops; j++) {
+                mask = AscendC::Reg::UpdateMask<uint32_t>(cnt);
+                AscendC::Reg::LoadAlign(a, anchor + j * VL_FP32);
+                AscendC::Reg::LoadAlign(b, target + j * VL_FP32);
+                AscendC::Reg::Add(b, a, b, mask);   // ← combine 替换点
+                AscendC::Reg::StoreAlign(target + j * VL_FP32, b, mask);
+            }
+        }
+    }
+};
+
+}  // namespace ScanOps
+#endif  // CUM_ONEWAY_SKLANSKY_H

@@ -1,0 +1,23 @@
+/*!
+ * \file conv2d_launch.h
+ * \brief Conv2D launch 声明（g++ 可见）。对应 templates/conv2d_cube.md / usage_guide.md。
+ *
+ * ── 集成说明：去掉 .template 后缀落地为 conv2d_launch.h ────────────────────────────────
+ */
+
+#ifndef CONV2D_LAUNCH_H
+#define CONV2D_LAUNCH_H
+
+#include <cstdint>
+
+#include "conv2d_tiling.h"
+
+#ifndef GM_ADDR
+#define GM_ADDR void*
+#endif
+
+// Runtime tiling launch: blockDim = tiling.batchDim * tiling.mDim * tiling.nDim.
+extern "C" void launch_conv2d(GM_ADDR x, GM_ADDR weight, GM_ADDR bias, GM_ADDR y,
+                              const Conv2DCase& tiling, void* stream);
+
+#endif

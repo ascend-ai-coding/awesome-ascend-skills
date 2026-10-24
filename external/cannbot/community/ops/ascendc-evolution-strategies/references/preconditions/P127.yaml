@@ -1,0 +1,41 @@
+strategy_id: P127
+description: Conversion 模式特化路由适用性检查 — 算子为 layout-transform 类（元素值不变只变位置/布局），且当前实现缺乏模式特化分发（单一通用 gather/逐元素索引主路径）。
+
+strategy_meta:
+  id: "P127"
+  slug: "P127_conversion_pattern_specialization_routing"
+  title: "P127: Conversion 模式特化路由（Transpose/Permute 禁止通用 gather 主路径）"
+  bottlenecks: [mte2_stall, scalar_compute, compute_bound]
+  op_families: [special, elementwise]
+  conflicts_with: []
+  synergizes_with: [P26, P114, P7, P1]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p127_conversion_pattern_specialization_routing.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p127_conversion_pattern_specialization_routing.md"
+  playbook_slug: "P127_conversion_pattern_specialization_routing"
+checks:
+  - id: is_layout_transform
+    type: grep_count
+    pattern: "permute|transpose|Permute|Transpose|Transpose2D|NCHW|NHWC"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "无 layout-transform 语义 → P127 不适用。"
+
+  - id: has_generic_gather_mainpath
+    type: grep_count
+    pattern: "GetValue|SetValue"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到逐元素索引搬运 → 可能已是 tile-based 特化实现，确认后再决定。"
+
+  - id: no_pattern_dispatch_yet
+    type: grep_count
+    pattern: "transpose_2d|batch_transpose|swap_adjacent|Transpose2D|BatchTranspose"
+    files: [kernel, header]
+    expected: "== 0"
+    fail_msg: "已存在模式特化分发 → P127 主要价值已发挥，转向 P26/P114 单点优化。"

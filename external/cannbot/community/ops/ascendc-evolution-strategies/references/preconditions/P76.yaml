@@ -1,0 +1,40 @@
+strategy_id: P76
+
+strategy_meta:
+  id: "P76"
+  slug: "P76_v_template_kv_premerge"
+  title: "P76: V_TEMPLATE KV 预合并 Workspace (V_TEMPLATE KV Pre-Merge Workspace)"
+  bottlenecks: [mte2_stall, undersize_transfer]
+  op_families: [flash_attention]
+  conflicts_with: []
+  synergizes_with: [P18, P60]
+  requires: []
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p76_v_template_kv_premerge.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p76_v_template_kv_premerge.md"
+  playbook_slug: "P76_v_template_kv_premerge"
+checks:
+  - id: has_sparse
+    type: grep_count
+    pattern: "sparse|Sparse|topk|TopK|attention|Attention"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 sparse/topK attention 相关逻辑 → 无 V_TEMPLATE 需求，不适用 P76。"
+
+  - id: has_pageattention
+    type: grep_count
+    pattern: "PageAttention|PA|block.*table|blockTable"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 PageAttention/block table → 无离散 KV 预合并场景，不适用 P76。"
+
+  - id: has_mergekv
+    type: grep_count
+    pattern: "MergeKv|V_TEMPLATE|C_TEMPLATE|预合并"
+    files: [kernel]
+    expected: ">= 0"
+    fail_msg: "已存在 KV 预合并逻辑 → 可能冗余，优先验证现有策略效果。"
