@@ -1,0 +1,48 @@
+strategy_id: P94
+description: 标量归约向量化适用性检查 — 必须存在标量归约循环或 raw pointer 累加，且无已有 ReduceSum/WholeReduceSum
+
+strategy_meta:
+  id: "P94"
+  slug: "P94_scalar_reduction_to_vector"
+  title: "P94: 标量归约向量化 (Scalar Reduction → Vector Reduce API)"
+  bottlenecks: [scalar_compute, compute_bound]
+  op_families: [reduction, normalization, elementwise, softmax, optimizer]
+  conflicts_with: []
+  synergizes_with: [P67, P68, P69, P84]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p94_scalar_reduction_to_vector.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p94_scalar_reduction_to_vector.md"
+  playbook_slug: "P94_scalar_reduction_to_vector"
+checks:
+  - id: has_scalar_reduction_loop
+    type: grep_count
+    pattern: 'for\s*\([^)]*\+\+[^)]*\).*\{\s*(sum|max_val|min_val|result)\s*[\+\-]?='
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未检测到标量归约循环（sum/max/min 累加）→ P94 无改造对象。考虑 P95 标量逐元素向量化或 P98 混合调度。"
+
+  - id: has_raw_pointer_or_getvalue
+    type: grep_count
+    pattern: 'reinterpret_cast.*GetPhyAddr|\.GetPhyAddr\(\)|GetValue\(.*\)\s*[\+\-]?='
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未检测到 raw pointer 或 GetValue 标量取值 → 当前可能已是向量化实现，P94 不适用。"
+
+  - id: no_existing_reduce_api
+    type: grep_count
+    pattern: '\b(ReduceSum|WholeReduceSum|ReduceMax|ReduceMin)\s*\('
+    files: [kernel, header]
+    expected: "== 0"
+    fail_msg: "算子已使用 ReduceSum/WholeReduceSum/ReduceMax → 标量归约已被向量化，P94 主要价值已发挥。考虑 P68 低延迟归约或 P95 向量链。"
+
+  - id: has_vector_unit
+    type: grep_count
+    pattern: "AI_VECTOR_CORE|TaskType::AI_VECTOR|aiv"
+    files: [all]
+    expected: ">= 1"
+    fail_msg: "未检测到 AIV-only kernel 证据 → P94 面向 Vector 单元标量归约，Cube 主导算子收益有限。"

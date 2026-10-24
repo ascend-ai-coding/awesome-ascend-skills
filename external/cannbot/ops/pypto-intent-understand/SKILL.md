@@ -4,8 +4,8 @@ description: PyPTO 算子需求意图理解。将用户的自然语言算子描�
   sinh 算子'、'实现 GELU'、'参考 PyTorch 的 F.scaled_dot_product_attention'、'根据论文实现算子'、'创建自定义算子'
 original-name: pypto-intent-understand
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-26'
-synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
+synced-date: '2026-10-24'
+synced-commit: ec8a7b0462e3acdd0d1d2f857f1dae652e19f4f2
 license: UNKNOWN
 ---
 
@@ -111,6 +111,7 @@ license: UNKNOWN
 | **Mask 机制** | causal_mask, padding_mask, custom_mask, sliding_window | 注意力/序列处理 | 数据流、内存访问、边界处理 |
 | **在线算法** | online_softmax, online_reduction, streaming_update | Reduction/Softmax | 计算顺序、中间状态 |
 | **量化支持** | int8_quant, fp8_quant, blockwise_quant, dequantize | 量化算子 | 数据类型、缩放因子 |
+| **数据布局/分形格式** | nz_format, nd_format, fractal_z | 量化/矩阵/权重类算子 | kernel 按输入数据给定布局（ND/NZ）消费，NZ 需对齐 |
 | **融合模式** | bias_add, residual_add, activation_fused | 通用 | 算子边界、中间结果复用 |
 | **动态 Shape** | variable_length, ragged_tensor, dynamic_axis | 序列处理/变长输入 | 内存分配、循环展开 |
 | **并行策略** | split_k, split_n, parallel_reduction | 矩阵乘法/Reduction | 并行度、同步开销 |
@@ -368,6 +369,8 @@ license: UNKNOWN
 
 **何时需要算法描述**：当计算涉及分块、循环、在线更新、状态维护等流程性逻辑时，公式只能描述数学语义但无法描述实现策略。此时需要算法描述来说明"怎么算"。典型例子：Flash Attention 的分块计算 + Online Softmax、Scan 类算子的递推过程。
 
+**⛔ 分块大小要区分数据布局与执行切块。** `block_size`（页大小）、量化 scale 分组大小等**数据布局参数**是数据格式/算法结构的一部分，可作常量；而 `S2_TILE`、`Br/Bc` 等**执行切块参数**在数学上与其余取值等价（如 online softmax 分块不变量）、只影响结构与性能，保持为符号变量、不固化 golden 里的具体数值、不标算法常量，取值留给 DESIGN 决定。
+
 **算法描述格式**：使用带编号的伪代码步骤，清晰展示循环结构、分块策略、状态更新等流程。示例：
 
 ```
@@ -442,6 +445,8 @@ Algorithm: Flash Attention (Forward)
 
 模板文件位于: [templates/spec-template.md](templates/spec-template.md)
 
+**生成方式（先复制模板再改）**：先用 `cp templates/spec-template.md <目标>/SPEC.md` 复制模板，再用 `Edit` 逐项替换占位符；不要自由 `Write` 重写，以免漏掉门禁要求的中文章节标题（数学公式 / 输入输出规格 / 精度要求）。
+
 使用时需替换以下占位符:
 - `{operator_name}` — 算子名称
 - `{category}` — 算子分类 (element-wise / reduction / matmul / attention / custom)
@@ -452,10 +457,11 @@ Algorithm: Flash Attention (Forward)
   - `{performance_target}`
   - `{atol}` / `{rtol}`
   - 约定：`axes_list` 必须是 YAML 可解析列表（例如 `['N']` 或 `['N','M']`）
+  - 约定：`supported_dtypes` 仅收录 **P0 输入/输出 tensor 的 dtype 集合**；若存在 REQUIRE.md，必须与 REQUIRE.md front matter 的 `supported_dtypes` 保持一致。权重 buffer 与中间计算 dtype（如量化权重 int8、中间累加 float32）**不得写入**——它们不是对外的输入/输出 dtype，写入会导致 Stage 6 的 OL30 要求测试覆盖这些非 P0 dtype
 - `{feature_name}`, `{need_or_not}`, `{confidence}`, `{impl_note}`, `{priority}` — 关键特性表格行（复杂算子必须）
 - `{algorithm_name}` / `{带编号的伪代码步骤}` — 算法描述（可选，复杂算子需要）
 - `{ASCII数据流图}` — 数据流图
-- `{name}`, `{shape}`, `{dtype}`, `{dynamic_axes}`, `{description}` — 输入输出规格
+- `{name}`, `{shape}`, `{dtype}`, `{layout}`, `{dynamic_axes}`, `{description}` — 输入输出规格（`{layout}` 为该 tensor **用户给定 / golden 产出的实际布局**：ND / NZ；非"必须转 NZ"，kernel 按数据给定布局消费；若为 NZ 须在"说明"列注明对齐要求）
 - `{atol}`, `{rtol}` — 精度要求
 - `{axes_list}`, `{axes_meanings}`, `{axes_ranges}` — 动态轴说明
 - `{zero_handling}`, `{inf_handling}`, `{nan_handling}` — 边界条件处理
@@ -605,6 +611,7 @@ Algorithm: Flash Attention (Forward)
 - [ ] 所有关键特性已标注实现状态（✓ 需要 / ✗ 不需要 / ? 待确认）和优先级
 - [ ] 所有信息已标注置信度（✓ 高 / ⚠ 中 / ❓ 低）
 - [ ] 输入输出 shape、dtype、动态轴已明确
+- [ ] 每个输入/输出 tensor（含权重 buffer）的物理布局/分形格式（按输入数据给定：ND / NZ；NZ 需写明内轴 32B、外轴 16 元素对齐）已在 §5 输入输出规格中显式声明，kernel 与 golden 布局口径一致，未遗漏
 - [ ] 可选参数已列出并标注优先级（P0-P3），P0/P1 已完成四维度分析
 - [ ] P0 和 P1 功能无遗漏（见"功能优先级体系"）
 - [ ] 精度要求、边界条件、动态轴范围已明确或使用默认值

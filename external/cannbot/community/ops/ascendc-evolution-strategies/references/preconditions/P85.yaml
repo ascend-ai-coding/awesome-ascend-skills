@@ -1,0 +1,40 @@
+strategy_id: P85
+
+strategy_meta:
+  id: "P85"
+  slug: "P85_on_chip_buffer_zone_reuse"
+  title: "P85: On-Chip Buffer Zone Reuse (片上 Buffer 分区与分时复用)"
+  bottlenecks: [ub_memory_pressure]
+  op_families: [special]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p85_on_chip_buffer_zone_reuse.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p85_on_chip_buffer_zone_reuse.md"
+  playbook_slug: "P85_on_chip_buffer_zone_reuse"
+checks:
+  - id: has_initbuffer
+    type: grep_count
+    pattern: "InitBuffer|TBuf|workspace|wsLocal|zone"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 Buffer/workspace 分配 → 无分区复用空间，不适用 P85。"
+
+  - id: has_stage
+    type: grep_count
+    pattern: "stage|Stage|阶段|phase|Phase|串行|serial"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到多阶段串行结构 → 无分时复用场景，不适用 P85。"
+
+  - id: has_offset
+    type: grep_count
+    pattern: "offset|Offset|alias|Alias|reuse.*zone|zone.*reuse"
+    files: [kernel]
+    expected: ">= 0"
+    fail_msg: "已存在 zone reuse/alias 逻辑 → 可能冗余，优先验证现有策略效果。"

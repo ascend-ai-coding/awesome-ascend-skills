@@ -1,0 +1,19 @@
+strategy_id: R6
+description: "R6: 低延迟归约"
+
+strategy_meta:
+  id: "R6"
+  slug: "R6_low_latency_reduce"
+  title: "R6: 低延迟归约"
+  bottlenecks: []
+  op_families: [datapath]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L1"
+  deprecated: true
+  deprecated_reason: "Content fully duplicated by P68 (Low-Latency Reduction Instruction Combination). Zero references."
+  has_preconditions: false
+  has_playbook: false
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/r6_low_latency_reduce.md"

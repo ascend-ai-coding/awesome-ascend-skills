@@ -1,0 +1,175 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "并行切分实施流程",
+      "config": {
+        "ascend_platforms": ["A2"],
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "已经定好并行方案，要把模型代码改成多卡并行，整体按什么步骤实施？只讲流程不用写代码。",
+      "expected_output": "回复应给出按 parallel_config 创建通信组→逐模块并行层替换→Embedding/LMHead 并行→YAML 配置→权重处理→验证的实施流程，强调前置依赖已确认的 parallel_config",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "并行线性层替换方式",
+      "config": {
+        "ascend_platforms": ["A2"],
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "TP 切分时模型里的线性层要怎么替换成并行版本？列切和行切分别用什么并行层类？只讲思路。",
+      "expected_output": "1. 回复应说明按切分方向替换为仓库的并行线性层：列切用 `ColumnParallelLinear`，行切用 `RowParallelLinear`。\n2. 回复应按模块通信特征选择切分方向：MLP 升维 / QKV 投影等「输入全量、输出按 rank 摊开」的层用列切，MLP 降维 / Attention 输出投影等「输入部分、输出完整」的层用行切，并说明列切层后接行切层可把两次归约合并为一次。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "权重处理",
+      "config": {
+        "ascend_platforms": ["A2"],
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "并行切分改完代码后，权重还需要做什么处理才能加载？只讲方向。",
+      "expected_output": "回复应说明权重需按并行配置做切分转换，或启用在线切分，使各 rank 加载对应分片",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 4,
+      "title": "前置条件不满足时确认",
+      "config": {
+        "ascend_platforms": ["A2"],
+        "max_tokens": 150000,
+        "timeout": 1800,
+        "eval_mode": "text"
+      },
+      "prompt": "帮我把模型直接改成 8 卡并行。",
+      "expected_output": "回复应说明实施前提是 parallel_config 已由并行策略分析确定并确认，若未确定应先用 model-infer-parallel-analysis 定方案，而不是直接开切",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 5,
+      "title": "正向看护-多 skill 环境下正确触发",
+      "config": {
+        "ascend_platforms": ["A2"],
+        "max_tokens": 150000,
+        "distractor_skills": [
+          "model-infer-parallel-analysis",
+          "model-infer-kvcache",
+          "model-infer-migrator"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "并行配置已经确认好了，现在要把代码切分、建通信组、改 YAML，往哪个方向做？只说方向不用写代码。",
+      "expected_output": "回复应正确激活 model-infer-parallel-impl，给出并行化代码改造方向，即使存在分析、KVCache、迁移等相似 skill 也应选并行实施专项",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 6,
+      "title": "通信组创建与层替换次序",
+      "config": {
+        "ascend_platforms": ["A2"],
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "多卡并行实施时，通信组创建和并行层替换的先后关系是什么？为什么不能先替换层再建通信组？只讲思路。",
+      "expected_output": "回复应说明先按 parallel_config 创建各模块通信组，并行层替换依赖通信组做集合通信，故通信组必须先建，否则层替换无组可用",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 7,
+      "title": "按产物信号选择框架或独立部署",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "parallel_config 已确认，但 dispatch 未写部署模式。模型注册在 support_models.py 时怎么实现通信组；只有自管 runner 且不继承框架基类时又怎么实现？",
+      "expected_output": "回复应将前者判为框架部署，通过 CommManager 按需注册和获取通信组并由框架 launch；后者判为独立部署，在 Runner 中初始化 HCCL、inline ParallelContext、注入 modeling 并用 torchrun 启动，不能混用两套控制流",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 8,
+      "title": "tp_size 等于 1 仍统一使用并行层包装",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "某个模块的 tp_size=1，我是否应保留原生 nn.Linear，而其他模块才换 ParallelLinear？",
+      "expected_output": "回复应说明线性层和 Embedding 仍统一使用对应 ParallelLinear 包装，即使 tp_size=1 也不产生集合通信，以保留统一的 weight_loader、quant_method 和通信上下文契约；只有对应 TP 通信组无需创建",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 9,
+      "title": "MC2 组必须独立物理注册",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "MoE EP 的普通进程组和 fullmesh_v2 MC2 组形状完全相同，我让 CommManager 自动复用同一个 HCCL 物理组可以吗？",
+      "expected_output": "1. 回复应否定「形状完全相同就让 CommManager 自动复用同一 HCCL 物理组」，并指出 MC2 fullmesh_v2 需要独立物理组\n2. 回复应说明 moe_ep_group_mc2 注册时显式传 allow_physical_reuse=False，并按需用 calc_moe_hccl_buffer_size 算出 hccl_buffer_size\n3. 回复应说明取组接口的区别：普通 ProcessGroup 用 comm_manager.get_group(name)，NPU dispatch/combine 需要的 HCCL group name 用 comm_manager.get_group_name(name)",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 10,
+      "title": "TP 加 DP 的 packed Token 通信协议",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "请先加载并使用 model-infer-parallel-impl 技能（读取其 SKILL.md 中「TP+DP 通信模式（attn_tp_size > 1 且 attn_dp_size > 1）」一节，含 references/），再回答：attn_tp_size>1 且 attn_dp_size>1 的 packed TND 模型里，我直接在每层做 AllReduce，并让同一通信组内各 rank 接收不同长度 token，可以吗？请说明 (1) 同一通信组内各 rank 的 token 长度约束；(2) 该 TP+DP 模式下应使用什么通信原语、hidden 在层间的分片布局以及 attention 入口/出口的通信；(3) packed T 如何 pad 与按 rank 切分，framework metadata、cache write、FA 使用哪个长度，以及 AllGather 与 O 投影后如何收尾。",
+      "expected_output": "1. 回复应指出同一 AllReduce 组内各 rank 必须持有等长同序 token（集合通信要求各 rank 等长），不能让同一通信组内各 rank 接收不同长度 token\n2. 回复应指出 attn_tp_size>1 且 attn_dp_size>1 的 TP+DP 模式下不应在每层使用 AllReduce，而应在 attn_tp_group 上用 all_gather_into_tensor 与 reduce_scatter_tensor 配对（layer 间 hidden 保持 [T/tp, H]，attention 入口 AllGather、O 投影后 ReduceScatter）\n3. 回复应指出 packed T 需 pad 到 attn_tp_size 倍数后按 rank 等长切分，且 framework metadata（slot_mapping/actual_seq_lengths_kv）按 T_real 构造、cache write 与 FA 必须 T_real：AllGather 出 [T_padded, H] 后 slice 回 T_real，O 投影后 cat-zeros 补回 [T_padded, H] 再 ReduceScatter",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 11,
+      "title": "MoE EP 分阶段实现与专家权重过滤",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "moe_tp_size=1 的 EP 模型（每 rank 只保存一部分 expert）里，有同事提出两点改动：① Prefill 和 Decode 共用同一套 dispatch/combine；② 每个 rank 加载所有专家权重。这两点在该 skill 的 EP 主路径下成立吗？请分别判断并给出依据。",
+      "expected_output": "1. 回复应指出 EP 主路径下 Prefill 与 Decode 必须使用不同的 routing 路径、不能共用同一套 dispatch/combine：Prefill 走 double-routing（`npu_moe_init_routing_v2` → AllToAll → `npu_moe_re_routing` → grouped matmul → `npu_moe_finalize_routing`）。\n2. 回复应指出 Decode 走 MC2 路径（`npu_moe_distribute_dispatch_v2` → grouped matmul → `npu_moe_distribute_combine_v2`），并说明框架需要 `is_prefill` 分支来区分两条链路。\n3. 回复应指出不能让每个 rank 加载所有专家权重：`FusedMoEGMM` 的 `weight_loader` 需按 `ep_rank` 只保留本 rank 负责的 expert 范围（丢弃其他），并用全局 expert 映射（`make_expert_params_mapping`）把全局 `expert_id` 映射为本地 expert id 后正确加载与执行后处理。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "model-infer-parallel-impl"
+}

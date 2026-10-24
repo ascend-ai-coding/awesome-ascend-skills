@@ -1,0 +1,49 @@
+strategy_id: P132
+description: 线性递归/SSM 算子三阶段分解适用性检查 — 算子沿序列维有状态递推（无 QK^T、无 softmax），且当前仍是逐 token 串行循环或已有 chunk 但未三阶段化。
+
+strategy_meta:
+  id: "P132"
+  slug: "P132_chunk_scan_three_stage_decomposition"
+  title: "P132: 线性递归 chunk-scan 三阶段分解（块内预计算 / 块间状态扫描 / 输出投影）"
+  bottlenecks: [compute_bound, scalar_compute]
+  op_families: [ssm, linear_attention, recurrent, matmul, cv_fusion, reduction]
+  conflicts_with: []
+  synergizes_with: [P133, P134, P135, P136]
+  requires: []
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p132_chunk_scan_three_stage_decomposition.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p132_chunk_scan_three_stage_decomposition.md"
+  playbook_slug: "P132_chunk_scan_three_stage_decomposition"
+
+checks:
+  - id: no_softmax_attention
+    type: grep_count
+    pattern: "softmax|online_softmax|running max|rowmax"
+    files: [kernel, header, model]
+    expected: "== 0"
+    fail_msg: "检测到 softmax 证据 → 可能是 FA 族（QK^T+softmax），不适用 P132，转 flashattention.md。"
+
+  - id: has_state_recurrence
+    type: grep_count
+    pattern: 'state|State|curState|h_t|prev|S\\b'
+    files: [kernel, header, model]
+    expected: ">= 1"
+    fail_msg: "未检测到状态递推证据 → 可能不是线性递归/SSM 算子，需人工确认后使用 P132。"
+
+  - id: serial_loop_or_not_chunked
+    type: grep_count
+    pattern: "for .*seq|for .*len|chunkSize|CHUNK_SIZE|n_chunks"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未检测到序列循环或 chunk 证据 → 需人工确认算子结构后再应用 P132。"
+
+  - id: no_full_three_stage
+    type: grep_count
+    pattern: "k_cumdecay|v_inner|attn_inter|masked_qkt"
+    files: [kernel, header]
+    expected: "== 0"
+    fail_msg: "已检测到三阶段中间量（k_cumdecay/v_inner 等）→ 可能已是三阶段实现，跳过 P132 或检查是否完整。"

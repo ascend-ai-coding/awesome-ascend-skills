@@ -1,0 +1,19 @@
+strategy_id: P144
+description: "P144: host 端计算全局池化与 BN 训练统计，标量传参替代设备归约/往返同步"
+
+strategy_meta:
+  id: "P144"
+  slug: "P144_host_pool_bnstats_scalar_pass"
+  title: "P144: host 端计算全局池化与 BN 训练统计，标量传参替代设备归约/往返同步"
+  bottlenecks: [no_overlap, scalar_loading]
+  op_families: [attention, elementwise, normalization]
+  conflicts_with: []
+  synergizes_with: [P145, P146, P147, A2]
+  requires: [P147]
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: false
+  has_playbook: false
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p144_host_pool_bnstats_scalar_pass.md"
+  quantified_gain: [{"shape": "64_TripletAttention 50-case（910B2C，geomean vs PyTorch）", "baseline_us": 4966.7, "optimized_us": 380.9, "speedup": 1.28, "source": "ops-perf-evolution output/64_TripletAttention_v2 round_3/parallel_2（x0_fix1_fix2）"}]

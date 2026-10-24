@@ -1,0 +1,276 @@
+/**
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * CANN Open Software License Agreement Version 2.0. THIS SOFTWARE IS PROVIDED "AS IS".
+ */
+
+/*!
+ * \file cum_core_partition_scan.template  (使用时改名为 cum_core_partition_scan.h)
+ * \brief 跨核 R 分段前缀扫描（arch35 / dav-3510）。提取自 cumsum core_ss 系模板的可复用骨架。
+ *
+ * 触发：M×N 极小（切 A/行只能用满极少核）且 R 超长（典型 1D [1000003]），单核串行 R 成瓶颈。
+ * 思想：把扫描轴 R 跨核切成 rBorrow 段，各核算局部前缀，再【保序】传播进位（carry）。
+ *       —— Scan 特有：Reduce 的分核合并可交换（顺序无关），Scan 的进位必须按 R 顺序传播。
+ *
+ * 两种实现进位的方式：
+ *  (A) 核内 SyncAll + 原地对数层 Sklansky（cumsum 原实现，无 workspace，进位直接读被扫核的输出行）：
+ *      Phase1 各核写完整局部前缀到 y → for i in [0, ceil(log2(rBorrow))): SyncAll; y 上做第 i 层跨段 combine。
+ *  (B) host 编排 3 次 launch（<<<>>> 单文件工程推荐，规避核内 SyncAll，风险低）：
+ *      launch 间 aclrtSynchronizeStream(stream) 即为跨核屏障。
+ *
+ * 本模板给出 (B) 的 kernel 侧两个 phase（Phase B exclusive 进位在 host 上对 rBorrow 个段总计计算）。
+ * 以 Cummin（min + argmin，last-occurrence）为例；Cumsum 把 combine 换成 Add、去掉 idx 与 carry 语义分支。
+ *
+ * 同时给出 (C) 单次 launch + SyncAll 的完整实现（替代两次 launch）。
+ *
+ * 以下成员函数挂进扫描类（如 CumminScan<T, P>）内使用，依赖调用方提供的成员：
+ *   xGm_ / valGm_ / idxGm_ / wsGm_   GM buffer
+ *   xBuf_ / valBuf_ / idxBuf_ / segBuf_   UB buffer
+ *   tl_->R / tl_->rChunk / tl_->wsSegs    tiling 参数
+ *
+ * Init 方法见 cum_row_kogge_stone.template 的 InitMode34()——跨核借 R 的 buffer 布局
+ * 与 mode 1 相同（Kogge-Stone 逐段扫描），额外加 segBuf_（workspace 暂存）和 laneBuf_。
+ * mode 3/4 不用 ping-pong，ScanRowRange 内部的 FetchEventID 即可。
+ * 完整实现见 cummin 参考工程 op_kernel/cummin_kernel.cpp。
+ */
+#ifndef CUM_CORE_PARTITION_SCAN_H
+#define CUM_CORE_PARTITION_SCAN_H
+
+#include "scan_base.h"
+
+namespace ScanOps {
+using namespace AscendC;
+
+// 跨核分段的 tiling（每核处理一个 R 段，覆盖全部 M×N=W 道；这里 W 极小，常为 1）。
+struct CorePartitionTiling {
+    int64_t W;         // M*N（向量道数，触发场景下极小）
+    int64_t R;         // 扫描轴总长
+    int64_t rBorrow;   // R 分段数（≈ coreNum）
+    int64_t partLen;   // 每段长度 = ceil(R / rBorrow)
+};
+
+// 各段在 workspace 里独占的 int32 槽位数：只用前 2 个（值 + 下标），
+// 撑到 32B 是为了让各核写各自的槽位时不会落进同一个 32B 块。
+constexpr static int64_t WS_SLOT_I32 = 8;
+
+#if 0  // ==== 类体内粘贴区开始 ====
+
+    // ===========================================================================
+    // 跨核借 R：单次 launch + SyncAll（mode 3+4 合一）
+    //
+    // blockIdx 映射为 (w, p)：w = blockIdx / segs 是行号，p = blockIdx % segs 是段号。
+    // 每核先归约自己那段求 (min, idx) 写 workspace（Phase A），
+    // SyncAll 后读回前序段总计合成进位（ReadCarry），带着进位完整扫描并写出（Phase B）。
+    //
+    // 两个必须的约束：
+    //   1. SyncAll 前要 PipeBarrier<PIPE_ALL>() 保证段结果已落 GM
+    //   2. 轮空的核也必须走到 SyncAll（提前 return 会死锁），判空写成 bool active
+    // ===========================================================================
+    __aicore__ inline void ProcessBorrowR(int64_t blockIdx)
+    {
+        int64_t segs = tl_->wsSegs;
+        int64_t w = blockIdx / segs;  // 行号（N == 1，故 work-item 即一行）
+        int64_t p = blockIdx % segs;  // 段号
+        int64_t segLen = CeilDivK(tl_->R, segs);
+        int64_t r0 = p * segLen;
+        bool active = w < tl_->M && r0 < tl_->R;
+        int64_t rLen = active ? (tl_->R - r0 < segLen ? tl_->R - r0 : segLen) : 0;
+
+        P carry = Identity();
+        int32_t carryIdx = 0;
+
+        // Phase A：段内纯归约（不写前缀），写段总计到 workspace
+        if (active) {
+            ReduceRowRange(w, r0, rLen, carry, carryIdx);
+            WriteSegTotal(w * segs + p, carry, carryIdx);
+        }
+
+        // 核间全同步：所有核的段结果落到 workspace 之后才能回读
+        AscendC::PipeBarrier<PIPE_ALL>();
+        AscendC::SyncAll();
+        if (!active) return;  // 轮空核在 SyncAll 之后才允许退出
+
+        // Phase B：读前序段总计合成进位，带着进位完整扫描并写出
+        bool hasCarry = ReadCarry(w * segs, p, carry, carryIdx);
+        ScanRowRange<P>(w, r0, rLen, carry, carryIdx, hasCarry, true);
+    }
+
+    // ---------------------------------------------------------------------------
+    // Phase A：只求段内合并结果 (min, argmin)，不写局部前缀。
+    // 那是归约而不是扫描——没有 log 因子，别复用扫描代码再丢掉输出（实测省 38%）。
+    // VL 条 lane 各自跨步累积，最后标量归并一次。
+    // ---------------------------------------------------------------------------
+    __aicore__ inline void ReduceRowRange(int64_t m, int64_t r0, int64_t rLen0, P& outVal, int32_t& outIdx)
+    {
+        LocalTensor<T> xUb = xBuf_.template Get<T>();
+        LocalTensor<P> accVal = valBuf_.template Get<P>();
+        LocalTensor<int32_t> accIdx = idxBuf_.template Get<int32_t>();
+        InitCarry(accVal, accIdx, (uint32_t)VL);
+
+        const int64_t rEnd = r0 + rLen0;
+        for (int64_t rBase = r0; rBase < rEnd; rBase += tl_->rChunk) {
+            int64_t rLen = tl_->rChunk;
+            if (rBase + rLen > rEnd) rLen = rEnd - rBase;
+
+            DataCopyExtParams in;
+            in.blockCount = 1;
+            in.blockLen = (uint32_t)(rLen * sizeof(T));
+            in.srcStride = 0;
+            in.dstStride = 0;
+            DataCopyPadExtParams<T> pad{false, 0, 0, 0};
+            DataCopyPad(xUb, xGm_[m * tl_->R + rBase], in, pad);
+            SetFlag<HardEvent::MTE2_V>(GetTPipePtr()->FetchEventID(HardEvent::MTE2_V));
+            WaitFlag<HardEvent::MTE2_V>(GetTPipePtr()->FetchEventID(HardEvent::MTE2_V));
+
+            ReduceChunk(xUb, accVal, accIdx, rLen, rBase);
+
+            SetFlag<HardEvent::V_MTE2>(GetTPipePtr()->FetchEventID(HardEvent::V_MTE2));
+            WaitFlag<HardEvent::V_MTE2>(GetTPipePtr()->FetchEventID(HardEvent::V_MTE2));
+        }
+
+        // 标量归并 VL 条 lane 的累加器结果
+        SetFlag<HardEvent::V_S>(GetTPipePtr()->FetchEventID(HardEvent::V_S));
+        WaitFlag<HardEvent::V_S>(GetTPipePtr()->FetchEventID(HardEvent::V_S));
+        outVal = Identity();
+        outIdx = 0;
+        bool haveNan = false;
+        for (int64_t l = 0; l < (int64_t)VL; l++) {
+            P v = accVal.GetValue(l);
+            int32_t i = accIdx.GetValue(l);
+            if (v != v) {  // NaN 压过一切实数，多个 NaN 之间取更晚的
+                if (!haveNan || i > outIdx) {
+                    outVal = v;
+                    outIdx = i;
+                    haveNan = true;
+                }
+            } else if (!haveNan && (v < outVal || (v == outVal && i > outIdx))) {
+                outVal = v;
+                outIdx = i;
+            }
+        }
+        SetFlag<HardEvent::S_V>(GetTPipePtr()->FetchEventID(HardEvent::S_V));
+        WaitFlag<HardEvent::S_V>(GetTPipePtr()->FetchEventID(HardEvent::S_V));
+    }
+
+    // 一块数据并进 VL 条 lane 的累加器：lane l 吃掉块内所有下标模 VL 等于 l 的元素
+    __aicore__ inline void ReduceChunk(
+        const LocalTensor<T>& xUb, const LocalTensor<P>& accVal, const LocalTensor<int32_t>& accIdx, int64_t rLen,
+        int64_t rBase)
+    {
+        __ubuf__ T* xp = (__ubuf__ T*)xUb.GetPhyAddr();
+        __ubuf__ P* ap = (__ubuf__ P*)accVal.GetPhyAddr();
+        __ubuf__ int32_t* aip = (__ubuf__ int32_t*)accIdx.GetPhyAddr();
+        uint16_t loops = (uint16_t)CeilDivK(rLen, VL);
+        int32_t rB = (int32_t)rBase;
+
+        __VEC_SCOPE__
+        {
+            AscendC::Reg::RegTensor<P> curMin, xReg;
+            AscendC::Reg::RegTensor<int32_t> curIdx, rReg;
+            AscendC::Reg::MaskReg full, mk, leMask, nanMask, takeB;
+            uint32_t g = VL;
+            full = AscendC::Reg::UpdateMask<uint32_t>(g);
+            AscendC::Reg::LoadAlign(curMin, ap);
+            AscendC::Reg::LoadAlign(curIdx, aip);
+
+            uint32_t cnt = (uint32_t)rLen;
+            for (uint16_t j = 0; j < loops; j++) {
+                mk = AscendC::Reg::UpdateMask<uint32_t>(cnt);
+                if constexpr (IsSameType<T, P>::value) {
+                    AscendC::Reg::LoadAlign(xReg, (__ubuf__ P*)(xp + j * VL));
+                } else {
+                    AscendC::Reg::RegTensor<T> b16;
+                    AscendC::Reg::LoadAlign<T, AscendC::Reg::LoadDist::DIST_UNPACK_B16>(b16, xp + j * VL);
+                    Cast<P, T, castTraitToFp32>(xReg, b16, mk);
+                }
+                AscendC::Reg::Arange(rReg, rB + (int32_t)(j * VL));
+                AscendC::Reg::Compare<P, CMPMODE::LE>(leMask, xReg, curMin, mk);
+                AscendC::Reg::Compare<P, CMPMODE::NE>(nanMask, xReg, xReg, mk);
+                AscendC::Reg::Or(takeB, leMask, nanMask, mk);
+                AscendC::Reg::Select<P>(curMin, xReg, curMin, takeB);
+                AscendC::Reg::Select<int32_t>(curIdx, rReg, curIdx, takeB);
+            }
+            AscendC::Reg::StoreAlign(ap, curMin, full);
+            AscendC::Reg::StoreAlign(aip, curIdx, full);
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // 把本段的合并结果写进 workspace。每段独占一个 32B 槽位，避免相邻核写同一个 32B 块。
+    // ---------------------------------------------------------------------------
+    __aicore__ inline void WriteSegTotal(int64_t slot, P val, int32_t idx)
+    {
+        LocalTensor<int32_t> seg = segBuf_.template Get<int32_t>();
+        seg.SetValue(0, *reinterpret_cast<int32_t*>(&val));
+        seg.SetValue(1, idx);
+        SetFlag<HardEvent::S_MTE3>(GetTPipePtr()->FetchEventID(HardEvent::S_MTE3));
+        WaitFlag<HardEvent::S_MTE3>(GetTPipePtr()->FetchEventID(HardEvent::S_MTE3));
+
+        DataCopyExtParams wp;
+        wp.blockCount = 1;
+        wp.blockLen = 2 * sizeof(int32_t);
+        wp.srcStride = 0;
+        wp.dstStride = 0;
+        DataCopyPad(wsGm_[slot * WS_SLOT_I32], seg, wp);
+    }
+
+    // ---------------------------------------------------------------------------
+    // 合并 slot0 起前 p 段的结果作为本段进位；p == 0 时无进位。
+    //
+    // 一次 DataCopyPad 把 p 段总计搬进 UB，然后标量逐段 GetValue 归并。
+    // 段数 p 通常 ≤ coreNum（72），标量循环可接受。
+    // 与向量路径用同一个 combine：NaN 最小、并列取更晚。
+    // ---------------------------------------------------------------------------
+    __aicore__ inline bool ReadCarry(int64_t slot0, int64_t p, P& carry, int32_t& carryIdx)
+    {
+        if (p <= 0) return false;
+
+        LocalTensor<int32_t> seg = segBuf_.template Get<int32_t>();
+        DataCopyExtParams rp;
+        rp.blockCount = 1;
+        rp.blockLen = (uint32_t)(p * WS_SLOT_I32 * sizeof(int32_t));
+        rp.srcStride = 0;
+        rp.dstStride = 0;
+        DataCopyPadExtParams<int32_t> pad{false, 0, 0, 0};
+        DataCopyPad(seg, wsGm_[slot0 * WS_SLOT_I32], rp, pad);
+        SetFlag<HardEvent::MTE2_S>(GetTPipePtr()->FetchEventID(HardEvent::MTE2_S));
+        WaitFlag<HardEvent::MTE2_S>(GetTPipePtr()->FetchEventID(HardEvent::MTE2_S));
+
+        carry = Identity();
+        carryIdx = 0;
+        for (int64_t k = 0; k < p; k++) {
+            int32_t bits = seg.GetValue(k * WS_SLOT_I32);
+            P v = *reinterpret_cast<P*>(&bits);
+            int32_t i = seg.GetValue(k * WS_SLOT_I32 + 1);
+            if (v != v || v <= carry) {  // NaN 最小、并列取更晚
+                carry = v;
+                carryIdx = i;
+            }
+        }
+        SetFlag<HardEvent::S_V>(GetTPipePtr()->FetchEventID(HardEvent::S_V));
+        WaitFlag<HardEvent::S_V>(GetTPipePtr()->FetchEventID(HardEvent::S_V));
+        return true;
+    }
+
+    // 初始化 VL 条 lane 的累加器为幺元
+    __aicore__ inline void InitCarry(const LocalTensor<P>& accVal, const LocalTensor<int32_t>& accIdx, uint32_t cnt)
+    {
+        __ubuf__ P* ap = (__ubuf__ P*)accVal.GetPhyAddr();
+        __ubuf__ int32_t* aip = (__ubuf__ int32_t*)accIdx.GetPhyAddr();
+        P ident = Identity();
+        int32_t zero = 0;
+        __VEC_SCOPE__
+        {
+            AscendC::Reg::RegTensor<P> vReg;
+            AscendC::Reg::RegTensor<int32_t> iReg;
+            AscendC::Reg::MaskReg full = AscendC::Reg::UpdateMask<uint32_t>(cnt);
+            AscendC::Reg::Duplicate(vReg, ident);
+            AscendC::Reg::Duplicate(iReg, zero);
+            AscendC::Reg::StoreAlign(ap, vReg, full);
+            AscendC::Reg::StoreAlign(aip, iReg, full);
+        }
+    }
+
+#endif  // ==== 类体内粘贴区结束 ====
+
+}  // namespace ScanOps
+#endif  // CUM_CORE_PARTITION_SCAN_H

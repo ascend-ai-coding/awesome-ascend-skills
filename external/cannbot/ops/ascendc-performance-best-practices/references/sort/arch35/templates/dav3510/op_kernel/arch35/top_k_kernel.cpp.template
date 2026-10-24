@@ -1,0 +1,581 @@
+/*!
+ * \file top_k_kernel.cpp
+ * \brief Direct launch of the ops-math TopK kernel plus two small-axis specializations.
+ */
+
+#include <algorithm>
+#include <cstdint>
+#include <cstdio>
+#include <type_traits>
+
+#include "acl/acl_rt.h"
+#include "kernel_operator.h"
+#include "platform/platform_ascendc.h"
+#include "simt_api/asc_simt.h"
+#include "top_k_launch.h"
+
+#define TOP_K_APT_H
+#include "core/radix_sort_top_k.h"
+#include "core/radix_sort_top_k_inter_core_template_optimization.h"
+#include "core/radix_sort_top_k_single_block.h"
+#include "core/radix_sort_top_k_single_core.h"
+#include "core/sort_and_top_k_more_core.h"
+#include "core/top_k_merge_sort.h"
+#include "core/top_k_merge_sort_intra_core.h"
+#include "core/top_k_merge_sort_more_core.h"
+#include "core/top_k_non_last_small_non_transpose.h"
+
+namespace {
+
+constexpr uint32_t TOPK_SMALL_AXIS_THREADS = 1024;
+constexpr uint32_t TOPK_SMALL_AXIS_ALIGN = 32;
+constexpr uint32_t TOPK_SMALL_AXIS_TILE = 2048;
+constexpr uint64_t TOPK_SIMT_RESERVED_UB = 32U * 1024U;
+
+inline uint64_t CeilDiv(uint64_t value, uint64_t divisor)
+{
+    return (value + divisor - 1U) / divisor;
+}
+
+inline uint64_t AlignUp(uint64_t value)
+{
+    return CeilDiv(value, TOPK_SMALL_AXIS_ALIGN) * TOPK_SMALL_AXIS_ALIGN;
+}
+
+template <typename T, typename IndexT>
+__simt_vf__ LAUNCH_BOUND(TOPK_SMALL_AXIS_THREADS) __aicore__ void StoreFullSmallAxis(
+    uint32_t axisLen, uint32_t width, uint32_t tileWidth, uint32_t threadNum, uint64_t inputBase,
+    uint64_t innerStart, uint64_t innerSize, __ubuf__ T* values, __ubuf__ IndexT* indices,
+    __gm__ volatile T* outputValue, __gm__ volatile int64_t* outputIndex)
+{
+    uint32_t total = axisLen * width;
+    for (uint32_t linear = static_cast<uint32_t>(threadIdx.x); linear < total; linear += threadNum) {
+        uint32_t axis = linear / width;
+        uint32_t col = linear - axis * width;
+        uint64_t gmOffset = inputBase + static_cast<uint64_t>(axis) * innerSize + innerStart + col;
+        uint32_t ubOffset = axis * tileWidth + col;
+        outputValue[gmOffset] = values[ubOffset];
+        outputIndex[gmOffset] = static_cast<int64_t>(indices[ubOffset]);
+    }
+}
+
+template <typename T>
+__aicore__ inline void CompareSwap(AscendC::LocalTensor<T> values, AscendC::LocalTensor<uint16_t> indices,
+                                   AscendC::LocalTensor<T> scratchValue,
+                                   AscendC::LocalTensor<uint16_t> scratchIndex,
+                                   AscendC::LocalTensor<uint8_t> mask, AscendC::LocalTensor<uint8_t> nanMask,
+                                   uint32_t tileWidth, uint32_t maskBytes, uint32_t width, uint32_t left,
+                                   uint32_t right, bool isLargest)
+{
+    auto a = values[left * tileWidth];
+    auto b = values[right * tileWidth];
+    auto ia = indices[left * tileWidth];
+    auto ib = indices[right * tileWidth];
+    const AscendC::CMPMODE cmp = isLargest ? AscendC::CMPMODE::GT : AscendC::CMPMODE::LT;
+    AscendC::Compare(mask, a, b, cmp, width);
+    if (isLargest) {
+        AscendC::Compare(nanMask, a, a, AscendC::CMPMODE::NE, width);
+    } else {
+        AscendC::Compare(nanMask, b, b, AscendC::CMPMODE::NE, width);
+    }
+    AscendC::Or(mask, mask, nanMask, maskBytes);
+    AscendC::Copy(scratchValue, a, width);
+    AscendC::Copy(scratchIndex, ia, width);
+    AscendC::Select(a, mask, a, b, AscendC::SELMODE::VSEL_TENSOR_TENSOR_MODE, width);
+    AscendC::Select(b, mask, b, scratchValue, AscendC::SELMODE::VSEL_TENSOR_TENSOR_MODE, width);
+    AscendC::Select(ia, mask, ia, ib, AscendC::SELMODE::VSEL_TENSOR_TENSOR_MODE, width);
+    AscendC::Select(ib, mask, ib, scratchIndex, AscendC::SELMODE::VSEL_TENSOR_TENSOR_MODE, width);
+}
+
+struct TopKComparePair {
+    uint8_t left;
+    uint8_t right;
+};
+
+template <typename T, uint32_t PAIR_COUNT>
+__aicore__ inline void ApplyCompareNetwork(AscendC::LocalTensor<T> values,
+                                           AscendC::LocalTensor<uint16_t> indices,
+                                           AscendC::LocalTensor<T> scratchValue,
+                                           AscendC::LocalTensor<uint16_t> scratchIndex,
+                                           AscendC::LocalTensor<uint8_t> mask,
+                                           AscendC::LocalTensor<uint8_t> nanMask,
+                                           uint32_t tileWidth, uint32_t maskBytes, uint32_t width,
+                                           const TopKComparePair (&pairs)[PAIR_COUNT], bool isLargest)
+{
+#pragma unroll
+    for (uint32_t pairId = 0; pairId < PAIR_COUNT; ++pairId) {
+        CompareSwap(values, indices, scratchValue, scratchIndex, mask, nanMask, tileWidth, maskBytes, width,
+                    pairs[pairId].left, pairs[pairId].right, isLargest);
+    }
+}
+
+template <typename T, uint32_t AXIS_LEN>
+__global__ __aicore__ void topk_full_small_axis_kernel(GM_ADDR x, GM_ADDR y, GM_ADDR idx,
+                                                        TopKSmallAxisParams params)
+{
+    KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIV_1_0);
+    AscendC::TPipe pipe;
+    AscendC::TBuf<AscendC::TPosition::VECCALC> valueBuf;
+    AscendC::TBuf<AscendC::TPosition::VECCALC> indexBuf;
+    AscendC::TBuf<AscendC::TPosition::VECCALC> scratchValueBuf;
+    AscendC::TBuf<AscendC::TPosition::VECCALC> scratchIndexBuf;
+    AscendC::TBuf<AscendC::TPosition::VECCALC> maskBuf;
+    AscendC::TBuf<AscendC::TPosition::VECCALC> nanMaskBuf;
+
+    const uint32_t axisLen = AXIS_LEN;
+    const uint32_t tileWidth = static_cast<uint32_t>(params.tileWidth);
+    const uint32_t valueRowBytes = (tileWidth * sizeof(T) + 31U) / 32U * 32U;
+    const uint32_t indexRowBytes = (tileWidth * sizeof(uint16_t) + 31U) / 32U * 32U;
+    const uint32_t maskBytes = ((tileWidth + 7U) / 8U + 31U) / 32U * 32U;
+    pipe.InitBuffer(valueBuf, axisLen * valueRowBytes);
+    pipe.InitBuffer(indexBuf, axisLen * indexRowBytes);
+    pipe.InitBuffer(scratchValueBuf, valueRowBytes);
+    pipe.InitBuffer(scratchIndexBuf, indexRowBytes);
+    pipe.InitBuffer(maskBuf, maskBytes);
+    pipe.InitBuffer(nanMaskBuf, maskBytes);
+
+    AscendC::GlobalTensor<T> inputGm;
+    AscendC::GlobalTensor<T> outputGm;
+    AscendC::GlobalTensor<int64_t> outputIndexGm;
+    inputGm.SetGlobalBuffer((__gm__ T*)x);
+    outputGm.SetGlobalBuffer((__gm__ T*)y);
+    outputIndexGm.SetGlobalBuffer((__gm__ int64_t*)idx);
+    auto values = valueBuf.Get<T>();
+    auto indices = indexBuf.Get<uint16_t>();
+    auto scratchValue = scratchValueBuf.Get<T>();
+    auto scratchIndex = scratchIndexBuf.Get<uint16_t>();
+    auto mask = maskBuf.Get<uint8_t>();
+    auto nanMask = nanMaskBuf.Get<uint8_t>();
+
+    const uint64_t innerSize = static_cast<uint64_t>(params.inner);
+    const uint64_t tilesPerOuter = (innerSize + tileWidth - 1U) / tileWidth;
+    const uint64_t totalTiles = static_cast<uint64_t>(params.outer) * tilesPerOuter;
+    for (uint64_t tileId = AscendC::GetBlockIdx(); tileId < totalTiles; tileId += AscendC::GetBlockNum()) {
+        uint64_t outerId = tileId / tilesPerOuter;
+        uint64_t innerTile = tileId - outerId * tilesPerOuter;
+        uint64_t innerStart = innerTile * tileWidth;
+        uint32_t width = static_cast<uint32_t>(innerSize - innerStart);
+        if (width > tileWidth) {
+            width = tileWidth;
+        }
+        uint64_t inputBase = outerId * static_cast<uint64_t>(axisLen) * innerSize;
+        AscendC::DataCopyExtParams copyIn{1, width * static_cast<uint32_t>(sizeof(T)), 0, 0, 0};
+        AscendC::DataCopyPadExtParams<T> pad{false, 0, 0, 0};
+        for (uint32_t axis = 0; axis < axisLen; ++axis) {
+            AscendC::DataCopyPad(values[axis * tileWidth],
+                                 inputGm[inputBase + static_cast<uint64_t>(axis) * innerSize + innerStart],
+                                 copyIn, pad);
+            AscendC::Duplicate(indices[axis * tileWidth], static_cast<uint16_t>(axis), width);
+        }
+        auto eventMte2V = static_cast<event_t>(pipe.FetchEventID(AscendC::HardEvent::MTE2_V));
+        AscendC::SetFlag<AscendC::HardEvent::MTE2_V>(eventMte2V);
+        AscendC::WaitFlag<AscendC::HardEvent::MTE2_V>(eventMte2V);
+
+        if constexpr (AXIS_LEN == 7) {
+            constexpr TopKComparePair network[] = {
+                {0, 6}, {2, 3}, {4, 5}, {0, 2},
+                {1, 4}, {3, 6}, {0, 1}, {2, 5},
+                {3, 4}, {1, 2}, {4, 6}, {2, 3},
+                {4, 5}, {1, 2}, {3, 4}, {5, 6},
+            };
+            ApplyCompareNetwork<T>(values, indices, scratchValue, scratchIndex, mask, nanMask, tileWidth, maskBytes,
+                                   width, network, params.isLargest != 0);
+        } else {
+            // 72 compare-exchanges in 11 layers. Pairs in each source line are
+            // independent, reducing both instruction count and dependency depth.
+            constexpr TopKComparePair network[] = {
+                {0, 8}, {1, 3}, {2, 6}, {4, 15}, {5, 13}, {9, 16}, {10, 11}, {12, 14},
+                {0, 2}, {1, 4}, {3, 15}, {5, 8}, {6, 14}, {7, 9}, {13, 16},
+                {2, 13}, {3, 11}, {5, 10}, {6, 9}, {7, 12}, {8, 15}, {14, 16},
+                {0, 7}, {1, 5}, {3, 6}, {4, 10}, {8, 14}, {9, 11}, {12, 13}, {15, 16},
+                {0, 1}, {2, 6}, {4, 12}, {5, 7}, {9, 14}, {10, 13}, {11, 15},
+                {1, 4}, {2, 3}, {6, 11}, {7, 12}, {8, 9}, {13, 14}, {15, 16},
+                {2, 5}, {3, 8}, {7, 10}, {9, 12}, {11, 13}, {14, 15},
+                {1, 2}, {3, 7}, {4, 5}, {6, 9}, {8, 10}, {13, 14},
+                {3, 4}, {5, 7}, {6, 8}, {9, 11}, {10, 12},
+                {2, 4}, {5, 6}, {7, 8}, {9, 10}, {11, 12},
+                {2, 3}, {4, 5}, {6, 7}, {8, 9}, {10, 11}, {12, 13},
+            };
+            ApplyCompareNetwork<T>(values, indices, scratchValue, scratchIndex, mask, nanMask, tileWidth, maskBytes,
+                                   width, network, params.isLargest != 0);
+        }
+
+        auto eventVS = static_cast<event_t>(pipe.FetchEventID(AscendC::HardEvent::V_S));
+        AscendC::SetFlag<AscendC::HardEvent::V_S>(eventVS);
+        AscendC::WaitFlag<AscendC::HardEvent::V_S>(eventVS);
+        asc_vf_call<StoreFullSmallAxis<T, uint16_t>>(
+            dim3(TOPK_SMALL_AXIS_THREADS), axisLen, width, tileWidth, TOPK_SMALL_AXIS_THREADS, inputBase,
+            innerStart, innerSize, (__ubuf__ T*)values.GetPhyAddr(), (__ubuf__ uint16_t*)indices.GetPhyAddr(),
+            (__gm__ volatile T*)outputGm.GetPhyAddr(), (__gm__ volatile int64_t*)outputIndexGm.GetPhyAddr());
+        auto eventSV = static_cast<event_t>(pipe.FetchEventID(AscendC::HardEvent::V_S));
+        AscendC::SetFlag<AscendC::HardEvent::V_S>(eventSV);
+        AscendC::WaitFlag<AscendC::HardEvent::V_S>(eventSV);
+    }
+}
+
+template <typename T>
+int32_t LaunchSmallAxis(GM_ADDR x, GM_ADDR y, GM_ADDR idx, const TopKSmallAxisParams& params, void* stream)
+{
+    struct Args {
+        GM_ADDR x;
+        GM_ADDR y;
+        GM_ADDR idx;
+        TopKSmallAxisParams params;
+    } args{x, y, idx, params};
+
+    const void* symbol = nullptr;
+    if (params.axisLen == 7) {
+        symbol = reinterpret_cast<const void*>(&topk_full_small_axis_kernel<T, 7>);
+    } else if (params.axisLen == 17) {
+        symbol = reinterpret_cast<const void*>(&topk_full_small_axis_kernel<T, 17>);
+    } else {
+        return static_cast<int32_t>(ACL_ERROR_INVALID_PARAM);
+    }
+
+    aclrtFuncHandle function = nullptr;
+    aclError ret = aclrtGetFuncBySymbol(symbol, &function);
+    if (ret != ACL_SUCCESS) {
+        std::fprintf(stderr, "[top_k] aclrtGetFuncBySymbol failed: %d\n", static_cast<int>(ret));
+        return static_cast<int32_t>(ret);
+    }
+    aclrtLaunchKernelAttr attrs[2]{};
+    attrs[0].id = ACL_RT_LAUNCH_KERNEL_ATTR_SCHEM_MODE;
+    attrs[0].value.schemMode = 1;
+    attrs[1].id = ACL_RT_LAUNCH_KERNEL_ATTR_DYN_UBUF_SIZE;
+    attrs[1].value.dynUBufSize = static_cast<uint32_t>(params.localMemoryBytes);
+    aclrtLaunchKernelCfg config{attrs, 2};
+    ret = aclrtLaunchKernelWithHostArgs(function, static_cast<uint32_t>(params.usedCores), stream, &config, &args,
+                                        sizeof(args), nullptr, 0);
+    if (ret != ACL_SUCCESS) {
+        std::fprintf(stderr, "[top_k] aclrtLaunchKernelWithHostArgs failed: %d\n", static_cast<int>(ret));
+    }
+    return static_cast<int32_t>(ret);
+}
+
+template <typename T, typename U, bool IS_LARGEST>
+__aicore__ inline void RunTopKSortAndTopK(GM_ADDR x, GM_ADDR y, GM_ADDR idx, GM_ADDR userWorkspace,
+                                            const TopKTilingDataSimd* tiling)
+{
+    AscendC::TPipe pipe;
+    if (tiling->isInInt32Range > 0) {
+        SortAndTopK::SortAndTopKMoreCore<T, int64_t, U, uint32_t, IS_LARGEST ? 1 : 0> op;
+        op.InitParam(x, y, idx, userWorkspace, tiling, &pipe);
+        op.ProcessTopK();
+    } else {
+        SortAndTopK::SortAndTopKMoreCore<T, int64_t, U, int64_t, IS_LARGEST ? 1 : 0> op;
+        op.InitParam(x, y, idx, userWorkspace, tiling, &pipe);
+        op.ProcessTopK();
+    }
+}
+
+template <typename T, typename U, int32_t NUM_PASS, bool IS_LARGEST>
+__aicore__ inline void RunTopKCommon(GM_ADDR x, GM_ADDR y, GM_ADDR idx, GM_ADDR userWorkspace,
+                                       const TopKTilingDataSimd* tiling)
+{
+    if (tiling->modeType == 8) {
+        AscendC::TPipe pipe;
+        if (tiling->keyParams0 == 1) {
+            if constexpr (std::is_same_v<T, float> || std::is_same_v<T, half> ||
+                          std::is_same_v<T, bfloat16_t>) {
+                topk::TopKNonLastSmallAxisNonTranspose<T, int64_t, IS_LARGEST, true, true> op;
+                op.Init(x, y, idx, tiling, &pipe);
+                op.Process();
+            } else {
+                topk::TopKNonLastSmallAxisNonTranspose<T, int64_t, IS_LARGEST, true, false> op;
+                op.Init(x, y, idx, tiling, &pipe);
+                op.Process();
+            }
+        } else {
+            topk::TopKNonLastSmallAxisNonTranspose<T, int64_t, IS_LARGEST, true, false> op;
+            op.Init(x, y, idx, tiling, &pipe);
+            op.Process();
+        }
+        return;
+    }
+
+    if (tiling->lastDimNeedCore == 1) {
+        AscendC::TPipe pipe;
+        RadixSortTopKSingleBlock<T, U, IS_LARGEST, true, int32_t, int64_t> op;
+        op.Init(x, nullptr, y, idx, userWorkspace, tiling, &pipe);
+        op.Process();
+        return;
+    }
+
+    if (tiling->modeType == 5) {
+        RunTopKSortAndTopK<T, U, IS_LARGEST>(x, y, idx, userWorkspace, tiling);
+        return;
+    }
+
+    if (tiling->modeType == 1) {
+        AscendC::TPipe pipe;
+        RadixSortTopKSingleCore<T, U, NUM_PASS, IS_LARGEST, true, int32_t, int64_t> op;
+        op.Init(x, nullptr, y, idx, userWorkspace, tiling, &pipe);
+        op.Process();
+        return;
+    }
+
+    if (tiling->modeType == 4) {
+        RadixSortTopKMultiCoreOptimization<T, IS_LARGEST, true, int64_t> op;
+        op.Init(x, nullptr, y, idx, userWorkspace, tiling);
+        op.Process();
+        return;
+    }
+
+    RadixSortTopK<T, U, NUM_PASS, IS_LARGEST, true, int32_t, int64_t> op;
+    op.Init(x, nullptr, y, idx, userWorkspace, tiling);
+    op.ProcessTopK();
+}
+
+template <typename T, typename U, int32_t NUM_PASS>
+__global__ __aicore__ void topk_common_direct_kernel(GM_ADDR x, GM_ADDR y, GM_ADDR idx, GM_ADDR workspace,
+                                                        TopKLaunchParams params)
+{
+    KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIV_1_0);
+    AscendC::SetSysWorkspaceForce(workspace);
+    GM_ADDR userWorkspace = AscendC::GetUserWorkspace(workspace);
+    if (userWorkspace == nullptr) {
+        return;
+    }
+    if (params.tiling.isLargest > 0) {
+        RunTopKCommon<T, U, NUM_PASS, true>(x, y, idx, userWorkspace, &params.tiling);
+    } else {
+        RunTopKCommon<T, U, NUM_PASS, false>(x, y, idx, userWorkspace, &params.tiling);
+    }
+}
+
+template <typename T, typename ConvertT>
+__global__ __aicore__ void topk_small_merge_direct_kernel(GM_ADDR x, GM_ADDR y, GM_ADDR idx, GM_ADDR workspace,
+                                                             TopKLaunchParams params)
+{
+    KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIV_1_0);
+    AscendC::SetSysWorkspaceForce(workspace);
+    GM_ADDR userWorkspace = AscendC::GetUserWorkspace(workspace);
+    AscendC::TPipe pipe;
+    if (params.tiling.isLargest > 0) {
+        topk::MergeSort<T, ConvertT, TopKTilingDataSimd, true, int64_t> op;
+        op.Init(x, y, idx, userWorkspace, &params.tiling, &pipe);
+        op.ProcessSort();
+    } else {
+        topk::MergeSort<T, ConvertT, TopKTilingDataSimd, false, int64_t> op;
+        op.Init(x, y, idx, userWorkspace, &params.tiling, &pipe);
+        op.ProcessSort();
+    }
+}
+
+template <bool IS_LARGEST>
+__aicore__ inline void RunTopKFp32Merge(GM_ADDR x, GM_ADDR y, GM_ADDR idx, GM_ADDR userWorkspace,
+                                          const TopKTilingDataSimd* tiling)
+{
+    AscendC::TPipe pipe;
+    if (tiling->modeType == 6) {
+        topk::TopKMergeSortMoreCore<float, float, IS_LARGEST, int64_t> op;
+        op.Init(x, y, idx, userWorkspace, tiling, &pipe);
+        op.Process();
+    } else {
+        topk::TopKMergeSortIntraCore<float, int64_t, IS_LARGEST> op;
+        op.Init(x, y, idx, userWorkspace, tiling, &pipe);
+        op.Process();
+    }
+}
+
+__global__ __aicore__ void topk_fp32_merge_direct_kernel(GM_ADDR x, GM_ADDR y, GM_ADDR idx, GM_ADDR workspace,
+                                                            TopKLaunchParams params)
+{
+    KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIV_1_0);
+    AscendC::SetSysWorkspaceForce(workspace);
+    GM_ADDR userWorkspace = AscendC::GetUserWorkspace(workspace);
+    if (params.tiling.isLargest > 0) {
+        RunTopKFp32Merge<true>(x, y, idx, userWorkspace, &params.tiling);
+    } else {
+        RunTopKFp32Merge<false>(x, y, idx, userWorkspace, &params.tiling);
+    }
+}
+
+template <typename KernelT>
+int32_t LaunchTopKKernel(KernelT symbol, GM_ADDR x, GM_ADDR y, GM_ADDR idx, GM_ADDR workspace,
+                           const TopKLaunchParams& params, void* stream)
+{
+    struct Args {
+        GM_ADDR x;
+        GM_ADDR y;
+        GM_ADDR idx;
+        GM_ADDR workspace;
+        TopKLaunchParams params;
+    } args{x, y, idx, workspace, params};
+
+    aclrtFuncHandle function = nullptr;
+    aclError status = aclrtGetFuncBySymbol(reinterpret_cast<const void*>(symbol), &function);
+    if (status != ACL_SUCCESS) {
+        std::fprintf(stderr, "[top_k] aclrtGetFuncBySymbol failed: %d\n", static_cast<int>(status));
+        return static_cast<int32_t>(status);
+    }
+    aclrtLaunchKernelAttr attrs[2]{};
+    attrs[0].id = ACL_RT_LAUNCH_KERNEL_ATTR_SCHEM_MODE;
+    attrs[0].value.schemMode = static_cast<uint8_t>(params.scheduleMode);
+    attrs[1].id = ACL_RT_LAUNCH_KERNEL_ATTR_DYN_UBUF_SIZE;
+    attrs[1].value.dynUBufSize = static_cast<uint32_t>(params.localMemoryBytes);
+    aclrtLaunchKernelCfg config{attrs, 2};
+    status = aclrtLaunchKernelWithHostArgs(function, static_cast<uint32_t>(params.usedCores), stream, &config, &args,
+                                           sizeof(args), nullptr, 0);
+    if (status != ACL_SUCCESS) {
+        std::fprintf(stderr, "[top_k] aclrtLaunchKernelWithHostArgs failed: %d\n", static_cast<int>(status));
+    }
+    return static_cast<int32_t>(status);
+}
+
+int32_t LaunchTransposeByDtype(GM_ADDR x, GM_ADDR y, int64_t dtypeId,
+                               const topk_transpose::TransposeTiling& tiling,
+                               void* stream)
+{
+    switch (dtypeId) {
+        case TOPK_DTYPE_INT32: topk_transpose::launch_transpose_kernel_int32(x, y, tiling, stream); return 0;
+        case TOPK_DTYPE_FP32: topk_transpose::launch_transpose_kernel_float(x, y, tiling, stream); return 0;
+        case TOPK_DTYPE_INT64: topk_transpose::launch_transpose_kernel_int64(x, y, tiling, stream); return 0;
+        default: return static_cast<int32_t>(ACL_ERROR_INVALID_PARAM);
+    }
+}
+
+int32_t LaunchTransposeFallback(GM_ADDR x, GM_ADDR y, GM_ADDR idx, GM_ADDR workspace, int64_t dtypeId,
+                                const TopKLaunchParams& params, void* stream)
+{
+    if (workspace == nullptr) {
+        return static_cast<int32_t>(ACL_ERROR_INVALID_PARAM);
+    }
+    auto* workspaceBase = static_cast<uint8_t*>(workspace);
+    const TopKTransposeFallbackParams& trans = params.transposeFallback;
+    GM_ADDR transposedInput = workspaceBase + trans.inputOffset;
+    GM_ADDR transposedValues = workspaceBase + trans.valuesOffset;
+    GM_ADDR transposedIndices = workspaceBase + trans.indicesOffset;
+    GM_ADDR innerWorkspace = workspaceBase + trans.innerWorkspaceOffset;
+
+    int32_t status = LaunchTransposeByDtype(x, transposedInput, dtypeId, trans.inputTranspose, stream);
+    if (status != 0) {
+        return status;
+    }
+    TopKLaunchParams innerParams = params;
+    innerParams.tilingKey = trans.innerTilingKey;
+    innerParams.workspaceBytes = trans.innerWorkspaceBytes;
+    status = launch_topk(transposedInput, transposedValues, transposedIndices, innerWorkspace, dtypeId,
+                         innerParams, stream);
+    if (status != 0) {
+        return status;
+    }
+    status = LaunchTransposeByDtype(transposedValues, y, dtypeId, trans.valuesTranspose, stream);
+    if (status != 0) {
+        return status;
+    }
+    return LaunchTransposeByDtype(transposedIndices, idx, TOPK_DTYPE_INT64, trans.indicesTranspose, stream);
+}
+
+} // namespace
+
+extern "C" int32_t calc_topk_small_axis_params(int64_t outer, int64_t axisLen, int64_t inner, int64_t isLargest,
+                                                int64_t coreNum, uint64_t ubSize, TopKSmallAxisParams* params)
+{
+    if (params == nullptr || outer <= 0 || inner <= 1 || coreNum <= 0 ||
+        (axisLen != 7 && axisLen != 17)) {
+        return -1;
+    }
+
+    uint32_t tileWidth = TOPK_SMALL_AXIS_TILE;
+    if (axisLen == 17) {
+        uint64_t tilesPerOuter = std::max<uint64_t>(static_cast<uint64_t>(coreNum) / outer, 1U);
+        uint64_t desired = std::min<uint64_t>((CeilDiv(inner, tilesPerOuter) + 15U) / 16U * 16U, 4096U);
+        tileWidth = static_cast<uint32_t>(std::max<uint64_t>(desired, 16U));
+        while (tileWidth >= 16U) {
+            uint64_t rowBytes = AlignUp(static_cast<uint64_t>(tileWidth) * sizeof(uint16_t));
+            uint64_t maskBytes = AlignUp(CeilDiv(tileWidth, 8U));
+            uint64_t required = static_cast<uint64_t>(axisLen) * rowBytes * 2U + rowBytes * 2U + maskBytes * 2U;
+            if (ubSize > TOPK_SIMT_RESERVED_UB && required <= ubSize - TOPK_SIMT_RESERVED_UB) {
+                break;
+            }
+            tileWidth -= 16U;
+        }
+        if (tileWidth < 16U || ubSize <= TOPK_SIMT_RESERVED_UB) {
+            return -3;
+        }
+    } else if (axisLen == 7) {
+        uint64_t tilesPerOuter = std::max<uint64_t>(static_cast<uint64_t>(coreNum) / outer, 1U);
+        uint64_t desired = std::min<uint64_t>(AlignUp(CeilDiv(inner, tilesPerOuter)), 4096U);
+        tileWidth = static_cast<uint32_t>(std::max<uint64_t>(desired, TOPK_SMALL_AXIS_ALIGN));
+        while (tileWidth >= TOPK_SMALL_AXIS_ALIGN) {
+            uint64_t rowBytes = AlignUp(static_cast<uint64_t>(tileWidth) * sizeof(uint16_t));
+            uint64_t maskBytes = AlignUp(CeilDiv(tileWidth, 8U));
+            uint64_t required = static_cast<uint64_t>(axisLen) * rowBytes * 2U + rowBytes * 2U + maskBytes * 2U;
+            if (ubSize > TOPK_SIMT_RESERVED_UB && required <= ubSize - TOPK_SIMT_RESERVED_UB) {
+                break;
+            }
+            tileWidth -= TOPK_SMALL_AXIS_ALIGN;
+        }
+        if (tileWidth < TOPK_SMALL_AXIS_ALIGN || ubSize <= TOPK_SIMT_RESERVED_UB) {
+            return -3;
+        }
+    }
+
+    uint64_t tileCount = static_cast<uint64_t>(outer) * CeilDiv(inner, tileWidth);
+    params->outer = outer;
+    params->axisLen = axisLen;
+    params->inner = inner;
+    params->isLargest = isLargest;
+    params->tileWidth = tileWidth;
+    params->usedCores = static_cast<int64_t>(std::min<uint64_t>(static_cast<uint64_t>(coreNum), tileCount));
+    params->localMemoryBytes = static_cast<int64_t>(ubSize - TOPK_SIMT_RESERVED_UB);
+    return params->usedCores > 0 ? 0 : -4;
+}
+
+extern "C" int32_t launch_topk(GM_ADDR x, GM_ADDR y, GM_ADDR idx, GM_ADDR workspace, int64_t dtypeId,
+                                const TopKLaunchParams& params, void* stream)
+{
+    if (params.tilingKey == TOPK_TILING_KEY_SMALL_AXIS) {
+        if (dtypeId == TOPK_DTYPE_FP16) {
+            return LaunchSmallAxis<half>(x, y, idx, params.smallAxis, stream);
+        }
+        if (dtypeId == TOPK_DTYPE_BF16) {
+            return LaunchSmallAxis<bfloat16_t>(x, y, idx, params.smallAxis, stream);
+        }
+        return static_cast<int32_t>(ACL_ERROR_INVALID_PARAM);
+    }
+    if (params.tilingKey == TOPK_TILING_KEY_TRANSPOSE_FALLBACK) {
+        return LaunchTransposeFallback(x, y, idx, workspace, dtypeId, params, stream);
+    }
+    if (params.tilingKey == TOPK_TILING_KEY_FALLBACK) {
+        launch_topk_fallback(x, y, idx, dtypeId, params.fallback, stream);
+        return 0;
+    }
+    if (params.tilingKey == 23003 || params.tilingKey == 33003) {
+        return LaunchTopKKernel(&topk_fp32_merge_direct_kernel, x, y, idx, workspace, params, stream);
+    }
+    if (params.tilingKey == 13002) {
+        return LaunchTopKKernel(&topk_small_merge_direct_kernel<half, half>, x, y, idx, workspace, params,
+                                  stream);
+    }
+    if (params.tilingKey == 13003) {
+        return LaunchTopKKernel(&topk_small_merge_direct_kernel<float, float>, x, y, idx, workspace, params,
+                                  stream);
+    }
+    if (params.tilingKey == 14002) {
+        return LaunchTopKKernel(&topk_small_merge_direct_kernel<bfloat16_t, float>, x, y, idx, workspace,
+                                  params, stream);
+    }
+    switch (dtypeId) {
+        case TOPK_DTYPE_INT8:
+            return LaunchTopKKernel(&topk_common_direct_kernel<int8_t, uint8_t, 1>, x, y, idx, workspace,
+                                      params, stream);
+        case TOPK_DTYPE_UINT8:
+            return LaunchTopKKernel(&topk_common_direct_kernel<uint8_t, uint8_t, 1>, x, y, idx, workspace,
+                                      params, stream);
+        case TOPK_DTYPE_INT32:
+            return LaunchTopKKernel(&topk_common_direct_kernel<int32_t, uint32_t, 4>, x, y, idx, workspace,
+                                      params, stream);
+        case TOPK_DTYPE_FP16:
+            return LaunchTopKKernel(&topk_common_direct_kernel<half, uint16_t, 2>, x, y, idx, workspace,
+                                      params, stream);
+        case TOPK_DTYPE_FP32:
+            return LaunchTopKKernel(&topk_common_direct_kernel<float, uint32_t, 4>, x, y, idx, workspace,
+                                      params, stream);
+        case TOPK_DTYPE_BF16:
+            return LaunchTopKKernel(&topk_common_direct_kernel<bfloat16_t, uint16_t, 2>, x, y, idx, workspace,
+                                      params, stream);
+        default: return static_cast<int32_t>(ACL_ERROR_INVALID_PARAM);
+    }
+}

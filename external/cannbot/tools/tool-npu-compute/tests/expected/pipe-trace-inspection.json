@@ -1,0 +1,95 @@
+{
+  "minimal_trace": {
+    "event_count": 3,
+    "track_count": 3,
+    "sampled_group_ids": [
+      0,
+      1
+    ],
+    "sampled_group_count": 2,
+    "sampled_core_tracks": {
+      "0": [
+        "veccore0"
+      ],
+      "1": [
+        "veccore1"
+      ]
+    },
+    "maximum_sampled_groups": 6,
+    "sampling_limited": true,
+    "tracks_represent_all_enabled_cores": false,
+    "trace_start_us": 1.0,
+    "trace_end_us": 4.0,
+    "trace_span_us": 3.0,
+    "pipeline_event_counts": {
+      "MTE2": 2,
+      "VECTOR": 1
+    },
+    "pipeline_duration_sum_us": {
+      "MTE2": 1.25,
+      "VECTOR": 0.5
+    }
+  },
+  "real_fixture": {
+    "file": "PipeTrace.json",
+    "size": 32096,
+    "sha256": "8cc58f05cadd9d380bd528cf57a874226d8b5ff6be6038d28fc4f6f4f21be189",
+    "display_time_unit": "ns",
+    "profiling_type": "op",
+    "schema_version": 1,
+    "timestamp_unit": "us",
+    "event_count": 238,
+    "track_count": 16,
+    "sampled_group_ids": [
+      0,
+      3
+    ],
+    "sampled_group_count": 2,
+    "sampled_core_tracks": {
+      "0": [
+        "veccore0",
+        "veccore1"
+      ],
+      "3": [
+        "veccore0",
+        "veccore1"
+      ]
+    },
+    "maximum_sampled_groups": 6,
+    "sampling_limited": true,
+    "tracks_represent_all_enabled_cores": false,
+    "trace_start_us": 2.483030303030303,
+    "trace_end_us": 16.82,
+    "trace_span_us": 14.336969696969698,
+    "pipeline_event_counts": {
+      "SCALAR": 143,
+      "VECTOR": 36,
+      "MTE2": 28,
+      "MTE3": 31
+    },
+    "pipeline_duration_sum_us": {
+      "SCALAR": 17.59939393939394,
+      "VECTOR": 1.665454545454545,
+      "MTE2": 15.805454545454547,
+      "MTE3": 7.204848484848486
+    },
+    "selected_tracks": {
+      "group0.veccore0|MTE2": {
+        "group_id": 0,
+        "core": "veccore0",
+        "event_count": 8,
+        "trace_start_us": 2.860606060606061,
+        "trace_end_us": 7.410909090909091,
+        "duration_sum_us": 4.129090909090911
+      },
+      "group3.veccore1|SCALAR": {
+        "group_id": 3,
+        "core": "veccore1",
+        "event_count": 37,
+        "trace_start_us": 2.6988181818181816,
+        "trace_end_us": 16.46669696969697,
+        "duration_sum_us": 4.429696969696972
+      }
+    }
+  }
+}

@@ -1,0 +1,48 @@
+strategy_id: P97
+description: 零拷贝子张量切片适用性检查 — 必须存在从大 tensor 逐元素取值或 gather 到临时 buffer 的模式
+
+strategy_meta:
+  id: "P97"
+  slug: "P97_zero_copy_subtensor"
+  title: "P97: 零拷贝子张量切片 + 批量向量运算 (Zero-Copy Sub-Tensor Slicing)"
+  bottlenecks: [scalar_compute, scalar_loading, mte2_stall]
+  op_families: [elementwise, reduction, special, index_scatter]
+  conflicts_with: []
+  synergizes_with: [P95, P69, P7]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p97_zero_copy_subtensor.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p97_zero_copy_subtensor.md"
+  playbook_slug: "P97_zero_copy_subtensor"
+checks:
+  - id: has_scalar_gather_loop
+    type: grep_count
+    pattern: 'for\s*\([^)]*j[^)]*\+\+[^)]*\).*\w+\[.*j.*\].*=|for\s*\([^)]*j[^)]*\+\+[^)]*\).*GetValue\(\s*j\s*\)'
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未检测到逐元素 gather / 从大 tensor 取值 → P97 无改造对象。考虑 P95 向量链。"
+
+  - id: has_gather_copy_buffer
+    type: grep_count
+    pattern: "for.*gather|for.*collect|for.*copy.*buf|LocalTensor.*tmp.*Gather"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未检测到 gather 到临时 buffer 的反模式 → 当前可能不需要零拷贝切片优化。"
+
+  - id: has_source_local_tensor
+    type: grep_count
+    pattern: 'LocalTensor\s*<|TBuf\s*<|inQueue|outQueue'
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未检测到 UB LocalTensor / Queue 使用 → 零拷贝切片需要在 UB tensor 上操作，当前不适用。"
+
+  - id: has_batch_vector_opportunity
+    type: grep_count
+    pattern: '\b(Max|Min|SubRelu|Mul|Div|Duplicate)\s*\('
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未检测到批量向量运算机会（Max/Min/SubRelu/Mul/Div）→ 零拷贝切片后无向量链消费，收益有限。"

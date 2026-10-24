@@ -1,0 +1,41 @@
+strategy_id: P137
+description: 稀疏/不规则 gather 的 attention 是否具备走 Cube 的 workspace 紧凑化结构 — 有 AIV gather + AIC mmad 分离路径，且 gather 写入范围 < Cube 读取范围
+strategy_meta:
+  id: "P137"
+  slug: "P137_sparse_topk_compact_gather_to_cube"
+  title: "P137: Token 级稀疏 Attention 的 workspace 紧凑化走 Cube（top-k 不再回退 Vector）"
+  bottlenecks: [scalar_loading, cube_bound]
+  op_families: [attention, flash_attention]
+  conflicts_with: []
+  synergizes_with: [P110, P14, P129]
+  requires: []
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p137_sparse_topk_compact_gather_to_cube.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p137_sparse_topk_compact_gather_to_cube.md"
+  playbook_slug: "P137_sparse_topk_compact_gather_to_cube"
+  quantified_gain: [{"shape": "SparseFlashAttention GQA topK512 Dk128 kvSeq4096（case1, 910B2C→910c）", "baseline_us": 27251.88, "optimized_us": 1578.0, "speedup": 17.28, "source": "cannbench-evo round_18（紧凑化→Cube 全程，cube_utilization≈98%）"}]
+checks:
+  - id: has_sparse_gather
+    type: grep_count
+    pattern: "sparseIndices|topK|Gather|GetValue.*idx|selected_tokens"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未发现稀疏索引/gather 相关代码 → P137（token 级稀疏走 Cube）不适用"
+
+  - id: has_cube_gemm
+    type: grep_count
+    pattern: "MIX_AIC|__aicore__|mmad|Cube|KERNEL_TYPE_MIX|MmQK|QK.*GEMM|Matmul"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未发现 Cube/AIC GEMM 路径 → 紧凑化无处落地，P137 需先确认可走 Cube"
+
+  - id: workspace_compact_tile
+    type: grep_count
+    pattern: "workspace|compact|validCount|laneBegin|rowGap|kCubeTileN"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未发现 workspace 紧凑 tile / validCount 行段逻辑 → P137 紧凑化结构缺失"

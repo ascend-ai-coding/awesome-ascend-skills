@@ -1,0 +1,47 @@
+strategy_id: P143
+description: Attention host 端 launch 合并 + per-shape tiling 缓存适用性检查 — 算子为 attention/FA/matmul 类，host 侧存在多次 kernel launch 或重复 tiling。
+strategy_meta:
+  id: "P143"
+  slug: "P143_attention_host_launch_merge"
+  title: "P143: Attention host 端 launch 合并 + per-shape tiling 缓存"
+  bottlenecks: [scalar_loading, no_overlap]
+  op_families: [attention, flash_attention, matmul]
+  conflicts_with: []
+  synergizes_with: [P35, P54, P131, P142]
+  requires: []
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p143_attention_host_launch_merge.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p143_attention_host_launch_merge.md"
+  playbook_slug: "P143_attention_host_launch_merge"
+checks:
+  - id: is_attention_or_matmul_family
+    type: grep_count
+    pattern: "attention|FlashAttention|matmul|Matmul|linear"
+    files: [kernel, header, host]
+    expected: ">= 1"
+    fail_msg: "算子非 attention/matmul 类 → P143 不适用。"
+
+  - id: has_multiple_launches
+    type: grep_count
+    pattern: "launch|aclnn|RunKernel|Invoke"
+    files: [host]
+    expected: ">= 2"
+    fail_msg: "host 侧 launch 次数不足 2 → 合并收益不明显。"
+
+  - id: has_tiling_computation
+    type: grep_count
+    pattern: "tiling|Tiling|SetTiling|GetTiling|tilingData"
+    files: [host]
+    expected: ">= 1"
+    fail_msg: "未检测到 host tiling 计算 → per-shape cache 无收益。"
+
+  - id: has_workspace_allocation
+    type: grep_count
+    pattern: "at::zeros|at::empty|workspace|AllocWorkspace"
+    files: [host]
+    expected: ">= 1"
+    fail_msg: "未检测到 workspace 分配 → 无法评估复用空间。"

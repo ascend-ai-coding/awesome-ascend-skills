@@ -1,0 +1,26 @@
+/*!
+ * \file conv3ddx_ks_launch.h
+ * \brief Conv3DDX kernel split launch 声明（g++ 可见）。
+ *        对应 templates/conv3ddx_kernel_split.md / usage_guide.md。
+ *
+ * ── 集成说明：去掉 .template 后缀落地为 conv3ddx_ks_launch.h ────────────────────
+ */
+
+#ifndef CONV3DDX_KS_LAUNCH_H
+#define CONV3DDX_KS_LAUNCH_H
+
+#include <cstdint>
+
+#include "conv3ddx_ks_tiling.h"
+
+#ifndef GM_ADDR
+#define GM_ADDR void*
+#endif
+
+// workspace：仅 SplitHW（splitMode=1）且 tiling.useWorkspace=1 时必须提供
+// ≥ tiling.workspaceBytes 的 device 缓冲（L0C→GM(ws)→UB 中转路径）；
+// SplitH（splitMode=2）恒直写 GM，workspace 可传 nullptr。
+extern "C" void launch_conv3ddx_ks(GM_ADDR filter, GM_ADDR dedy, GM_ADDR dx, GM_ADDR workspace,
+                                   const Conv3ddxKsCase& tiling, void* stream);
+
+#endif

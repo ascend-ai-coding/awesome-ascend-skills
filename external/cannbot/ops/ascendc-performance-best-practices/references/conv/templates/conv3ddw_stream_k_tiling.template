@@ -1,0 +1,141 @@
+/**
+ * Copyright (c) 2025 Huawei Technologies Co., Ltd.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
+
+/* Conv3DDW StreamK runtime contract. Materialize as conv3ddw_stream_k_tiling.h.
+ * NCDHW X/dY and [Cout,Cin,Kd,Kh,Kw] FP32 dW, groups=1.
+ * Independent of ops-nn registry/GE/runtime KB. Source mapping: tuning guide.
+ */
+#ifndef CONV3DDW_STREAM_K_TILING_H
+#define CONV3DDW_STREAM_K_TILING_H
+#include <cstdint>
+#include <limits>
+
+enum class ConvDwSkDType : uint32_t { FP16=0, BF16=1, FP32=2 };
+enum class ConvDwSkMode : uint32_t { AUTO=0, DISABLED=1, BATCH_DOUT=2, HWOUT=3 };
+constexpr uint32_t kDwSkL1Bytes=512*1024;
+constexpr uint32_t kDwSkL0ABBytes=64*1024;
+constexpr uint32_t kDwSkL0CBytes=256*1024;
+constexpr uint64_t DwSkCeil(uint64_t a,uint64_t b) { return a/b+(a%b!=0); }
+constexpr uint64_t DwSkAlign(uint64_t a,uint64_t b) { return DwSkCeil(a,b)*b; }
+constexpr uint32_t DwSkBytes(ConvDwSkDType d) { return d==ConvDwSkDType::FP32 ? 4:2; }
+
+// Geometry, Cube buffers and StreamK fields retain the verified device semantics.
+// Defaults are not a runnable tiling: use Conv3ddwSkDoTiling and ValidateCase.
+struct Conv3ddwSkCase {
+    uint32_t batch = 1;
+    uint32_t cin = 1;
+    uint32_t cout = 1;
+    uint32_t cin1G = 1;
+    uint32_t cout1G = 1;
+    uint32_t dout = 1;
+    uint32_t ho = 1;
+    uint32_t wo = 1;
+    uint32_t di = 1;
+    uint32_t hi = 1;
+    uint32_t wi = 1;
+    uint32_t dk = 1;
+    uint32_t hk = 1;
+    uint32_t wk = 1;
+    uint32_t group = 1;
+    uint32_t realGroup = 1;
+    uint32_t strideD = 1;
+    uint32_t strideH = 1;
+    uint32_t strideW = 1;
+    uint32_t padFront = 1;
+    uint32_t padBack = 1;
+    uint32_t padUp = 1;
+    uint32_t padDown = 1;
+    uint32_t padLeft = 1;
+    uint32_t padRight = 1;
+    uint32_t dilationD = 1;
+    uint32_t dilationH = 1;
+    uint32_t dilationW = 1;
+    uint32_t channelSize = 1;
+    uint32_t al0Pbuffer = 1;
+    uint32_t bl0Pbuffer = 1;
+    uint32_t cl0Pbuffer = 1;
+    uint32_t al1Pbuffer = 1;
+    uint32_t bl1Pbuffer = 1;
+    uint32_t baseM = 1;
+    uint32_t baseK = 1;
+    uint32_t baseN = 1;
+    uint32_t m0 = 1;
+    uint32_t k0 = 1;
+    uint32_t n0 = 1;
+    uint32_t stepKa = 1;
+    uint32_t stepKb = 1;
+    uint32_t iterateOrder = 1;
+    uint32_t bl1Bound = 1;
+    uint32_t al1Bound = 1;
+    uint32_t hf32Flag = 1;
+    uint32_t singleCoreDk = 1;
+    uint32_t singleCoreGroup = 1;
+    uint32_t singleCoreCout = 1;
+    uint32_t singleCoreHo = 1;
+    uint32_t splitWo = 128;
+    uint32_t streamkType = 1;
+    uint32_t usedCoreNum = 1;
+    uint32_t singleCoreM = 1;
+    uint32_t singleCoreN = 1;
+    uint32_t singleCoreK = 1;
+    uint64_t singleCoreBatch = 1;
+    uint64_t singleCoreCin = 1;
+    uint64_t singleCoreBatchDout = 1;
+    ConvDwSkDType dtype=ConvDwSkDType::FP16;
+    uint32_t streamkCores=0;
+    uint64_t totalTiles=0, mainRounds=0, tailTiles=0;
+    uint64_t workspaceBytes=0;
+    uint64_t ubBytes=0; // host 查询到的目标设备单核 UB 容量
+};
+
+struct Conv3ddwSkTilingIn {
+    uint32_t n=0, cin=0, cout=0, di=0, hi=0, wi=0;
+    uint32_t kd=0, kh=0, kw=0;
+    uint32_t strideD=1, strideH=1, strideW=1;
+    uint32_t dilationD=1, dilationH=1, dilationW=1;
+    uint32_t padFront=0,padBack=0,padUp=0,padDown=0,padLeft=0,padRight=0;
+    uint32_t groups=1, aicoreNum=0; // 调用方须从目标平台查询可用 AIC 核数
+    uint64_t ubBytes=0; // 调用方须从目标平台查询单核 UB 字节数
+    ConvDwSkDType dtype=ConvDwSkDType::FP16;
+    ConvDwSkMode streamkMode=ConvDwSkMode::AUTO;
+    uint32_t hf32=0;
+    // 0: choose automatically; 1/2: select L0C single/double buffer for A/B.
+    uint32_t c0Db=0;
+};
+struct Conv3ddwSkTilingOut { Conv3ddwSkCase caseData{}; };
+inline Conv3ddwSkCase ToCaseView(const Conv3ddwSkTilingIn&,const Conv3ddwSkTilingOut& out)
+{ return out.caseData; }
+
+// No splitWo in this template. This is the upstream CalBL1Bound formula.
+constexpr uint64_t DwSkBL1Bound(const Conv3ddwSkCase& c,uint32_t stepKb) {
+    const uint64_t k=uint64_t(c.baseK)*stepKb;
+    const uint64_t h=(k%c.wo==0 || c.wo%k==0) ? DwSkCeil(k,c.wo) :
+                     (k>c.wo ? k/c.wo+2 : 2);
+    const uint64_t hi=(h-1)*c.strideH+uint64_t(c.hk-1)*c.dilationH+1;
+    const uint64_t hw=uint64_t(c.hk)*c.wk;
+    const uint64_t bn=DwSkCeil(c.baseN,16);
+    uint64_t copies=DwSkCeil(bn,hw);
+    if (hw>bn && hw%bn!=0) ++copies;
+    else if ((2*bn)%hw!=0) ++copies;
+    const uint64_t cinBlock=(c.baseN/(hw*16)>0?c.baseN/(hw*16):1)*16;
+    const uint64_t channels=cinBlock<copies*16?cinBlock:copies*16;
+    return hi*c.wi*channels;
+}
+constexpr bool DwSkFitsL1(const Conv3ddwSkCase& c,uint32_t ka,uint32_t kb) {
+    // InitTque places both pong buffers at fixed L1/2; always use symmetric DB.
+    const uint64_t a=DwSkAlign(uint64_t(c.baseM)*c.baseK*ka*DwSkBytes(c.dtype),32);
+    const uint64_t b=DwSkAlign(DwSkBL1Bound(c,kb)*DwSkBytes(c.dtype),32);
+    return a+b<=kDwSkL1Bytes/2;
+}
+
+// Host-only validation (implemented with tiling search, no SDK dependency).
+bool ValidateCase(const Conv3ddwSkCase& c);
+bool Conv3ddwSkDoTiling(const Conv3ddwSkTilingIn& in,Conv3ddwSkTilingOut& out);
+#endif
