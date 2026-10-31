@@ -1,0 +1,19 @@
+strategy_id: P13
+description: "P13: Special Algorithms & High-Level AscendC APIs (特殊算法与高阶API)"
+
+strategy_meta:
+  id: "P13"
+  slug: "P13_special_algorithms"
+  title: "P13: Special Algorithms & High-Level AscendC APIs (特殊算法与高阶API)"
+  bottlenecks: [compute_bound]
+  op_families: [special]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L0"
+  deprecated: true
+  deprecated_reason: "Title is vague 'Special Algorithms'. Content is actually FakeQuant DAG scheduling (very specific, not L0 universal)."
+  has_preconditions: false
+  has_playbook: false
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p13_special_algorithms.md"

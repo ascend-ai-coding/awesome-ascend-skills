@@ -1,0 +1,48 @@
+strategy_id: P98
+description: 混合标量/向量路径自适应调度适用性检查 — 必须同时存在标量循环和向量 API 使用场景，或 workload 跨度大
+
+strategy_meta:
+  id: "P98"
+  slug: "P98_hybrid_scalar_vector_dispatch"
+  title: "P98: 混合标量/向量路径自适应调度 (Hybrid Scalar/Vector Dispatch)"
+  bottlenecks: [scalar_compute, compute_bound, near_optimal]
+  op_families: [reduction, normalization, elementwise, softmax]
+  conflicts_with: []
+  synergizes_with: [P94, P95, P67]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p98_hybrid_scalar_vector_dispatch.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p98_hybrid_scalar_vector_dispatch.md"
+  playbook_slug: "P98_hybrid_scalar_vector_dispatch"
+checks:
+  - id: has_scalar_loop
+    type: grep_count
+    pattern: 'for\s*\([^)]*\+\+[^)]*\)\s*\{[^}]*GetPhyAddr|for\s*\([^)]*\+\+[^)]*\)\s*\{[^}]*GetValue'
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未检测到标量循环路径 → 无标量路径可保留，P98 不适用。"
+
+  - id: has_vector_api
+    type: grep_count
+    pattern: '\b(Add|Mul|ReduceSum|Adds|Muls|EnQue|DeQue)\s*\('
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未检测到 Vector API / Queue 使用 → 无向量路径可切换，P98 不适用。"
+
+  - id: has_workload_variation
+    type: grep_count
+    pattern: "spatial|rowLength|tile_size|count_spatial|numCol"
+    files: [kernel, header, tiling]
+    expected: ">= 1"
+    fail_msg: "未检测到 workload 变化维度 → 无法确定 dispatch 阈值，P98 不适用。"
+
+  - id: not_already_dispatch
+    type: grep_count
+    pattern: "VECTOR_MIN_SPATIAL|Process.*Scalar|Process.*Vectorized|dispatch"
+    files: [kernel, header]
+    expected: "<= 2"
+    fail_msg: "算子已存在较复杂的 dispatch 逻辑 → 避免过度复杂化，先评估现有 dispatch 是否足够。"

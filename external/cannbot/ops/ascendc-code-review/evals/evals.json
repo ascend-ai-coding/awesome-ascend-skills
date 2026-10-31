@@ -1,0 +1,222 @@
+{
+  "skill_name": "ascendc-code-review",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "代码检视工作流路由",
+      "config": {
+        "max_tokens": 160000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "ascendc-code-review 技能在接收到代码检视请求时，如何根据用户输入选择合适的工作流？请介绍该技能支持的主要工作流类型以及各自的路由逻辑。不需要执行任何工具调用。",
+      "expected_output": "回复应介绍 ascendc-code-review 的主要工作流类型及其基本的路由逻辑。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 2,
+      "title": "代码检视检查项与规范",
+      "config": {
+        "disabled": true,
+        "max_tokens": 160000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "在使用 ascendc-code-review 技能进行 Ascend C 代码检视时，主要检查哪些方面的内容？有哪些检视规则和规范文档可以参考？检视完成后如何输出结果？不需要执行任何工具调用。",
+      "expected_output": "回复应介绍代码检视的主要检查维度（安全编码、API 最佳实践、性能约束等）、可参考的规范文档，以及检视结果的输出方式。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 3,
+      "title": "Ascend C 代码检视请求（正向看护）",
+      "config": {
+        "max_tokens": 320000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 576000,
+          "glm-5": 544000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "distractor_skills": [
+          "ascendc-st-design"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请帮我快速检视以下 Ascend C 代码是否存在问题：\n\n```cpp\n__aicore__ void Add(GM_ADDR x, GM_ADDR y, GM_ADDR z) {\n    LocalTensor<half> xLocal;\n    LocalTensor<half> yLocal;\n    LocalTensor<half> zLocal;\n    DataCopy(xLocal, xGM);\n    DataCopy(yLocal, yGM);\n    Add(zLocal, xLocal, yLocal);\n    DataCopy(zGM, zLocal);\n}\n```\n\n请加载 ascendc-code-review 技能完成检视。",
+      "expected_output": "回复应对提交的 Ascend C 代码给出检视意见：涵盖安全编码、API 使用、边界条件等检视维度。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "通用 Python 代码风格咨询（负向看护）",
+      "config": {
+        "max_tokens": 160000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请帮我 review 以下 Python 代码是否符合 PEP 8 规范，有没有潜在的性能问题：\n\n```python\ndef processData(n):\n    result=[]\n    for i in range(n):\n        temp = i*2\n        result.append(temp+1)\n    return result\n```\n\n我不需要 Ascend C 相关的内容。",
+      "expected_output": "回复应关注 Python 代码规范和性能优化，指出命名风格（如 snake_case）、列表推导式等可改进的点。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "PR 检视流程（关键能力）",
+      "config": {
+        "max_tokens": 160000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我负责的算子仓提交了一个 PR，想用 ascendc-code-review 对它做全量检视。PR 检视是怎么做的？从获取 diff 到出具报告要经过哪些阶段？检视时怎么判断代码侧别？",
+      "expected_output": "应说明走 pr-review 工作流：提取 PR 链接并判断托管平台，派发子 Agent 获取 diff 与完整源码（code-fetch），并行派发代码概要/API 预研（仅 Kernel 侧），产出检视计划（通用分组+跳过清单+仅核对清单），按波次逐条检视，行号校对，撰写报告。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "设计一致性检查（对照 DESIGN.md）",
+      "config": {
+        "disabled": true,
+        "max_tokens": 160000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我新写的算子实现和算子仓里的 DESIGN.md 设计文档有些对不上，设计文档就在仓里，想对照设计文档做一次设计一致性检查，看看实现有没有偏离设计。这个应该怎么检视？",
+      "expected_output": "应说明走文件检视流程中的设计一致性检查（design-check）：用 docs-detect 自动探测设计文档路径（docs_input，优先自动探测算子仓内的设计文档，而不是直接向用户索要文件路径），读取并执行 steps/common.design-check.md，派发专项 design-check 子 agent 并与通用检视并行执行，对照 DESIGN.md 逐项核对实现代码，输出设计决策与实现的一致性偏差及修改建议。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 8,
+      "title": "红线问题清单（必须拦截）",
+      "config": {
+        "max_tokens": 160000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "检视 Ascend C 算子代码时，有哪些红线问题是必须拦截的高危问题？比如除法和数组索引这类。Kernel 侧还有什么特殊的红线？",
+      "expected_output": "应说明红线问题清单（ascendc-red-line.md）共 10 条且严重级别均为高：All 侧 7 条（除法/余数运算除零保护、数组索引校验、有符号整数运算不溢出、无符号整数运算不回绕、禁止使用未初始化的变量、指针操作使用前判空、避免数据竞争）；Host 侧 1 条（资源泄露防护）；Kernel 侧 2 条（gm 内存偏移或大小必须用 int64 表示、支持 superKernel 场景禁止直接对 GM 地址读写需改用 GetValue/SetValue）。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 9,
+      "title": "假设检验驱动的检视方法论",
+      "config": {
+        "max_tokens": 160000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "检视代码时怎么判定一段代码有没有问题？我听说有假设检验的方法：完整的假设检验检视流程分哪几步、从哪一步开始？原假设和备择假设分别是什么？正向证据和负向证据各有哪些类型、分值是多少？置信度怎么评估？负向证据有什么要求？",
+      "expected_output": "应说明假设检验驱动的检视流程（core/methodology.md）：代码段识别→建立原假设 H0（代码段安全）与备择假设 H1（存在风险，自信值初始 0%）→收集并评估证据：正向证据（规范违反 +40%、上下文防御缺失 +30%、PR 归属 +20%、调用链/数据流风险 +15%、领域关联 +10%）与负向证据（防御存在 -20%、上游校验 -15%、范围外 -50%）→判定结论；负向证据必须附可验证的代码引用（格式 [文件路径]:[行号] [具体代码行内容]），否则该条证据得分为 0。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 10,
+      "title": "错误码检视引用唯一基准与废弃码检测",
+      "config": {
+        "max_tokens": 160000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请说明新增的错误码检测项如何工作，要拦截哪些废弃错误码？Host 代码使用 OP_LOGE_WITH_INVALID_INPUT_SHAPE(opName, 0, actual, expected)，目前看不到依赖的 log.h，应该如何给出检视结论和修复建议？不要调用外部服务，也不要修改代码。",
+      "expected_output": "应说明引用 cann-error-code-standard 的 SKILL、development-standard 和 documented-error-codes.json，而不是复制正式码表。列出要拦截的 EZ0001、EZ0002、EZ0003、EZ0005、EZ0006、EZ0007 及对应旧宏。旧 shape 宏是废弃码候选，须解析实际宏定义和 include 链；缺少 log.h 时不能臆称实际叶子已验证。替换按语义参数名、单/多参数、expected/reason 选择目标版本已注册且可见的入口，不机械改编号。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 11,
+      "title": "正式码注册契约与首报唯一性",
+      "config": {
+        "max_tokens": 160000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "检视错误码：LowerLayer 已报告具体参数错误，外层 if(rc != SUCCESS) 又 REPORT_INNER_ERR_MSG(\"EZ9999\", \"failed\") 并返回 rc。我们在官方文档看到了一个替代正式码，就能直接上报吗？不需要修改或编译代码。",
+      "expected_output": "应检查 ERR-2/3：资料收录不等于目标版本已注册或实际宏可用，须核对目标注册项、Arglist 名称数量顺序以及 include 链。下层已首报时外层只能补日志和原始 rc 并透传，不能再用内部码覆盖首错；保持公开返回值兼容。注明编译、负向日志和首错唯一性没有在本次静态咨询中验证。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 20,
+      "title": "MC2 关联 helper 的选规与排除",
+      "config": {
+        "max_tokens": 32000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请读取 ascendc-code-review 的 common.plan-design.md 及其要求的规则声明，按 Step 3 至 Step 5 分别判断以下独立输入。只输出匹配文件、适用条款和理由，不创建检视目录或执行条款检视。A 至 F 均为 C++ Kernel，scope_hint 为空。\n\nA：src/index_offset.h 不调用同步或通信 API，变量为 localIds、localCount，变更是专家编号转换后的数组索引。API 索引、变量溯源和 diff 均未命中四份 MC2 主题文件的触发词。概要的跨文件关系已确认该 helper 由 MC2 MoE 入口调用，证据为入口.cpp:80 -> index_offset.h:12。\nB：standalone/gather.cpp 调用 AllGather，但概要已确认它是独立通信实现，与 MC2 无调用、注册或构建关系。\nC：src/index_offset.h 与 A 的代码及关键词情况相同，概要没有任何领域关联证据。\nD：src/expert_offset.h 使用 SyncAll 和 expertIds，变更是专家编号转换后的数组索引，且已有与 A 同类的 MC2 调用关系证据。\nE：standalone/sync.cpp 使用 SyncAll 和 expertIds，但概要已确认与 MC2 无调用、注册或构建关系。\nF：代码与 A 相同，概要只有基线格式，未记录领域关联；本次任务输入提供了已确认的 MC2 调用关系及入口.cpp:80 -> index_offset.h:12。\n\n分别给出文件检视与 PR 检视的处理；PR 中 A、D 和 F 仅修改 helper，调用者未修改。F 还需说明从主 Agent 向计划设计、再向新上下文条款执行者传递依据的位置和来源标注。补充确认未声明关联适用的日志规则、必须触发规则是否保持原行为。\n\nG：以下为既有规则兼容对照，不含 MC2 关键词或关联证据，均只检视实际变更：G1 是 C++ Host，新增 OP_LOGE 调用；G2 同为 C++ Host，但无日志关键词或日志调用；G3 是 C++ Kernel，无领域关键词，检查 cpp-secure、ascendc-red-line、ascendc-topk、ascendc-error-code 的必须触发行为；G4 是 third_party 下的 C++ Kernel 文件，含 Blaze:: 调用，检查 plan-design 原有排除场景。分别给出匹配结果，不额外索要 MC2 归属证明。再读取 quick-review.md，说明其关注点匹配是否新增了对所有领域规则的排除检查。混合分组含 MC2-5.1 与通用安全条款时，关联依据应传给谁？",
+      "expected_output": "应通过各主题文件的触发词、关联适用声明和排除场景判断，不依赖流程中的 MC2 文件名单。A 应依据概要中的已确认调用关系匹配四份 MC2 主题文件，随后按 Kernel 侧别和变更内容筛选，保留 MC2-5.1；PR 中调用者未修改不影响关联关系成立，但检视仍限于 helper 的变更影响。不能因未命中关键词跳过所有 MC2 规则，也不能无条件派发全部条款。B 应按排除场景跳过 MC2 规则。C 不能复用 A 的关联结论，应记录证据不足，不能仅凭文件名或 localIds 启用 MC2。D 中 SyncAll、expertIds 应命中恢复的触发词，经归属和内容检查后保留 MC2-5.1。E 虽命中触发词，仍须按排除场景跳过；不能把关键词命中直接当作 MC2 归属证明。 F 由派发者按 common.plan-design 的可选输入转入任务提供的依据；可匹配四份主题并筛选保留 MC2-5.1，无需修改概要模板。计划输出保留关联依据，条款派发者按 clause-review 模板转入当前组的新上下文；全过程注明用户来源，不把用户说明写成代理已读取代码核实。不能因为概要未重复记录关系而跳过。未声明可选字段的日志规则及必须触发规则保持原匹配和读取行为，不额外要求领域归属证明。 选规不依赖读取 mc2-specific.md 总览；只有关键词匹配或有证据支持的关联条件成立时，才进入候选。 G1 的日志规则按 Host 侧别和日志关键词进入候选，再按变更内容保留相关条款；G2 不命中日志规则。G3 四份必须触发规则保持原有候选与内容筛查行为，不要求 MC2 关联证据。G4 按 Blaze 自身已有的 third_party 排除条件跳过，不经过 MC2 归属判断。quick-review 的 Step 3 保持基线的语言/侧别检查，没有新增对全部规则的排除检查；MC2 适用前提由单条正文执行。混合分组的关联依据仅用于对应的 MC2 条款，不作为通用安全条款的启用条件。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 21,
+      "title": "MC2 快速检视的独立条款与合法边界",
+      "config": {
+        "max_tokens": 32000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请加载 ascendc-code-review，按快速检视流程实际读取并检视以下片段。任务已确认这两个 C++ helper 由 MC2 MoE 入口调用，依据是调用者.cpp:80 -> helper.h:12；不需要拉取源码或提交结果。列出实际读取的文件、章节及行范围，再给出判断。不能用复述流程代替读取。本用例验证单章能否独立执行：除 SKILL 入口、quick-review 和 methodology 外，只读取 references/mc2-resources-errors.md 的适用声明及 MC2-7.7、MC2-7.3 章节，以及 references/mc2-communication-compute.md 的适用声明及 MC2-5.1 章节；不读取 mc2-specific 总览或其他规则正文。定位范围时仅列同级条款标题（grep -nE '^## MC2-'），不要把代码块中的 # 注释当成标题。原片段与对照路径分别给出判断，不混用两条路径的变量或校验。\n\nA：容量计算，uint32_t count=65536, width=65536; uint64_t bytes=count*width; 上游只分别保证 count、width 不超过65536。对照路径先转 uint64_t 再乘，且已有上游验证结果不超过缓冲区容量，使用前不改值。允许 rounds=0，已有 HandleEmptyRounds 分支。重点核对 MC2-7.7。\nB：专家全局编号集合为[2,5,8]，本地数组长度3；对输入5用 localId=globalId-2 后访问。对照路径用实际映射表将5映射为1，上游已验证映射值范围，使用前不改值；-1 为合法丢弃哨兵并跳过访存。重点核对 MC2-5.1。\nC：另一段已确认属于 MC2 的 Host 侧通信拆分实现，准备把所有平台的 CCU 单次上限写死为256MB，并称 API 最新文档就是判断依据。没有目标 CANN 版本、设备或重载信息。按 MC2-7.3 说明需要的证据。\n\n不联网，不虚构 API 查证结果或完整源码行号。",
+      "expected_output": "实际读取 quick-review 和 methodology，并按适用声明及单条标题读取 MC2-7.7、MC2-5.1、MC2-7.3；章节内取得所需条件，不依赖总览先读协议。A：32位乘法先回绕，赋给64位仍为0；宽类型计算且已有有效容量校验的对照不要求重复守卫，合法0轮次保留。B：5-2=3越界，非连续专家不能直接减基址；映射为1且上游已验证的路径不报错，-1分支不访问数组即可。C：不能把历史256MB视为统一上限，也不能用最新文档替代目标版本；需确认目标CANN版本、设备、后端及实际原语/重载并查对应预研、官方资料和本地定义。未提供资料时说明待核实，不捏造已查证或精确限制；接口允许拒绝超限时不强制实现拆分/fallback。报告读取轨迹和实际结论，纯整数缺陷无需等待无关API资料。 实际读取轨迹不得包含 mc2-specific 总览或其他规则正文；不能读取总览后声称已验证单章独立性。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 22,
+      "title": "MC2 总览缺失时的独立选规与检视",
+      "config": {
+        "max_tokens": 32000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "在临时目录复制 ascendc-code-review 的四份 MC2 主题文件，以及 common.plan-design、两个 clause-review 模板、quick-review 和 methodology；不要复制 mc2-specific.md 总览，不修改原技能目录。所有读取都使用临时副本。\n\n任务输入已确认 src/local_index.h 被 MC2 MoE 入口调用，证据是入口.cpp:80 -> local_index.h:12；helper 不含主题文件触发词，变更是专家映射后的本地数组索引。另有含 AllGather 的独立通信实现，已确认与 MC2 无关系。按计划设计的 Step3至Step5实际读取声明和索引，给出两者选规结果，不运行完整检视或派发子代理。再按文件/PR执行模板和快速检视的读取边界，读取 MC2-5.1：本地专家集合[2,5,8]，输入5减起点2后访问长度3数组。\n\n列出实际读取文件和章节，说明判断所需的归属条件、映射条件来自哪里；如缺少资料，指出具体缺口，不推定已经完成。禁止联网或改动原技能目录。",
+      "expected_output": "临时副本确实没有总览文件。根据主题适用声明中的已有调用证据，helper 可进入 MC2 候选，再按 Kernel 和索引访问模式保留 MC2-5.1；独立通信实现按排除条件跳过。文件/PR模板及快速检视均能读取单条章节，获得已确认MC2归属、实际专家映射和上下游校验的判断条件；5-2=3越界，应使用真实映射，不能默认连续分配。不存在必读公共说明或因缺总览静默丢结果、反复补派的分支；导航文件缺失不等于当前条款必要条件缺失。若实际调用证据不足仍须说明，不能将总览可选解释为可省略领域判断。 独立 AllGather 实现应说明 MC2 条款不适用，不把未执行的 MC2 检查写成 PASS 或已覆盖；快速检视依靠 MC2 单章的适用前提，不要求修改其他规则的排除逻辑。",
+      "expectations": [],
+      "files": []
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+# Paths and required structure of the design outputs.
+version: 1
+artifacts:
+  DESIGN:
+    path: DESIGN.md
+    description: Design document used by implementation and verification.
+    frontmatter:
+      required:
+        - schema_version
+        - op_name
+        - dynamic_axes
+    required_headings:
+      - 算子契约
+      - 计算图与 API 映射
+      - 分解与模块边界
+      - 范式与设计决策
+      - 伪代码
+      - 验证方案 / Verification Plan
+      - 风险与开放问题
+  module_interfaces:
+    path: eval/module_interfaces.yaml
+    required_keys:
+      - schema_version
+      - op
+      - primary_inputs
+      - modules
+      - final_outputs
+      - composition_verification

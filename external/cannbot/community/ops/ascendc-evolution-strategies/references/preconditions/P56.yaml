@@ -1,0 +1,40 @@
+strategy_id: P56
+
+strategy_meta:
+  id: "P56"
+  slug: "P56_datacopy_batch_output"
+  title: "P56: DataCopy UB2GM 合并输出 (Batch DataCopy Output)"
+  bottlenecks: [mte2_stall, mte3_stall]
+  op_families: [pooling_gather]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p56_datacopy_batch_output.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p56_datacopy_batch_output.md"
+  playbook_slug: "P56_datacopy_batch_output"
+checks:
+  - id: has_datacopy
+    type: grep_count
+    pattern: "DataCopy|CopyOut|Fixpipe|UB2GM"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 DataCopy UB2GM 写回操作 → 无合并优化空间，不适用 P56。"
+
+  - id: has_datacopy_2
+    type: grep_count
+    pattern: "for.*DataCopy|循环.*DataCopy|loop.*DataCopy"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到循环内 DataCopy 模式 → 无批量合并场景，不适用 P56。"
+
+  - id: has_batch
+    type: grep_count
+    pattern: "batch.*output|合并.*写回|统一.*DataCopy"
+    files: [kernel]
+    expected: ">= 0"
+    fail_msg: "已存在输出合并逻辑 → 可能冗余，优先验证现有策略效果。"

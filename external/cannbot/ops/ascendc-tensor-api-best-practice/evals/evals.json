@@ -1,0 +1,97 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "Tensor API 手册与样例自动获取",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A5"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "本地缺少 Tensor API 手册和官方样例时应该怎么处理？不需要执行工具。",
+      "expected_output": "应说明运行 ensure_docs.py 自动获取或 fast-forward asc-devkit；主工作区被非 master 分支占用或与 master 历史分叉时，自动维护独立的 asc-devkit-master 浅镜像提供手册与样例（不修改主工作区），输出 JSON 的 selected_root 为事实源根目录；仓库 dirty 或 origin 不匹配时阻断，不强制覆盖。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "bf16 Cube matmul 精度超标定位流程",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A5"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "自研 bf16 Cube matmul 算子在大 K 大 M×N 的 case 上出现小值域精度超标（相对误差超过逐点门限），如何系统定位是自己的实现 bug 还是硬件舍入极限？请依据本 skill 的 references/precision-model.md 中的既有排障结论回答，并保留其中的具体数值（误差量级区间、σ(段数) 模型、K 段数计算等）与官方对照、控制变量实验步骤。不需要执行任何工具调用。",
+      "expected_output": "回复应给出排障路径：先看误差量级区分两类问题（实现 bug 的 MERE 通常是 1e-1~1e1 量级，硬件舍入极限是 1e-6~1e-5 量级）；做官方 kernel 对照实验（官方 torch_npu matmul 跑同数据同判定，再 bit 级对比输出，一致即数值等价）；做控制变量变体实验（从现有数据切 K/M/N 派生真子集，注意验证切片后 shape 真的变了）；拟合 σ(段数) 模型（σ≈2.6e-6×sqrt(K段数)，K 段数=ceil(K/128)，mmad k=256 会被拆成 2×128，K 链长度物理不可减）；注意位置基数效应（超标数=位置数×超标率，大 M×N case 更容易撞逐点门限）；纯 Cube 修复死路表（树状累加受 L0C 单 tile 限制、split-K GM 中转走 hf32 丢 5 位尾数引入更大误差、拆双链 σ 不减等）。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "L1 超容量的失败模式与预防",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A5"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "为提升 B 矩阵复用率，把 L1 中的 B 缓存槽位从 6 个增加到 8 个后，部分 case 全部失败且耗时暴涨到 300ms 以上。可能是什么原因？应如何预防？请依据本 skill 的 references（performance-patterns.md §4、design-guidance.md §4）中的既有结论回答，并保留其中的具体容量数值（L1 总预算、槽位容量核算、CMake 门禁与安全利用率）与 expert 维度约束。不需要执行任何工具调用。",
+      "expected_output": "回复应指出：这是 L1 容量超限（A5 L1 总预算 512KB，8 槽 × 列片尺寸可能达到 576KB 超出）；超限的失败模式是全挂 + 超时而非明确报错，极难定位；预防措施是构建期容量预算门禁（CMake 检查 槽数×列片尺寸×dtype ≤ 预算×安全利用率，实证 459KB/87.6% 可行），超限硬失败；另注意 B 槽位跨 expert 场景必须区分 expert 维度否则数值错配。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 4,
+      "title": "无 torch_npu 环境的编译面验证策略",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A5"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "x86 开发机上装不了 torch_npu，torch extension 的 npu 模式本地无法构建。提交前如何在本地最大化覆盖编译正确性？请依据本 skill 的 references/verification-and-debug.md 中的既有分层验证策略回答，并保留其中的具体命令（build.sh --run-mode=sim、cmake DEMO_ONLY 等）、纯 Python.h 入口壳设计与环境矩阵结论。不需要执行任何工具调用。",
+      "expected_output": "回复应给出分层验证策略：build.sh --run-mode=sim 覆盖全部内核代码编译；cmake -D<OP>_DEMO_ONLY=ON -DCMAKE_ASC_RUN_MODE=npu 覆盖 kernel+host 侧 ASC 编译面（绕开 torch 依赖）；torch extension 的 C++ 部分设计为纯 Python.h 入口壳，版本敏感代码收敛在 kernel 侧；远程真机完成完整链路验证；补充环境矩阵意识：torch_npu 只能在系统 CANN 环境跑。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 5,
+      "title": "集成边界与唯一工作流入口",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A5"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "用户要求开发一个 Ascend 950 Tensor API 算子，是否应该启动独立的 Tensor API 工作流？请依据本 skill 的 SKILL.md（定位与路径合同、Step 3 的 DESIGN/PLAN 覆盖清单）回答：说明定位与路线记录方式，并明确文档合同中 DESIGN/PLAN 承接的 API 分工、Layout、ABI、内存预算和验证合同。不执行工具。",
+      "expected_output": "应说明唯一开发语言入口仍是 Ascend C 直调；用户明确要求 Tensor API 时固定 implementation_route=tensor_api_custom，不做 Blaze 优先改选；本 Skill 是领域权威源，不新增 PM、Agent、workflow 模板或 harness 状态。需求清单记录用户原话和路线来源，DESIGN/PLAN 承接 API 分工、Layout、ABI、内存预算和验证合同。",
+      "files": [],
+      "expectations": []
+    }
+  ],
+  "skill_name": "ascendc-tensor-api-best-practice"
+}

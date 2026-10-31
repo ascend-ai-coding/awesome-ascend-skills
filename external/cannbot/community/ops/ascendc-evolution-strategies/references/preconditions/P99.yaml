@@ -1,0 +1,48 @@
+strategy_id: P99
+description: BroadCast + 批量向量运算适用性检查 — 必须存在逐行 GetValue + Muls/Adds 反模式，且有行/列维度参数
+
+strategy_meta:
+  id: "P99"
+  slug: "P99_broadcast_batch_vector_ops"
+  title: "P99: BroadCast + 批量向量运算替代逐行标量循环 (BroadCast + Batch Vector Ops)"
+  bottlenecks: [scalar_compute, scalar_loading, compute_bound]
+  op_families: [normalization, elementwise, reduction, softmax]
+  conflicts_with: []
+  synergizes_with: [P94, P95, P69]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p99_broadcast_batch_vector_ops.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p99_broadcast_batch_vector_ops.md"
+  playbook_slug: "P99_broadcast_batch_vector_ops"
+checks:
+  - id: has_row_wise_getvalue_vec
+    type: grep_count
+    pattern: 'for\s*\([^)]*\+\+[^)]*\).*GetValue\(.*\).*(Muls|Adds|Mul|Add)'
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未检测到逐行 GetValue + 向量运算反模式 → P99 无改造对象。考虑 P95 一般向量链。"
+
+  - id: has_row_column_dimensions
+    type: grep_count
+    pattern: "gRows|UD|rowLength|numCol|group.*D"
+    files: [kernel, header, tiling]
+    expected: ">= 1"
+    fail_msg: "未检测到行/列维度参数（gRows/UD/rowLength）→ 无法设计 BroadCast shape，不适用。"
+
+  - id: no_existing_broadcast
+    type: grep_count
+    pattern: 'BroadCast\s*<'
+    files: [kernel, header]
+    expected: "== 0"
+    fail_msg: "算子已使用 BroadCast → 广播优化已应用，P99 主要价值已发挥。"
+
+  - id: has_small_vector_source
+    type: grep_count
+    pattern: "rstd|inv_std|scale.*Local|shift.*Local|bias.*Local"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未检测到小向量源（rstd/inv_std/scale/shift）→ P99 典型场景不匹配。"

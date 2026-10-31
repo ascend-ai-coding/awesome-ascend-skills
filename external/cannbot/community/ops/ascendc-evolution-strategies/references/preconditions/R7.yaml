@@ -1,0 +1,19 @@
+strategy_id: R7
+description: "R7: SIMD/SIMT 混合编程"
+
+strategy_meta:
+  id: "R7"
+  slug: "R7_simd_simt_hybrid"
+  title: "R7: SIMD/SIMT 混合编程"
+  bottlenecks: []
+  op_families: [datapath]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L1"
+  deprecated: true
+  deprecated_reason: "Uses fictional __simt_vf__ / threadIdx.x CUDA-style APIs not present in AscendC. Zero references."
+  has_preconditions: false
+  has_playbook: false
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/r7_simd_simt_hybrid.md"

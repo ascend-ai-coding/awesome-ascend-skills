@@ -1,0 +1,47 @@
+strategy_id: P120
+description: FA 向量点积 → Cube mmad 重写适用性检查 — 算子为 attention 类，QK^T/PV 由 Vector 指令（Mul+ReduceSum/标量乘加）模拟，尚未使用 Cube mmad。
+strategy_meta:
+  id: "P120"
+  slug: "P120_fa_vec_dot_to_cube_mmad"
+  title: "P120: FA 向量点积模拟 Matmul → Cube mmad 重写（QK^T / PV 上 Cube）"
+  bottlenecks: [compute_bound, scalar_compute]
+  op_families: [attention, flash_attention, cv_fusion]
+  conflicts_with: []
+  synergizes_with: [P13, P14, P119, P121, P122]
+  requires: []
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p120_fa_vec_dot_to_cube_mmad.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p120_fa_vec_dot_to_cube_mmad.md"
+  playbook_slug: "P120_fa_vec_dot_to_cube_mmad"
+checks:
+  - id: is_attention_family
+    type: grep_count
+    pattern: 'softmax|attention|Exp\\s*\\(|score'
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子无 attention/softmax 语义 → P120 不适用（通用 matmul 改写看 P13）。"
+
+  - id: has_vector_simulated_matmul
+    type: grep_count
+    pattern: "ReduceSum|WholeReduceSum|BlockReduceSum"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 Mul+ReduceSum 式向量点积证据 → QK^T 可能已是 tile 级实现，确认后再决定。"
+
+  - id: no_cube_mmad_yet
+    type: grep_count
+    pattern: "Mmad|mmad|BlockMmad|Matmul|LoadData.*L0|__DAV_C220_CUBE__"
+    files: [kernel, header]
+    expected: "== 0"
+    fail_msg: "已使用 Cube mmad → P120 主要价值已发挥，转向 P121 流水拓扑或 P122 tile 大块化。"
+
+  - id: has_fp32_cast_uplift
+    type: grep_count
+    pattern: 'Cast\\(.*RoundMode|Cast\\(.*CAST_'
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到输入→fp32 的 Cast 提升 → 确认数据通路精度链路后再应用 P120（可能已是混合精度）。"

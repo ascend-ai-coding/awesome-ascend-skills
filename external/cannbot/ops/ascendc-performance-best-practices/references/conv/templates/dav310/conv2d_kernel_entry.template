@@ -1,0 +1,50 @@
+/*!
+ * \file conv2d_kernel.cpp
+ * \brief Conv2D __cube__ 入口 + launch_conv2d。
+ *
+ * ── 集成说明 ──────────────────────────────────────────────────────────────────
+ *   落地为 conv2d_kernel.cpp，用 bisheng（-xasc）编译；include 目录需能找到
+ *   conv2d_tiling.h / conv2d_kernel.h / conv2d_launch.h。
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+
+#include "conv2d_tiling.h"
+#include "conv2d_kernel.h"
+#include "conv2d_launch.h"
+
+using namespace conv2d_cases;
+
+template <typename T>
+__global__ __aicore__ __cube__ void conv2d_kernel(GM_ADDR x, GM_ADDR weight, GM_ADDR bias, GM_ADDR y,
+                                                  Conv2DCase tiling)
+{
+    Conv2DKernel<T> op;
+    op.Init(x, weight, bias, y, tiling);
+    op.Process();
+}
+
+template <typename T>
+static void LaunchTyped(GM_ADDR x, GM_ADDR weight, GM_ADDR bias, GM_ADDR y, const Conv2DCase& tiling,
+                        void* stream)
+{
+    const uint32_t blockDim = tiling.batchDim * tiling.mDim * tiling.nDim;
+    conv2d_kernel<T><<<blockDim, nullptr, stream>>>(x, weight, bias, y, tiling);
+}
+
+extern "C" void launch_conv2d(GM_ADDR x, GM_ADDR weight, GM_ADDR bias, GM_ADDR y,
+                              const Conv2DCase& tiling, void* stream)
+{
+    switch (tiling.dtype) {
+        case ConvDType::FP16:
+            LaunchTyped<half>(x, weight, bias, y, tiling, stream);
+            break;
+        case ConvDType::FP32:
+            LaunchTyped<float>(x, weight, bias, y, tiling, stream);
+            break;
+        case ConvDType::BF16:
+            LaunchTyped<bfloat16_t>(x, weight, bias, y, tiling, stream);
+            break;
+        default:
+            break;
+    }
+}

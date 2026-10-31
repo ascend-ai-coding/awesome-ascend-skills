@@ -1,0 +1,40 @@
+strategy_id: P121
+description: FA SplitFuse CV 流水拓扑适用性检查 — 算子为 cube+vector 混合的 attention 类（QK/PV 已上 cube），但 CV 间串行或 SyncAll 全局同步，尚无 CrossCoreFlag 握手与 workspace 多槽流水。
+strategy_meta:
+  id: "P121"
+  slug: "P121_fa_splitfuse_cv_pipeline"
+  title: "P121: FA SplitFuse CV 流水拓扑（AIC QK+PV / AIV softmax+rescaleO，GM workspace 握手槽 + PRE_LAUNCH 预发射）"
+  bottlenecks: [no_overlap, partial_overlap]
+  op_families: [attention, flash_attention, cv_fusion]
+  conflicts_with: []
+  synergizes_with: [P14, P73, P120, P122, P38]
+  requires: []
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p121_fa_splitfuse_cv_pipeline.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p121_fa_splitfuse_cv_pipeline.md"
+  playbook_slug: "P121_fa_splitfuse_cv_pipeline"
+checks:
+  - id: has_cube_stages
+    type: grep_count
+    pattern: "Mmad|mmad|BlockMmad|Matmul"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "QK^T/PV 尚未上 Cube → 先应用 P120（向量点积→mmad 重写），再谈 CV 流水。"
+
+  - id: has_vector_epilogue
+    type: grep_count
+    pattern: 'softmax|Softmax|Exp\\s*\\(|ReduceMax|BlockReduceMax'
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未检测到 vector 侧 softmax/epilogue 阶段 → 非典型 FA 四阶段结构，P121 不适用。"
+
+  - id: no_crosscore_handshake
+    type: grep_count
+    pattern: "CrossCoreSetFlag|CrossCoreWaitFlag|CrossCoreFlag|PRE_LAUNCH|PipelineSlots"
+    files: [kernel, header]
+    expected: "== 0"
+    fail_msg: "已存在 CrossCoreFlag 握手/PRE_LAUNCH 预发射槽 → CV 流水已建立，转向 P122 堆叠大块化或 P73 核数比例调优。"
