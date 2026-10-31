@@ -1,0 +1,214 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "TileLang PTO Reduction/Norm 实现决策",
+      "config": {
+        "max_tokens": 120000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "请使用 tilelang-performance-best-practices，说明在当前仓库中为 PTO 后端实现 bf16 RMSNorm 时应如何选择执行域、累加精度、UB/流水和测试门禁。不要执行外部工具。",
+      "expected_output": "应优先引用目标仓库同类实现并说明通过实际 import 路径定位 TileLang；执行域沿用同类已验证的 SimtVF + reduction，SimdVF 作为需实测的优化候选；bf16 输入使用 fp32 统计、累加和 eps；核数来自目标配置；UB 计入 padding、resident 和 buffer versions；测试遵守公开接口合约并先运行 PTO 定向精度测试，再运行相关完整测试套和合入前项目要求的扩展测试。",
+      "files": [],
+      "expectations": [
+        {
+          "name": "uses_trusted_sources",
+          "description": "按正确优先级核对实现和 API",
+          "assertion_text": "先查当前仓库同类算子实现，并通过实际 import 路径定位 TileLang 源码，而不是猜测兄弟目录版本"
+        },
+        {
+          "name": "keeps_fp32_statistics",
+          "description": "低精度归约使用 fp32 状态",
+          "assertion_text": "bf16 RMSNorm 的平方和、统计量、eps 和累加保持 fp32，最终边界才转换输出"
+        },
+        {
+          "name": "uses_repository_core_config",
+          "description": "核数来自目标硬件查询",
+          "assertion_text": "纯 vector 路径显式传入已确认的可用 AIV 核数，并限制为不超过独立任务数"
+        },
+        {
+          "name": "requires_full_test_gates",
+          "description": "说明分级验证和接口合约",
+          "assertion_text": "先按公开接口确定 shape 矩阵，依次运行定向精度测试、相关完整测试套，并在合入前运行项目要求的扩展测试"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "TileLang PTO GEMM 实现决策",
+      "config": {
+        "max_tokens": 120000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "请使用 tilelang-performance-best-practices，审查一个准备运行在 PTO 后端的 TileLang GEMM 方案。列出 Kernel、布局、buffer、累加和性能验证约束，并说明 [N,K] + transpose_B=True 是否是 T.gemm 对所有 target 的强制要求。不要执行外部工具。",
+      "expected_output": "应说明 Ascend Kernel 为一维网格且不传 threads；[N,K] + transpose_B=True 是当前 PTO Ascend 已验证 canonical 方案而非所有 target 的 API 强制条件；L0C 默认 fp32；首个有效 K 子 tile clear_accum，嵌套循环需同时判断外层和内层索引；使用 L1/L0、Cube 核与任务数；尾块从已验证样例适配，并进行同条件精度和 latency 测试。",
+      "files": [],
+      "expectations": [
+        {
+          "name": "states_ascend_kernel_contract",
+          "description": "说明 Ascend Kernel launch 约束",
+          "assertion_text": "T.Kernel 使用一维 grid 且不传 threads，线程域写在 SimtVF"
+        },
+        {
+          "name": "qualifies_gemm_layout_rule",
+          "description": "不把 canonical 布局误写成通用 API 限制",
+          "assertion_text": "[N,K] 与 transpose_B=True 是当前 PTO Ascend 已验证模式，其他布局需按目标版本验证但不是 API 对所有 target 的禁止项"
+        },
+        {
+          "name": "handles_nested_k_clear",
+          "description": "正确描述 L0C 清零条件",
+          "assertion_text": "只在首个有效 K 子 tile 清零，嵌套 kt/sk 循环示例为 kt == 0 and sk == 0"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "PTO 测试失败归因",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "运行 PTO 定向精度测试时已有一部分 case 通过，随后一个 Ascend backward 分支主动抛出 NotImplementedError。请使用 tilelang-performance-best-practices 判断如何报告和处理。不要执行外部工具。",
+      "expected_output": "应区分已通过路径与尚未实现路径；记录收集数、通过数、首个失败 case、shape/dtype、异常和根因；不得放宽容差、跳过失败或宣称全量通过；实现 backward 后从定向精度测试重跑，再进入相关完整测试套、项目要求的扩展测试和 benchmark。",
+      "files": [],
+      "expectations": [
+        {
+          "name": "classifies_not_implemented",
+          "description": "把未实现与数值失败分开",
+          "assertion_text": "NotImplementedError 表示未实现路径，不是精度通过或可通过放宽容差解决的问题"
+        },
+        {
+          "name": "does_not_claim_full_pass",
+          "description": "不夸大通过范围",
+          "assertion_text": "只报告实际通过子集，同时记录首个失败和覆盖范围，不宣称全量通过"
+        },
+        {
+          "name": "restarts_test_sequence",
+          "description": "修复后从最小门禁重新验证",
+          "assertion_text": "补齐实现后从定向精度测试重跑，再进入相关完整测试套、合入前项目要求的扩展测试和性能测试"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "模板成熟度判定",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "某个 softmax_v2_ara_recompute.py 只有 STRATEGY 元数据，没有 @T.prim_func、@tilelang.jit 或 build；另一个 ar_small_r.py 有 build，但只是调用串行 full-load baseline。请使用 tilelang-performance-best-practices 判断两者能否作为可直接拷贝的优化模板。不要执行外部工具。",
+      "expected_output": "ara_recompute 应归为 DESIGN_ONLY，ar_small_r 应归为 PARTIAL；两者都不能作为可直接拷贝的已验证优化。需要补齐实际 kernel、dispatch、PTO lowering、设备精度和同条件性能证据后才可升级。",
+      "files": [],
+      "expectations": [
+        {
+          "name": "classifies_design_only",
+          "description": "正确识别只有元数据的设计文件",
+          "assertion_text": "没有 kernel/build 的 ara_recompute 分类为 DESIGN_ONLY"
+        },
+        {
+          "name": "classifies_partial_alias",
+          "description": "正确识别退化为 baseline 的策略",
+          "assertion_text": "ar_small_r 只有 baseline alias，分类为 PARTIAL 而不是已实现 small-R 优化"
+        },
+        {
+          "name": "requires_upgrade_evidence",
+          "description": "说明状态升级证据",
+          "assertion_text": "升级为 VERIFIED 前需要实际 kernel、dispatch、lowering、设备精度和同条件性能证据"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "PTO 尾块布局审查",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "一个 Broadcast 模板在 cols=129 时令 tile_cols=129，并在 T.SimtVF(threads=128) 中分配长度 129 的 fragment、执行 T.Parallel(129)，只在 GM copy/store 时使用 valid。请使用 tilelang-performance-best-practices 审查风险并给出修正方向。不要执行外部工具。",
+      "expected_output": "应指出只限制 GM valid 不足以保证 PTO layout；UB/fragment 必须按完整且已验证的 SIMD/thread footprint padding，例如该 Skill 已验证的 256 footprint；GM 仍只访问 valid，无效 lane 不参与计算或填安全幺元；加入 127/128/129/255/256/257 lowering 和精度测试。",
+      "files": [],
+      "expectations": [
+        {
+          "name": "identifies_layout_risk",
+          "description": "识别非对齐 fragment 的 lowering 风险",
+          "assertion_text": "cols=129 直接作为 fragment/T.Parallel extent 可能导致 PTO layout inference 失败"
+        },
+        {
+          "name": "requires_padded_footprint",
+          "description": "给出正确 padding 原则",
+          "assertion_text": "UB 和 fragment 按完整已验证 footprint padding，GM copy/store 只覆盖 valid"
+        },
+        {
+          "name": "requires_tail_matrix",
+          "description": "覆盖关键边界",
+          "assertion_text": "验证至少覆盖 tile 前后边界及 127/128/129/255/256/257 的 lowering 和精度"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Persistent 多轴任务映射",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "一个 PTO kernel 的任务域是 row_tiles×col_tiles，当前先展平为 task_id，再在每次 Persistent 迭代中用除法和取模还原两个坐标；profiling 显示 Scalar/地址准备开销明显。请使用 tilelang-performance-best-practices 给出通用优化与验证方法。不要执行外部工具。",
+      "expected_output": "应在当前 TileLang/PTO 支持时改用 T.Persistent 的多轴任务域直接取得各轴 tile ID，同时保持一维 T.Kernel；根据访存局部性和负载选择轴顺序，并检查 lowering。验证任务无遗漏/重复、所有轴尾块、生成代码中的除法取模、每核尾差和 latency；无 lowering 或性能收益时保留扁平 fallback。",
+      "files": [],
+      "expectations": [
+        {
+          "name": "uses_multiaxis_persistent_domain",
+          "description": "直接表达多轴任务域",
+          "assertion_text": "使用 T.Persistent([tiles_0, tiles_1, ...]) 直接取得各轴 ID，避免热循环中的扁平索引除法和取模"
+        },
+        {
+          "name": "keeps_one_dimensional_kernel",
+          "description": "不违反 Ascend Kernel 网格约束",
+          "assertion_text": "T.Kernel 仍是一维 block 网格，多轴列表仅表示 Persistent 任务域"
+        },
+        {
+          "name": "validates_mapping_and_codegen",
+          "description": "验证映射完整性与实际收益",
+          "assertion_text": "检查无遗漏无重复、各轴尾块、生成代码中的 div/mod、负载尾差和同口径 latency，并保留无收益 fallback"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Reduction 宽输出轴 Tiling",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "一个 PTO reduction 的归约计算较轻、非归约连续输出轴很宽，当前小 tile 产生大量 Persistent task 和小 DMA。请使用 tilelang-performance-best-practices 给出通用优化方法，不使用算子专属常量。不要执行外部工具。",
+      "expected_output": "应沿非归约连续轴按几何级数增大 tile，让每个 task 处理多个 SIMD chunk；计算 task/wave、有效与填充元素、DMA、UB×versions，并重新选择核数。tile 和 stage 分开测试，保持 fp32 reduction 状态、单输出 owner 和 valid GM 访问，覆盖 tile 边界与 forward/backward；并行度、尾块、UB 或 latency 退化时回退。",
+      "files": [],
+      "expectations": [
+        {
+          "name": "tiles_non_reduction_axis",
+          "description": "沿正确轴合并连续输出",
+          "assertion_text": "增大非归约连续输出轴 tile，使单个 Persistent task 处理多个 SIMD chunk，而不改变归约轴和数值顺序"
+        },
+        {
+          "name": "models_resource_tradeoffs",
+          "description": "显式建模任务与资源权衡",
+          "assertion_text": "计算 task/wave、有效与 padded 元素、DMA 次数、核数和包含 buffer versions 的 UB 占用"
+        },
+        {
+          "name": "requires_separate_ab_and_fallback",
+          "description": "避免把大 tile 当作固定规则",
+          "assertion_text": "按几何候选搜索并将 tile 与 stage 分开 A/B；并行度、尾块、UB 或实测 latency 不利时保留 fallback"
+        }
+      ]
+    }
+  ],
+  "skill_name": "tilelang-performance-best-practices"
+}

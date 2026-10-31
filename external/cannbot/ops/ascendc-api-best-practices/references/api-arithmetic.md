@@ -208,6 +208,10 @@ struct BinaryRepeatParams {
 迭代 2: dst[2cols:3cols]= src0[2cols:3cols]- src1[0:cols]  ← 重复读取
 ```
 
+**收益**（相对 Duplicate 预生成广播 buffer + 逐行计算）：
+- `src1` 只需申请**一行** UB 空间（`alignedCols` 个元素），不需要 `Duplicate` 生成 R 行广播 buffer，src1 侧 UB 占用约为原来的 `1/R`；
+- 一条指令覆盖 R 行，替代 R 次逐行 `Add/Sub` 调用，同时减少指令下发次数与源数据的重复搬移量。
+
 ### 分批处理
 
 #### 方案1：逐行循环（低效）
@@ -392,8 +396,8 @@ AscendC::Cast<half, float>(dst, src0Fp32, AscendC::RoundMode::CAST_ROUND, count)
 
 ## 参考资料
 
-- [BinaryRepeatParams 结构体](../../../asc-devkit/docs/api/context/BinaryRepeatParams.md)
-- [Adds API](../../../asc-devkit/docs/api/context/Adds.md)
-- [Muls API](../../../asc-devkit/docs/api/context/Muls.md)
-- [Sub API](../../../asc-devkit/docs/api/context/Sub.md)
-- [Div API](../../../asc-devkit/docs/api/context/Div.md)
+- BinaryRepeatParams 结构体：通过 `/ascendc-docs-search` skill 查阅 `BinaryRepeatParams` API 文档
+- Adds API：通过 `/ascendc-docs-search` skill 查阅 `Adds` API 文档
+- Muls API：通过 `/ascendc-docs-search` skill 查阅 `Muls` API 文档
+- Sub API：通过 `/ascendc-docs-search` skill 查阅 `Sub` API 文档
+- Div API：通过 `/ascendc-docs-search` skill 查阅 `Div` API 文档

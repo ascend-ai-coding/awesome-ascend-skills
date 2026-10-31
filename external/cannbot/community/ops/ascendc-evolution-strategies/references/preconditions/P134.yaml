@@ -1,0 +1,42 @@
+strategy_id: P134
+description: chunk-group 任务划分适用性检查 — 线性递归算子核分配是"全序列一次分核"（跨核状态依赖），未用 chunk-group 分组。
+
+strategy_meta:
+  id: "P134"
+  slug: "P134_ssm_chunk_group_partitioning"
+  title: "P134: chunk-group 任务划分（group 间串行 + group 内 (nv, chunk) 多核并行）"
+  bottlenecks: [tiling_imbalance, no_overlap, mte2_stall]
+  op_families: [ssm, linear_attention, recurrent, matmul, cv_fusion]
+  conflicts_with: []
+  synergizes_with: [P132, P133, P136]
+  requires: [P132]
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p134_ssm_chunk_group_partitioning.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p134_ssm_chunk_group_partitioning.md"
+  playbook_slug: "P134_ssm_chunk_group_partitioning"
+
+checks:
+  - id: has_three_stage_or_chunk
+    type: grep_count
+    pattern: "chunkSize|CHUNK_SIZE|n_chunks|k_cumdecay|v_inner|Stage1|stage1"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未检测到 chunk/三阶段证据 → 先应用 P132 三阶段分解，再考虑 P134 任务划分。"
+
+  - id: has_full_sequence_partition
+    type: grep_count
+    pattern: "seqLength|seq_len|totalSeq|GetBlockIdx|coreIdx|blockDim"
+    files: [kernel, header, host]
+    expected: ">= 1"
+    fail_msg: "未检测到序列分核证据 → 需确认当前任务划分方式后再应用 P134。"
+
+  - id: no_chunk_group
+    type: grep_count
+    pattern: 'maxGroupLength|chunkGroup|chunk_group|cg\\b'
+    files: [kernel, header, host]
+    expected: "== 0"
+    fail_msg: "已检测到 chunk-group 证据 → 可能已按 P134 划分，跳过或检查完整性。"

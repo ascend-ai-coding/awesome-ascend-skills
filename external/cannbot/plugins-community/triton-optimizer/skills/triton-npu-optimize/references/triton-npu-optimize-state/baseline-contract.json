@@ -1,0 +1,15 @@
+{
+  "baseline_state_fields": {
+    "baseline_kind": "record whether the canonical baseline is the original operator or a minimally repaired prepared baseline.",
+    "source_operator": "record the path from the directory that contains `baseline/state.json` to the operator file that baseline preparation started from, normally `../<operator>.py`.",
+    "baseline_operator": "record the path from the directory that contains `baseline/state.json` to the operator snapshot saved under `baseline/`, normally `<operator>.py` or another baseline-local path.",
+    "test_file": "record the path from the directory that contains `baseline/state.json` to the correctness harness used for the baseline, normally `../test_<operator>.py` or `../differential_test_<operator>.py`.",
+    "test_mode": "record the resolved correctness mode used for the baseline run.",
+    "bench_file": "record the path from the directory that contains `baseline/state.json` to the benchmark harness used for the baseline, normally `../bench_<operator>.py`.",
+    "bench_mode": "record the resolved benchmark mode used for the baseline run.",
+    "perf_artifact": "record the path from the directory that contains `baseline/state.json` to the canonical baseline perf artifact, normally `<operator>_perf.txt` or `perf.txt`.",
+    "correctness_status": "record the final baseline correctness result; use `passed` only after correctness succeeds.",
+    "benchmark_status": "record the final baseline benchmark result; use `passed` only after the benchmark succeeds.",
+    "baseline_established": "set this to `true` only after `correctness_status` is `passed`, `benchmark_status` is `passed`, and the canonical baseline artifacts are written."
+  }
+}

@@ -1,0 +1,175 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "融合算子替换工作流",
+      "config": {
+        "ascend_platforms": ["A2"],
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "我想把模型里的算子替换成 torch_npu 融合算子提速。整体应该按什么流程做？只讲方法，不用写代码。",
+      "expected_output": "1. 回复应给出完整的逐模块流程：先分析模型并拆解模块（含 Prefill/Decode 分支与关键子链路），再按模块匹配仓库参考实现或算子总表，然后查阅算子文档确认适配性，最后逐模块替换并做精度对比与性能验证。\n2. 回复应说明用 skill 自带的 `scripts/torch_npu_query.py`（`show` / `search` / `list`）查询 torch_npu 本地 docstring，确认算子签名与参数约束，而不是凭记忆写 API。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "确认算子接口的方式",
+      "config": {
+        "ascend_platforms": ["A2"],
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "替换前怎么确认某个 torch_npu 融合算子的入参和功能，避免写错接口？",
+      "expected_output": "回复应说明用本地 docstring 查询脚本检索算子接口、入参、功能，而不是凭记忆或猜测 API，必要时反向搜索算子名",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "覆盖的模块类型",
+      "config": {
+        "ascend_platforms": ["A2"],
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "融合算子替换一般覆盖模型的哪些模块？请列举可分析替换的模块类型。",
+      "expected_output": "回复应覆盖 Attention 子链路（RoPE/Norm 等）、MoE、FFN、Norm 等模块，说明逐模块分析匹配",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 4,
+      "title": "信息不足时主动确认",
+      "config": {
+        "ascend_platforms": ["A2"],
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "帮我把模型的算子换成融合算子。",
+      "expected_output": "回复应先确认必要信息再动手，而不是缺信息直接给替换代码",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 5,
+      "title": "正向看护-多 skill 环境下正确触发",
+      "config": {
+        "ascend_platforms": ["A2"],
+        "max_tokens": 150000,
+        "distractor_skills": [
+          "model-infer-kvcache",
+          "model-infer-graph-mode",
+          "model-infer-parallel-analysis"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "模型里 RMSNorm 和残差是手写的多个小算子，想合成一个 torch_npu 融合算子减少开销，往哪个方向改？只说方向不用写代码。",
+      "expected_output": "回复应正确激活 model-infer-fusion，给出融合算子匹配替换方向，即使存在 KVCache、图模式、并行等相似 skill 也应选融合算子专项",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 6,
+      "title": "使用边界",
+      "config": {
+        "ascend_platforms": ["A2"],
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "我要重新设计一套量化算法并实现自定义量化内核，这个融合算子 skill 能做吗？",
+      "expected_output": "回复应说明本 skill 只做既有 torch_npu 融合算子的识别与替换，不设计量化算法、不实现自定义算子，应建议用户改用量化或算子开发相关方案",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 7,
+      "title": "参考实现只能作为候选蓝图",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "我在仓库里找到了一个模型调用 npu_mla_prolog_v3，当前模型结构看起来类似。能不能直接照搬这个调用并认为一定适配？只做分析。",
+      "expected_output": "回复应说明仓库实现只能作为候选蓝图，先列出其覆盖和未覆盖的子链路，再通过本地 docstring 或官方详情文档核对当前 torch_npu 版本中的签名、shape、dtype、layout、cache 和 metadata 约束，不能仅凭相似实现直接判定适配或进入修改",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 8,
+      "title": "Attention 分阶段与缓存形态匹配",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "一个 GQA 模型 Prefill 直接用当前 q/k/v，Decode 从 PA KVCache 读取。请先加载并 Read model-infer-fusion 技能的 SKILL.md（Attention 部分可再 Read references/module-attention-gqa.md），然后回答：评估融合 Attention 时应该只选一个统一调用，还是分开看？请逐条说明：1）Prefill 与 Decode 为什么要分开评估，二者在同一 FA 算子上按什么条件分流到哪两条 kernel 路径，KV 输入、mask 参数、性能指标与精度基线各有什么差异；2）应怎样结合 cache 组织方式与写入/读取语义（PA cache、slot_mapping 或 cache_index、block_table、actual_seq_lengths）去匹配 FA 路径，Decode 分支需要哪些前置改造；3）假设 FA 融合算子已经替换完成，Attention 的其余子链路（RoPE、KV Cache 写入、Residual+Norm、QKV/O 投影等）是否就不用管了，还需逐一检查哪些可用融合算子（含 npu_kv_rmsnorm_rope_cache、npu_mla_prolog_v3 这类多步骤整体融合算子）。",
+      "expected_output": "1. 回复应明确 Prefill 与 Decode 必须分开评估、不能只看一个统一调用，并说明同一 FA 算子会按 Query 的 Q_S 分流：Q_S=1 进入 IncreFlashAttention（Decode）、其余场景进入 PromptFlashAttention（Prefill），两条 kernel 路径的 KV 输入、mask 参数、性能瓶颈与精度基线都不同。\n2. 回复应结合 cache 组织方式与写入/读取语义匹配 FA 路径：Prefill 用当前 batch 的连续 q/k/v（sparse_mode=3 causal），Decode 从 PA KVCache 经 block_table + block_size 读取并配 actual_seq_lengths_kv，写入侧涉及 slot_mapping/cache_index，且 Decode 分支依赖 PA cache 改造，需要时标记为「候选 + 需前置改造」。\n3. 回复应指出即使 FA 已替换，Attention 其余子链路（RoPE、KV Cache 写入、Residual+Norm、QKV/O 投影等）仍需逐一检查是否有可用融合算子，包括 npu_kv_rmsnorm_rope_cache、npu_mla_prolog_v3 这类多步骤整体融合算子，不得以「标准线性层无融合算子」为由跳过评估。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 9,
+      "title": "仅分析任务在审查阶段停止",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "请说明在只做分析、不改代码的前提下，识别一段模型代码里 torch_npu 融合算子机会的完整做法：会做哪些模块拆解、如何按模块匹配仓库参考实现、如何核验算子约束、候选清单要包含哪些状态信息与最小验证切口，以及在哪个阶段停止。不用写代码。",
+      "expected_output": "1. 回复应说明先做模块拆解：输出模块清单并展开到可替换链路级别（Attention 的 Norm/QKV 投影/RoPE/KV Cache/Flash Attention/O 投影，MoE 与 FFN 的 Gate/路由分发/专家计算/聚合等），并记录 Prefill/Decode、量化、并行配置、layout 与 cache 形态、中间张量消费关系等运行场景特征。\n2. 回复应说明按模块匹配仓库参考实现只能作为候选蓝图，并要用 scripts/torch_npu_query.py 查询本地 docstring 或对照官方详情文档，核验每个候选 torch_npu API 的签名与 shape/dtype/layout/cache/metadata 约束，不能凭相似实现直接判定适配。\n3. 回复应说明仅分析任务在第四步分析阶段审查处结束：输出候选清单（每个候选模块的适配状态、前置条件、最小验证切口和阻塞点）与验证计划，并明确不进入代码替换、不修改代码。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 10,
+      "title": "外部消费者阻止整链融合",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "我想把 Norm、QKV、RoPE 和 Cache 写入合成一条大融合链，但 RoPE 后的 key 还会被 debug hook 和另一个分支读取。可以直接替换吗？",
+      "expected_output": "回复应识别中间张量存在融合范围外消费者，不能直接消除该输出；应保留语义或缩小融合范围，并把 hook、graph 输出、多分支复用等消费关系作为跳过或前置改造证据",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 11,
+      "title": "替换失败时回退并记录证据",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "某个融合算子替换后精度对不齐，换了另一组参数也失败了。请按 model-infer-fusion 技能的融合算子替换流程说明这一步应当怎么处理（流程动作与需要记录的内容），不用展开具体调试手段。",
+      "expected_output": "1. 回复应要求先回退该模块的改动（不要在已失败的实现上继续试参数），并记录本次的精度对比结果与失败证据（报错或数值对比等不适配证据）。\n2. 回复应说明回退后重新分析该模块，评估是否有其他可用的现成 torch_npu 算子或替代方案可尝试，而不是继续换参数硬试。\n3. 回复应给出两种收尾：确认当前无现成 torch_npu API 可适配但有明确融合收益时，记录为新增融合算子需求（模块位置、子图语义、期望融合范围）；当前无法继续实施时，回退后记录失败证据与阻塞原因并继续处理下一个候选模块。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "model-infer-fusion"
+}

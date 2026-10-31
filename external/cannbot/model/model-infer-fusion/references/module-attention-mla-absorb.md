@@ -6,7 +6,7 @@
 
 ## Prefill 链路
 
-参考 `deepseek-r1/forward_page_attention_normal`
+参考 `deepseek_r1/forward_page_attention_normal`
 
 ```python
 # ─── Pre-Norm ───
@@ -44,7 +44,7 @@ output = o_proj(output)
 
 ## Decode 链路（推荐路径）
 
-参考 `deepseek-r1/forward_page_attention_mla_prolog`
+参考 `deepseek_r1/forward_page_attention_mla_prolog`
 
 ```python
 # ─── Pre-Norm ───

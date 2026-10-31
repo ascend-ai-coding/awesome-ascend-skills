@@ -1,0 +1,40 @@
+strategy_id: P43
+
+strategy_meta:
+  id: "P43"
+  slug: "P43_grad_pingpong_deferred_scatter"
+  title: "P43: 反向梯度 4路PingPong 常驻与 Scatter-Add 延迟写回"
+  bottlenecks: [mte2_stall, partial_overlap]
+  op_families: [elementwise, normalization]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p43_grad_pingpong_deferred_scatter.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p43_grad_pingpong_deferred_scatter.md"
+  playbook_slug: "P43_grad_pingpong_deferred_scatter"
+checks:
+  - id: has_grad
+    type: grep_count
+    pattern: "grad|Grad|dK|dV|反向|backward"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到反向梯度计算 → 无 PingPong 延迟写回需求，不适用 P43。"
+
+  - id: has_scatteradd
+    type: grep_count
+    pattern: "ScatterAdd|scatter.*add|AtomicAdd"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 ScatterAdd/AtomicAdd 操作 → 无延迟写回优化空间，不适用 P43。"
+
+  - id: has_pingpong
+    type: grep_count
+    pattern: "PingPong|pingpong|PPP|%.*4"
+    files: [kernel]
+    expected: ">= 0"
+    fail_msg: "已存在 PingPong 多路缓冲逻辑 → 可能冗余，优先验证现有策略效果。"

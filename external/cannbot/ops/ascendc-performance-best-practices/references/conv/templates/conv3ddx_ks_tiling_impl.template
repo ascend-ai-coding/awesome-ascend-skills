@@ -1,0 +1,314 @@
+/*!
+ * \file conv3ddx_ks_tiling.cpp
+ * \brief Conv3DDX kernel split Host tiling 实现（g++ 编译，禁止进 bisheng TU）。
+ *
+ * 流程（对齐 conv3ddx_kernel_split.md §7）：
+ *   1. 准入判定（Conv3ddxKsAdmit）
+ *   2. 基本块：kernel>1 → 512/128；kernel=1 → 256/256；baseK 双整除子核分形
+ *   3. B1 全载判定（L1 容量 + baseN 覆盖 Cin）
+ *   4. stepK：全载 → ceil(kValue/baseK)；切分 → L1 对半分搜索（EqualL1）
+ *   5. L0 容量钳位
+ *   6. 核间切分与负载均衡（M 对齐 splitWi 行）
+ *   7. workspace 判定（UB 不足或 Wi 不对齐 16 时 L0C→GM(ws) 中转）
+ * 源模板对照（完整索引见 tuning guide §15）：
+ *   ops-nn conv3d_backprop_input_v2_kernel_split_tiling.cpp
+ *     Conv3ddxKsAdmitMode  ← CheckKernelSplitEnable（公共）/TryKernelSplitHW/TryKernelSplitH/
+ *                              CheckKernelSplitHEnable/IsBaseShapeFitKernelSplitH
+ *     SplitH 流程          ← SetParamForKernelSplit(true)/SetSingleCoreInfo(H 分支)/
+ *                              UpdateWorkSpaceSize（H 恒 0）
+ *   （kernel split 的 tiling = "子核替代原核、stride 归一、M 换相位面"之后的 stride=1 内积 tiling；
+ *     基座方法说明见 conv3ddx_kernel_split_tuning_guide.md §11，本目录自包含）。
+ */
+
+#include "conv3ddx_ks_tiling.h"
+
+#include <algorithm>
+#include <string>
+
+namespace {
+
+// ---------------------------------------------------------------------------
+// CalFmapH：相位面 M 块 → dedy 行数（A1 容量几何，tuning guide §4）
+// ---------------------------------------------------------------------------
+uint32_t CalFmapH(uint32_t baseM, uint32_t splitWi, uint32_t subHk, uint32_t ho)
+{
+    uint32_t hiCal;
+    if (baseM % splitWi == 0) {
+        hiCal = baseM / splitWi;
+    } else if (baseM > splitWi) {
+        hiCal = baseM / splitWi + 2; // 不整除时多搬首尾两行
+    } else {
+        hiCal = 2;
+    }
+    const uint32_t hoCal = (hiCal - 1) + subHk; // 拆分后 dilation=1，subHkDilation = subHk
+    return std::min(hoCal, ho);
+}
+
+uint32_t FloorAlign(uint32_t a, uint32_t b)
+{
+    return b == 0U ? a : (a / b) * b;
+}
+
+// ---------------------------------------------------------------------------
+// 1. 准入判定（ops-nn CheckKernelSplitEnable：先试 SplitHW，失败兜底 SplitH）
+//    返回 0=拒绝 / 1=SplitHW / 2=SplitH（conv3ddx_kernel_split.md §4.3 与 §10.3）
+// ---------------------------------------------------------------------------
+uint8_t Conv3ddxKsAdmitMode(const Conv3ddxKsTilingIn& in, std::string* err)
+{
+    auto fail = [&](const char* why) {
+        *err = why;
+        return 0U;
+    };
+    // ---- 公共准入（两种模式共享）----
+    if (in.dilationH != 1U || in.dilationW != 1U) return fail("dilationH/W must be 1");
+    if (in.groups != 1U) return fail("groups must be 1");
+    if (in.padUp != in.padDown || in.padLeft != in.padRight) return fail("pads must be symmetric");
+    if (in.dtype == ConvKsDType::FP32) return fail("fp32 not validated for kernel-split template");
+    // shape 下限：太小时拆分搬运开销不回本（ops-nn CheckShapeValue）
+    const uint32_t mValue = in.hi * in.wi;
+    const uint32_t cout1G = KsCeilDiv(in.cout, kKsN0);
+    if (mValue < 256U && cout1G == 1U) return fail("shape too small for kernel split");
+
+    // ---- SplitHW 准入（TryKernelSplitHW → CheckKernelSplitHWEnable/CheckShapeConditions）----
+    const bool hwStride = (in.strideH == 2U) && (in.strideW == 2U);
+    const bool hwKernel = (in.kh >= 1U && in.kh <= 4U && in.kw >= 1U && in.kw <= 4U);
+    const bool hwShape = (in.wi >= 12U) && (KsCeilDiv(in.cin, in.groups) >= 16U);
+    // 负向经验（MTE2 bound 恶化）：Hi > Wi 且 Cin > Cout 慎用
+    const bool hwNegExp = (in.hi > in.wi) && (in.cin > in.cout);
+    if (hwStride && hwKernel && hwShape && !hwNegExp) {
+        return 1U;
+    }
+
+    // ---- SplitH 准入（TryKernelSplitH → CheckKernelSplitHEnable，§10.3）----
+    if (in.strideH >= 2U && in.kh >= in.strideH && in.kh <= kKsMaxPhases &&
+        KsCeilDiv(in.cin, in.groups) >= 16U && in.cout >= 16U && in.wi >= 32U) {
+        // L1 最小容量预判（IsBaseShapeFitKernelSplitH：cout1 均取 1 时 minA1+minB1 ≤ L1）
+        const uint32_t splitHk0 = KsCeilDiv(in.kh, in.strideH);
+        const uint32_t eH = in.dilationH * (in.kh - 1) + 1;
+        const uint32_t ho = (in.hi + in.padUp + in.padDown - eH) / in.strideH + 1;
+        const uint32_t hoCal = CalFmapH(256U, in.wi, splitHk0, ho);   // bestBaseMN=256 最小块
+        const uint32_t eW = in.dilationW * (in.kw - 1) + 1;
+        const uint32_t wo = (in.wi + in.padLeft + in.padRight - eW) / in.strideW + 1;
+        const uint32_t elem = KsDTypeBytes(in.dtype);
+        const uint32_t k0 = KsCubeK0(in.dtype);
+        const uint64_t minA1 = static_cast<uint64_t>(hoCal) * wo * in.strideW * k0 * elem;
+        const uint64_t minB1 = static_cast<uint64_t>(splitHk0) * in.kw * k0 * kKsN0 * elem;
+        if (minA1 + minB1 <= kKsL1Bytes) {
+            return 2U;
+        }
+        return fail("splitH min L1 capacity exceeded");
+    }
+    return fail("no kernel-split mode admitted");
+}
+
+} // namespace
+
+bool Conv3ddxKsDoTiling(const Conv3ddxKsTilingIn& in, Conv3ddxKsTilingOut& out)
+{
+    if (in.aicoreNum == 0 || in.ubBytes == 0) return false;
+    std::string err;
+    const uint8_t mode = Conv3ddxKsAdmitMode(in, &err);
+    if (mode == 0U) {
+        return false;
+    }
+    out.splitMode = mode;
+
+    const uint32_t elem = KsDTypeBytes(in.dtype);
+    const uint32_t k0 = KsCubeK0(in.dtype);
+    const bool isSplitH = (mode == static_cast<uint8_t>(ConvKsSplitMode::H));
+    const uint32_t splitHi = KsCeilDiv(in.hi, in.strideH);
+    const uint32_t splitWi = isSplitH ? in.wi : KsCeilDiv(in.wi, in.strideW);  // H：行宽 = Wi
+    const uint32_t splitHk0 = KsCeilDiv(in.kh, in.strideH);
+    const uint32_t splitWk0 = isSplitH ? in.kw : KsCeilDiv(in.kw, in.strideW); // H：Wk 不拆
+    const uint32_t splitHk1 = in.kh / in.strideH;
+    const uint32_t splitWk1 = isSplitH ? in.kw : in.kw / in.strideW;
+    const uint32_t mValue = splitHi * splitWi;                 // 相位面 M（新的 M 轴）
+    const uint32_t nValue = KsAlignUp(in.cin, kKsN0);          // N = Cin 对齐 16
+    const uint32_t cout1G = KsCeilDiv(in.cout, kKsN0);         // Cout 分形数
+    const uint32_t maxSubHkWk = splitHk0 * splitWk0;           // 最大子核
+    const uint32_t minSubHkWk = std::max(1U, splitHk1 * splitWk1);
+    const uint64_t kValue = static_cast<uint64_t>(cout1G) * maxSubHkWk * k0; // 单层 kd 的 K 总长
+
+    // ---- 2. 基本块初始值（经验：kernel>1 → 512/128 掩盖 B 侧转换；kernel=1 → 256/256）----
+    // 乒乓默认 DB=2（切分模式）；L0A/L0B 的 M/N 上界以最小 K 粒度 k0 预算
+    const bool kernelGt1 = in.kd * maxSubHkWk > 1U;
+    uint8_t a1Db = 2;
+    uint8_t b1Db = 2;
+    uint32_t baseM = kernelGt1 ? 512U : 256U;
+    uint32_t baseN = kernelGt1 ? 128U : 256U;
+    baseM = std::min(baseM, KsAlignUp(mValue, kKsM0));
+    baseN = std::min(baseN, nValue);
+    const uint32_t maxL0ABaseM = KsAlignUp(kKsL0ABBytes / (a1Db * elem * k0), kKsM0);
+    const uint32_t maxL0ABaseN = KsAlignUp(kKsL0ABBytes / (b1Db * elem * k0), kKsN0);
+    baseM = std::min(baseM, maxL0ABaseM);
+    baseN = std::min(baseN, maxL0ABaseN);
+
+    // baseK 契约按模式区分（ops-nn 两条路径，方向相反）：
+    //   SplitHW：baseK 是子核分形的倍数（CalculateOptimalBaseK/AdjustBaseKForKernelSplit
+    //             的 baseK % lenHkWkC0 == 0），保证 L1→L0 按分形对齐不撕裂
+    //   SplitH ：baseK 整除 K 段（ShrinkBaseKForKernelSplit 的
+    //             cout1×subHkWkC0 % baseK == 0），保证 K 段整块装载
+    const uint32_t maxSubC0 = maxSubHkWk * k0;
+    const uint32_t minSubC0 = std::max(k0, minSubHkWk * k0);
+    uint32_t baseK = 0;
+    {
+        const uint32_t l0abElems = kKsL0ABBytes / (a1Db * elem);
+        uint32_t cap = KsAlignUp(l0abElems / std::max(baseM, baseN), k0);
+        cap = static_cast<uint32_t>(std::min<uint64_t>(cap, kValue));
+        if (isSplitH) {
+            // SplitH：从 cap 向下找第一个整除最大/最小 K 段的 k0 倍数
+            const uint64_t segMax = kValue;                                      // cout1G×maxSubHkWk×k0
+            const uint64_t segMin = static_cast<uint64_t>(cout1G) * minSubHkWk * k0;
+            cap = static_cast<uint32_t>(std::min<uint64_t>(cap, segMin));
+            baseK = k0;
+            for (uint32_t k = cap; k >= k0; k -= k0) {
+                if (segMax % k == 0U && segMin % k == 0U) {
+                    baseK = k;
+                    break;
+                }
+                if (k <= k0 + k0) {
+                    break; // 防下溢；k0 本身必满足（k0 | k0×n）
+                }
+            }
+        } else {
+            // SplitHW：从 cap 向下找第一个为最大/最小子核分形公倍数的值
+            uint32_t maxBaseK = std::max(cap, maxSubC0);    // 至少容纳一个最大子核分形
+            baseK = std::min(maxBaseK, minSubC0);           // 下限保底
+            while (maxBaseK >= maxSubC0) {
+                if ((maxBaseK % maxSubC0) == 0U && (maxBaseK % minSubC0) == 0U) {
+                    baseK = maxBaseK;
+                    break;
+                }
+                maxBaseK = (maxBaseK > k0 + maxSubC0) ? maxBaseK - k0 : maxSubC0;
+                if (maxBaseK == maxSubC0) {
+                    baseK = maxSubC0;
+                    break;
+                }
+            }
+        }
+    }
+
+    // ---- 3. B1 全载判定（conv3ddx_kernel_split.md §7.3）----
+    // SplitH 不启用全载：B1 装载在 GM→L1 阶段按相位行循环取样重组
+    //（ops-nn LoadToB1Dn2NzTransposeForKernelSplitH），子核切换走 GM 相位偏移
+    const uint32_t ho = (in.hi + in.padUp + in.padDown - (in.kh - 1) - 1) / in.strideH + 1;
+    const uint32_t wo = (in.wi + in.padLeft + in.padRight - (in.kw - 1) - 1) / in.strideW + 1;
+    // SplitH 的 A1 W 向留洞：每 Cout 通道字节数 × strideW（IsBaseShapeFitKernelSplitH 同款）
+    const uint32_t a1WExpand = isSplitH ? in.strideW : 1U;
+    const uint32_t hoCal = CalFmapH(std::min(baseM, mValue), splitWi, splitHk0, ho);
+    const uint64_t minA1 = static_cast<uint64_t>(hoCal) * wo * a1WExpand * k0 * elem; // 每 Cout 通道 A1 字节
+    const uint64_t fullB1 = static_cast<uint64_t>(baseN) * kValue * elem;            // 全载 B1 字节
+    bool b1FullLoad = !isSplitH && (minA1 + fullB1 <= kKsL1Bytes) && (baseN >= nValue);
+
+    // ---- 4. stepK ----
+    uint32_t stepKa = 1;
+    uint32_t stepKb = 1;
+    if (b1FullLoad) {
+        stepKb = static_cast<uint32_t>((kValue + baseK - 1) / baseK);
+        stepKa = stepKb;
+        a1Db = 1; // A1 单缓冲（全载配套）
+        b1Db = 1; // B1 全载单缓冲驻留
+        const uint32_t coutNum = std::min(stepKa * baseK / k0, cout1G);
+        const uint64_t a1Bytes = static_cast<uint64_t>(hoCal) * wo * coutNum * elem;
+        if (a1Bytes + fullB1 > kKsL1Bytes) {
+            b1FullLoad = false; // 容量不足，降级回切分模式
+        }
+    }
+    if (!b1FullLoad) {
+        // EqualL1 对半分：L1/2 各自容纳的 Cout 分形数
+        const uint64_t b1Unit = static_cast<uint64_t>(baseN) * maxSubC0 * elem; // 每 Cout 分形的 B1 字节
+        uint32_t cout1A1 = static_cast<uint32_t>(std::min<uint64_t>(
+            cout1G, std::max<uint64_t>(1, kKsL1Bytes / 2 / std::max<uint64_t>(minA1, 1))));
+        uint32_t cout1B1 = static_cast<uint32_t>(std::min<uint64_t>(
+            cout1G, std::max<uint64_t>(1, kKsL1Bytes / 2 / std::max<uint64_t>(b1Unit, 1))));
+        stepKa = std::max(1U, (cout1A1 * maxSubC0 + baseK - 1) / baseK);
+        stepKb = std::max(1U, (cout1B1 * maxSubC0 + baseK - 1) / baseK);
+        // 对齐二者（K 循环同拍；FloorAlign 至少为 1）
+        if (stepKa > stepKb) {
+            stepKa = std::max(1U, FloorAlign(stepKa, stepKb));
+        } else {
+            stepKb = std::max(1U, FloorAlign(stepKb, stepKa));
+        }
+        // 乒乓容量验证，超 L1 先关 A1 乒乓再关 B1（LegalProtection 简化版）
+        const uint32_t coutNumA = std::min(stepKa * baseK / k0, cout1G);
+        const uint64_t a1Bytes = static_cast<uint64_t>(hoCal) * wo * coutNumA * elem * a1Db;
+        const uint64_t b1Bytes = static_cast<uint64_t>(baseN) * stepKb * baseK * elem * b1Db;
+        if (a1Bytes + b1Bytes > kKsL1Bytes) {
+            a1Db = 1;
+            if (a1Bytes / 2 + b1Bytes > kKsL1Bytes) {
+                b1Db = 1;
+            }
+        }
+    }
+
+    // ---- 5. L0 容量钳位（乒乓后不超过 L0A/L0B）----
+    while (baseM * baseK * elem * a1Db > kKsL0ABBytes && baseM > kKsM0) {
+        baseM = std::max(baseM - kKsM0, kKsM0);
+    }
+    while (baseN * baseK * elem * b1Db > kKsL0ABBytes && baseN > kKsN0) {
+        baseN = std::max(baseN - kKsN0, kKsN0);
+    }
+
+    // ---- 6. 核间切分（ops-nn SetSingleCoreInfo：H 分支相位维度 kSCnt=strideH 进核间）----
+    uint32_t singleCoreM = baseM;
+    uint64_t mCnt = (mValue + singleCoreM - 1) / singleCoreM;
+    const uint64_t nCnt = (nValue + baseN - 1) / baseN;
+    // SplitH：totalCnt × strideH（每相位一个核段）；SplitHW：kSCnt=1（相位在核内轮转）
+    const uint64_t kSCnt = isSplitH ? in.strideH : 1U;
+    const uint64_t totalCnt = static_cast<uint64_t>(in.n) * in.di * mCnt * nCnt * kSCnt;
+    const uint32_t usedCoreNum = static_cast<uint32_t>(std::min<uint64_t>(totalCnt, in.aicoreNum));
+    const uint32_t calRound = static_cast<uint32_t>(totalCnt / usedCoreNum);
+    const uint32_t tailCnt = static_cast<uint32_t>(totalCnt - calRound * usedCoreNum);
+    // 分不满核时按行均分（负载均衡：M 按行宽 splitWi 对齐切块；H 模式 splitWi=Wi）
+    if (totalCnt <= usedCoreNum) {
+        singleCoreM = KsAlignUp(std::max(1U, mValue / static_cast<uint32_t>(mCnt)), splitWi);
+        singleCoreM = std::min(singleCoreM, KsAlignUp(mValue, kKsM0));
+    }
+
+    // ---- 7. workspace 判定（ops-nn UpdateWorkSpaceSize：仅 HW 模式）----
+    uint8_t useWorkspace = 0;
+    uint32_t workspaceBytes = 0;
+    if (!isSplitH) {
+        // SplitHW：UB 需容纳 4 块相位缓冲（源 2 + interleave 目的 2）
+        const uint32_t alignUnit = (elem == 1U) ? 32U : 16U; // b8→32 元素，b16→16 元素
+        const uint32_t hi = KsCeilDiv(baseM, splitWi);
+        const uint64_t hwAlign = static_cast<uint64_t>(KsAlignUp(splitWi, alignUnit)) * hi * baseN;
+        const uint64_t need = hwAlign * 4 * elem;
+        if (need > in.ubBytes || (in.wi % 16U) != 0U) {
+            useWorkspace = 1;
+            workspaceBytes = static_cast<uint32_t>(hwAlign * 2 * elem) * usedCoreNum;
+        }
+    }
+    // SplitH：L0C 三段直写 GM（LoadL0c2GmDnForKernelSplitH），无重排 workspace
+
+    // SplitH 尾相位字段（ops-nn ReCalcMInfo/kSTailM，§10.4）
+    uint32_t ksTailIdx = 0;
+    uint32_t ksTailM = 0;
+    uint32_t ksTailMCnt = 0;
+    if (isSplitH) {
+        ksTailIdx = in.hi % in.strideH;
+        ksTailM = (in.hi / in.strideH) * in.wi;
+        ksTailMCnt = KsCeilDiv(ksTailM == 0U ? 1U : ksTailM, singleCoreM);
+    }
+
+    out.usedCoreNum = usedCoreNum;
+    out.calRound = calRound;
+    out.tailCnt = tailCnt;
+    out.singleCoreM = singleCoreM;
+    out.singleCoreN = baseN;
+    out.baseM = baseM;
+    out.baseN = baseN;
+    out.baseK = baseK;
+    out.stepKa = stepKa;
+    out.stepKb = stepKb;
+    out.a1Db = a1Db;
+    out.b1Db = b1Db;
+    out.c0Db = (baseM * baseN * sizeof(float) * 2 <= kKsL0CBytes) ? 2 : 1;
+    out.b1FullLoad = b1FullLoad ? 1 : 0;
+    out.useWorkspace = useWorkspace;
+    out.workspaceBytes = workspaceBytes;
+    out.kSTailIdx = ksTailIdx;
+    out.kSTailM = ksTailM;
+    out.kSTailMCnt = ksTailMCnt;
+    return true;
+}

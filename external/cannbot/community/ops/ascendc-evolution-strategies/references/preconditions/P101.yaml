@@ -1,0 +1,20 @@
+strategy_id: P101
+description: "P101: GatherMask 替代 Host 侧列拆分 (GatherMask Replaces Host-Side Column Split)"
+
+strategy_meta:
+  id: "P101"
+  slug: "P101_gathermask_host_column_split"
+  title: "P101: GatherMask 替代 Host 侧列拆分 (GatherMask Replaces Host-Side Column Split)"
+  bottlenecks: [mte2_stall, scalar_loading]
+  op_families: [elementwise, special, index_scatter, attention]
+  conflicts_with: []
+  synergizes_with: [P100, P95, P69]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: false
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p101_gathermask_host_column_split.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p101_gathermask_host_column_split.md"
+  playbook_slug: "P101_gathermask_host_column_split"

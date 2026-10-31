@@ -1,0 +1,165 @@
+/*!
+* \file sort_with_index_multi_block.h
+* \brief sort_with_index multiblock mode impl
+*/
+
+#ifndef SORT_WITH_INDEX_MULTI_BLOCK_H
+#define SORT_WITH_INDEX_MULTI_BLOCK_H
+
+#include "sort_with_index/radix_sort_with_index_multi_block.h"
+
+using namespace AscendC;
+using namespace SortWithIndex;
+
+template <typename XType, typename UnsignedType, bool IsDescend, typename XRangeType, typename IndexType>
+class SortWithIndexMultiBlock : public SortWithIndex::RadixSortWithIndexMultiBlock<XType, UnsignedType, IsDescend, XRangeType, IndexType> {
+public:
+    __aicore__ inline SortWithIndexMultiBlock(){}
+    __aicore__ inline void Init(GM_ADDR x, GM_ADDR index, GM_ADDR y, GM_ADDR sortedIndex,
+                                GM_ADDR workspace, const TopKTilingDataSimd* tilingData, TPipe* pipe);
+    __aicore__ inline void Process();
+
+private:
+    __aicore__ inline void ParserTilingData();
+    __aicore__ inline void ProcessMultiBlock(GlobalTensor<XType> xGm, GlobalTensor<IndexType> indexGm, 
+                                         uint64_t gmOffset, uint64_t loopRound);
+private:
+    const TopKTilingDataSimd* tilingData_;
+};
+
+template <typename XType, typename UnsignedType, bool IsDescend, typename XRangeType, typename IndexType>
+__aicore__ inline void SortWithIndexMultiBlock<XType, UnsignedType, IsDescend, XRangeType, IndexType>::Init(
+    GM_ADDR x, GM_ADDR index, GM_ADDR y, GM_ADDR sortedIndex, GM_ADDR workspace, 
+    const TopKTilingDataSimd* tilingData, TPipe* pipe)
+{
+    this->blockIdx_ = GetBlockIdx();
+    this->pipe_ = pipe;
+    tilingData_ = tilingData;
+    ParserTilingData();
+    // 需要使用的核心数
+    this->realCoreNum_ = this->unsortedDimParallel_ * this->lastDimRealCore_;
+    if constexpr (sizeof(XRangeType) == sizeof(int64_t)) { 
+        this->factor_ = 2;
+    }
+    // 输入输出GlobalTensor初始化
+    this->inputXGm_.SetGlobalBuffer((__gm__ XType *)x);
+    this->indexGm_.SetGlobalBuffer((__gm__ IndexType *)index);
+    this->outValueGm_.SetGlobalBuffer((__gm__ XType *)y);
+    this->outIdxGm_.SetGlobalBuffer((__gm__ IndexType *)sortedIndex);
+
+    uint64_t wkOffset = this->clearCoreSize0_ * this->clearCore0_;
+    uint64_t oneBlockNumB32 = this->oneBlock_ / sizeof(int32_t); // oneBlock_ = 32
+    if constexpr (sizeof(XRangeType) == sizeof(int64_t)) {
+        wkOffset = wkOffset * 2;
+    }
+    wkOffset = Ops::Base::CeilAlign(wkOffset, oneBlockNumB32);
+    this->excusiveBinsGmWk_.SetGlobalBuffer((__gm__ uint32_t *)workspace, wkOffset);
+    wkOffset = wkOffset * sizeof(uint32_t);
+
+    uint64_t histOffset = this->clearCout_ * this->clearSize_ * this->clearCore1_;
+    if constexpr (sizeof(XRangeType) == sizeof(int64_t)) {
+        histOffset = histOffset * 2;
+    }
+    histOffset = Ops::Base::CeilAlign(histOffset, oneBlockNumB32);
+    this->globalHistGmWk_.SetGlobalBuffer((__gm__ uint32_t *)(workspace + wkOffset), histOffset);
+    wkOffset = wkOffset + histOffset * sizeof(uint32_t);
+
+    uint64_t indexDbOffset = this->totalDataNum_ * this->unsortedDimParallel_ * sizeof(IndexType);
+    indexDbOffset = Ops::Base::CeilAlign(indexDbOffset, this->oneBlock_);
+    this->outIdxDbWK_.SetGlobalBuffer((__gm__ IndexType *)(workspace + wkOffset), indexDbOffset / sizeof(IndexType));
+    wkOffset = wkOffset + indexDbOffset;
+
+    uint64_t histTileOffset = this->lastDimTileNum_ * Sort::RADIX_SORT_NUM * this->unsortedDimParallel_;
+    this->histTileGmWk_.SetGlobalBuffer((__gm__ uint16_t *)(workspace + wkOffset), histTileOffset);
+    wkOffset = wkOffset + histTileOffset * sizeof(uint16_t);
+    this->histCumsumTileGmWk_.SetGlobalBuffer((__gm__ uint16_t *)(workspace + wkOffset), histTileOffset);
+    wkOffset = wkOffset + histTileOffset * sizeof(uint16_t);
+
+    uint64_t xB8Offset = this->lastDimTileNum_ * this->numTileData_ * this->unsortedDimParallel_;
+    xB8Offset = Ops::Base::CeilAlign(xB8Offset, this->oneBlock_);
+    this->xB8GmWk_.SetGlobalBuffer((__gm__ uint8_t *)(workspace + wkOffset), xB8Offset);
+    wkOffset = wkOffset + xB8Offset * sizeof(uint8_t);
+
+    uint64_t dbOffset = this->totalDataNum_ * this->unsortedDimParallel_;
+    dbOffset = Ops::Base::CeilAlign(dbOffset * sizeof(XType), this->oneBlock_) / sizeof(XType);
+    this->outValueDbWK_.SetGlobalBuffer((__gm__ XType *)(workspace + wkOffset), dbOffset);
+
+    this->pipe_->InitBuffer(this->inQueueX_, 1, this->numTileData_ * sizeof(XType));
+    this->pipe_->InitBuffer(this->inQueueIndex_, 1, this->numTileData_ * sizeof(IndexType));
+    this->pipe_->InitBuffer(this->inQueueGlobalHist_, 1, Sort::RADIX_SORT_NUM * sizeof(XRangeType));
+    this->pipe_->InitBuffer(this->outValueQueue_, 1, this->numTileData_);
+    this->pipe_->InitBuffer(this->blockExcusiveInQue_, 1, Sort::RADIX_SORT_NUM * sizeof(uint16_t));
+    this->pipe_->InitBuffer(this->blockHistInQue_, 1, Sort::RADIX_SORT_NUM * sizeof(uint16_t));
+    this->pipe_->InitBuffer(this->blockUbFlagQue_, 1, Sort::RADIX_SORT_NUM * sizeof(XRangeType));
+    this->pipe_->InitBuffer(this->inputB8Que_, 1, this->numTileData_);
+    this->pipe_->InitBuffer(this->outIdxQueue_, 1, this->numTileData_ * sizeof(uint32_t));
+    this->pipe_->InitBuffer(this->tmpUb_, this->tmpUbSize_);
+    this->pipe_->InitBuffer(this->blockHistFlagUbQue_, 1, Sort::RADIX_SORT_NUM * sizeof(XRangeType));
+
+    this->globalHistGmWkTmp_ = this->globalHistGmWk_.template ReinterpretCast<XRangeType>();
+    this->excusiveBinsGmWkTmp_ = this->excusiveBinsGmWk_.template ReinterpretCast<XRangeType>();  
+}
+
+template <typename XType, typename UnsignedType, bool IsDescend, typename XRangeType, typename IndexType>
+__aicore__ inline void SortWithIndexMultiBlock<XType, UnsignedType, IsDescend, XRangeType, IndexType>::ParserTilingData()
+{
+    this->totalDataNum_ = tilingData_->lastAxisNumForSort;                // h轴大小
+    this->numTileData_ = tilingData_->numTileDataSizeForSort;             // ub循环块大小
+    this->unsortedDimNum_ = tilingData_->unsortedDimNumForSort;           // b轴大小
+    this->unsortedDimParallel_ = tilingData_->unsortedDimParallelForSort; // b轴使用的核数
+    this->lastDimTileNum_ = tilingData_->lastDimTileNumForSort;           // h轴循环次数
+    this->sortLoopTimes_ = tilingData_->sortLoopTimesForSort;             // b轴循环次数
+    this->lastDimRealCore_ = tilingData_->lastDimNeedCoreForSort;         // h轴需要的核数
+    this->tmpUbSize_ = tilingData_->tmpUbSize;                     // 高级api需要用的ub大小
+
+    this->clearCore1_ = tilingData_->keyParams0;     // 用于清零的globalHistGmWk_的核
+    this->clearCore0_ = tilingData_->keyParams1;     // 用于清零excusiveBinsGmWk_的核
+    this->clearSize_ = tilingData_->keyParams2;      // 每次清零的ub大小，按照大的globalHistGmWk_所需ub算
+    this->clearCout_ = tilingData_->keyParams3;      // 清零globalHistGmWk_ ub循环次数
+    this->clearCoreSize0_ = tilingData_->keyParams4; // 清零excusiveBinsGmWk_,每个核处理多少个数
+    this->clearCoreSize1_ = tilingData_->keyParams5; // 清零globalHistGmWk_，每个核处理多少
+}
+
+template <typename XType, typename UnsignedType, bool IsDescend, typename XRangeType, typename IndexType>
+__aicore__ inline void SortWithIndexMultiBlock<XType, UnsignedType, IsDescend, XRangeType, IndexType>::Process()
+{
+    for (uint64_t i = 0; i < this->sortLoopTimes_; i++) {
+        uint64_t loopOffset = i * this->unsortedDimParallel_ * this->totalDataNum_;
+        ProcessMultiBlock(this->inputXGm_[loopOffset], this->indexGm_[loopOffset], loopOffset, i);
+    }
+}
+
+template <typename XType, typename UnsignedType, bool IsDescend, typename XRangeType, typename IndexType>
+__aicore__ inline void SortWithIndexMultiBlock<XType, UnsignedType, IsDescend, XRangeType, IndexType>::ProcessMultiBlock(
+    GlobalTensor<XType> xGm, GlobalTensor<IndexType> indexGm, uint64_t gmOffset, uint64_t loopRound)
+{
+    if (this->blockIdx_ < this->realCoreNum_) {
+        this->ClearWorkSapce();
+    }
+    SyncAll();
+    
+    if (this->blockIdx_ < this->realCoreNum_) {
+        uint64_t indexGmOffset = gmOffset;
+        if constexpr (sizeof(XType) == sizeof(int8_t)) {
+            this->inputXDbGm_.SetDoubleBuffer(this->outValueDbWK_, this->outValueGm_[gmOffset]);
+            this->idxDbGm_.SetDoubleBuffer(indexGm, this->outIdxGm_[indexGmOffset]);
+        } else {
+            this->inputXDbGm_.SetDoubleBuffer(this->outValueGm_[gmOffset], this->outValueDbWK_);
+            this->idxDbGm_.SetDoubleBuffer(this->outIdxGm_[indexGmOffset], this->outIdxDbWK_);
+        }
+    }
+
+    for (uint32_t sortRound = 0; sortRound < static_cast<uint32_t>(sizeof(XType)); sortRound++) {
+        if (this->blockIdx_ < this->realCoreNum_) {
+            // 确定  histTileGmWk_(直方图), histCumsumTileGmWk_, excusiveBinsGmWk_
+            this->GetGlobalExcusiveSum(sortRound, loopRound, xGm);
+        }
+        SyncAll();
+        if (this->blockIdx_ < this->realCoreNum_) {
+            this->ComputeOnePass(sortRound, loopRound, xGm, indexGm);
+        }
+        SyncAll();
+    }
+}
+
+#endif // SORT_WITH_INDEX_MULTI_BLOCK_H

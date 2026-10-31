@@ -1,0 +1,278 @@
+/**
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
+
+/*!
+ * \file softmax_v2_tiling_data.h
+ * \brief SoftmaxV2 六个模板的 TilingData 结构定义（host 与 device 共用，packed 布局保持一致）。
+ *
+ * 本文件集中定义六个独立的 TilingData 结构体，每个结构体对应一个 Kernel 模板。
+ * 模板之间互不依赖，使用者只需 include 本文件和对应模板头文件即可独立实例化。
+ *
+ * 结构体与模板对应关系：
+ *   - SoftmaxV2ArSmallRTilingData    → dav310/softmax_v2_ar_small_r.h   (SoftmaxV2ArSmallR)
+ *   - SoftmaxV2ARTilingData          → dav310/softmax_v2_ar_full_load.h  (SoftmaxV2AR)
+ *   - SoftmaxV2ArRecomputeTilingData → dav310/softmax_v2_ar_recompute.h  (SoftmaxV2ArRecompute)
+ *   - SoftmaxV2ARATilingData         → dav310/softmax_v2_ara_full_load.h (SoftmaxV2ARA)
+ *   - SoftmaxV2ARARecomputeTilingData→ dav310/softmax_v2_ara_recompute.h (SoftmaxV2ARARecompute)
+ *   - SoftmaxV2ARAOnlineTilingData   → dav310/softmax_v2_ara_online.h    (SoftmaxV2ARAOnline)
+ *
+ * 所有结构体使用 #pragma pack(1)，确保 Host 与 Device 内存布局一致。
+ */
+
+#ifndef SOFTMAX_V2_TILING_DATA_H
+#define SOFTMAX_V2_TILING_DATA_H
+
+#include <cstdint>
+
+#pragma pack(1)
+
+// ============================================================================
+// AR Small R — 对应模板 SoftmaxV2ArSmallR (dav310/softmax_v2_ar_small_r.h)
+//
+// 适用场景：2D [A1, R] 布局，R 极小（FP32≤16 / FP16≤32），转置为 (R, A1) 向量化。
+// 字段说明：
+//   totalA0Len    — 转置后的 A0 维长度（= 原 A1），单位：元素数
+//   totalRLen     — 归约轴 R 的实际长度，单位：元素数
+//   totalTiles    — A0 方向总 tile 数，单位：tile
+//   tilesPerCore  — 每核处理的 tile 数，单位：tile
+//   tileA0Len     — 主块 A0 tile 长度（VL_FP32 对齐），单位：元素数
+//   tileA0Tail    — 尾块 A0 实际长度，单位：元素数；主块时等于 tileA0Len
+//   rTileBase     — R 方向转置基础块大小，FP32=8 / FP16=16，单位：元素数
+//   rAligned      — R 对齐后长度（按 rTileBase 向上取整），单位：元素数
+//
+// Host 侧生成约束：
+//   - tileA0Len 须为 VL_FP32 (64) 的倍数
+//   - rAligned = CeilDiv(R, rTileBase) * rTileBase
+//   - tilesPerCore = CeilDiv(totalTiles, numBlocks)，totalTiles = CeilDiv(A1, tileA0Len)
+// ============================================================================
+struct SoftmaxV2ArSmallRTilingData {
+    int64_t totalA0Len;
+    int64_t totalRLen;
+    int64_t totalTiles;
+    int64_t tilesPerCore;
+    int64_t tileA0Len;
+    int64_t tileA0Tail;
+    int64_t rTileBase;
+    int64_t rAligned;
+};
+
+// ============================================================================
+// AR Full Load — 对应模板 SoftmaxV2AR (dav310/softmax_v2_ar_full_load.h)
+//
+// 适用场景：2D [A1, R] 布局，R 可整段载入 UB，单 pass VF 计算。
+// 字段说明：
+//   a             — A1 维总长度（行数），单位：元素数
+//   r             — R 维实际长度，单位：元素数
+//   rAligned      — R 对齐后长度（按 32B/dtypeSize 向上取整），单位：元素数
+//   ubFactor      — 单次 UB 载入的行数（A 方向分块），单位：行
+//   aBlockFactor  — 每核处理的行数，单位：行
+//   rLoopCount    — R 方向 VL_FP32 分段数 = CeilDiv(rAligned, VL_FP32)，单位：段
+//
+// Host 侧生成约束：
+//   - rAligned 按 blockSize/dtypeSize 对齐
+//   - ubFactor 受 UB 容量约束，须满足 ubFactor * rAligned * (dtypeSize*2 + 4) <= ubSize
+//   - aBlockFactor = CeilDiv(A1, numBlocks)
+// ============================================================================
+struct SoftmaxV2ARTilingData {
+    int64_t a;
+    int64_t r;
+    int64_t rAligned;
+    int64_t ubFactor;
+    int64_t aBlockFactor;
+    int64_t rLoopCount;
+};
+
+// ============================================================================
+// AR Recompute — 对应模板 SoftmaxV2ArRecompute (dav310/softmax_v2_ar_recompute.h)
+//
+// 适用场景：2D [A1, R] 布局，R 超出 UB，R 切 chunk 三阶段重读 GM + 二分累加树。
+// 字段说明：
+//   a               — A1 维总长度（行数），单位：元素数
+//   r               — R 维实际长度，单位：元素数
+//   ubFactor        — R 方向单 chunk 长度（UB 内一次载入的 R 元素数），单位：元素数
+//   ubFactorTail    — R 方向尾块长度（最后一个 chunk 的实际长度），单位：元素数
+//   aBlockFactor    — 每核处理的行数，单位：行
+//   aLoopCountCeil  — R 方向 chunk 总数 = CeilDiv(R, ubFactor)，单位：chunk
+//   basicBlockLoop  — 二分树展开的基础块数（<= aLoopCountCeil 的最大 2^k），单位：块
+//   mainFoldCount   — 需要折叠的块数 = aLoopCountCeil - basicBlockLoop，单位：块
+//
+// Host 侧生成约束：
+//   - ubFactor 受 UB 容量约束，须满足多 buffer 约束
+//   - ubFactorTail = R - ubFactor * FloorDiv(R, ubFactor)；R 整除时为 0
+//   - basicBlockLoop = FindNearestPower2(aLoopCountCeil)
+//   - mainFoldCount = FloorDiv(R, ubFactor) - basicBlockLoop
+// ============================================================================
+struct SoftmaxV2ArRecomputeTilingData {
+    int64_t a;
+    int64_t r;
+    int64_t ubFactor;
+    int64_t ubFactorTail;
+    int64_t aBlockFactor;
+    int64_t aLoopCountCeil;
+    int64_t basicBlockLoop;
+    int64_t mainFoldCount;
+};
+
+// ============================================================================
+// ARA Full Load — 对应模板 SoftmaxV2ARA (dav310/softmax_v2_ara_full_load.h)
+//
+// 适用场景：3D [A1, R, A0] 布局，R×A0_tile 可载入 UB，沿 A0 切 tile 跨 R 逐列 VF。
+// 字段说明：
+//   totalA1Len          — A1 维总长度，单位：元素数
+//   totalRLen           — R 维总长度，单位：元素数
+//   totalA0Len          — A0 维总长度，单位：元素数
+//   totalTiles          — 总 tile 数 = A1 * a0Outer，单位：tile
+//   tilesPerCore        — 每核处理的 tile 数，单位：tile
+//   usedCoreNums        — 实际使用的核数，单位：核
+//   a1Outer             — A1 外层循环数（= totalA1Len），单位：次
+//   tileA1Len           — A1 方向 tile 长度（当前为 1），单位：元素数
+//   tileA1Tail          — A1 方向尾块长度（= totalA1Len），单位：元素数
+//   a0Outer             — A0 方向 tile 总数 = CeilDiv(A0, tileA0Len)，单位：tile
+//   tileA0Len           — 主块 A0 tile 长度，单位：元素数
+//   tileA0Tail          — 尾块 A0 实际长度，单位：元素数
+//   binaryAddK          — BinaryAdd 外层折叠层数，单位：层
+//   binaryAddLast       — BinaryAdd 最后是否需额外 2→1 折叠（0 或 1），单位：标志
+//   binaryAddInnerLoop  — BinaryAdd 每层内循环次数，单位：次
+//   remainderLoopCount  — R 对 8 取余后的折叠循环数，单位：次
+//   quotientLoopCount   — R 整除 8 后的剩余折叠循环数，单位：次
+//   remainderTailCount  — 余数部分的尾块计数，单位：个
+//   remainderOffset     — 余数部分在 UB 中的偏移，单位：元素数
+//   baseLineOffset      — 8 行 baseline 偏移，单位：元素数
+//   validNumInXUb       — UB 中有效元素数 = R * tileA0Len，单位：元素数
+//   quotientTailOffset  — 商部分尾块偏移，单位：元素数
+//   remainderTailOffset — 余数部分尾块偏移，单位：元素数
+//   remainderTailOffset0~7 — 余数尾块各行的具体偏移（越界则指向 validNumInXUb 做零填充），单位：元素数
+//
+// Host 侧生成约束：
+//   - tileA0Len 须为 a0TileBase 的倍数（FP32=8 / FP16=16）
+//   - 当 R <= 8 时，binaryAdd* 字段不使用（可全为 0）
+//   - 当 R > 8 时，binaryAddQuotient = 最大 2^k <= R-1，按 8 行分组做 BinaryAddVF
+// ============================================================================
+struct SoftmaxV2ARATilingData {
+    int64_t totalA1Len;
+    int64_t totalRLen;
+    int64_t totalA0Len;
+    int64_t totalTiles;
+    int64_t tilesPerCore;
+    int64_t usedCoreNums;
+    int64_t a1Outer;
+    int64_t tileA1Len;
+    int64_t tileA1Tail;
+    int64_t a0Outer;
+    int64_t tileA0Len;
+    int64_t tileA0Tail;
+    uint16_t binaryAddK;
+    uint16_t binaryAddLast;
+    uint16_t binaryAddInnerLoop;
+    uint16_t remainderLoopCount;
+    uint16_t quotientLoopCount;
+    uint16_t remainderTailCount;
+    uint32_t remainderOffset;
+    uint32_t baseLineOffset;
+    uint32_t validNumInXUb;
+    uint32_t quotientTailOffset;
+    uint32_t remainderTailOffset;
+    uint32_t remainderTailOffset0;
+    uint32_t remainderTailOffset1;
+    uint32_t remainderTailOffset2;
+    uint32_t remainderTailOffset3;
+    uint32_t remainderTailOffset4;
+    uint32_t remainderTailOffset5;
+    uint32_t remainderTailOffset6;
+    uint32_t remainderTailOffset7;
+};
+
+// ============================================================================
+// ARA Recompute — 对应模板 SoftmaxV2ARARecompute (dav310/softmax_v2_ara_recompute.h)
+//
+// 适用场景：3D [A1, R, A0] 布局，R 超出 UB，R 切 bin 三阶段跨 bin 二分折叠。
+// 字段说明：
+//   totalRLen              — R 维总长度，单位：元素数
+//   totalA0Len             — A0 维总长度，单位：元素数
+//   totalTiles             — 总 tile 数 = A1 * tileA0Outer，单位：tile
+//   tilesPerCore           — 每核处理的 tile 数，单位：tile
+//   usedCoreNums           — 实际使用的核数，单位：核
+//   tileA0Outer            — A0 方向 tile 总数，单位：tile
+//   tileA0Len              — 主块 A0 tile 长度，单位：元素数
+//   tileA0Tail             — 尾块 A0 实际长度，单位：元素数
+//   binAddRFactor          — R 方向单 bin 长度（默认 128），单位：元素数
+//   binAddRLoop            — R 方向完整 bin 数 = FloorDiv(R, binAddRFactor)，单位：bin
+//   binAddRTotalLoop       — R 方向 bin 总数 = CeilDiv(R, binAddRFactor)，单位：bin
+//   binAddRTail            — R 方向尾 bin 长度，单位：元素数
+//   binAddBasicBlockLoop   — 二分树展开的基础块数，单位：块
+//   binAddMainFoldCount    — 需要折叠的块数，单位：块
+//   binAddCacheBufferCount — 二分累加 cache buffer 数量，单位：个
+//   binAddResultCacheID    — 最终结果所在的 cache buffer 索引，单位：索引
+//
+// Host 侧生成约束：
+//   - binAddRFactor 默认 128，可根据 UB 容量调整
+//   - binAddRTail = R - (binAddRTotalLoop - 1) * binAddRFactor
+//   - binAddBasicBlockLoop = FindNearestPower2(binAddRTotalLoop)
+//   - binAddCacheBufferCount / binAddResultCacheID 由 GetCacheID 计算
+// ============================================================================
+struct SoftmaxV2ARARecomputeTilingData {
+    int64_t totalRLen;
+    int64_t totalA0Len;
+    int64_t totalTiles;
+    int64_t tilesPerCore;
+    int64_t usedCoreNums;
+    int64_t tileA0Outer;
+    int64_t tileA0Len;
+    int64_t tileA0Tail;
+    int64_t binAddRFactor;
+    int64_t binAddRLoop;
+    int64_t binAddRTotalLoop;
+    int64_t binAddRTail;
+    int64_t binAddBasicBlockLoop;
+    int64_t binAddMainFoldCount;
+    int64_t binAddCacheBufferCount;
+    int64_t binAddResultCacheID;
+};
+
+// ============================================================================
+// ARA Online Softmax — 对应模板 SoftmaxV2ARAOnline (dav310/softmax_v2_ara_online.h)
+//
+// 适用场景：3D [A1, R, A0] 布局，沿 R 分 chunk 在线更新 running max / running sum。
+// 输入读 2 次（1 遍在线 max+sum，1 遍输出），无需二分 cache。
+// 字段说明：
+//   totalRLen       — R 维总长度，单位：元素数
+//   totalA0Len      — A0 维总长度，单位：元素数
+//   totalTiles      — 总 tile 数 = A1 * tileA0Outer，单位：tile
+//   tilesPerCore    — 每核处理的 tile 数，单位：tile
+//   usedCoreNums    — 实际使用的核数，单位：核
+//   tileA0Outer     — A0 方向 tile 总数，单位：tile
+//   tileA0Len       — 主块 A0 tile 长度，单位：元素数
+//   tileA0Tail      — 尾块 A0 实际长度，单位：元素数
+//   rChunkFactor    — R 方向单 chunk 长度（默认 128），单位：元素数
+//   rChunkTotalLoop — R 方向 chunk 总数 = CeilDiv(R, rChunkFactor)，单位：chunk
+//   rChunkTail      — R 方向尾 chunk 长度，单位：元素数
+//
+// Host 侧生成约束：
+//   - rChunkFactor 默认 128，若大于 R 则取 R
+//   - rChunkTail = R - (rChunkTotalLoop - 1) * rChunkFactor
+//   - tileA0Len 须为 a0TileBase 的倍数（FP32=8 / FP16=16）
+// ============================================================================
+struct SoftmaxV2ARAOnlineTilingData {
+    int64_t totalRLen;
+    int64_t totalA0Len;
+    int64_t totalTiles;
+    int64_t tilesPerCore;
+    int64_t usedCoreNums;
+    int64_t tileA0Outer;
+    int64_t tileA0Len;
+    int64_t tileA0Tail;
+    int64_t rChunkFactor;
+    int64_t rChunkTotalLoop;
+    int64_t rChunkTail;
+};
+
+#pragma pack()
+
+#endif  // SOFTMAX_V2_TILING_DATA_H

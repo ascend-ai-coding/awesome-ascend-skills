@@ -1,0 +1,47 @@
+strategy_id: P117
+description: 双 BMM 链 MatmulApiTiling host 配方适用性检查 — 算子含 QK^T/PV 双 matmul 链（或等价双 matmul），且 host 端尚未使用 MatmulApiTiling 生成 tiling。
+strategy_meta:
+  id: "P117"
+  slug: "P117_matmul_api_tiling_host_recipe"
+  title: "P117: 双 BMM 链 MatmulApiTiling Host 配方（SetBufferSpace + SetFixSplit + depthA1 流水微调）"
+  bottlenecks: [cube_underutilization]
+  op_families: [attention, flash_attention, matmul, cv_fusion]
+  conflicts_with: []
+  synergizes_with: [P46, P86, P92]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p117_matmul_api_tiling_host_recipe.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p117_matmul_api_tiling_host_recipe.md"
+  playbook_slug: "P117_matmul_api_tiling_host_recipe"
+checks:
+  - id: has_dual_bmm_chain
+    type: grep_count
+    pattern: "bmm1|bmm2|Bmm1|Bmm2|matmul|Matmul|Mmad|ReduceSum|WholeReduceSum"
+    files: [kernel, host]
+    expected: ">= 2"
+    fail_msg: "未检测到 matmul 链证据（含 Mul+ReduceSum 伪 matmul）→ P117 不适用；单 elementwise 算子走 P39/P42。"
+
+  - id: no_matmul_api_tiling
+    type: grep_count
+    pattern: "MatmulApiTiling"
+    files: [host, tiling, kernel]
+    expected: "== 0"
+    fail_msg: "host 端已使用 MatmulApiTiling → P117 主要价值已发挥，转向 P86 数据通路调优或 P92 块配比。"
+
+  - id: manual_cube_evidence
+    type: grep_count
+    pattern: 'Nd2Nz|LoadData|Fixpipe|Mul\\s*\\(.*ReduceSum|ReduceSum'
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到手写 cube 搬运或 vector 伪 matmul → 确认 matmul 链路现状后再决定是否套用本配方。"
+
+  - id: has_tiling_struct
+    type: grep_count
+    pattern: "TilingData|TCubeTiling|tiling"
+    files: [host, header]
+    expected: ">= 1"
+    fail_msg: "无 tiling 结构承载 bmm tiling 数据 → 需先在 TilingData 中预留 bmm1/bmm2 tiling 字段。"

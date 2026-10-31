@@ -1,0 +1,22 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+
+# Framework registry —— stage 9 oracle 可识别的框架集合
+#
+# 作用：作为 stage 9 判别 `reference_oracle.framework` 是否是"已知框架"的参考。
+#       未知框架 ⇒ stage 9 emit `unknown_framework` WARN（仍会尝试真 import）。
+#
+# 使用方法：新增框架只需在本文件 frameworks: 下加一项。代码侧不需修改。
+schema_version: 1
+
+frameworks:
+  - torch        # PyTorch
+  - numpy        # NumPy
+  - scipy        # SciPy
+  - tensorflow   # TensorFlow
+  - jax          # JAX

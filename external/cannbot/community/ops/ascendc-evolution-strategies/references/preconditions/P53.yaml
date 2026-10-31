@@ -1,0 +1,40 @@
+strategy_id: P53
+
+strategy_meta:
+  id: "P53"
+  slug: "P53_l1_resident_reuse"
+  title: "P53: L1 常驻复用策略 (L1 Resident Reuse)"
+  bottlenecks: [partial_overlap]
+  op_families: [cv_fusion, flash_attention]
+  conflicts_with: []
+  synergizes_with: [P14, P18, P38]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p53_l1_resident_reuse.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p53_l1_resident_reuse.md"
+  playbook_slug: "P53_l1_resident_reuse"
+checks:
+  - id: has_cube
+    type: grep_count
+    pattern: "Cube|Matmul|matmul|FlashAttention|IFA"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 Cube/Matmul 密集型算子 → 不适用 P53。检查 P20 或 P22。"
+
+  - id: has_cubeinbuffer
+    type: grep_count
+    pattern: "L1|l1|CubeInBuffer|AllocTensor|GetBuffer"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 L1 Buffer 使用 → 无 L1 常驻空间，不适用 P53。检查 P78 或 P83。"
+
+  - id: has_nloops
+    type: grep_count
+    pattern: "for.*nloops|nloops|loop.*N|CopyQ"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 N 方向迭代或 Q 搬运逻辑 → 无跨迭代复用场景，不适用 P53。"

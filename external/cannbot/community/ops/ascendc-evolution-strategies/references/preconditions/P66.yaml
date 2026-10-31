@@ -1,0 +1,40 @@
+strategy_id: P66
+
+strategy_meta:
+  id: "P66"
+  slug: "P66_gm_512b_alignment"
+  title: "P66: GM 地址 512B 对齐优化带宽 (GM 512B Alignment Bandwidth)"
+  bottlenecks: [mte2_stall, undersize_transfer]
+  op_families: [datapath]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p66_gm_512b_alignment.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p66_gm_512b_alignment.md"
+  playbook_slug: "P66_gm_512b_alignment"
+checks:
+  - id: has_datacopy
+    type: grep_count
+    pattern: "DataCopy|CopyIn|CopyOut|Fixpipe|GM|gm"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 GM 访问操作 → 无对齐优化空间，不适用 P66。"
+
+  - id: has_align
+    type: grep_count
+    pattern: "Align|对齐|offset|Offset|stride|Stride"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到对齐/偏移相关逻辑 → 无 512B 对齐优化空间，不适用 P66。"
+
+  - id: has_align_2
+    type: grep_count
+    pattern: "512|256|32B|align.*512"
+    files: [kernel]
+    expected: ">= 0"
+    fail_msg: "已存在 512B/256B/32B 对齐优化 → 可能冗余，优先验证现有策略效果。"

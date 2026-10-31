@@ -1,0 +1,48 @@
+strategy_id: P115
+description: FlashAttention Tiling 路由适用性检查 — 算子为 FlashAttention 类，且未按四层架构完成选型与设计节点路由。
+
+strategy_meta:
+  id: "P115"
+  slug: "P115_flashattention_tiling_routing"
+  title: "P115: FlashAttention Tiling 路由"
+  bottlenecks: [tiling_mismatch, cube_underutilization, sync_overhead]
+  op_families: [attention, flash_attention]
+  conflicts_with: []
+  synergizes_with: [P14, P18, P38, P55]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p115_flashattention_tiling_routing.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p115_flashattention_tiling_routing.md"
+  playbook_slug: "P115_flashattention_tiling_routing"
+checks:
+  - id: has_flash_attention_semantics
+    type: grep_count
+    pattern: "FlashAttention|flash_attention|FA|GQA|MHA|MLA|softmax|matmul"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未检测到 FlashAttention 语义 → P115 不适用。"
+
+  - id: has_head_info
+    type: grep_count
+    pattern: "headNum|kvHeadNum|hiddenSize|seqLen"
+    files: [header]
+    expected: ">= 2"
+    fail_msg: "未检测到 head/hidden/seq 信息 → 无法完成 FA 形态选型。"
+
+  - id: no_fa_routing
+    type: grep_count
+    pattern: "GQA|MHA|MLA|base_design|quantization_design|sparse_design|feature_flags"
+    files: [kernel, header]
+    expected: "== 0"
+    fail_msg: "算子已实现 FA 变体路由 → P115 主要价值已发挥。"
+
+  - id: has_cube_or_vector
+    type: grep_count
+    pattern: "AI_CORE|TaskType::AI_CUBE|TaskType::AI_VECTOR|aicore"
+    files: [all]
+    expected: ">= 1"
+    fail_msg: "未检测到 AscendC kernel 证据 → P115 不适用。"

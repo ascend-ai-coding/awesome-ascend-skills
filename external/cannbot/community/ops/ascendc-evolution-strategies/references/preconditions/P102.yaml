@@ -1,0 +1,35 @@
+strategy_id: P102
+description: scalar/向量模拟矩阵运算 → MIX CV 融合重写 — kernel 必须存在标量/向量模拟矩阵运算特征且尚未是 MIX/Cube 架构
+
+strategy_meta:
+  id: "P102"
+  slug: "P102_scalar_matmul_to_cv_fusion_rewrite"
+  title: "P102: 标量/向量模拟矩阵运算 → MIX CV 融合重写"
+  bottlenecks: [scalar_compute, compute_bound]
+  op_families: [cv_fusion, matmul, attention, special]
+  conflicts_with: []
+  synergizes_with: [P29, P46, P87, P92]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p102_scalar_matmul_to_cv_fusion_rewrite.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p102_scalar_matmul_to_cv_fusion_rewrite.md"
+  playbook_slug: "P102_scalar_matmul_to_cv_fusion_rewrite"
+  quantified_gain: [{"shape": "GDR B=1,T=64,Hk=4,Hv=4,fp16", "baseline_us": 3650.0, "optimized_us": 261.0, "speedup": 14.0, "source": "gated_delta_rule_cv rewrite (scalar+VEC → MIX_AIC_1_1)"}, {"shape": "GDR geomean over T=64..4096", "baseline_us": 1.0, "optimized_us": 1.0, "speedup": 8.85, "source": "gated_delta_rule_cv vs PyTorch reference, wall-clock 20 iters"}]
+checks:
+  - id: has_scalar_matmul_emulation
+    type: grep_count
+    pattern: 'for\\s*\\([^)]*\\+\\+[^)]*\\)\\s*\\{?\\s*for\\s*\\(|reinterpret_cast.*GetPhyAddr|\\.GetPhyAddr\\(\\)'
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到嵌套标量循环或 raw pointer 标量计算 → 无 scalar 模拟矩阵运算特征，不适用 P102。纯 elementwise 标量循环检查 P94/P95。"
+
+  - id: not_already_mix_architecture
+    type: grep_count
+    pattern: "KERNEL_TYPE_MIX|ASCEND_IS_AIC|Mmad"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "检测到 KERNEL_TYPE_MIX/ASCEND_IS_AIC/Mmad → 已是 MIX/Cube 架构，P102 重写已完成。进阶优化检查 P29/P87/P92，三角求解检查 P103。"

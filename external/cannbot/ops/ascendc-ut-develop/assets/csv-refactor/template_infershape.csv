@@ -1,0 +1,5 @@
+case_name,expectResult,input0_shape,input0_dtype,input0_format,input1_shape,input1_dtype,input1_format,input_optional_shape,input_optional_dtype,input_optional_format,output0_shape,output0_dtype,output0_format,output_optional_shape,output_optional_dtype,output_optional_format,attr_int,attr_float,attr_string,attr_bool,case_annotation
+basic_success,SUCCESS,4 13 8192,FLOAT16,ND,4 10347 512,FLOAT16,ND,0,FLOAT16,ND,4 13 8192,FLOAT16,ND,0,INT8,ND,16,0.04166,ND,0,基础成功场景（Optional Tensor shape填0）
+optional_input1,SUCCESS,32 1 1024,FLOAT16,ND,0,FLOAT16,ND,0,FLOAT16,ND,32 1 1024,FLOAT16,ND,0,INT8,ND,8,0.08838,ND,1,input1不使用（shape填0，dtype/format必填）
+multi_dtype,SUCCESS,4 8 512,BF16,ND,4 8 128,FLOAT16,ND,0,INT8,ND,4 8 512,BF16,ND,0,FLOAT,ND,4,1.0,NCHW,0,混合精度测试（多种dtype）
+failed_case,FAILED,1 1,FLOAT16,ND,0,FLOAT16,ND,0,FLOAT16,ND,0,FLOAT16,ND,0,INT8,ND,0,0.1,ND,0,失败场景（所有不用的Tensor shape填0）

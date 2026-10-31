@@ -1,0 +1,44 @@
+/* !
+ * \file util_type_simd.h
+ * \brief util simd impl
+ */
+#ifndef UTIL_TYPE_SIMD_H
+#define UTIL_TYPE_SIMD_H
+#include "kernel_operator.h"
+#include "op_kernel/platform_util.h"
+
+constexpr uint32_t UB_BLOCK_SIZE = Ops::Base::GetUbBlockSize(); // UB block size in bytes
+
+__aicore__ inline uint32_t ROUND_UP_AGLIN(uint32_t x)
+{
+    if (UB_BLOCK_SIZE == 0) {
+        return x;
+    }
+    return (x + UB_BLOCK_SIZE - 1U) / UB_BLOCK_SIZE * UB_BLOCK_SIZE;
+}
+
+__aicore__ inline uint64_t ROUND_UP_AGLIN_UINT64(uint64_t x)
+{
+    if (UB_BLOCK_SIZE == 0) {
+        return x;
+    }
+    return (x + UB_BLOCK_SIZE - 1ULL) / UB_BLOCK_SIZE * UB_BLOCK_SIZE;
+}
+
+template <typename T>
+struct DoubleBufferSimd {
+    AscendC::GlobalTensor<T> doubleBuffer_[2];
+    int selector_ = 0;
+    __aicore__ inline DoubleBufferSimd() {}
+    __aicore__ inline void SetDoubleBuffer(AscendC::GlobalTensor<T> currentBuffer,
+                                           AscendC::GlobalTensor<T> alternateBuffer)
+    {
+        selector_ = 0;
+        doubleBuffer_[0] = currentBuffer;
+        doubleBuffer_[1] = alternateBuffer;
+    }
+    __aicore__ inline AscendC::GlobalTensor<T> Current() const { return doubleBuffer_[selector_]; }
+    __aicore__ inline AscendC::GlobalTensor<T> Alternate() const { return doubleBuffer_[selector_ ^ 1]; }
+    __aicore__ inline void UpdateSelect() { selector_ = selector_ ^ 1; }
+};
+#endif
