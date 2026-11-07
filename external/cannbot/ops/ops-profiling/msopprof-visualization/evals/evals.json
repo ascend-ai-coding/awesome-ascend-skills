@@ -1,0 +1,33 @@
+{
+  "skill_name": "msopprof-visualization",
+  "evals": [
+    {
+      "id": 1,
+      "config": {"ascend_platforms": ["A2"], "timeout": 900},
+      "prompt": "我有一个算子工程，准备采集完整的 msOpProf 数据并生成中文 HTML 可视化报告。请说明应该使用哪套流程与脚本、执行顺序，以及会产出哪些交付文件。",
+      "expected_output": "1. 回复应说明使用统一的 run_pipeline.py 流程（而不是散装脚本拼凑），先执行 BasicInfo/preflight 预检\n2. 回复应说明按最小非重复计划采集，最终交付 HTML 报告与 report_index.json 交付回执",
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "config": {"ascend_platforms": ["A2"], "timeout": 900},
+      "prompt": "我已经有 collection_manifest.json，只想重新生成 Roofline、Timeline 和 Cache，不要重新采集。请给出应该执行的模式与参数，不需要真的执行。",
+      "expected_output": "1. 回复应选择 visualize 模式（不重新采集），并对 roofline、timeline、cache 各传入一次 --feature\n2. 回复应说明该模式下不会触发新的 msprof 采集/replay",
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "config": {"ascend_platforms": ["A2"], "timeout": 900},
+      "prompt": "数据里没有 memory_info.json。有同事建议直接用 MemoryDetail 计数画片上内存分配图。这样可以吗？请说明理由和处理方式。",
+      "expected_output": "1. 回复应拒绝在缺少 memory_info.json 时伪造 allocation 地址、lifetime、bank 等片上内存数据\n2. 回复应说明应输出该模块不可用的诊断（按 unavailable 策略说明原因），而不是用 MemoryDetail 计数硬凑",
+      "expectations": []
+    },
+    {
+      "id": 4,
+      "config": {"ascend_platforms": ["A2"], "timeout": 900},
+      "prompt": "请用已有采集数据生成包含全部模块的报告，即使某些模块没有数据也要说明原因。请说明需要显式请求哪些页面、以及用什么策略解释缺失数据。",
+      "expected_output": "1. 回复应说明要显式请求全部九个页面（含 onchip-memory、instruction-timeline 等）\n2. 回复应使用 --unavailable-policy explain，对缺数据的模块说明原因而不是静默略过",
+      "expectations": []
+    }
+  ]
+}

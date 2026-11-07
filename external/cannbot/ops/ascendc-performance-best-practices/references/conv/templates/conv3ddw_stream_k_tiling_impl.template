@@ -1,0 +1,195 @@
+/* Conv3DDW StreamK standalone host tiling, materialize as conv3ddw_stream_k_tiling.cpp.
+ * Derived from ops-nn arch35 StreamKTiling / BasicBlockTiling (source revision in guide).
+ * Deliberate domain: groups=1, NCDHW, native Load3D specs, no splitWo/kernel enlargement.
+ * No graph context, tiling registry, runtime KB or project headers are needed.
+ */
+#include "conv3ddw_stream_k_tiling.h"
+#include <algorithm>
+#include <initializer_list>
+
+namespace {
+constexpr uint64_t kIndexLimit=0x7fffffffULL;
+bool ProductFits(std::initializer_list<uint64_t> values) {
+    uint64_t p=1;
+    for (auto v:values) { if (!v || p>kIndexLimit/v) return false; p*=v; }
+    return true;
+}
+bool OutputDim(uint32_t x,uint32_t k,uint32_t dil,uint32_t s,
+               uint32_t p0,uint32_t p1,uint32_t& y) {
+    if (!x || !k || !dil || !s) return false;
+    const uint64_t e=uint64_t(k-1)*dil+1, padded=uint64_t(x)+p0+p1;
+    if (padded<e || padded>kIndexLimit) return false;
+    const uint64_t value=(padded-e)/s+1;
+    if (value>kIndexLimit) return false;
+    y=static_cast<uint32_t>(value); return true;
+}
+bool Geometry(const Conv3ddwSkCase& c) {
+    uint32_t d=0,h=0,w=0;
+    if (c.group!=1 || c.realGroup!=1 || uint32_t(c.dtype)>2 || c.hf32Flag>1 ||
+        (c.hf32Flag && c.dtype!=ConvDwSkDType::FP32) ||
+        !c.usedCoreNum || c.usedCoreNum>64 ||
+        !c.hk || c.hk>255 || !c.wk || c.wk>255 ||
+        !c.strideH || c.strideH>63 || !c.strideW || c.strideW>63 ||
+        !c.dilationH || c.dilationH>255 || !c.dilationW || c.dilationW>255 ||
+        c.padUp>255 || c.padDown>255 || c.padLeft>255 || c.padRight>255 ||
+        uint64_t(c.hk)*c.wk*16>65536) return false;
+    if (!OutputDim(c.di,c.dk,c.dilationD,c.strideD,c.padFront,c.padBack,d) ||
+        !OutputDim(c.hi,c.hk,c.dilationH,c.strideH,c.padUp,c.padDown,h) ||
+        !OutputDim(c.wi,c.wk,c.dilationW,c.strideW,c.padLeft,c.padRight,w)) return false;
+    return c.dout==d && c.ho==h && c.wo==w &&
+        ProductFits({c.batch,c.cin,c.di,c.hi,c.wi}) &&
+        ProductFits({c.batch,c.cout,d,h,w}) &&
+        ProductFits({c.cout,c.cin,c.dk,c.hk,c.wk});
+}
+void CommitBounds(Conv3ddwSkCase& c) {
+    c.al1Bound=c.baseM*c.baseK*c.stepKa;
+    c.bl1Bound=static_cast<uint32_t>(DwSkBL1Bound(c,c.stepKb));
+}
+void SetSteps(Conv3ddwSkCase& c) {
+    c.stepKa=c.stepKb=1;
+    const auto kIters=DwSkCeil(c.singleCoreK,c.baseK);
+    for (uint32_t s: {8U,4U,2U,1U}) {
+        if (s<=kIters && DwSkFitsL1(c,s,s)) { c.stepKa=c.stepKb=s; break; }
+    }
+    CommitBounds(c);
+}
+bool BaseBlock(Conv3ddwSkCase& c,uint32_t db) {
+    const uint64_t hw=uint64_t(c.hk)*c.wk;
+    const uint32_t maxM=static_cast<uint32_t>(std::min<uint64_t>(256,DwSkAlign(c.cout,16)));
+    const uint32_t maxN=static_cast<uint32_t>(std::min<uint64_t>(256,DwSkAlign(c.cin,16)*hw));
+    c.singleCoreK=c.ho*c.wo;
+    c.al0Pbuffer=c.bl0Pbuffer=c.al1Pbuffer=c.bl1Pbuffer=2;
+    for (uint32_t m=maxM;m>=16;m-=16) for (uint32_t n=maxN;n>=16;n-=16) {
+        c.baseM=m; c.baseN=n;
+        c.cl0Pbuffer=db ? db : (uint64_t(m)*n*8<=kDwSkL0CBytes ? 2:1);
+        if (uint64_t(m)*n*4*c.cl0Pbuffer>kDwSkL0CBytes ||
+            uint64_t(m)*n*4>c.ubBytes) continue;
+        auto cap=std::min<uint64_t>(kDwSkL0ABBytes/(2*DwSkBytes(c.dtype)*std::max(m,n)),
+                                   DwSkAlign(c.singleCoreK,16));
+        for (uint32_t k=static_cast<uint32_t>(cap/16*16);k>=16;k-=16) {
+            c.baseK=k;
+            if (!DwSkFitsL1(c,1,1)) continue;
+            c.singleCoreM=c.singleCoreCout=m;
+            c.singleCoreCin=std::max<uint64_t>(n/(hw*16),1)*16;
+            c.singleCoreN=static_cast<uint32_t>(c.singleCoreCin*hw);
+            c.singleCoreDk=c.singleCoreBatch=c.singleCoreGroup=1;
+            c.iterateOrder=DwSkAlign(c.cout,16)>DwSkAlign(c.cin,16)*hw ? 1:0;
+            SetSteps(c); return true;
+        }
+    }
+    return false;
+}
+uint64_t MteCount(const Conv3ddwSkCase& c,uint64_t bd,uint64_t h,
+                  uint64_t k,uint64_t ka,uint64_t kb) {
+    const uint64_t seg=std::min<uint64_t>(DwSkCeil(65536,c.wo),h);
+    const uint64_t iters=DwSkCeil(seg*c.wo,k);
+    return bd*DwSkCeil(h,seg)*(DwSkCeil(iters,ka)+DwSkCeil(iters,kb));
+}
+bool PreferBatch(const Conv3ddwSkCase& c,uint32_t splits) {
+    const uint64_t bd=uint64_t(c.batch)*c.dout;
+    const uint64_t b=DwSkCeil(bd,splits), k=DwSkCeil(c.ho,splits)*c.wo;
+    const uint64_t sb=DwSkCeil(bd,b), sh=DwSkCeil(c.singleCoreK,k);
+    if (sb<sh) {
+        if (sb<=1) return false;
+        const uint64_t bk=DwSkAlign(std::min<uint64_t>(c.baseK,k),16);
+        return MteCount(c,b,c.ho,c.baseK,c.stepKa,c.stepKb)<
+            MteCount(c,bd,DwSkCeil(c.ho,splits),bk,
+                     std::min<uint64_t>(c.stepKa,DwSkCeil(k,bk)),
+                     std::min<uint64_t>(c.stepKb,DwSkCeil(k,bk)));
+    }
+    // Preserve the source remainder-ratio rule, including the divisible-BD case.
+    return !(bd%b>0 && double(bd%b)/b<double(c.singleCoreK%k)/k);
+}
+void SelectStreamK(Conv3ddwSkCase& c,ConvDwSkMode mode) {
+    const uint64_t bd=uint64_t(c.batch)*c.dout;
+    c.totalTiles=DwSkCeil(c.cout,c.singleCoreM)*DwSkCeil(uint64_t(c.cin)*c.hk*c.wk,c.singleCoreN)*c.dk;
+    const uint64_t tail=c.totalTiles%c.usedCoreNum;
+    c.streamkType=0; c.streamkCores=0; c.singleCoreBatchDout=bd;
+    if (mode!=ConvDwSkMode::DISABLED && tail && tail<=c.usedCoreNum/2) {
+        const uint32_t target=c.usedCoreNum/tail;
+        const bool batch=mode==ConvDwSkMode::BATCH_DOUT ||
+            (mode==ConvDwSkMode::AUTO && PreferBatch(c,target));
+        const auto old=c;
+        if (batch) {
+            c.singleCoreBatchDout=DwSkCeil(bd,target);
+            c.streamkCores=static_cast<uint32_t>(DwSkCeil(bd,c.singleCoreBatchDout));
+            c.streamkType=c.streamkCores>1?1:0;
+        } else {
+            c.singleCoreK=static_cast<uint32_t>(DwSkCeil(c.ho,target)*c.wo);
+            c.streamkCores=static_cast<uint32_t>(DwSkCeil(uint64_t(c.ho)*c.wo,c.singleCoreK));
+            c.streamkType=c.streamkCores>1?2:0;
+            c.baseK=static_cast<uint32_t>(DwSkAlign(std::min(c.baseK,c.singleCoreK),16));
+            c.stepKa=std::min<uint32_t>(c.stepKa,DwSkCeil(c.singleCoreK,c.baseK));
+            c.stepKb=std::min<uint32_t>(c.stepKb,DwSkCeil(c.singleCoreK,c.baseK));
+            while (!DwSkFitsL1(c,c.stepKa,c.stepKb) && c.stepKa>1 && c.stepKb>1) {
+                --c.stepKa; --c.stepKb;
+            }
+            if (!DwSkFitsL1(c,c.stepKa,c.stepKb)) c=old;
+        }
+        if (!c.streamkType) { c=old; c.streamkCores=0; }
+    }
+    c.singleCoreHo=c.singleCoreK/c.wo;
+    c.mainRounds=c.streamkType?c.totalTiles/c.usedCoreNum:DwSkCeil(c.totalTiles,c.usedCoreNum);
+    c.tailTiles=c.streamkType?tail:0;
+    c.workspaceBytes=c.streamkType?2ULL*c.usedCoreNum*kDwSkL0CBytes:0;
+    CommitBounds(c);
+}
+} // namespace
+
+bool ValidateCase(const Conv3ddwSkCase& c) {
+    if (!Geometry(c) || !c.ubBytes || !c.baseM || !c.baseN || !c.baseK || !c.stepKa || !c.stepKb ||
+        !c.singleCoreM || !c.singleCoreN || !c.singleCoreK || !c.singleCoreBatchDout) return false;
+    const uint64_t hw=uint64_t(c.hk)*c.wk, bd=uint64_t(c.batch)*c.dout;
+    if (c.baseM>256 || c.baseN>256 || c.baseK>2048 || c.stepKa>8 || c.stepKb>8 ||
+        c.baseM%16 || c.baseN%16 || c.baseK%16 || c.splitWo!=c.wo ||
+        c.cin1G!=c.cin || c.cout1G!=c.cout || c.m0!=16 || c.n0!=16 ||
+        c.k0!=(c.dtype==ConvDwSkDType::FP32?8U:16U) || c.channelSize!=c.k0 ||
+        c.al0Pbuffer!=2 || c.bl0Pbuffer!=2 || c.al1Pbuffer!=2 || c.bl1Pbuffer!=2 ||
+        (c.cl0Pbuffer!=1 && c.cl0Pbuffer!=2) || c.hf32Flag>1 || c.iterateOrder>1 ||
+        c.singleCoreM!=c.baseM || c.singleCoreCout!=c.baseM ||
+        c.singleCoreCin!=std::max<uint64_t>(c.baseN/(hw*16),1)*16 ||
+        c.singleCoreN!=c.singleCoreCin*hw || c.singleCoreDk!=1 ||
+        c.singleCoreBatch!=1 || c.singleCoreGroup!=1 ||
+        c.singleCoreK>uint64_t(c.ho)*c.wo || c.singleCoreK%c.wo ||
+        c.singleCoreHo!=c.singleCoreK/c.wo || c.singleCoreBatchDout>bd) return false;
+    if (uint64_t(c.baseM)*c.baseK*DwSkBytes(c.dtype)*2>kDwSkL0ABBytes ||
+        uint64_t(c.baseN)*c.baseK*DwSkBytes(c.dtype)*2>kDwSkL0ABBytes ||
+        uint64_t(c.baseM)*c.baseN*4*c.cl0Pbuffer>kDwSkL0CBytes ||
+        uint64_t(c.baseM)*c.baseN*4>c.ubBytes || !DwSkFitsL1(c,c.stepKa,c.stepKb) ||
+        c.al1Bound!=uint64_t(c.baseM)*c.baseK*c.stepKa || c.bl1Bound!=DwSkBL1Bound(c,c.stepKb)) return false;
+    const uint64_t total=DwSkCeil(c.cout,c.singleCoreM)*DwSkCeil(uint64_t(c.cin)*hw,c.singleCoreN)*c.dk;
+    if (c.totalTiles!=total) return false;
+    if (!c.streamkType) return c.streamkCores==0 && c.tailTiles==0 && c.workspaceBytes==0 &&
+        c.singleCoreK==uint64_t(c.ho)*c.wo && c.singleCoreBatchDout==bd &&
+        c.mainRounds==DwSkCeil(total,c.usedCoreNum);
+    const uint64_t r=DwSkCeil(uint64_t(c.ho)*c.wo,c.singleCoreK)*DwSkCeil(bd,c.singleCoreBatchDout);
+    return c.streamkType<=2 && r>=2 && c.streamkCores==r &&
+        c.tailTiles==total%c.usedCoreNum && c.tailTiles>0 && c.tailTiles<=c.usedCoreNum/2 &&
+        c.tailTiles*r<=c.usedCoreNum && c.mainRounds==total/c.usedCoreNum &&
+        ((c.streamkType==1 && c.singleCoreK==uint64_t(c.ho)*c.wo) ||
+         (c.streamkType==2 && c.singleCoreBatchDout==bd)) &&
+        c.workspaceBytes==2ULL*c.usedCoreNum*kDwSkL0CBytes;
+}
+
+bool Conv3ddwSkDoTiling(const Conv3ddwSkTilingIn& in,Conv3ddwSkTilingOut& out) {
+    out={};
+    if (in.groups!=1 || in.c0Db>2 || uint32_t(in.streamkMode)>3 || in.aicoreNum==0 || in.ubBytes==0) return false;
+    Conv3ddwSkCase c{};
+    c.batch=in.n; c.cin=in.cin; c.cout=in.cout;
+    c.cin1G=in.cin; c.cout1G=in.cout; c.di=in.di; c.hi=in.hi; c.wi=in.wi;
+    c.dk=in.kd; c.hk=in.kh; c.wk=in.kw; c.group=c.realGroup=1;
+    c.strideD=in.strideD; c.strideH=in.strideH; c.strideW=in.strideW;
+    c.dilationD=in.dilationD; c.dilationH=in.dilationH; c.dilationW=in.dilationW;
+    c.padFront=in.padFront; c.padBack=in.padBack; c.padUp=in.padUp; c.padDown=in.padDown;
+    c.padLeft=in.padLeft; c.padRight=in.padRight;
+    c.dtype=in.dtype; c.hf32Flag=in.hf32; c.usedCoreNum=in.aicoreNum; c.ubBytes=in.ubBytes;
+    if (!OutputDim(c.di,c.dk,c.dilationD,c.strideD,c.padFront,c.padBack,c.dout) ||
+        !OutputDim(c.hi,c.hk,c.dilationH,c.strideH,c.padUp,c.padDown,c.ho) ||
+        !OutputDim(c.wi,c.wk,c.dilationW,c.strideW,c.padLeft,c.padRight,c.wo) || !Geometry(c)) return false;
+    c.m0=c.n0=16; c.k0=c.channelSize=c.dtype==ConvDwSkDType::FP32?8:16;
+    c.splitWo=c.wo;
+    if (!BaseBlock(c,in.c0Db)) return false;
+    SelectStreamK(c,in.streamkMode);
+    if (!ValidateCase(c)) return false;
+    out.caseData=c; return true;
+}

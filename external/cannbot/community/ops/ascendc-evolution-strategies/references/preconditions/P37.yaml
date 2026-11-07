@@ -1,0 +1,40 @@
+strategy_id: P37
+
+strategy_meta:
+  id: "P37"
+  slug: "P37_grad_accumulator_cross_batch"
+  title: "P37: 梯度累加器跨 batch 常驻"
+  bottlenecks: [ub_memory_pressure]
+  op_families: [optimizer, elementwise]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p37_grad_accumulator_cross_batch.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p37_grad_accumulator_cross_batch.md"
+  playbook_slug: "P37_grad_accumulator_cross_batch"
+checks:
+  - id: has_grad
+    type: grep_count
+    pattern: "grad|Grad|梯度|dW|weight_grad"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到梯度相关计算 → 无梯度累加器需求，不适用 P37。"
+
+  - id: has_batch
+    type: grep_count
+    pattern: "batch|Batch|loopS|B×S"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 batch/seq 循环结构 → 无跨 batch 累加场景，不适用 P37。"
+
+  - id: has_tbuf
+    type: grep_count
+    pattern: "TBuf|VECCALC|常驻|resident"
+    files: [kernel]
+    expected: ">= 0"
+    fail_msg: "已存在常驻累加逻辑 → 可能冗余，优先验证现有策略效果。"

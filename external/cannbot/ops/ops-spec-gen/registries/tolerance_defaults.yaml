@@ -1,0 +1,53 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+
+# Per-dtype tolerance defaults & tightness thresholds
+# 单一数据源 — 同时被生成器（默认值）与 stage 7 校验器（"过紧"启发式阈值）使用
+# 避免数字漂移
+schema_version: 1
+
+# generator 默认填的 per_dtype 容差（合理初始值，开发者按 ops-precision-standard 调）
+defaults:
+  float64:      {rtol: 1.0e-12, atol: 1.0e-12, metric: max_relative}
+  float32:      {rtol: 1.0e-5,  atol: 1.0e-5,  metric: max_relative}
+  float16:      {rtol: 1.0e-3,  atol: 1.0e-3,  metric: max_relative}
+  bfloat16:     {rtol: 4.0e-3,  atol: 4.0e-3,  metric: max_relative}
+  # 窄浮点（Atlas A3 / 950）—— 单步舍入大，容差自然更松
+  float8_e4m3fn:  {rtol: 5.0e-2,  atol: 5.0e-2,  metric: max_relative}    # 3-bit mantissa
+  float8_e5m2:  {rtol: 1.0e-1,  atol: 1.0e-1,  metric: max_relative}    # 2-bit mantissa
+  float8_e8m0:  {rtol: 1.0e-1,  atol: 1.0e-1,  metric: max_relative}    # 0-bit mantissa；scale-only，工程上仅作 OCP MX 缩放因子使用
+  hifloat8:     {rtol: 5.0e-2,  atol: 5.0e-2,  metric: max_relative}    # HF8 同 e4m3fn 量级
+  float4_e2m1:  {rtol: 2.5e-1,  atol: 2.5e-1,  metric: max_relative}    # 4-bit float (1S+2E+1M)
+  float4_e1m2:  {rtol: 2.5e-1,  atol: 2.5e-1,  metric: max_relative}    # 4-bit float (1S+1E+2M)；动态范围小
+  complex32:    {rtol: 1.0e-3,  atol: 1.0e-3,  metric: max_relative}    # 实部 fp16，对齐 fp16 容差
+  complex64:    {rtol: 1.0e-6,  atol: 1.0e-6,  metric: max_relative}
+  complex128:   {rtol: 1.0e-12, atol: 1.0e-12, metric: max_relative}
+  int4:         {rtol: 0,       atol: 0,       metric: bitwise_equal}
+  int8:         {rtol: 0,       atol: 0,       metric: bitwise_equal}
+  int16:        {rtol: 0,       atol: 0,       metric: bitwise_equal}
+  int32:        {rtol: 0,       atol: 0,       metric: bitwise_equal}
+  int64:        {rtol: 0,       atol: 0,       metric: bitwise_equal}
+  uint1:        {rtol: 0,       atol: 0,       metric: bitwise_equal}
+  uint4:        {rtol: 0,       atol: 0,       metric: bitwise_equal}
+  uint8:        {rtol: 0,       atol: 0,       metric: bitwise_equal}
+  uint16:       {rtol: 0,       atol: 0,       metric: bitwise_equal}
+  uint32:       {rtol: 0,       atol: 0,       metric: bitwise_equal}
+  uint64:       {rtol: 0,       atol: 0,       metric: bitwise_equal}
+  bool:         {rtol: 0,       atol: 0,       metric: bitwise_equal}
+
+# stage 7 启发式：rtol 低于该值视为"过紧"
+tightness_threshold:
+  float32:      1.0e-7
+  float16:      1.0e-4
+  bfloat16:     1.0e-3
+  float8_e4m3fn:  1.0e-2
+  float8_e5m2:  5.0e-2
+  float8_e8m0:  5.0e-2
+  hifloat8:     1.0e-2
+  float4_e2m1:  5.0e-2
+  float4_e1m2:  5.0e-2

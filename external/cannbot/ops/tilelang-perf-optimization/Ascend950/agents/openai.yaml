@@ -1,0 +1,4 @@
+interface:
+  display_name: "TileLang/PTO 性能方案"
+  short_description: "基于逐 case 实测为 TileLang PTO 算子制定可验证优化方案"
+  default_prompt: "Use $tilelang-perf-optimization to analyze per-case evidence and produce implementable, validated optimization plans for a TileLang kernel targeting PTO."

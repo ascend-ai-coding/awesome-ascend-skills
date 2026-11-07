@@ -1,0 +1,82 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+
+# Chip registry —— 受控 Atlas 芯片型号 + dtype 矩阵 + DAV 编译宏映射
+#
+# 作用：
+#   * spec.op.platform_constraints.supported_chips 字段的合法取值集合
+#   * spec.op.platform_constraints.dav_macros 字段的合法取值集合
+#   * stage 2 校验 dtype_set 与 supported_chips 兼容性——若 spec 声明 dtype_set 含
+#     fp8/fp4/hf8/int4/bf16 等芯片敏感类型，但 supported_chips 包含不支持该 dtype
+#     的型号，触发 paradigm_constraint.dtype_chip_mismatch
+#
+# 维护：
+#   * 新增芯片：登记到本文件 + schemas/op-spec.json 的 supported_chips.enum
+#   * 新增 dtype：同步更新各芯片的 supported_dtypes 列表
+#   * 新增 DAV 宏：登记到本文件 dav_macros + schemas 的 dav_macros.enum
+#   * registry/schema 同步由 scripts/check_registry_schema_sync.py 守门
+
+schema_version: 1
+
+# 各芯片支持的数值 dtype（仅算子层面可用的；layout 类型不在此处）+ 对应 DAV 编译宏
+chips:
+  - id: Ascend310
+    name: "Atlas 310 推理（昇腾 310）"
+    dav_macros: [DAV_1001]
+    supported_dtypes: [float16, float32, int8, int16, int32, uint8, bool]
+
+  - id: Ascend310P
+    name: "Atlas 310P 推理"
+    dav_macros: [DAV_2002]
+    supported_dtypes: [float16, float32, int8, int16, int32, uint8, bool]
+
+  - id: Ascend910
+    name: "Atlas 910 训练（昇腾 910 原版）"
+    dav_macros: [DAV_2002]
+    supported_dtypes: [float16, float32, float64, int8, int16, int32, int64, uint8, uint16, uint32, bool, complex64]
+
+  - id: Ascend310B
+    name: "Atlas 200I/500 A2 推理"
+    dav_macros: [DAV_2002]
+    supported_dtypes: [float16, float32, int8, int16, int32, uint8, bool]
+
+  - id: Ascend910B
+    name: "Atlas A2 训练 / 推理（昇腾 910B/910C）"
+    dav_macros: [DAV_2201]
+    supported_dtypes:
+      [float16, bfloat16, float32, float64,
+       int4, int8, int16, int32, int64,
+       uint4, uint8, uint16, uint32, uint64,
+       bool, complex64, complex128]
+
+  - id: Ascend950PR
+    name: "Atlas 950PR（昇腾 950 推理）"
+    dav_macros: [DAV_3510]
+    supported_dtypes:
+      [float4_e2m1, float8_e4m3fn, float8_e5m2, hifloat8,
+       float16, bfloat16, float32, float64,
+       int4, int8, int16, int32, int64,
+       uint4, uint8, uint16, uint32, uint64,
+       bool, complex64, complex128]
+
+  - id: Ascend950DT
+    name: "Atlas 950DT（昇腾 950 训练）"
+    dav_macros: [DAV_3510]
+    supported_dtypes:
+      [float4_e2m1, float8_e4m3fn, float8_e5m2, hifloat8,
+       float16, bfloat16, float32, float64,
+       int4, int8, int16, int32, int64,
+       uint4, uint8, uint16, uint32, uint64,
+       bool, complex64, complex128]
+
+# DAV 宏 → 芯片反向索引（生成器 / 校验器使用；冗余但避免遍历芯片列表）
+dav_macro_to_chips:
+  DAV_1001: [Ascend310]
+  DAV_2002: [Ascend310P, Ascend910, Ascend310B]
+  DAV_2201: [Ascend910B]
+  DAV_3510: [Ascend950PR, Ascend950DT]

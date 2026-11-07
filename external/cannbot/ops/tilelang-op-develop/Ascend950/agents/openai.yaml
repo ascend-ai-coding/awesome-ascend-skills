@@ -1,0 +1,3 @@
+interface:
+  display_name: "TileLang Ascend950 算子生成"
+  short_description: "依据设计与源码生成 Ascend950 TileLang kernel 和测试，完成指定 case 精度验证"

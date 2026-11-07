@@ -1,0 +1,39 @@
+# routes.yaml — 范式路由表
+#
+# 根据 spec.yaml 的 op.paradigms 注入范式参考材料。
+# 路径相对于 ascendc-regbase-best-practice skill 根目录。
+#
+# 匹配规则：
+#   op.paradigms 列表逐项匹配，结果自动去重。
+#
+# 加载粒度：每条路由仅加载对应范式的 patterns.md（入口索引）。
+# 其他细节文件在 patterns.md 中按需引用，由阅读者按需打开。
+#
+# 兜底机制：当 op.paradigms 在本表中没有任何匹配时，自动注入
+# references/paradigms/general-methodology.md 作为通用 Tiling 方法论 fallback。
+#
+# 未配置路由的 paradigm（按 fallback 走通用方法论）：
+#   ReductionComposite, ArgReduce,
+#   Padding, IndexGather, ScatterUpdate, AtomicUpdate, Interpolation,
+#   SortSelect, Histogram, SlidingWindow, ControlFlow,
+#   Spectral, RandomSampling,
+#   Sparse, CollectiveCommunication, FusedComposite
+
+routes:
+  paradigms:
+    Elementwise:
+      - references/paradigms/elewise/patterns.md
+    Broadcast:
+      - references/paradigms/broadcast/patterns.md
+    Reduction:
+      - references/paradigms/reduction/patterns.md
+    NumericalStable:
+      - references/paradigms/numerical_stable/patterns.md
+    DynamicShape:
+      - references/paradigms/dynamic_shape/patterns.md
+    VariableOutput:
+      - references/paradigms/variable_output/patterns.md
+    MaskPredicate:
+      - references/paradigms/mask_predicate/patterns.md
+    Stateful:
+      - references/paradigms/stateful/patterns.md

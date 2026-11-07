@@ -1,0 +1,40 @@
+strategy_id: P33
+
+strategy_meta:
+  id: "P33"
+  slug: "P33_gather_offset_table"
+  title: "P33: Gather 偏移表驱动的结构化数据提取"
+  bottlenecks: [mte2_stall, undersize_transfer]
+  op_families: [pooling_gather]
+  conflicts_with: []
+  synergizes_with: [P32]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p33_gather_offset_table.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p33_gather_offset_table.md"
+  playbook_slug: "P33_gather_offset_table"
+checks:
+  - id: has_gather
+    type: grep_count
+    pattern: "Gather|gather|提取|子张量"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 Gather 操作 → 不适用 P33。检查 P32 或 P56。"
+
+  - id: has_offset
+    type: grep_count
+    pattern: "offset|Offset|偏移|table|Table"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到偏移表/索引计算 → 无 Gather 偏移优化空间，不适用 P33。"
+
+  - id: has_localtensor
+    type: grep_count
+    pattern: "UB|ub|LocalTensor|TBuf"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 UB/LocalTensor 使用 → 偏移表无法常驻，不适用 P33。"

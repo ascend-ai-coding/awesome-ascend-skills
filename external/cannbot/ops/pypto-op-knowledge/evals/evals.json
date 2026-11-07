@@ -1,0 +1,135 @@
+{
+  "skill_name": "pypto-op-knowledge",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "经验表命中查询",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "disabled": false
+      },
+      "prompt": "查经验表：错误码 F00001，看有没有对应的经验。",
+      "expected_output": "按串行查询流程执行：第 1 步在 references/experience-table.md 索引中按错误码 + 二级关键词匹配，命中则打开 experience_classified 下对应分类文件，提取症状 → 根因 → 修复方案返回给调用方；同一错误码多条目时精确匹配（错误码+二级关键词）优先，无精确匹配时返回该错误码全部候选条目由调用方选择。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "问题查找表未命中",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "disabled": false
+      },
+      "prompt": "查问题查找表：错误码 FC9000，但表里没有这个条目，怎么处理？",
+      "expected_output": "第 1 步经验表未命中后进入第 2 步：在 references/problem-lookup.md 的四个索引（§〇 关键字索引 / §一 错误码路由 / §二 运行时症状 / §三 修复速查表）中并行查找，任一命中即返回；全部未命中则记录搜索关键词并返回\"无匹配\"。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "经验表多条目时的精确匹配",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ]
+      },
+      "prompt": "经验表里同一个错误码对应好几条经验，应该怎么选？",
+      "expected_output": "精确匹配（错误码加二级关键词）的条目优先返回；无精确匹配时返回该错误码的全部候选条目，由调用方根据实际错误日志选择，不擅自只挑一条。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 4,
+      "title": "按运行时症状查问题查找表",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ]
+      },
+      "prompt": "PyPTO 报错没有错误码，但现象是卡死，能查到相关资料吗？",
+      "expected_output": "可在 problem-lookup.md 的四个索引中并行查找：关键字索引、错误码路由、运行时症状索引、修复速查表，任一命中即返回对应文档章节或修复方案；全部未命中则返回无匹配。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 5,
+      "title": "查询信息不足时要求补充错误细节",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ]
+      },
+      "prompt": "帮我查一下 PyPTO 报错怎么解决。",
+      "expected_output": "查询信息不足时应先获取具体错误码、错误关键词或异常症状，再按经验表和问题查找表串行查询；仅有泛化描述无法定位时应反问用户补充报错细节，而不是猜测。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 6,
+      "title": "经验表命中后立即停止查询",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "错误码和二级关键词已经在经验表精确命中。还需要继续查 problem-lookup.md 并合并所有官方文档吗？",
+      "expected_output": "回复应说明查询是串行短路流程：经验表精确命中后，打开对应分类条目，返回症状、根因、修复方案并结束；只有经验表未命中才进入 problem-lookup.md，不应继续扩大查询。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "仅错误码命中多个经验时保留候选",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "日志只有 F00001，没有能区分多个条目的二级关键词。知识库能否自行挑最常见的一条作为答案？",
+      "expected_output": "回复应拒绝擅自选择：无错误码+二级关键词的精确匹配时，应返回该错误码的全部候选条目，由调用方结合完整错误日志判断；需要时请求补充关键词或症状。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 8,
+      "title": "问题查找表四索引并行但不编造命中",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "经验表未命中后，problem-lookup.md 应按什么范围查询？四个索引都没结果时能否给一个推测修复？",
+      "expected_output": "回复应在关键字索引、错误码路由、运行时症状、修复速查表四个索引中并行查找，任一命中即返回对应文档/根因/修复；全部未命中则记录搜索关键词并明确返回“无匹配”，不能编造推测修复。",
+      "expectations": [],
+      "files": []
+    }
+  ]
+}

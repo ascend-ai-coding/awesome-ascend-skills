@@ -1,0 +1,55 @@
+strategy_id: P106
+description: Matmul Batch 合并到 M 适用性检查 — 必须存在 Batch 维度与 transA 判断，且尚未合并
+
+strategy_meta:
+  id: "P106"
+  slug: "P106_matmul_batch_merge_to_m"
+  title: "P106: Matmul Batch 维度合并到 M（Batch Merge to M）"
+  bottlenecks: [parallelism_underutil, tiling_imbalance]
+  op_families: [matmul]
+  conflicts_with: []
+  synergizes_with: [P104, P16]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p106_matmul_batch_merge_to_m.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p106_matmul_batch_merge_to_m.md"
+  playbook_slug: "P106_matmul_batch_merge_to_m"
+checks:
+  - id: has_batch_dims
+    type: grep_count
+    pattern: 'batchA|batchB|batchC'
+    files: [host]
+    expected: '>= 1'
+    fail_msg: '未检测到 batchA / batchB / batchC 字段 → 非 BatchMatMul，P106 不适用。'
+
+  - id: has_transa_flag
+    type: grep_count
+    pattern: 'transA|isTransA'
+    files: [host]
+    expected: '>= 1'
+    fail_msg: '未检测到 transA 标志 → 无法判断 batch 合并合法性。'
+
+  - id: has_batchmatmul_api
+    type: grep_count
+    pattern: 'BatchMatMul|MultiBatchInfo|IterateBatch'
+    files: [host, kernel, header]
+    expected: '>= 1'
+    fail_msg: '未检测到 BatchMatMul / MultiBatchInfo / IterateBatch → P106 不适用。'
+
+  - id: no_existing_batch_merge
+    type: grep_count
+    pattern: 'M\s*=\s*batchA\s*\*\s*M|M\s*=\s*M\s*\*\s*batchA|batchA\s*=\s*1'
+    files: [host]
+    expected: '== 0'
+    fail_msg: '已存在 batchA 合并到 M 或 batchA=1 的赋值 → P106 可能已应用。'
+
+  - id: batchb_broadcasable
+    type: grep_count
+    pattern: 'batchB\s*==\s*1'
+    files: [host]
+    expected: '>= 1'
+    fail_msg: '未检测到 batchB == 1 分支/判断 → 不满足 batch 合并到 M 的前提。'

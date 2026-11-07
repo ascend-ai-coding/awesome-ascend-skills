@@ -1,0 +1,114 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "kernel 性能数据的拆解流程",
+      "config": {
+        "ascend_platforms": ["A2"],
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "我有一份 NPU profiling 的 kernel_details.csv，想按模型结构拆出每层 attn/ffn/moe 的耗时分布、找出抖动的 layer，整体怎么做？只讲方法。",
+      "expected_output": "1. 回复应说明按用户描述的模型结构（structure_spec + 逐 component 定 stream sample 范围）把 kernel 序列切成 component 实例，产出含 `layer_idx` / `type` / `op_indices` 的 component 实例表。\n2. 回复应说明每个 `component_type` 按 cluster 规则把 component 内部算子分桶，统计各类计算的 `wall_ms` / `bubble_ms` 中位数与抖动（p95/max/std），据此定位异常 layer，最终由 `render.py` 产出单页 HTML 报告。\n3. 回复应说明产物只写到 `<run_dir>/`：禁止修改用户提供的 prof / modeling 源码 / config 等任何原始文件。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "历史产物的分档复用",
+      "config": {
+        "ascend_platforms": ["A2"],
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "请加载并使用 model-infer-perf-breakdown 技能回答：同一个模型我前后跑了两版 prof，第二次拆解还要从头再来一遍吗？请按该技能的复用规则讲清：复用范围怎么判定（进 <run_dir> 后先看什么、比哪些信号），复用分哪几档、各档分别复用或重做哪些产物。只讲思路，不用执行。",
+      "expected_output": "1. 回复应说明第二版 prof 不必从零重来，复用范围由本次 prof 与上一版产物的自动 diff 决定：先进 <run_dir> 读 HISTORY.md / 上一版 raw_ops，比较 kernel 集合与 anchor 数量后再判档。\n2. 回复应给出按改动幅度分档复用的思路——kernel 集合与 anchor 数量基本不变时 structure_spec 与 <network>_spec 可直接复用、只需平移 sample 位置（小改档）。\n3. 回复应说明出现新算子、sample 偏移超限或 shape 漂移时复用结构定义但需重走 Phase 0b 重出 sample 并增量补 cluster 规则（中改档），而关键 anchor kernel 消失 / 总 op 数偏差很大时才重走 Phase 0a/0b（大改档）。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "前置物料缺失必须停止",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 1800,
+        "eval_mode": "text"
+      },
+      "prompt": "请加载并使用 model-infer-perf-breakdown 技能回答，严格按该 skill 的前置物料契约与 ack 契约逐条判断。现状：我手上只有 kernel_details.csv，没有 trace_view.json，也拿不到 modeling 脚本；prof 目录里还有多个 phase 和 device。我打算让你默认挑第一个 phase/device 直接开始拆，缺的那两样先跳过，你只讲判断和前置要求就行，不用去找数据或跑脚本。这样可以吗？",
+      "expected_output": "1. 回复应拒绝「默认挑第一个 phase/device 就开始拆」，说明多卡 / 多采集 / 多 phase 组合数大于 1 时必须枚举所有 (phase, rank/device) 组合交给用户挑，不允许 agent 自作主张默认选第一个。\n2. 回复应说明按 skill 前置物料 checklist，prof 路径（kernel_details.csv 与 trace_view.json）、模型脚本路径、<run_dir> 都是 Step 1 之前必须与用户敲齐的硬约束：模型脚本用户说「没有/不方便」也 abort，不能改成授权放宽 model_script_paths 校验后继续；Step 4 对缺 trace 的合成 fallback 也不能作为跳过 Step 0 物料确认、带着空缺或默认值继续往下走的理由。\n3. 回复应说明 expected_components 中每个 component 都必须给出 stream sample 并经用户逐项 ack 后才能进入 Phase 1（detect_structure.py 会校验 sample_ack 里每个 component 都有 stream_samples 且恰好一个 primary，缺条目直接 exit 1），不能跳过 ack、只确认部分 component 或先带着空缺开始拆解。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "Stream Sample 与 Warning 必须逐项确认",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "structure_spec 里有 mla、moe、mtp 三类 component。我只确认 mla 的一段主流 sample，其余 component 让脚本猜、或只做一次概括确认而不逐项 ack，并对 hard warnings 自动加 --accept-warnings，可以吗？请说明 sample ack 的逐项要求、auxiliary 流的归属规则，以及 warnings 的处理流程（含 warnings 属于结构性问题时怎么补救）。",
+      "expected_output": "1. 回复应拒绝「只确认 mla 的 sample、其余 component 让脚本猜」的做法，说明 expected_components 中每个 component 都必须有 stream_samples 且恰好一个 primary，缺条目的 sample_ack.json 会被 detect_structure 直接判失败。\n2. 回复应说明每个 component 的 sample 范围都必须由用户逐项 ack；不能用一次概括确认/一句整体授权代替。\n3. 回复应说明 auxiliary 流的归属按语义判断而非时间是否重叠（语义上属于该 component 的流即使与本层时间脱节也写 `auxiliary`，不属于任何 component 的流才留 `unmatched`）。\n4. 回复应说明不能对 hard / ambiguous warnings 按类型自动加 `--accept-warnings`；必须先复读给用户、由用户明确接受后才可重跑放行。\n5. 回复应说明 `warnings[]` 必须逐条复读给用户（区分 hard / ambiguous），且结构性问题（如 `sample_ack_mismatch` / `composition_mismatch`）应回 Phase 0a / 0b 修改后重跑。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "Compute Unmatched 超阈值不可静默放行",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "render 后 compute-core unmatched 达到 18%，主要是一大段矩阵和向量算子。我能直接加 --accept-unmatched 生成报告吗？",
+      "expected_output": "回复应拒绝静默放行大段 compute unmatched，要求回 Phase 0a/0b 补 component/sample 或细化 cluster 规则；只有确认剩余是通信、采样、embedding、IO 等非关注项时才可显式接受，并在报告中保留 unmatched 证据",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "切片必须完整覆盖且无重无漏",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "HTML 已经生成，Step 4 是否可以省略？component 之间的 gap 和 unmatched op 不保存也没关系吧？",
+      "expected_output": "1. 回复应说明 Step 4 是 skill 标明的「必跑」交付项，不能因为 HTML 已生成就省略，它承担 op 序列被完整切片的交付契约。\n2. 回复应说明需按 op_indices 为每个 component 实例与每段 unmatched/gap 各生成一个文件夹，产出 kernels.csv、trace_view.json 与 manifest.json，整体严格覆盖 [0,N-1] 且无重无漏。\n3. 回复应指出切片脚本会自检 partition，draft 与 raw_ops 不一致时会直接 abort，因此不能靠省略或放宽 gap/unmatched 来绕过。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "理论性能步骤默认可跳过",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "外部 operator-theoretical-perf 不可用，是否会阻塞性能拆解报告？多流情况下没有填写流语义，能否随便挑一条流算 theory median？",
+      "expected_output": "回复应说明理论性能注入默认可选，不可用时 theory median 留空且不阻塞；若启用且同一 sub-item 有多流，必须记录 theory_stream_decisions 的语义说明，覆盖接近时还需明确 selected_stream，不能任意挑流",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "model-infer-perf-breakdown"
+}

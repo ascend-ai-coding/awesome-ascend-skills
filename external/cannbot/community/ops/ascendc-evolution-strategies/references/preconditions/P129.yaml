@@ -1,0 +1,41 @@
+strategy_id: P129
+description: Fused img2col LoadData3D 适用性检查 — conv2d（kHkW>1）或 im2col+GEMM 形态算子，im2col 存在 GM 物化往返。
+
+strategy_meta:
+  id: "P129"
+  slug: "P129_fused_img2col_loaddata3d"
+  title: "P129: Fused img2col LoadData3D 随路展开（含 band 窗口化突破 L1 容量）"
+  bottlenecks: [mte2_stall]
+  op_families: [matmul, special]
+  conflicts_with: []
+  synergizes_with: [P128, P131]
+  requires: []
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p129_fused_img2col_loaddata3d.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p129_fused_img2col_loaddata3d.md"
+  playbook_slug: "P129_fused_img2col_loaddata3d"
+checks:
+  - id: is_conv_like
+    type: grep_count
+    pattern: "im2col|img2col|kH|kW|stride|dilation|pad"
+    files: [kernel, header]
+    expected: ">= 2"
+    fail_msg: "无卷积滑窗语义 → P129 不适用。"
+
+  - id: has_im2col_materialization
+    type: grep_count
+    pattern: "im2col|Im2col|img2col"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 im2col 物化 → 可能已是 fused 路径。"
+
+  - id: no_loaddata3d_yet
+    type: grep_count
+    pattern: "LoadData3D"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "已使用 LoadData3D 随路展开 → P129 主要价值已发挥。"

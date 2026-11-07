@@ -1,0 +1,59 @@
+sources:
+  ops-tensor:
+    root: ~/ops-tensor
+    url: https://gitcode.com/cann/ops-tensor.git
+    required_paths:
+      - docs/API/gemm/block
+      - docs/API/epilogue/block
+      - docs/API/epilogue
+      - examples/grouped_matmul
+      - examples/weight_quant_batch_matmul
+      - examples/quant_matmul_activation_quant
+      - examples/weight_quant_matmul
+  ops-nn:
+    root: ~/ops-nn
+    url: https://gitcode.com/cann/ops-nn.git
+    required_paths:
+      - conv/conv2d_v2
+      - conv/conv3d_backprop_filter_v2
+      - conv/depthwise_conv2d_backprop_input
+      - pooling/dilation2_d
+      - norm/rms_norm_dynamic_quant
+      - quant/dynamic_quant
+      - quant/swiglu_mx_quant
+      - hash/embedding_hash_table_lookup_or_insert
+      - index/embedding_bag
+      - index/scatter_update
+      - index/scatter_nd_update
+      - index/unique
+      - index/top_k_top_p_sample
+      - matmul/quant_matmul
+      - matmul/transpose_batch_mat_mul
+      - matmul/weight_quant_batch_matmul
+  ops-transformer:
+    root: ~/ops-transformer
+    url: https://gitcode.com/cann/ops-transformer.git
+    required_paths:
+      - attention/scatter_pa_kv_cache
+      - experimental/engram
+      - gmm
+      - gmm/grouped_matmul
+      - mhc
+      - mhc/mhc_post_backward
+      - mhc/mhc_sinkhorn
+      - moe/moe_gating_top_k_softmax
+      - moe/moe_re_routing
+  cann-samples:
+    root: ~/cann-samples
+    url: https://gitcode.com/cann/cann-samples.git
+    required_paths:
+      - Samples/0_Introduction/03_simt_api/01_gather/general_gather
+      - Samples/1_Features/hardware_features/cv_datapath
+      - Samples/1_Features/memory_optimization/transpose_batch_matmul
+      - Samples/2_Performance/grouped_matmul_story
+      - Samples/2_Performance/matmul_story
+      - Samples/2_Performance/matmul_story/matmul_recipes/examples/quant_matmul_int8
+      - Samples/2_Performance/matmul_story/matmul_recipes/examples/quant_matmul_mxfp4
+      - Samples/2_Performance/moe_init_routing_story
+      - Samples/2_Performance/rms_norm_quant_story
+      - Samples/2_Performance/simt_scatter_story

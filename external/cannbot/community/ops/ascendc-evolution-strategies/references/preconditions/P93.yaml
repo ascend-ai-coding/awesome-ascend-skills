@@ -1,0 +1,40 @@
+strategy_id: P93
+
+strategy_meta:
+  id: "P93"
+  slug: "P93_matmul_k_stagger_access"
+  title: "P93: Matmul K 轴错峰访问内存 (Matmul K-Axis Staggered Memory Access)"
+  bottlenecks: [mte2_stall, bus_contention]
+  op_families: [matmul]
+  conflicts_with: []
+  synergizes_with: [P46, P86, P92]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p93_matmul_k_stagger_access.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p93_matmul_k_stagger_access.md"
+  playbook_slug: "P93_matmul_k_stagger_access"
+checks:
+  - id: has_matmul
+    type: grep_count
+    pattern: "Matmul|matmul|Mmad|mmad"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 Matmul 调用 → 不适用 P93。"
+
+  - id: has_block_dim
+    type: grep_count
+    pattern: "block_dim|blockIdx|core_num|coreNum|GetBlockNum|SplitCore"
+    files: [host]
+    expected: ">= 1"
+    fail_msg: "未检测到多核分核逻辑 → 非多核 Matmul，不适用 P93（单核无 GM 地址冲突）。"
+
+  - id: has_cfg_mdl
+    type: grep_count
+    pattern: "CFG_MDL"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 CFG_MDL 模板 → P93 仅支持 MDL 模板，CFG_NBuffer33 等不兼容 enableKdimReorderLoad。检查 P64 或 P58。"

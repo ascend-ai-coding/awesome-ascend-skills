@@ -1,0 +1,33 @@
+strategy_id: P154
+description: O 常驻 L0C，AIC scalar/发射受限 适用性检查。
+
+strategy_meta:
+  id: "P154"
+  slug: "P154_block_m_max_l0c"
+  title: "P154: 在 L0C 预算内把 block_m 取到最大 16 对齐值"
+  bottlenecks: [scalar_compute, cube_underutilization]
+  op_families: [attention, cv_fusion]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p154_block_m_max_l0c.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p154_block_m_max_l0c.md"
+  playbook_slug: "P154_block_m_max_l0c"
+checks:
+  - id: has_block_m
+    type: grep_count
+    pattern: "block_m|BLOCK_M|L0C"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未发现 block_m/L0C 预算结构 → P154 不适用。"
+  - id: has_softmax
+    type: grep_count
+    pattern: "softmax|Exp|Mmad"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未发现 attention/softmax 计算 → P154 不适用。"

@@ -1,0 +1,110 @@
+/**
+ * GatherElementsV2 upstream route gate.
+ *
+ * This host-only helper separates physical Transpose from the one-kernel
+ * internal Transpose template. The cost gate follows the structure of
+ * ops-nn aclnn_gather.cpp::IfUseGatherElementsV2/MemCheck; platform capability
+ * is supplied by the caller instead of being hard-coded to one SoC.
+ */
+#ifndef GATHER_ELEMENTS_V2_ROUTE_H
+#define GATHER_ELEMENTS_V2_ROUTE_H
+
+#include <algorithm>
+#include <cstdint>
+#include <limits>
+
+namespace optiling {
+
+enum class GatherElementsV2Route {
+    LAST_DIM,
+    INTERNAL_TRANSPOSE,
+    PHYSICAL_TRANSPOSE,
+    SCALAR_SIMT,
+};
+
+struct GatherElementsV2RouteParams {
+    uint64_t xPreDim = 1;
+    uint64_t xGatherDim = 1;
+    uint64_t xPostDim = 1;
+    uint64_t idxPreDim = 1;
+    uint64_t idxGatherDim = 1;
+    uint64_t idxPostDim = 1;
+    uint64_t xElementCount = 1;
+    uint64_t indexElementCount = 1;
+    uint64_t coreNum = 1;
+    uint32_t xDtypeSize = 0;
+    uint32_t indexDtypeSize = 0;
+    bool isLastDim = false;
+    bool perElementSemantics = true;
+    bool nonGatherShapesEqual = true;
+    bool mergeAxesCompatible = true;
+    bool internalTransposeDtypeSupported = false; // current kernel: fp16/bf16/fp32/int32
+    bool internalTransposeSocSupported = false;
+    bool physicalTransposeAvailable = false;
+    bool physicalTransposeProfitable = false; // profiling/model gate; availability alone is insufficient
+};
+
+namespace gather_elements_v2_route_detail {
+constexpr uint64_t kPostDimLimit = 32;
+constexpr uint64_t kTransposeLen = 16;
+constexpr uint64_t kInternalUbLimitBytes = 120000;
+constexpr uint64_t kCachelineElementsBytes = 512;
+
+inline uint64_t CeilDiv(uint64_t value, uint64_t divisor)
+{
+    return divisor == 0 ? 0 : (value + divisor - 1) / divisor;
+}
+
+inline bool InternalTransposeProfitable(const GatherElementsV2RouteParams& p)
+{
+    const uint64_t coreNum = std::max<uint64_t>(1, p.coreNum);
+    const uint64_t coresPerGroup = std::max<uint64_t>(1, coreNum / std::max<uint64_t>(1, p.idxPreDim));
+    const uint64_t workspaceLen = std::min<uint64_t>(
+        kCachelineElementsBytes / p.xDtypeSize, CeilDiv(p.idxPostDim, coresPerGroup));
+
+    using Wide = unsigned __int128;
+    if (Wide(p.idxPreDim) * p.idxPostDim <= coreNum) {
+        return Wide(p.xElementCount) >
+               Wide(p.idxPreDim) * p.idxPostDim * (p.idxGatherDim + p.xGatherDim);
+    }
+
+    const Wide directTraffic = Wide(p.xElementCount) * p.xDtypeSize +
+                               Wide(p.indexElementCount) * p.indexDtypeSize;
+    const Wide internalTraffic = Wide(p.indexElementCount) * p.xDtypeSize +
+                                 Wide(coreNum) * workspaceLen *
+                                     (Wide(p.idxGatherDim) * p.indexDtypeSize +
+                                      Wide(p.xGatherDim) * p.xDtypeSize);
+    return directTraffic > internalTraffic;
+}
+} // namespace gather_elements_v2_route_detail
+
+inline bool CanUseInternalTranspose(const GatherElementsV2RouteParams& p)
+{
+    using namespace gather_elements_v2_route_detail;
+    if (!p.perElementSemantics || p.isLastDim || !p.internalTransposeSocSupported ||
+        !p.internalTransposeDtypeSupported || !p.nonGatherShapesEqual || !p.mergeAxesCompatible ||
+        p.xDtypeSize == 0 || p.indexDtypeSize == 0 || p.xElementCount >= std::numeric_limits<int32_t>::max() ||
+        p.xPostDim <= kPostDimLimit || p.xGatherDim < kTransposeLen || p.idxGatherDim < kTransposeLen ||
+        p.xGatherDim * uint64_t(p.xDtypeSize) >= kInternalUbLimitBytes) {
+        return false;
+    }
+    return InternalTransposeProfitable(p);
+}
+
+inline GatherElementsV2Route SelectGatherElementsV2Route(const GatherElementsV2RouteParams& p)
+{
+    if (p.isLastDim) {
+        return GatherElementsV2Route::LAST_DIM;
+    }
+    if (CanUseInternalTranspose(p)) {
+        return GatherElementsV2Route::INTERNAL_TRANSPOSE;
+    }
+    if (p.physicalTransposeAvailable && p.physicalTransposeProfitable) {
+        return GatherElementsV2Route::PHYSICAL_TRANSPOSE;
+    }
+    return GatherElementsV2Route::SCALAR_SIMT;
+}
+
+} // namespace optiling
+
+#endif // GATHER_ELEMENTS_V2_ROUTE_H

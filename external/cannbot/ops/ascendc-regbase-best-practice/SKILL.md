@@ -3,8 +3,8 @@ name: external-cannbot-ops-ascendc-regbase-best-practice
 description: 当需要为 DAV_3510 RegBase 算子确认 API 约束、实现结构、排查常见陷阱或选择真实参考算子时使用。
 original-name: ascendc-regbase-best-practice
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-26'
-synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
+synced-date: '2026-11-07'
+synced-commit: 2374941495c1549eb4a1a5a82987b567d61855f5
 license: UNKNOWN
 ---
 
@@ -26,16 +26,20 @@ license: UNKNOWN
 
 ## 阅读入口
 
+- **最小示例（先看效果）**：`references/paradigms/common/scripts/README.md` §从伪码到 JSON 最小填写示例——一个 `y = γ · mean(x)` 的完整链路（计算图 → dag.json → 约束声明 → allocate.py 配槽 → physical_p.py 验证），先跑起来再读理论。
 - 端到端开发主线：`references/regbase_development_guide.md`
 - API 约束和签名：`references/api/index.md`
 - 陷阱和精度风险：`references/pitfalls/index.md`
 - 工程经验和路线判断：`references/dev-experience/index.md`
+- 算子范式设计：`references/paradigms/`，每个范式以自身 `patterns.md` 为入口，按需渐进展开更深层参考、示例和模板。
+- VF 段编排规则（C1-C9）：`references/paradigms/common/vf-split-fusion-rules.md`——Reduce / Broadcast / 多段融合类范式设计的必读第一步，判定段边界、物化点与段级/段内两层分工。
+- L / P 峰值计算脚本：`references/paradigms/common/scripts/`（liveness.py / allocate.py / physical_p.py）——L/P_baseline 计算器、槽位分配器与 P 峰值计算器。段编排方案定型后必跑：先声明调度/pinned/分支约束，allocate.py 产出复用映射与 B 名物理流，再交 physical_p.py 验证；脚本输入与输出随交付件落盘。
 - 真实参考实现：`references/reference-ops/open_source_operator_table.md`
 
 ## 按阶段选择
 
 - 方案决策：`references/regbase_development_guide.md`、`references/dev-experience/index.md`
-- 设计：`references/regbase_development_guide.md`、`references/api/index.md`
+- 设计：`references/regbase_development_guide.md`、`references/api/index.md`、按范式名路由的 `references/paradigms/<paradigm>/patterns.md`；段编排方案定型后**必须执行** `references/paradigms/common/scripts/` 三步管线（liveness.py P_baseline → allocate.py 槽位分配 → physical_p.py P 峰值校验，时机与产物落盘见 `references/paradigms/common/vf-split-fusion-rules.md` §12）
 - 实现：`references/api/index.md`、`references/dev-experience/regbase_programming_notes.md`、`references/reference-ops/open_source_operator_table.md`
 - 审查：`references/pitfalls/index.md`、`references/dev-experience/index.md`
 - 修复和调试：`references/pitfalls/symptom_to_cause.md`、`references/dev-experience/index.md`
