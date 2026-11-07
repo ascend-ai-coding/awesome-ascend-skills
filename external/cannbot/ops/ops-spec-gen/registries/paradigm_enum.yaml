@@ -1,0 +1,48 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+
+# 算子 spec.yaml — op.paradigms 受控集合（27 项 PascalCase）
+schema_version: 1
+paradigms:
+  # 基础（6）
+  - {name: Elementwise,             group: basic,        priority: P0}
+  - {name: Broadcast,                group: access_mod,   priority: P0}
+  - {name: Reduction,                group: basic,        priority: P0}
+  - {name: Contraction,              group: basic,        priority: P0}
+  - {name: ArgReduce,                group: basic,        priority: P0}
+  - {name: LayoutTransform,          group: basic,        priority: P0}
+  # 访存修饰（5）
+  - {name: Padding,                  group: access_mod,   priority: P1}
+  - {name: IndexGather,              group: access_mod,   priority: P0}
+  - {name: ScatterUpdate,            group: access_mod,   priority: P0}
+  - {name: AtomicUpdate,             group: access_mod,   priority: P1}
+  - {name: Interpolation,            group: access_mod,   priority: P0}
+  # 控制类（3）
+  - {name: MaskPredicate,            group: control,      priority: P0}
+  - {name: SortSelect,               group: control,      priority: P0}
+  - {name: Histogram,                group: control,      priority: P1}
+  # 结构修饰（3）
+  - {name: SlidingWindow,            group: structural,   priority: P0}
+  - {name: ControlFlow,              group: structural,   priority: P0}
+  - {name: Recurrence,               group: structural,   priority: P0}
+  # 算法修饰（2）
+  - {name: NumericalStable,          group: algorithmic,  priority: P0}
+  - {name: Spectral,                 group: algorithmic,  priority: P1}
+  # 形状状态修饰（4）
+  - {name: DynamicShape,             group: shape_state,  priority: P0}
+  - {name: VariableOutput,           group: shape_state,  priority: P1}
+  - {name: RandomSampling,           group: shape_state,  priority: P0}
+  - {name: Stateful,                 group: shape_state,  priority: P0}
+  # 数据结构修饰（1）
+  - {name: Sparse,                   group: data_struct,  priority: P0}
+  # 转换语义（1）
+  - {name: Quantization,             group: conversion,   priority: P0}
+  # 通信原语（1）
+  - {name: CollectiveCommunication,  group: communication, priority: P0}
+  # 复合形态（1）
+  - {name: FusedComposite,           group: composite,    priority: P0}

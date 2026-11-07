@@ -1,0 +1,42 @@
+# ----------------------------------------------------------------------------
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+# ----------------------------------------------------------------------------
+strategy_id: P153
+description: L0B K/V 单缓冲，fill/mma 串行 适用性检查。
+
+strategy_meta:
+  id: "P153"
+  slug: "P153_l0b_parity_double_slot"
+  title: "P153: L0B 按 chunk 奇偶轮转的双 slot，重叠 K/V 填充与 mma"
+  bottlenecks: [mte1_stall, no_overlap]
+  op_families: [attention, cv_fusion]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p153_l0b_parity_double_slot.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p153_l0b_parity_double_slot.md"
+  playbook_slug: "P153_l0b_parity_double_slot"
+checks:
+  - id: has_l0b
+    type: grep_count
+    pattern: "L0B|l0b|kv_l0"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未发现 L0B K/V 缓冲 → P153 不适用。"
+  - id: has_mte1
+    type: grep_count
+    pattern: "M_MTE1|MTE1"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未发现 MTE1 填充路径 → P153 不适用。"

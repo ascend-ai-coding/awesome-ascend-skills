@@ -1,0 +1,19 @@
+strategy_id: R3
+description: "R3: 指令双发射"
+
+strategy_meta:
+  id: "R3"
+  slug: "R3_dual_issue"
+  title: "R3: 指令双发射"
+  bottlenecks: [compute_bound, no_overlap]
+  op_families: [datapath]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L1"
+  deprecated: true
+  deprecated_reason: "Uses fictional APIs. Dual-issue is compiler/hardware behavior, not a manually applicable strategy."
+  has_preconditions: false
+  has_playbook: false
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/r3_dual_issue.md"

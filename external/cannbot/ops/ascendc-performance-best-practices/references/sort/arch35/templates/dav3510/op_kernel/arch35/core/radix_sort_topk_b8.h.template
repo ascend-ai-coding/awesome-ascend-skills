@@ -1,0 +1,77 @@
+/*!
+ * \file radix_sort_topk_b8.h
+ * \brief radix_sort_topk_b8 impl
+ */
+#ifndef RADIX_SORT_TOPK_B8_H
+#define RADIX_SORT_TOPK_B8_H
+#include "kernel_operator.h"
+#include "top_k_util_type_simd.h"
+using namespace AscendC;
+using namespace topk;
+template <typename T, typename UNSIGNED_TYPE, int32_t NUM_PASS, bool IS_DESCEND, typename T_INDEX>
+struct RadixSortTopKB8 {
+    __aicore__ inline RadixSortTopKB8() {}
+    __aicore__ inline void GetCumSum(LocalTensor<UNSIGNED_TYPE> inputX, LocalTensor<int32_t> blockCumSum,
+                                     UNSIGNED_TYPE andDataMask, UNSIGNED_TYPE involvedDataMask, int32_t round,
+                                     uint32_t numTileData);
+};
+
+template <typename T, typename U>
+__aicore__ inline void StoreCumsumToUB(__ubuf__ T* blockCumSumPtr, Reg::RegTensor<U>& chistVectorZero,
+                                       Reg::RegTensor<U>& chistVectorOne, Reg::RegTensor<U>& zeroVector)
+{
+    __VEC_SCOPE__
+    {
+        Reg::MaskReg predicateDefaultB32 = Reg::CreateMask<uint32_t>();
+        Reg::RegTensor<int32_t> cumSumZeroB32, cumSumOneB32;
+        Reg::Interleave((Reg::RegTensor<uint16_t>&)cumSumZeroB32, (Reg::RegTensor<uint16_t>&)cumSumOneB32,
+                        chistVectorZero, zeroVector);
+        Reg::RegTensor<int32_t> cumSumTwoB32, cumSumThreeB32;
+        Reg::Interleave((Reg::RegTensor<uint16_t>&)cumSumTwoB32, (Reg::RegTensor<uint16_t>&)cumSumThreeB32,
+                        chistVectorOne, zeroVector);
+        Reg::StoreAlign<int32_t, Reg::PostLiteral::POST_MODE_UPDATE>(blockCumSumPtr, cumSumZeroB32, ONE_TIMES_B32_NUM,
+                                                                   predicateDefaultB32);
+        Reg::StoreAlign<int32_t, Reg::PostLiteral::POST_MODE_UPDATE>(blockCumSumPtr, cumSumOneB32, ONE_TIMES_B32_NUM,
+                                                                   predicateDefaultB32);
+        Reg::StoreAlign<int32_t, Reg::PostLiteral::POST_MODE_UPDATE>(blockCumSumPtr, cumSumTwoB32, ONE_TIMES_B32_NUM,
+                                                                   predicateDefaultB32);
+        Reg::StoreAlign<int32_t, Reg::PostLiteral::POST_MODE_UPDATE>(blockCumSumPtr, cumSumThreeB32, ONE_TIMES_B32_NUM,
+                                                                   predicateDefaultB32);
+    }
+}
+
+template <typename T, typename UNSIGNED_TYPE, int32_t NUM_PASS, bool IS_DESCEND, typename T_INDEX>
+__aicore__ inline void RadixSortTopKB8<T, UNSIGNED_TYPE, NUM_PASS, IS_DESCEND, T_INDEX>::GetCumSum(
+    LocalTensor<UNSIGNED_TYPE> inputX, LocalTensor<int32_t> blockCumSum, UNSIGNED_TYPE andDataMask,
+    UNSIGNED_TYPE involvedDataMask, int32_t round, uint32_t numTileData)
+{
+    __ubuf__ UNSIGNED_TYPE* inputXValuePtr = (__ubuf__ UNSIGNED_TYPE*)inputX.GetPhyAddr();
+    __ubuf__ int32_t* blockCumSumPtr = (__ubuf__ int32_t*)blockCumSum.GetPhyAddr();
+    int16_t bitOffset = round * SHIFT_BIT_NUM;
+    uint16_t repateTime = (numTileData + ONE_TIMES_B8_NUM - 1) / ONE_TIMES_B8_NUM;
+    __VEC_SCOPE__
+    {
+        Reg::RegTensor<uint8_t> inputVectorOne;
+        Reg::RegTensor<uint16_t> chistVectorZero, chistVectorOne;
+        Reg::RegTensor<uint16_t> zeroVector;
+        Reg::MaskReg predicateDefaultB16 = Reg::CreateMask<uint16_t>();
+        Reg::MaskReg predicateDefaultB32 = Reg::CreateMask<uint32_t>();
+        Reg::Duplicate(chistVectorZero, 0, predicateDefaultB16);
+        Reg::Duplicate(chistVectorOne, 0, predicateDefaultB16);
+        Reg::Duplicate(zeroVector, 0, predicateDefaultB16);
+        uint32_t inputElementNum = numTileData;
+        for (uint16_t i = 0; i < repateTime; i++) {
+            Reg::MaskReg histMask = Reg::UpdateMask<uint8_t>(inputElementNum);
+            // load input
+            Reg::LoadAlign<uint8_t, Reg::PostLiteral::POST_MODE_UPDATE>(inputVectorOne, inputXValuePtr,
+                                                                       ONE_TIMES_B8_NUM);
+            // get hist
+            Reg::Histograms<uint8_t, uint16_t, Reg::HistogramsBinType::BIN0, Reg::HistogramsType::ACCUMULATE>(
+                chistVectorZero, inputVectorOne, histMask);
+            Reg::Histograms<uint8_t, uint16_t, Reg::HistogramsBinType::BIN1, Reg::HistogramsType::ACCUMULATE>(
+                chistVectorOne, inputVectorOne, histMask);
+        }
+        StoreCumsumToUB<int32_t, uint16_t>(blockCumSumPtr, chistVectorZero, chistVectorOne, zeroVector);
+    }
+}
+#endif

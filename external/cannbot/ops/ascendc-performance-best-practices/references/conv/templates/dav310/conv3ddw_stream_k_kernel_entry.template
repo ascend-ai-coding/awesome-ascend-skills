@@ -1,0 +1,65 @@
+/* Conv3DDW StreamK direct launch. Materialize as conv3ddw_stream_k_kernel.cpp.
+ * bisheng -xasc --npu-arch=dav-3510; link the host tiling object and ascendcl.
+ * Same five-file layout and by-value Case contract as Conv3DDX KS.
+ * The ACL launch config is necessary: global CrossCore mode0 requires batch scheduling.
+ */
+#include "conv3ddw_stream_k_tiling.h"
+#include "conv3ddw_stream_k_kernel.h"
+#include "conv3ddw_stream_k_launch.h"
+#include "acl/acl.h"
+#include "platform/platform_ascendc.h"
+#include <type_traits>
+
+using namespace AscendC;
+template <typename T>
+__global__ __aicore__ __mix__(1, 2) void conv3ddw_stream_k_kernel(
+    GM_ADDR x,GM_ADDR dy,GM_ADDR dw,GM_ADDR workspace,Conv3ddwSkCase tiling)
+{
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+    if (tiling.ubBytes > AscendC::TOTAL_UB_SIZE) {
+        return;
+    }
+    conv3ddw_sk::Conv3ddwSkKernel<T> op;
+    op.Init(x,dy,dw,workspace,tiling);
+    op.Process();
+#endif
+}
+
+template <typename T>
+static int32_t LaunchTyped(void* x,void* dy,void* dw,void* workspace,
+                           const Conv3ddwSkCase& tiling,void* stream)
+{
+    struct Args { void* x; void* dy; void* dw; void* workspace; Conv3ddwSkCase tiling; };
+    static_assert(std::is_standard_layout<Args>::value && std::is_trivially_copyable<Args>::value,
+                  "Kernel by-value argument ABI must remain POD");
+    Args args{x,dy,dw,workspace,tiling};
+    aclrtFuncHandle func=nullptr;
+    auto status=aclrtGetFuncBySymbol(reinterpret_cast<const void*>(&conv3ddw_stream_k_kernel<T>),&func);
+    if (status!=ACL_SUCCESS) return status;
+    aclrtLaunchKernelAttr attr{};
+    attr.id=ACL_RT_LAUNCH_KERNEL_ATTR_SCHEM_MODE;
+    attr.value.schemMode=1;
+    aclrtLaunchKernelCfg config{&attr,1};
+    return aclrtLaunchKernelWithHostArgs(func,tiling.usedCoreNum,stream,&config,
+                                       &args,sizeof(args),nullptr,0);
+}
+extern "C" int32_t launch_conv3ddw_sk(void* x,void* dy,void* dw,void* workspace,
+                                     const Conv3ddwSkCase& tiling,void* stream)
+{
+    if (!x || !dy || !dw || (tiling.workspaceBytes && !workspace) || !ValidateCase(tiling))
+        return ACL_ERROR_INVALID_PARAM;
+    auto platform = platform_ascendc::PlatformAscendCManager::GetInstance();
+    if (platform == nullptr || tiling.usedCoreNum > platform->GetCoreNumAic() ||
+        platform->GetCoreNumAiv() < 2 * platform->GetCoreNumAic())
+        return ACL_ERROR_INVALID_PARAM;
+    uint64_t ubBytes = 0;
+    platform->GetCoreMemSize(platform_ascendc::CoreMemType::UB, ubBytes);
+    if (ubBytes == 0 || tiling.ubBytes != ubBytes)
+        return ACL_ERROR_INVALID_PARAM;
+    switch (tiling.dtype) {
+        case ConvDwSkDType::FP16: return LaunchTyped<half>(x,dy,dw,workspace,tiling,stream);
+        case ConvDwSkDType::BF16: return LaunchTyped<bfloat16_t>(x,dy,dw,workspace,tiling,stream);
+        case ConvDwSkDType::FP32: return LaunchTyped<float>(x,dy,dw,workspace,tiling,stream);
+        default: return ACL_ERROR_INVALID_PARAM;
+    }
+}

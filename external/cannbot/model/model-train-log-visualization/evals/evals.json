@@ -1,0 +1,81 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "单日志画曲线",
+      "config": {
+        "ascend_platforms": ["A2"],
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "我有一份 NPU 训练的 stdout 日志，想画 loss 和 grad_norm 曲线，怎么做？",
+      "expected_output": "回复应说明用本技能的绘图脚本按 step 解析日志并绘制 loss/grad_norm 曲线，并先确认主日志路径等输入",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "双日志对比",
+      "config": {
+        "ascend_platforms": ["A2"],
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "我有正常和异常两份训练日志，想画在同一张图上对比 loss，还想看误差曲线。先讲讲这个双日志对比会画出哪些曲线、有什么限制？",
+      "expected_output": "1. 回复应说明双日志对比模式下 loss 与 grad_norm 都会绘制。\n2. 回复应说明双日志模式会额外绘制 loss 与 grad_norm 的绝对误差和相对误差曲线（loss abs error / loss rel error / grad_norm abs error / grad_norm rel error）。\n3. 回复应提示双日志没有共同 step 时脚本会报错退出，避免生成误导性对比图。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "追加可选指标",
+      "config": {
+        "ascend_platforms": ["A2"],
+        "max_tokens": 150000,
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "画训练日志曲线时，我还想顺便看 memory、tps、mfu 这些指标，能加吗？",
+      "expected_output": "回复应说明可通过 --metrics 追加 memory/tps/mfu 等可选指标，并提示指标不存在时会跳过并告警",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 4,
+      "title": "正向看护-多 skill 环境下正确触发",
+      "config": {
+        "ascend_platforms": ["A2"],
+        "max_tokens": 150000,
+        "distractor_skills": [
+          "model-infer-runtime-debug",
+          "model-infer-precision-debug",
+          "model-infer-superkernel"
+        ],
+        "timeout": 900,
+        "eval_mode": "text"
+      },
+      "prompt": "帮我把两份训练日志的 loss 曲线画出来对比一下。",
+      "expected_output": "回复应正确激活 model-train-log-visualization 进行日志解析与绘图，即使存在 OOM 分析、精度调试等相似 skill 也应选日志可视化专项",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 5,
+      "title": "使用边界",
+      "config": {
+        "ascend_platforms": ["A2"],
+        "max_tokens": 150000,
+        "timeout": 1800,
+        "eval_mode": "text"
+      },
+      "prompt": "我的训练 loss 偏了，想用日志曲线辅助排查。请加载并使用 model-train-log-visualization 技能回答（可阅读该技能文档，但不要执行绘图脚本）：(1) 这个技能的职责边界是什么、能帮我做到哪一步；(2) 精度问题的根因定位能不能靠它完成，如果不能，应交给什么类型的技能/流程，它自己最多能提供哪些曲线来辅助观察；(3) 要出图还需要我提供哪些输入。",
+      "expected_output": "1. 回复应说明本技能的职责边界：只负责从训练日志解析指标并绘制可视化曲线，不承担精度问题的根因定位。\n2. 回复应说明本技能能提供的观测手段：绘制 loss/grad_norm 曲线（双日志对比还会额外给出 loss 与 grad_norm 的绝对/相对误差曲线），只能用来观察偏差出现的 step 区间；精度根因定位不属于本技能能力范围，需另行借助精度调试类流程/技能。\n3. 回复应要求用户提供主日志路径（必填）等本技能所需输入后才能出图。",
+      "files": [],
+      "expectations": []
+    }
+  ],
+  "skill_name": "model-train-log-visualization"
+}

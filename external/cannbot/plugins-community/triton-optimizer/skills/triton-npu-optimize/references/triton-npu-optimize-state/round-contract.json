@@ -1,0 +1,21 @@
+{
+  "round_state_required_fields": {
+    "round": "record the completed round directory name, for example `opt-round-1`.",
+    "parent_round": "record the baseline or prior round that directly seeded this round, for example `round-0` or `opt-round-2`.",
+    "hypothesis": "record the concrete optimization idea that this round tested.",
+    "evidence_sources": "record the ordered list of evidence sources that justified the round conclusion, such as `benchmark`, `profile`, `ir`, or `compiler-source`.",
+    "correctness_status": "record the final correctness result for this round; use `passed` only after the round operator passes the chosen correctness check.",
+    "benchmark_status": "record the final benchmark result for this round; use `passed` only after the round benchmark succeeds and the round perf artifact is written.",
+    "perf_artifact": "record the path from the directory that contains `round-state.json` to the canonical round perf artifact, normally `opt_<operator>_perf.txt`.",
+    "comparison_target": "record the path from the directory that contains `round-state.json` to the canonical baseline perf artifact used for comparison, normally `../baseline/<operator>_perf.txt` or `../baseline/perf.txt`.",
+    "effective_metric_source": "record the resolved `compare-perf` basis that decided the round outcome: `kernel`, `total-op`, or `mixed`.",
+    "summary_path": "record the path from the directory that contains `round-state.json` to the final round summary markdown, normally `summary.md`.",
+    "opt_note_updated": "set this to `true` only after the top-level `opt-note.md` entry for this round has been updated."
+  },
+  "round_state_optional_fields": {
+    "analysis_skipped_reason": "when deeper analysis was intentionally skipped, record the evidence-backed reason here.",
+    "profile_dir": "when profiler artifacts are part of the round record, record the path from the directory that contains `round-state.json` to that round-local profiler directory, normally `profile`.",
+    "ir_dir": "when IR artifacts are part of the round record, record the path from the directory that contains `round-state.json` to that round-local IR directory, normally `ir`.",
+    "perf_analysis_path": "when a standalone performance-analysis note exists, record the path from the directory that contains `round-state.json` to that markdown file, normally `perf-analysis.md`."
+  }
+}

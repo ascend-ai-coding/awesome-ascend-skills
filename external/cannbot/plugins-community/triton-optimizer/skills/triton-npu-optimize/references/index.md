@@ -1,0 +1,15 @@
+# Script Index
+
+| Script | Description | Reference |
+|---|---|---|
+| Analyze Round Performance | Deep performance diagnosis from round-local profile and optional IR evidence — scalar/vector/cube imbalance, frequent data movement, weak pipeline overlap, and other signals traced back to current operator implementation problems. | [analyze-round-performance.md](triton-npu-analyze-round-performance/analyze-round-performance.md) |
+| Gen Bench | Generate benchmark code for an Ascend NPU operator. Use when a new benchmark file is needed for a given operator. | [gen-bench.md](triton-npu-gen-bench/gen-bench.md) |
+| Gen Test | Generate correctness test code for an Ascend NPU operator from source code and task context. Supports standalone and differential test styles with requested output location. | [gen-test.md](triton-npu-gen-test/gen-test.md) |
+| Optimize State | Manage temporary optimize workflow state including baseline acceptance, round start, same-round strategy-state updates, and round submission. | [optimize-state.md](triton-npu-optimize-state/optimize-state.md) |
+| Prepare Optimize Baseline | Establish a reusable canonical optimize baseline by reusing or generating harnesses, performing minimum repair, and passing submit-baseline validation. | [prepare-optimize-baseline.md](triton-npu-prepare-optimize-baseline/prepare-optimize-baseline.md) |
+| Profile Operator | Get and analyze Ascend NPU operator performance data — profiling hot operators, identifying timing bottlenecks, summarizing performance evidence, comparing profiling results across runs, inspecting msprof outputs, op_statistic/op_summary CSV files, and Ascend profiler `.bin` data. | [profile-operator.md](triton-npu-profile-operator/profile-operator.md) |
+| Run Eval | Execute and evaluate generated operator artifacts — run test cases, run benchmark cases, fast-screen candidate operators against baselines, profile benchmark harnesses, summarize profiling data, and compare performance artifacts. | [run-eval.md](triton-npu-run-eval/run-eval.md) |
+| Analyze Compiler Source | Source-backed explanation for performance-related lowering symptoms, suspicious pass effects, or compiler-side behavior when profiler and IR evidence have narrowed but not fully explained the issue. | [analyze-compiler-source.md](triton-npu-analyze-compiler-source/analyze-compiler-source.md) |
+| Analyze IR | Capture, archive, and inspect Triton Ascend compiler IR for operator workflows — analyze dumped Triton or Bisheng IR stages, reason about performance issues from generated IR artifacts, collect complete IR from local or remote execution. | [analyze-ir.md](triton-npu-analyze-ir/analyze-ir.md) |
+| Optimize Knowledge | Generic reference-only optimize knowledge for pattern triage and evidence-backed symptom routing. Does not define optimize workflow or own round artifacts. | [optimize-knowledge.md](triton-npu-optimize-knowledge/optimize-knowledge.md) |
+| Repair Guide | Heuristic fixes for Ascend Triton compile/JIT/kernel errors and numerical precision mismatches when editing or converting operators. | [repair-guide.md](triton-npu-repair-guide/repair-guide.md) |

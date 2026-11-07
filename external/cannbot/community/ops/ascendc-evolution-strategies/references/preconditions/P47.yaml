@@ -1,0 +1,40 @@
+strategy_id: P47
+
+strategy_meta:
+  id: "P47"
+  slug: "P47_diagonal_block_scheduling"
+  title: "P47: 对角线块调度 (Diagonal Block Scheduling)"
+  bottlenecks: [compute_bound, tiling_imbalance]
+  op_families: [cv_fusion, matmul]
+  conflicts_with: []
+  synergizes_with: [P46, P51, P63]
+  requires: []
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p47_diagonal_block_scheduling.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p47_diagonal_block_scheduling.md"
+  playbook_slug: "P47_diagonal_block_scheduling"
+checks:
+  - id: has_getblocknum
+    type: grep_count
+    pattern: "GetBlockNum|BLOCK_DIM|coreNum|blockIdx|SplitCore"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到多核分块逻辑 → 无块调度优化空间，不适用 P47。检查 P51 或 P16。"
+
+  - id: has_cache
+    type: grep_count
+    pattern: "L2|l2|cache|Cache"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 L2 Cache 相关逻辑 → 无 cache 复用优化空间，不适用 P47。"
+
+  - id: has_mnblockidxcompute
+    type: grep_count
+    pattern: "MNBlockIdxCompute|对角线|diagonal"
+    files: [kernel]
+    expected: ">= 0"
+    fail_msg: "已存在对角线块调度逻辑 → 可能冗余，优先验证现有策略效果。"

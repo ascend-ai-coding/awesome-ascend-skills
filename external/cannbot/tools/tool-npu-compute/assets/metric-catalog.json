@@ -1,0 +1,2378 @@
+{
+  "schema_version": 2,
+  "sections": {
+    "ArithmeticUtilization": {
+      "output_file": "ArithmeticUtilization.csv",
+      "fields": [
+        {
+          "name": "block_id",
+          "meaning": "PMU 聚合记录所属的 Block 标识",
+          "core_types": ["common"],
+          "unit": "无",
+          "dependencies": ["PMU 聚合键中的 `blockId`"],
+          "formula": "直接输出 `blockId`",
+          "na_conditions": ["正常 PMU 行不为 `NA`"],
+          "analysis_notes": "与 `sub_block_id` 共同定位数据行"
+        },
+        {
+          "name": "sub_block_id",
+          "meaning": "Core 类型和 Sub-block 的组合标识",
+          "core_types": ["common"],
+          "unit": "无",
+          "dependencies": ["`coreType`、`subBlockId`"],
+          "formula": "AIC 为 `cubeN`，AIV 为 `vectorN`",
+          "na_conditions": ["正常 PMU 行不为 `NA`"],
+          "analysis_notes": "`N` 是 `subBlockId`，不是 `coreId`"
+        },
+        {
+          "name": "aic_time(us)",
+          "meaning": "AIC 行总执行时长",
+          "core_types": ["AIC"],
+          "unit": "us",
+          "dependencies": ["AIC `C`、`F_AIC`"],
+          "formula": "`C / F_AIC`",
+          "na_conditions": ["非 AIC 行或频率无效"],
+          "analysis_notes": "用于观察 AIC 总周期对应的时间"
+        },
+        {
+          "name": "aic_total_cycles",
+          "meaning": "AIC 行总周期数",
+          "core_types": ["AIC"],
+          "unit": "cycle",
+          "dependencies": ["AIC `C`"],
+          "formula": "直接输出 `C`",
+          "na_conditions": ["非 AIC 行"],
+          "analysis_notes": "是 AIC 利用率字段的分母"
+        },
+        {
+          "name": "aic_cube_ratio",
+          "meaning": "AIC Cube 活跃周期占 AIC 总周期的比值",
+          "core_types": ["AIC"],
+          "unit": "比值",
+          "dependencies": ["Cube 活跃周期、AIC `C`"],
+          "formula": "`Cube 活跃周期 / C`",
+          "na_conditions": ["非 AIC 行、Cube 活跃周期缺失或 `C` 为零"],
+          "analysis_notes": "原始比值，不乘以 100"
+        },
+        {
+          "name": "aic_cube_fp_ratio",
+          "meaning": "AIC Cube 浮点指令活跃周期占 AIC 总周期的比值",
+          "core_types": ["AIC"],
+          "unit": "比值",
+          "dependencies": ["Cube 浮点指令活跃周期、AIC `C`"],
+          "formula": "`Cube 浮点指令活跃周期 / C`",
+          "na_conditions": ["非 AIC 行、浮点指令活跃周期缺失或 `C` 为零"],
+          "analysis_notes": "原始比值，不乘以 100"
+        },
+        {
+          "name": "aic_cube_int_ratio",
+          "meaning": "AIC Cube 整数指令活跃周期占 AIC 总周期的比值",
+          "core_types": ["AIC"],
+          "unit": "比值",
+          "dependencies": ["Cube 整数指令活跃周期、AIC `C`"],
+          "formula": "`Cube 整数指令活跃周期 / C`",
+          "na_conditions": ["非 AIC 行、整数指令活跃周期缺失或 `C` 为零"],
+          "analysis_notes": "原始比值，不乘以 100"
+        },
+        {
+          "name": "aic_cube_total_instr_number",
+          "meaning": "AIC Cube 执行的总指令数",
+          "core_types": ["AIC"],
+          "unit": "条",
+          "dependencies": ["Cube 总指令计数"],
+          "formula": "直接输出总指令计数",
+          "na_conditions": ["非 AIC 行或计数缺失"],
+          "analysis_notes": "用于观察 Cube 总体指令量"
+        },
+        {
+          "name": "aic_cube_fp_instr_number",
+          "meaning": "AIC Cube 执行的浮点指令数",
+          "core_types": ["AIC"],
+          "unit": "条",
+          "dependencies": ["Cube 浮点指令计数"],
+          "formula": "直接输出浮点指令计数",
+          "na_conditions": ["非 AIC 行或计数缺失"],
+          "analysis_notes": "用于观察 Cube 浮点指令量"
+        },
+        {
+          "name": "aic_cube_int_instr_number",
+          "meaning": "AIC Cube 执行的整数指令数",
+          "core_types": ["AIC"],
+          "unit": "条",
+          "dependencies": ["Cube 整数指令计数"],
+          "formula": "直接输出整数指令计数",
+          "na_conditions": ["非 AIC 行或计数缺失"],
+          "analysis_notes": "用于观察 Cube 整数指令量"
+        },
+        {
+          "name": "aiv_time(us)",
+          "meaning": "AIV 行总执行时长",
+          "core_types": ["AIV"],
+          "unit": "us",
+          "dependencies": ["AIV `C`、`F_AIV`"],
+          "formula": "`C / F_AIV`",
+          "na_conditions": ["非 AIV 行或频率无效"],
+          "analysis_notes": "用于观察 AIV 总周期对应的时间"
+        },
+        {
+          "name": "aiv_total_cycles",
+          "meaning": "AIV 行总周期数",
+          "core_types": ["AIV"],
+          "unit": "cycle",
+          "dependencies": ["AIV `C`"],
+          "formula": "直接输出 `C`",
+          "na_conditions": ["非 AIV 行"],
+          "analysis_notes": "是 AIV 利用率字段的分母"
+        },
+        {
+          "name": "aiv_vec_ratio",
+          "meaning": "AIV Vector 活跃周期占 AIV 总周期的比值",
+          "core_types": ["AIV"],
+          "unit": "比值",
+          "dependencies": ["Vector 活跃周期、AIV `C`"],
+          "formula": "`Vector 活跃周期 / C`",
+          "na_conditions": ["非 AIV 行、Vector 活跃周期缺失或 `C` 为零"],
+          "analysis_notes": "原始比值，不乘以 100"
+        },
+        {
+          "name": "aiv_vec_vf_ratio",
+          "meaning": "AIV Vector VF 指令活跃周期占 AIV 总周期的比值",
+          "core_types": ["AIV"],
+          "unit": "比值",
+          "dependencies": ["AIV VF 指令活跃周期、AIV `C`"],
+          "formula": "`AIV VF 指令活跃周期 / C`",
+          "na_conditions": ["非 AIV 行、VF 指令活跃周期缺失或 `C` 为零"],
+          "analysis_notes": "原始比值，不乘以 100"
+        },
+        {
+          "name": "aiv_vec_sfu_ratio",
+          "meaning": "AIV Vector SFU 指令活跃周期占 AIV 总周期的比值",
+          "core_types": ["AIV"],
+          "unit": "比值",
+          "dependencies": ["AIV SFU 指令活跃周期、AIV `C`"],
+          "formula": "`AIV SFU 指令活跃周期 / C`",
+          "na_conditions": ["非 AIV 行、SFU 指令活跃周期缺失或 `C` 为零"],
+          "analysis_notes": "原始比值，不乘以 100"
+        },
+        {
+          "name": "aiv_vec_simt_vf_ratio",
+          "meaning": "AIV SIMT VF 指令活跃周期占 AIV 总周期的比值",
+          "core_types": ["AIV"],
+          "unit": "比值",
+          "dependencies": ["AIV SIMT VF 指令活跃周期、AIV `C`"],
+          "formula": "`AIV SIMT VF 指令活跃周期 / C`",
+          "na_conditions": ["非 AIV 行、SIMT VF 指令活跃周期缺失或 `C` 为零"],
+          "analysis_notes": "原始比值，不乘以 100"
+        }
+      ]
+    },
+    "PipeUtilization": {
+      "output_file": "PipeUtilization.csv",
+      "fields": [
+        {
+          "name": "block_id",
+          "meaning": "PMU 聚合记录所属的 Block 标识",
+          "core_types": [
+            "common"
+          ],
+          "unit": "无",
+          "dependencies": [
+            "PMU 键中的 `blockId`"
+          ],
+          "formula": "直接输出 `blockId`",
+          "na_conditions": [
+            "正常 PMU 行不为 `NA`"
+          ],
+          "analysis_notes": "与 `sub_block_id` 共同定位数据行"
+        },
+        {
+          "name": "sub_block_id",
+          "meaning": "Core 类型和 Sub-block 的组合标识",
+          "core_types": [
+            "common"
+          ],
+          "unit": "无",
+          "dependencies": [
+            "`coreType`、`subBlockId`"
+          ],
+          "formula": "AIC 为 `cubeN`，AIV 为 `vectorN`",
+          "na_conditions": [
+            "正常 PMU 行不为 `NA`"
+          ],
+          "analysis_notes": "`N` 是 `subBlockId`，不是 `coreId`"
+        },
+        {
+          "name": "aic_time(us)",
+          "meaning": "AIC 行总执行时长",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "us",
+          "dependencies": [
+            "AIC `C`、`F_AIC`"
+          ],
+          "formula": "`C / F_AIC`",
+          "na_conditions": [
+            "非 AIC 行或频率无效"
+          ],
+          "analysis_notes": "用于观察本行 AIC 总周期对应的时间"
+        },
+        {
+          "name": "aic_total_cycles",
+          "meaning": "AIC 行总周期数",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "cycle",
+          "dependencies": [
+            "AIC `C`"
+          ],
+          "formula": "直接输出 `C`",
+          "na_conditions": [
+            "非 AIC 行"
+          ],
+          "analysis_notes": "是多个 AIC `ratio` 字段的分母"
+        },
+        {
+          "name": "aic_cube_time(us)",
+          "meaning": "Cube 流水活跃时长",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "us",
+          "dependencies": [
+            "Cube 活跃周期、`F_AIC`"
+          ],
+          "formula": "`Cube 活跃周期 / F_AIC`",
+          "na_conditions": [
+            "非 AIC 行、Cube 活跃周期缺失或频率无效"
+          ],
+          "analysis_notes": "表示 Cube 活跃周期折算的时间"
+        },
+        {
+          "name": "aic_cube_ratio",
+          "meaning": "Cube 活跃周期占 AIC 总周期的比值",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "比值",
+          "dependencies": [
+            "Cube 活跃周期、AIC `C`"
+          ],
+          "formula": "`Cube 活跃周期 / C`",
+          "na_conditions": [
+            "非 AIC 行、Cube 活跃周期缺失或 `C` 为零"
+          ],
+          "analysis_notes": "原始比值，不乘以 100"
+        },
+        {
+          "name": "aic_scalar_time(us)",
+          "meaning": "AIC Scalar 流水活跃时长",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "us",
+          "dependencies": [
+            "Scalar 活跃周期、`F_AIC`"
+          ],
+          "formula": "`Scalar 活跃周期 / F_AIC`",
+          "na_conditions": [
+            "非 AIC 行、Scalar 活跃周期缺失或频率无效"
+          ],
+          "analysis_notes": "表示 Scalar 活跃周期折算的时间"
+        },
+        {
+          "name": "aic_scalar_ratio",
+          "meaning": "AIC Scalar 活跃周期占总周期的比值",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "比值",
+          "dependencies": [
+            "Scalar 活跃周期、AIC `C`"
+          ],
+          "formula": "`Scalar 活跃周期 / C`",
+          "na_conditions": [
+            "非 AIC 行、Scalar 活跃周期缺失或 `C` 为零"
+          ],
+          "analysis_notes": "原始比值，不乘以 100"
+        },
+        {
+          "name": "aic_mte1_time(us)",
+          "meaning": "AIC MTE1 流水活跃时长",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "us",
+          "dependencies": [
+            "MTE1 活跃周期、`F_AIC`"
+          ],
+          "formula": "`MTE1 活跃周期 / F_AIC`",
+          "na_conditions": [
+            "非 AIC 行、MTE1 活跃周期缺失或频率无效"
+          ],
+          "analysis_notes": "表示 MTE1 活跃周期折算的时间"
+        },
+        {
+          "name": "aic_mte1_ratio",
+          "meaning": "AIC MTE1 活跃周期占总周期的比值",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "比值",
+          "dependencies": [
+            "MTE1 活跃周期、AIC `C`"
+          ],
+          "formula": "`MTE1 活跃周期 / C`",
+          "na_conditions": [
+            "非 AIC 行、MTE1 活跃周期缺失或 `C` 为零"
+          ],
+          "analysis_notes": "原始比值，不乘以 100"
+        },
+        {
+          "name": "aic_mte1_active_bw(GB/s)",
+          "meaning": "AIC MTE1 活跃期间的 L1 读取带宽",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "GB/s",
+          "dependencies": [
+            "AIC L1 读取次数、MTE1 活跃周期、`F_AIC`"
+          ],
+          "formula": "`ActiveBW(AIC L1 读取次数 * 256, MTE1 活跃周期, F_AIC)`",
+          "na_conditions": [
+            "非 AIC 行、任一计算所需计数缺失、频率无效或活跃周期非正数"
+          ],
+          "analysis_notes": "AIC L1 读取次数由其他 Section 提供，单独采集时通常不可用"
+        },
+        {
+          "name": "aic_mte2_time(us)",
+          "meaning": "AIC MTE2 流水活跃时长",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "us",
+          "dependencies": [
+            "MTE2 活跃周期、`F_AIC`"
+          ],
+          "formula": "`MTE2 活跃周期 / F_AIC`",
+          "na_conditions": [
+            "非 AIC 行、MTE2 活跃周期缺失或频率无效"
+          ],
+          "analysis_notes": "表示 MTE2 活跃周期折算的时间"
+        },
+        {
+          "name": "aic_mte2_ratio",
+          "meaning": "AIC MTE2 活跃周期占总周期的比值",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "比值",
+          "dependencies": [
+            "MTE2 活跃周期、AIC `C`"
+          ],
+          "formula": "`MTE2 活跃周期 / C`",
+          "na_conditions": [
+            "非 AIC 行、MTE2 活跃周期缺失或 `C` 为零"
+          ],
+          "analysis_notes": "原始比值，不乘以 100"
+        },
+        {
+          "name": "aic_mte2_active_bw(GB/s)",
+          "meaning": "AIC MTE2 活跃期间的主存读取带宽",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "GB/s",
+          "dependencies": [
+            "AIC 主存读取次数、MTE2 活跃周期、`F_AIC`"
+          ],
+          "formula": "`ActiveBW(AIC 主存读取次数 * 128, MTE2 活跃周期, F_AIC)`",
+          "na_conditions": [
+            "非 AIC 行、任一计算所需计数缺失、频率无效或活跃周期非正数"
+          ],
+          "analysis_notes": "AIC 主存读取次数由其他 Section 提供，单独采集时通常不可用"
+        },
+        {
+          "name": "aic_mte3_time(us)",
+          "meaning": "AIC MTE3 流水活跃时长",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "us",
+          "dependencies": [
+            "MTE3 活跃周期、`F_AIC`"
+          ],
+          "formula": "`MTE3 活跃周期 / F_AIC`",
+          "na_conditions": [
+            "非 AIC 行、MTE3 活跃周期缺失或频率无效"
+          ],
+          "analysis_notes": "表示 MTE3 活跃周期折算的时间"
+        },
+        {
+          "name": "aic_mte3_ratio",
+          "meaning": "AIC MTE3 活跃周期占总周期的比值",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "比值",
+          "dependencies": [
+            "MTE3 活跃周期、AIC `C`"
+          ],
+          "formula": "`MTE3 活跃周期 / C`",
+          "na_conditions": [
+            "非 AIC 行、MTE3 活跃周期缺失或 `C` 为零"
+          ],
+          "analysis_notes": "原始比值，不乘以 100"
+        },
+        {
+          "name": "aic_mte3_active_bw(GB/s)",
+          "meaning": "AIC MTE3 活跃期间的 L1 写入相关带宽",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "GB/s",
+          "dependencies": [
+            "AIC L1 写入次数、L0C 到 L1 传输次数、主存读取次数、MTE3 活跃周期、`F_AIC`"
+          ],
+          "formula": "`ActiveBW(L1 写入修正计数 * 256, MTE3 活跃周期, F_AIC)`",
+          "na_conditions": [
+            "非 AIC 行、任一计算所需计数缺失、频率无效或活跃周期非正数"
+          ],
+          "analysis_notes": "除 MTE3 活跃周期外的计算所需计数由其他 Section 提供，单独采集时通常不可用"
+        },
+        {
+          "name": "aic_fixpipe_time(us)",
+          "meaning": "AIC Fixpipe 流水活跃时长",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "us",
+          "dependencies": [
+            "Fixpipe 活跃周期、`F_AIC`"
+          ],
+          "formula": "`Fixpipe 活跃周期 / F_AIC`",
+          "na_conditions": [
+            "非 AIC 行、Fixpipe 活跃周期缺失或频率无效"
+          ],
+          "analysis_notes": "表示 Fixpipe 活跃周期折算的时间"
+        },
+        {
+          "name": "aic_fixpipe_ratio",
+          "meaning": "AIC Fixpipe 活跃周期占总周期的比值",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "比值",
+          "dependencies": [
+            "Fixpipe 活跃周期、AIC `C`"
+          ],
+          "formula": "`Fixpipe 活跃周期 / C`",
+          "na_conditions": [
+            "非 AIC 行、Fixpipe 活跃周期缺失或 `C` 为零"
+          ],
+          "analysis_notes": "原始比值，不乘以 100"
+        },
+        {
+          "name": "aic_fixpipe_active_bw(GB/s)",
+          "meaning": "AIC Fixpipe 活跃期间的相关数据带宽",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "GB/s",
+          "dependencies": [
+            "四类 AIC Fixpipe 相关数据传输次数、Fixpipe 活跃周期、`F_AIC`"
+          ],
+          "formula": "`ActiveBW(Fixpipe 相关传输计数 * 128, Fixpipe 活跃周期, F_AIC)`",
+          "na_conditions": [
+            "非 AIC 行、任一计算所需计数缺失、频率无效或活跃周期非正数"
+          ],
+          "analysis_notes": "数据传输次数由其他 Section 提供，单独采集时通常不可用"
+        },
+        {
+          "name": "aic_icache_miss_rate",
+          "meaning": "AIC 指令缓存未命中计数与访问计数的比值",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "比值",
+          "dependencies": [
+            "ICache 未命中次数、ICache 访问次数"
+          ],
+          "formula": "`ICache 未命中次数 / ICache 访问次数`",
+          "na_conditions": [
+            "非 AIC 行、任一计算所需计数缺失或 ICache 访问次数为零"
+          ],
+          "analysis_notes": "原始比值，不乘以 100"
+        },
+        {
+          "name": "aiv_time(us)",
+          "meaning": "AIV 行总执行时长",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "us",
+          "dependencies": [
+            "AIV `C`、`F_AIV`"
+          ],
+          "formula": "`C / F_AIV`",
+          "na_conditions": [
+            "非 AIV 行或频率无效"
+          ],
+          "analysis_notes": "用于观察本行 AIV 总周期对应的时间"
+        },
+        {
+          "name": "aiv_total_cycles",
+          "meaning": "AIV 行总周期数",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "cycle",
+          "dependencies": [
+            "AIV `C`"
+          ],
+          "formula": "直接输出 `C`",
+          "na_conditions": [
+            "非 AIV 行"
+          ],
+          "analysis_notes": "是多个 AIV `ratio` 字段的分母"
+        },
+        {
+          "name": "aiv_vec_time(us)",
+          "meaning": "Vector 流水活跃时长",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "us",
+          "dependencies": [
+            "Vector 活跃周期、`F_AIV`"
+          ],
+          "formula": "`Vector 活跃周期 / F_AIV`",
+          "na_conditions": [
+            "非 AIV 行、Vector 活跃周期缺失或频率无效"
+          ],
+          "analysis_notes": "表示 Vector 活跃周期折算的时间"
+        },
+        {
+          "name": "aiv_vec_ratio",
+          "meaning": "Vector 活跃周期占 AIV 总周期的比值",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "比值",
+          "dependencies": [
+            "Vector 活跃周期、AIV `C`"
+          ],
+          "formula": "`Vector 活跃周期 / C`",
+          "na_conditions": [
+            "非 AIV 行、Vector 活跃周期缺失或 `C` 为零"
+          ],
+          "analysis_notes": "原始比值，不乘以 100"
+        },
+        {
+          "name": "aiv_scalar_time(us)",
+          "meaning": "AIV Scalar 流水活跃时长",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "us",
+          "dependencies": [
+            "Scalar 活跃周期、`F_AIV`"
+          ],
+          "formula": "`Scalar 活跃周期 / F_AIV`",
+          "na_conditions": [
+            "非 AIV 行、Scalar 活跃周期缺失或频率无效"
+          ],
+          "analysis_notes": "表示 Scalar 活跃周期折算的时间"
+        },
+        {
+          "name": "aiv_scalar_ratio",
+          "meaning": "AIV Scalar 活跃周期占总周期的比值",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "比值",
+          "dependencies": [
+            "Scalar 活跃周期、AIV `C`"
+          ],
+          "formula": "`Scalar 活跃周期 / C`",
+          "na_conditions": [
+            "非 AIV 行、Scalar 活跃周期缺失或 `C` 为零"
+          ],
+          "analysis_notes": "原始比值，不乘以 100"
+        },
+        {
+          "name": "aiv_mte2_time(us)",
+          "meaning": "AIV MTE2 流水活跃时长",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "us",
+          "dependencies": [
+            "MTE2 活跃周期、`F_AIV`"
+          ],
+          "formula": "`MTE2 活跃周期 / F_AIV`",
+          "na_conditions": [
+            "非 AIV 行、MTE2 活跃周期缺失或频率无效"
+          ],
+          "analysis_notes": "表示 MTE2 活跃周期折算的时间"
+        },
+        {
+          "name": "aiv_mte2_ratio",
+          "meaning": "AIV MTE2 活跃周期占总周期的比值",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "比值",
+          "dependencies": [
+            "MTE2 活跃周期、AIV `C`"
+          ],
+          "formula": "`MTE2 活跃周期 / C`",
+          "na_conditions": [
+            "非 AIV 行、MTE2 活跃周期缺失或 `C` 为零"
+          ],
+          "analysis_notes": "原始比值，不乘以 100"
+        },
+        {
+          "name": "aiv_mte2_active_bw(GB/s)",
+          "meaning": "AIV MTE2 活跃期间的 GM 到 UB 相关带宽",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "GB/s",
+          "dependencies": [
+            "AIV 主存读取次数、两类修正次数、MTE2 活跃周期、`F_AIV`"
+          ],
+          "formula": "`ActiveBW(GM 到 UB 相关计数 * 128, MTE2 活跃周期, F_AIV)`",
+          "na_conditions": [
+            "非 AIV 行、任一计算所需计数缺失、频率无效或活跃周期非正数"
+          ],
+          "analysis_notes": "除 MTE2 活跃周期外的计算所需计数由其他 Section 提供，单独采集时通常不可用"
+        },
+        {
+          "name": "aiv_mte3_time(us)",
+          "meaning": "AIV MTE3 流水活跃时长",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "us",
+          "dependencies": [
+            "MTE3 活跃周期、`F_AIV`"
+          ],
+          "formula": "`MTE3 活跃周期 / F_AIV`",
+          "na_conditions": [
+            "非 AIV 行、MTE3 活跃周期缺失或频率无效"
+          ],
+          "analysis_notes": "表示 MTE3 活跃周期折算的时间"
+        },
+        {
+          "name": "aiv_mte3_ratio",
+          "meaning": "AIV MTE3 活跃周期占总周期的比值",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "比值",
+          "dependencies": [
+            "MTE3 活跃周期、AIV `C`"
+          ],
+          "formula": "`MTE3 活跃周期 / C`",
+          "na_conditions": [
+            "非 AIV 行、MTE3 活跃周期缺失或 `C` 为零"
+          ],
+          "analysis_notes": "原始比值，不乘以 100"
+        },
+        {
+          "name": "aiv_mte3_active_bw(GB/s)",
+          "meaning": "AIV MTE3 活跃带宽字段",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "GB/s",
+          "dependencies": [
+            "当前实现未提供所需 DBI 数据"
+          ],
+          "formula": "固定输出 `NA`",
+          "na_conditions": [
+            "所有数据行均为 `NA`"
+          ],
+          "analysis_notes": "不能据此判断 AIV MTE3 实际带宽"
+        },
+        {
+          "name": "aiv_icache_miss_rate",
+          "meaning": "AIV 指令缓存未命中计数与访问计数的比值",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "比值",
+          "dependencies": [
+            "ICache 未命中次数、ICache 访问次数"
+          ],
+          "formula": "`ICache 未命中次数 / ICache 访问次数`",
+          "na_conditions": [
+            "非 AIV 行、任一计算所需计数缺失或 ICache 访问次数为零"
+          ],
+          "analysis_notes": "原始比值，不乘以 100"
+        }
+      ]
+    },
+    "ResourceConflictRatio": {
+      "output_file": "ResourceConflictRatio.csv",
+      "fields": [
+        {
+          "name": "block_id",
+          "meaning": "PMU 聚合记录所属的 Block 标识",
+          "core_types": ["common"],
+          "unit": "无",
+          "dependencies": ["PMU 聚合键中的 `blockId`"],
+          "formula": "直接输出 `blockId`",
+          "na_conditions": ["正常 PMU 行不为 `NA`"],
+          "analysis_notes": "与 `sub_block_id` 共同定位数据行"
+        },
+        {
+          "name": "sub_block_id",
+          "meaning": "Core 类型和 Sub-block 的组合标识",
+          "core_types": ["common"],
+          "unit": "无",
+          "dependencies": ["`coreType`、`subBlockId`"],
+          "formula": "AIC 为 `cubeN`，AIV 为 `vectorN`",
+          "na_conditions": ["正常 PMU 行不为 `NA`"],
+          "analysis_notes": "`N` 是 `subBlockId`，不是 `coreId`"
+        },
+        {
+          "name": "aic_time(us)",
+          "meaning": "AIC 行总执行时长",
+          "core_types": ["AIC"],
+          "unit": "us",
+          "dependencies": ["AIC `C`、`F_AIC`"],
+          "formula": "`C / F_AIC`",
+          "na_conditions": ["非 AIC 行或频率无效"],
+          "analysis_notes": "用于观察 AIC 总周期对应的时间"
+        },
+        {
+          "name": "aic_total_cycles",
+          "meaning": "AIC 行总周期数",
+          "core_types": ["AIC"],
+          "unit": "cycle",
+          "dependencies": ["AIC `C`"],
+          "formula": "直接输出 `C`",
+          "na_conditions": ["非 AIC 行"],
+          "analysis_notes": "是 AIC 等待比例字段的分母"
+        },
+        {
+          "name": "aic_cube_wait_ratio",
+          "meaning": "AIC Cube 等待周期占 AIC 总周期的比值",
+          "core_types": ["AIC"],
+          "unit": "比值",
+          "dependencies": ["Cube 等待周期、AIC `C`"],
+          "formula": "`Cube 等待周期 / C`",
+          "na_conditions": ["非 AIC 行、Cube 等待周期缺失或 `C` 为零"],
+          "analysis_notes": "原始比值，不乘以 100"
+        },
+        {
+          "name": "aic_mte1_wait_ratio",
+          "meaning": "AIC MTE1 等待周期占 AIC 总周期的比值",
+          "core_types": ["AIC"],
+          "unit": "比值",
+          "dependencies": ["MTE1 等待周期、AIC `C`"],
+          "formula": "`MTE1 等待周期 / C`",
+          "na_conditions": ["非 AIC 行、MTE1 等待周期缺失或 `C` 为零"],
+          "analysis_notes": "原始比值，不乘以 100"
+        },
+        {
+          "name": "aic_mte2_wait_ratio",
+          "meaning": "AIC MTE2 等待周期占 AIC 总周期的比值",
+          "core_types": ["AIC"],
+          "unit": "比值",
+          "dependencies": ["MTE2 等待周期、AIC `C`"],
+          "formula": "`MTE2 等待周期 / C`",
+          "na_conditions": ["非 AIC 行、MTE2 等待周期缺失或 `C` 为零"],
+          "analysis_notes": "原始比值，不乘以 100"
+        },
+        {
+          "name": "aic_mte3_wait_ratio",
+          "meaning": "AIC MTE3 等待周期占 AIC 总周期的比值",
+          "core_types": ["AIC"],
+          "unit": "比值",
+          "dependencies": ["MTE3 等待周期、AIC `C`"],
+          "formula": "`MTE3 等待周期 / C`",
+          "na_conditions": ["非 AIC 行、MTE3 等待周期缺失或 `C` 为零"],
+          "analysis_notes": "原始比值，不乘以 100"
+        },
+        {
+          "name": "aiv_time(us)",
+          "meaning": "AIV 行总执行时长",
+          "core_types": ["AIV"],
+          "unit": "us",
+          "dependencies": ["AIV `C`、`F_AIV`"],
+          "formula": "`C / F_AIV`",
+          "na_conditions": ["非 AIV 行或频率无效"],
+          "analysis_notes": "用于观察 AIV 总周期对应的时间"
+        },
+        {
+          "name": "aiv_total_cycles",
+          "meaning": "AIV 行总周期数",
+          "core_types": ["AIV"],
+          "unit": "cycle",
+          "dependencies": ["AIV `C`"],
+          "formula": "直接输出 `C`",
+          "na_conditions": ["非 AIV 行"],
+          "analysis_notes": "是 AIV 冲突和等待比例字段的分母"
+        },
+        {
+          "name": "aiv_vec_stu_cflt_ratio",
+          "meaning": "AIV Vector STU 冲突周期占 AIV 总周期的比值",
+          "core_types": ["AIV"],
+          "unit": "比值",
+          "dependencies": ["Vector STU 冲突周期、AIV `C`"],
+          "formula": "`Vector STU 冲突周期 / C`",
+          "na_conditions": ["非 AIV 行、STU 冲突周期缺失或 `C` 为零"],
+          "analysis_notes": "原始比值，不乘以 100"
+        },
+        {
+          "name": "aiv_vec_ldu_cflt_ratio",
+          "meaning": "AIV Vector LDU 冲突周期占 AIV 总周期的比值",
+          "core_types": ["AIV"],
+          "unit": "比值",
+          "dependencies": ["Vector LDU 冲突周期、AIV `C`"],
+          "formula": "`Vector LDU 冲突周期 / C`",
+          "na_conditions": ["非 AIV 行、LDU 冲突周期缺失或 `C` 为零"],
+          "analysis_notes": "原始比值，不乘以 100"
+        },
+        {
+          "name": "aiv_vec_sfu_cflt_ratio",
+          "meaning": "AIV Vector SFU 冲突周期占 AIV 总周期的比值",
+          "core_types": ["AIV"],
+          "unit": "比值",
+          "dependencies": ["四类 AIV Vector SFU 冲突周期、AIV `C`"],
+          "formula": "`四类 AIV Vector SFU 冲突周期之和 / C`",
+          "na_conditions": ["非 AIV 行、任一 SFU 冲突周期缺失或 `C` 为零"],
+          "analysis_notes": "四类 SFU 冲突周期全部存在时才计算；原始比值，不乘以 100"
+        },
+        {
+          "name": "aiv_vec_wait_ratio",
+          "meaning": "AIV Vector 等待周期占 AIV 总周期的比值",
+          "core_types": ["AIV"],
+          "unit": "比值",
+          "dependencies": ["Vector 等待周期、AIV `C`"],
+          "formula": "`Vector 等待周期 / C`",
+          "na_conditions": ["非 AIV 行、Vector 等待周期缺失或 `C` 为零"],
+          "analysis_notes": "原始比值，不乘以 100"
+        },
+        {
+          "name": "aiv_mte2_wait_ratio",
+          "meaning": "AIV MTE2 等待周期占 AIV 总周期的比值",
+          "core_types": ["AIV"],
+          "unit": "比值",
+          "dependencies": ["MTE2 等待周期、AIV `C`"],
+          "formula": "`MTE2 等待周期 / C`",
+          "na_conditions": ["非 AIV 行、MTE2 等待周期缺失或 `C` 为零"],
+          "analysis_notes": "原始比值，不乘以 100"
+        },
+        {
+          "name": "aiv_mte3_wait_ratio",
+          "meaning": "AIV MTE3 等待周期占 AIV 总周期的比值",
+          "core_types": ["AIV"],
+          "unit": "比值",
+          "dependencies": ["MTE3 等待周期、AIV `C`"],
+          "formula": "`MTE3 等待周期 / C`",
+          "na_conditions": ["非 AIV 行、MTE3 等待周期缺失或 `C` 为零"],
+          "analysis_notes": "原始比值，不乘以 100"
+        }
+      ]
+    },
+    "Memory": {
+      "output_file": "Memory.csv",
+      "fields": [
+        {
+          "name": "block_id",
+          "meaning": "PMU 聚合记录所属的 Block 标识",
+          "core_types": [
+            "common"
+          ],
+          "unit": "无",
+          "dependencies": [
+            "PMU 键中的 `blockId`"
+          ],
+          "formula": "直接输出 `blockId`",
+          "na_conditions": [
+            "正常 PMU 行不为 `NA`"
+          ],
+          "analysis_notes": "与 `sub_block_id` 共同定位数据行"
+        },
+        {
+          "name": "sub_block_id",
+          "meaning": "Core 类型和 Sub-block 的组合标识",
+          "core_types": [
+            "common"
+          ],
+          "unit": "无",
+          "dependencies": [
+            "`coreType`、`subBlockId`"
+          ],
+          "formula": "AIC 为 `cubeN`，AIV 为 `vectorN`",
+          "na_conditions": [
+            "正常 PMU 行不为 `NA`"
+          ],
+          "analysis_notes": "`N` 是 `subBlockId`，不是 `coreId`"
+        },
+        {
+          "name": "aic_time(us)",
+          "meaning": "AIC 行总执行时长",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "us",
+          "dependencies": [
+            "AIC `C`、`F_AIC`"
+          ],
+          "formula": "`C / F_AIC`",
+          "na_conditions": [
+            "非 AIC 行或频率无效"
+          ],
+          "analysis_notes": "公共时长字段始终使用行周期，不替换为 `D_op`"
+        },
+        {
+          "name": "aic_total_cycles",
+          "meaning": "AIC 行总周期数",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "cycle",
+          "dependencies": [
+            "AIC `C`"
+          ],
+          "formula": "直接输出 `C`",
+          "na_conditions": [
+            "非 AIC 行"
+          ],
+          "analysis_notes": "是 AIC MTE 比值字段的分母"
+        },
+        {
+          "name": "aic_l1_read_bw(GB/s)",
+          "meaning": "AIC 从 L1 读取数据的平均带宽",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "GB/s",
+          "dependencies": [
+            "AIC L1 读取次数、AIC `D`"
+          ],
+          "formula": "`BW(AIC L1 读取次数, 256, D)`",
+          "na_conditions": [
+            "非 AIC 行、L1 读取次数缺失或 `D` 无效"
+          ],
+          "analysis_notes": "计数按每次 256 字节换算"
+        },
+        {
+          "name": "aic_l1_write_bw(GB/s)",
+          "meaning": "AIC 向 L1 写入数据的平均带宽",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "GB/s",
+          "dependencies": [
+            "AIC L1 写入次数、AIC `D`"
+          ],
+          "formula": "`BW(AIC L1 写入次数, 128, D)`",
+          "na_conditions": [
+            "非 AIC 行、L1 写入次数缺失或 `D` 无效"
+          ],
+          "analysis_notes": "计数按每次 128 字节换算"
+        },
+        {
+          "name": "aic_main_mem_read_bw(GB/s)",
+          "meaning": "AIC 主存读取平均带宽",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "GB/s",
+          "dependencies": [
+            "AIC 主存读取次数、AIC `D`"
+          ],
+          "formula": "`BW(AIC 主存读取次数, 128, D)`",
+          "na_conditions": [
+            "非 AIC 行、主存读取次数缺失或 `D` 无效"
+          ],
+          "analysis_notes": "表示所选时长内的平均带宽"
+        },
+        {
+          "name": "aic_main_mem_write_bw(GB/s)",
+          "meaning": "AIC 主存写入平均带宽",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "GB/s",
+          "dependencies": [
+            "AIC 主存写入次数、AIC `D`"
+          ],
+          "formula": "`BW(AIC 主存写入次数, 128, D)`",
+          "na_conditions": [
+            "非 AIC 行、主存写入次数缺失或 `D` 无效"
+          ],
+          "analysis_notes": "表示所选时长内的平均带宽"
+        },
+        {
+          "name": "aic_mte1_instructions",
+          "meaning": "AIC MTE1 指令计数",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "次",
+          "dependencies": [
+            "AIC MTE1 指令执行次数"
+          ],
+          "formula": "直接输出 AIC MTE1 指令执行次数",
+          "na_conditions": [
+            "非 AIC 行或 MTE1 指令执行次数缺失"
+          ],
+          "analysis_notes": "指令次数不等于活跃周期数"
+        },
+        {
+          "name": "aic_mte1_ratio",
+          "meaning": "AIC MTE1 活跃周期占总周期的比值",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "比值",
+          "dependencies": [
+            "AIC MTE1 活跃周期、AIC `C`"
+          ],
+          "formula": "`AIC MTE1 活跃周期 / C`",
+          "na_conditions": [
+            "非 AIC 行、MTE1 活跃周期缺失或 `C` 为零"
+          ],
+          "analysis_notes": "原始比值，不乘以 100"
+        },
+        {
+          "name": "aic_mte2_instructions",
+          "meaning": "AIC MTE2 指令计数",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "次",
+          "dependencies": [
+            "AIC MTE2 指令执行次数"
+          ],
+          "formula": "直接输出 AIC MTE2 指令执行次数",
+          "na_conditions": [
+            "非 AIC 行或 MTE2 指令执行次数缺失"
+          ],
+          "analysis_notes": "指令次数不等于活跃周期数"
+        },
+        {
+          "name": "aic_mte2_ratio",
+          "meaning": "AIC MTE2 活跃周期占总周期的比值",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "比值",
+          "dependencies": [
+            "AIC MTE2 活跃周期、AIC `C`"
+          ],
+          "formula": "`AIC MTE2 活跃周期 / C`",
+          "na_conditions": [
+            "非 AIC 行、MTE2 活跃周期缺失或 `C` 为零"
+          ],
+          "analysis_notes": "原始比值，不乘以 100"
+        },
+        {
+          "name": "aic_mte3_instructions",
+          "meaning": "AIC MTE3 指令计数",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "次",
+          "dependencies": [
+            "AIC MTE3 指令执行次数"
+          ],
+          "formula": "直接输出 AIC MTE3 指令执行次数",
+          "na_conditions": [
+            "非 AIC 行或 MTE3 指令执行次数缺失"
+          ],
+          "analysis_notes": "指令次数不等于活跃周期数"
+        },
+        {
+          "name": "aic_mte3_ratio",
+          "meaning": "AIC MTE3 活跃周期占总周期的比值",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "比值",
+          "dependencies": [
+            "AIC MTE3 活跃周期、AIC `C`"
+          ],
+          "formula": "`AIC MTE3 活跃周期 / C`",
+          "na_conditions": [
+            "非 AIC 行、MTE3 活跃周期缺失或 `C` 为零"
+          ],
+          "analysis_notes": "原始比值，不乘以 100"
+        },
+        {
+          "name": "aiv_time(us)",
+          "meaning": "AIV 行总执行时长",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "us",
+          "dependencies": [
+            "AIV `C`、`F_AIV`"
+          ],
+          "formula": "`C / F_AIV`",
+          "na_conditions": [
+            "非 AIV 行或频率无效"
+          ],
+          "analysis_notes": "公共时长字段始终使用行周期，不替换为 `D_op`"
+        },
+        {
+          "name": "aiv_total_cycles",
+          "meaning": "AIV 行总周期数",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "cycle",
+          "dependencies": [
+            "AIV `C`"
+          ],
+          "formula": "直接输出 `C`",
+          "na_conditions": [
+            "非 AIV 行"
+          ],
+          "analysis_notes": "是 AIV MTE 比值字段的分母"
+        },
+        {
+          "name": "aiv_ub_to_gm_bw(GB/s)",
+          "meaning": "AIV UB 到 GM 方向的预留带宽字段",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "GB/s",
+          "dependencies": [
+            "当前实现未提供所需 DBI 数据"
+          ],
+          "formula": "固定输出 `NA`",
+          "na_conditions": [
+            "所有数据行均为 `NA`"
+          ],
+          "analysis_notes": "不能据此判断 UB 到 GM 的实际带宽"
+        },
+        {
+          "name": "aiv_gm_to_ub_bw(GB/s)",
+          "meaning": "AIV GM 到 UB 相关平均带宽",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "GB/s",
+          "dependencies": [
+            "AIV 主存读取次数、两类修正次数、AIV `D`"
+          ],
+          "formula": "`BW(GM 到 UB 相关计数, 128, D)`",
+          "na_conditions": [
+            "非 AIV 行、任一计算所需计数缺失或 `D` 无效"
+          ],
+          "analysis_notes": "修正后的计数小于零时按零计算"
+        },
+        {
+          "name": "aiv_main_mem_read_bw(GB/s)",
+          "meaning": "AIV 主存读取平均带宽",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "GB/s",
+          "dependencies": [
+            "AIV 主存读取次数、AIV `D`"
+          ],
+          "formula": "`BW(AIV 主存读取次数, 128, D)`",
+          "na_conditions": [
+            "非 AIV 行、主存读取次数缺失或 `D` 无效"
+          ],
+          "analysis_notes": "表示所选时长内的平均带宽"
+        },
+        {
+          "name": "aiv_main_mem_write_bw(GB/s)",
+          "meaning": "AIV 主存写入平均带宽",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "GB/s",
+          "dependencies": [
+            "AIV 主存写入次数、AIV `D`"
+          ],
+          "formula": "`BW(AIV 主存写入次数, 128, D)`",
+          "na_conditions": [
+            "非 AIV 行、主存写入次数缺失或 `D` 无效"
+          ],
+          "analysis_notes": "表示所选时长内的平均带宽"
+        },
+        {
+          "name": "aiv_mte2_instructions",
+          "meaning": "AIV MTE2 指令计数",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "次",
+          "dependencies": [
+            "AIV MTE2 指令执行次数"
+          ],
+          "formula": "直接输出 AIV MTE2 指令执行次数",
+          "na_conditions": [
+            "非 AIV 行或 MTE2 指令执行次数缺失"
+          ],
+          "analysis_notes": "指令次数不等于活跃周期数"
+        },
+        {
+          "name": "aiv_mte2_ratio",
+          "meaning": "AIV MTE2 活跃周期占总周期的比值",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "比值",
+          "dependencies": [
+            "AIV MTE2 活跃周期、AIV `C`"
+          ],
+          "formula": "`AIV MTE2 活跃周期 / C`",
+          "na_conditions": [
+            "非 AIV 行、MTE2 活跃周期缺失或 `C` 为零"
+          ],
+          "analysis_notes": "原始比值，不乘以 100"
+        },
+        {
+          "name": "aiv_mte3_instructions",
+          "meaning": "AIV MTE3 指令计数",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "次",
+          "dependencies": [
+            "AIV MTE3 指令执行次数"
+          ],
+          "formula": "直接输出 AIV MTE3 指令执行次数",
+          "na_conditions": [
+            "非 AIV 行或 MTE3 指令执行次数缺失"
+          ],
+          "analysis_notes": "指令次数不等于活跃周期数"
+        },
+        {
+          "name": "aiv_mte3_ratio",
+          "meaning": "AIV MTE3 活跃周期占总周期的比值",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "比值",
+          "dependencies": [
+            "AIV MTE3 活跃周期、AIV `C`"
+          ],
+          "formula": "`AIV MTE3 活跃周期 / C`",
+          "na_conditions": [
+            "非 AIV 行、MTE3 活跃周期缺失或 `C` 为零"
+          ],
+          "analysis_notes": "原始比值，不乘以 100"
+        },
+        {
+          "name": "read_main_memory_datas(KB)",
+          "meaning": "当前 Core 行的主存读取数据量",
+          "core_types": [
+            "AIC",
+            "AIV"
+          ],
+          "unit": "KB",
+          "dependencies": [
+            "当前 Core 的主存读取次数"
+          ],
+          "formula": "`DataKB(主存读取次数, 128)`",
+          "na_conditions": [
+            "主存读取次数缺失"
+          ],
+          "analysis_notes": "每行按本行 Core 类型取值，不合并 AIC/AIV"
+        },
+        {
+          "name": "write_main_memory_datas(KB)",
+          "meaning": "当前 Core 行的主存写入数据量",
+          "core_types": [
+            "AIC",
+            "AIV"
+          ],
+          "unit": "KB",
+          "dependencies": [
+            "当前 Core 的主存写入次数"
+          ],
+          "formula": "`DataKB(主存写入次数, 128)`",
+          "na_conditions": [
+            "主存写入次数缺失"
+          ],
+          "analysis_notes": "每行按本行 Core 类型取值，不合并 AIC/AIV"
+        },
+        {
+          "name": "GM_to_L1_datas(KB)",
+          "meaning": "当前实现用于表示 GM 到 L1 的数据量",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "KB",
+          "dependencies": [
+            "AIC 主存读取次数"
+          ],
+          "formula": "`DataKB(AIC 主存读取次数, 128)`",
+          "na_conditions": [
+            "非 AIC 行或主存读取次数缺失"
+          ],
+          "analysis_notes": "当前代码复用 AIC 主存读取次数计算该字段"
+        },
+        {
+          "name": "GM_to_L1_bw_usage_rate(%)",
+          "meaning": "GM 到 L1 平均带宽占配置最大带宽的比例",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "%",
+          "dependencies": [
+            "AIC 主存读取次数、AIC `D`、GM 到 L1 最大带宽"
+          ],
+          "formula": "`Usage(BW(AIC 主存读取次数, 128, D), maximum)`",
+          "na_conditions": [
+            "非 AIC 行、主存读取次数缺失、`D` 无效或最大带宽无效"
+          ],
+          "analysis_notes": "结果上限为 100%"
+        },
+        {
+          "name": "L0C_to_L1_datas(KB)",
+          "meaning": "L0C 到 L1 的数据量",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "KB",
+          "dependencies": [
+            "AIC L0C 到 L1 传输次数"
+          ],
+          "formula": "`DataKB(AIC L0C 到 L1 传输次数, 128)`",
+          "na_conditions": [
+            "非 AIC 行或 L0C 到 L1 传输次数缺失"
+          ],
+          "analysis_notes": "计数按每次 128 字节换算"
+        },
+        {
+          "name": "L0C_to_L1_bw_usage_rate(%)",
+          "meaning": "L0C 到 L1 平均带宽占配置最大带宽的比例",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "%",
+          "dependencies": [
+            "AIC L0C 到 L1 传输次数、AIC `D`、L0C 到 L1 最大带宽"
+          ],
+          "formula": "`Usage(BW(AIC L0C 到 L1 传输次数, 128, D), maximum)`",
+          "na_conditions": [
+            "非 AIC 行、L0C 到 L1 传输次数缺失、`D` 无效或最大带宽无效"
+          ],
+          "analysis_notes": "结果上限为 100%"
+        },
+        {
+          "name": "L0C_to_GM_datas(KB)",
+          "meaning": "L0C 到 GM 的数据量",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "KB",
+          "dependencies": [
+            "AIC 主存写入次数"
+          ],
+          "formula": "`DataKB(AIC 主存写入次数, 128)`",
+          "na_conditions": [
+            "非 AIC 行或主存写入次数缺失"
+          ],
+          "analysis_notes": "当前代码复用 AIC 主存写入次数计算该字段"
+        },
+        {
+          "name": "L0C_to_GM_bw_usage_rate(%)",
+          "meaning": "L0C 到 GM 平均带宽占配置最大带宽的比例",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "%",
+          "dependencies": [
+            "AIC 主存写入次数、AIC `D`、L0C 到 GM 最大带宽"
+          ],
+          "formula": "`Usage(BW(AIC 主存写入次数, 128, D), maximum)`",
+          "na_conditions": [
+            "非 AIC 行、主存写入次数缺失、`D` 无效或最大带宽无效"
+          ],
+          "analysis_notes": "结果上限为 100%"
+        },
+        {
+          "name": "GM_to_UB_datas(KB)",
+          "meaning": "AIV GM 到 UB 相关数据量",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "KB",
+          "dependencies": [
+            "AIV 主存读取次数、两类修正次数"
+          ],
+          "formula": "`DataKB(GM 到 UB 相关计数, 128)`",
+          "na_conditions": [
+            "非 AIV 行或任一计算所需计数缺失"
+          ],
+          "analysis_notes": "修正后的计数小于零时按零计算"
+        },
+        {
+          "name": "GM_to_UB_bw_usage_rate(%)",
+          "meaning": "GM 到 UB 相关平均带宽占配置最大带宽的比例",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "%",
+          "dependencies": [
+            "GM 到 UB 相关计数、AIV `D`、GM 到 UB 最大带宽"
+          ],
+          "formula": "`Usage(BW(GM 到 UB 相关计数, 128, D), maximum)`",
+          "na_conditions": [
+            "非 AIV 行、任一计算所需计数缺失、`D` 无效或最大带宽无效"
+          ],
+          "analysis_notes": "结果上限为 100%"
+        },
+        {
+          "name": "UB_to_GM_datas(KB)",
+          "meaning": "AIV UB 到 GM 方向的预留数据量字段",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "KB",
+          "dependencies": [
+            "当前实现未提供所需 DBI 数据"
+          ],
+          "formula": "固定输出 `NA`",
+          "na_conditions": [
+            "所有数据行均为 `NA`"
+          ],
+          "analysis_notes": "不能据此判断 UB 到 GM 的实际数据量"
+        },
+        {
+          "name": "UB_to_GM_bw_usage_rate(%)",
+          "meaning": "AIV UB 到 GM 方向的预留带宽利用率字段",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "%",
+          "dependencies": [
+            "当前实现未提供所需 DBI 数据"
+          ],
+          "formula": "固定输出 `NA`",
+          "na_conditions": [
+            "所有数据行均为 `NA`"
+          ],
+          "analysis_notes": "不能据此判断 UB 到 GM 的实际带宽利用率"
+        }
+      ]
+    },
+    "MemoryL0": {
+      "output_file": "MemoryL0.csv",
+      "fields": [
+        {
+          "name": "block_id",
+          "meaning": "PMU 聚合记录所属的 Block 标识",
+          "core_types": [
+            "common"
+          ],
+          "unit": "无",
+          "dependencies": [
+            "PMU 键中的 `blockId`"
+          ],
+          "formula": "直接输出 `blockId`",
+          "na_conditions": [
+            "正常 PMU 行不为 `NA`"
+          ],
+          "analysis_notes": "与 `sub_block_id` 共同定位数据行"
+        },
+        {
+          "name": "sub_block_id",
+          "meaning": "Core 类型和 Sub-block 的组合标识",
+          "core_types": [
+            "common"
+          ],
+          "unit": "无",
+          "dependencies": [
+            "`coreType`、`subBlockId`"
+          ],
+          "formula": "AIC 为 `cubeN`，AIV 为 `vectorN`",
+          "na_conditions": [
+            "正常 PMU 行不为 `NA`"
+          ],
+          "analysis_notes": "`N` 是 `subBlockId`，不是 `coreId`"
+        },
+        {
+          "name": "aic_time(us)",
+          "meaning": "AIC 行总执行时长",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "us",
+          "dependencies": [
+            "AIC `C`、`F_AIC`"
+          ],
+          "formula": "`C / F_AIC`",
+          "na_conditions": [
+            "非 AIC 行或频率无效"
+          ],
+          "analysis_notes": "该字段始终是 AIC 行周期时长，不替换为 `D_op`"
+        },
+        {
+          "name": "aic_total_cycles",
+          "meaning": "AIC 行总周期数",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "cycle",
+          "dependencies": [
+            "AIC `C`"
+          ],
+          "formula": "直接输出 `C`",
+          "na_conditions": [
+            "非 AIC 行"
+          ],
+          "analysis_notes": "用于核对 AIC 行采样周期"
+        },
+        {
+          "name": "aic_l0a_read_bw(GB/s)",
+          "meaning": "L0A 到 Cube 方向的读取带宽",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "GB/s",
+          "dependencies": [
+            "L0A 到 Cube 传输次数、`D`"
+          ],
+          "formula": "`BW(L0A 到 Cube 传输次数, 64, D)`",
+          "na_conditions": [
+            "非 AIC 行、L0A 到 Cube 传输次数缺失或 `D` 无效"
+          ],
+          "analysis_notes": "计数按每次 64 字节换算"
+        },
+        {
+          "name": "aic_l0a_write_bw(GB/s)",
+          "meaning": "L1 到 L0A 方向的写入带宽",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "GB/s",
+          "dependencies": [
+            "L1 到 L0A 传输次数、`D`"
+          ],
+          "formula": "`BW(L1 到 L0A 传输次数, 256, D)`",
+          "na_conditions": [
+            "非 AIC 行、L1 到 L0A 传输次数缺失或 `D` 无效"
+          ],
+          "analysis_notes": "计数按每次 256 字节换算"
+        },
+        {
+          "name": "aic_l0b_read_bw(GB/s)",
+          "meaning": "L0B 到 Cube 方向的读取带宽",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "GB/s",
+          "dependencies": [
+            "L0B 到 Cube 传输次数、`D`"
+          ],
+          "formula": "`BW(L0B 到 Cube 传输次数, 256, D)`",
+          "na_conditions": [
+            "非 AIC 行、L0B 到 Cube 传输次数缺失或 `D` 无效"
+          ],
+          "analysis_notes": "计数按每次 256 字节换算"
+        },
+        {
+          "name": "aic_l0b_write_bw(GB/s)",
+          "meaning": "L1 到 L0B 方向的写入带宽",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "GB/s",
+          "dependencies": [
+            "L1 到 L0B 传输次数、`D`"
+          ],
+          "formula": "`BW(L1 到 L0B 传输次数, 256, D)`",
+          "na_conditions": [
+            "非 AIC 行、L1 到 L0B 传输次数缺失或 `D` 无效"
+          ],
+          "analysis_notes": "计数按每次 256 字节换算"
+        },
+        {
+          "name": "aic_l0c_read_bw_cube(GB/s)",
+          "meaning": "L0C 到 Cube 方向的读取带宽",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "GB/s",
+          "dependencies": [
+            "L0C 到 Cube 传输次数、`D`"
+          ],
+          "formula": "`BW(L0C 到 Cube 传输次数, 1024, D)`",
+          "na_conditions": [
+            "非 AIC 行、L0C 到 Cube 传输次数缺失或 `D` 无效"
+          ],
+          "analysis_notes": "计数按每次 1024 字节换算"
+        },
+        {
+          "name": "aic_l0c_write_bw_cube(GB/s)",
+          "meaning": "Cube 到 L0C 方向的写入带宽",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "GB/s",
+          "dependencies": [
+            "Cube 到 L0C 传输次数、`D`"
+          ],
+          "formula": "`BW(Cube 到 L0C 传输次数, 1024, D)`",
+          "na_conditions": [
+            "非 AIC 行、Cube 到 L0C 传输次数缺失或 `D` 无效"
+          ],
+          "analysis_notes": "计数按每次 1024 字节换算"
+        },
+        {
+          "name": "aiv_time(us)",
+          "meaning": "AIV 行总执行时长",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "us",
+          "dependencies": [
+            "AIV `C`、`F_AIV`"
+          ],
+          "formula": "`C / F_AIV`",
+          "na_conditions": [
+            "非 AIV 行或频率无效"
+          ],
+          "analysis_notes": "AIV 行可能存在，但本 Section 没有 AIV L0 指标"
+        },
+        {
+          "name": "aiv_total_cycles",
+          "meaning": "AIV 行总周期数",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "cycle",
+          "dependencies": [
+            "AIV `C`"
+          ],
+          "formula": "直接输出 `C`",
+          "na_conditions": [
+            "非 AIV 行"
+          ],
+          "analysis_notes": "用于核对 AIV 行采样周期"
+        }
+      ]
+    },
+    "MemoryUB": {
+      "output_file": "MemoryUB.csv",
+      "fields": [
+        {
+          "name": "block_id",
+          "meaning": "PMU 聚合记录所属的 Block 标识",
+          "core_types": [
+            "common"
+          ],
+          "unit": "无",
+          "dependencies": [
+            "PMU 键中的 `blockId`"
+          ],
+          "formula": "直接输出 `blockId`",
+          "na_conditions": [
+            "正常 PMU 行不为 `NA`"
+          ],
+          "analysis_notes": "与 `sub_block_id` 共同定位数据行"
+        },
+        {
+          "name": "sub_block_id",
+          "meaning": "Core 类型和 Sub-block 的组合标识",
+          "core_types": [
+            "common"
+          ],
+          "unit": "无",
+          "dependencies": [
+            "`coreType`、`subBlockId`"
+          ],
+          "formula": "AIC 为 `cubeN`，AIV 为 `vectorN`",
+          "na_conditions": [
+            "正常 PMU 行不为 `NA`"
+          ],
+          "analysis_notes": "`N` 是 `subBlockId`，不是 `coreId`"
+        },
+        {
+          "name": "aic_time(us)",
+          "meaning": "AIC 行总执行时长",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "us",
+          "dependencies": [
+            "AIC `C`、`F_AIC`"
+          ],
+          "formula": "`C / F_AIC`",
+          "na_conditions": [
+            "非 AIC 行或频率无效"
+          ],
+          "analysis_notes": "AIC 行可能存在，但本 Section 没有 AIC UB 指标"
+        },
+        {
+          "name": "aic_total_cycles",
+          "meaning": "AIC 行总周期数",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "cycle",
+          "dependencies": [
+            "AIC `C`"
+          ],
+          "formula": "直接输出 `C`",
+          "na_conditions": [
+            "非 AIC 行"
+          ],
+          "analysis_notes": "用于核对 AIC 行采样周期"
+        },
+        {
+          "name": "aiv_time(us)",
+          "meaning": "AIV 行总执行时长",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "us",
+          "dependencies": [
+            "AIV `C`、`F_AIV`"
+          ],
+          "formula": "`C / F_AIV`",
+          "na_conditions": [
+            "非 AIV 行或频率无效"
+          ],
+          "analysis_notes": "该字段始终是 AIV 行周期时长，不替换为 `D_op`"
+        },
+        {
+          "name": "aiv_total_cycles",
+          "meaning": "AIV 行总周期数",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "cycle",
+          "dependencies": [
+            "AIV `C`"
+          ],
+          "formula": "直接输出 `C`",
+          "na_conditions": [
+            "非 AIV 行"
+          ],
+          "analysis_notes": "用于核对 AIV 行采样周期"
+        },
+        {
+          "name": "aiv_ub_read_bw_vector(GB/s)",
+          "meaning": "UB 到 Vector 方向的数据读取带宽",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "GB/s",
+          "dependencies": [
+            "UB 到 Vector 传输次数、`D`"
+          ],
+          "formula": "`BW(UB 到 Vector 传输次数, 256, D)`",
+          "na_conditions": [
+            "非 AIV 行、UB 到 Vector 传输次数缺失或 `D` 无效"
+          ],
+          "analysis_notes": "计数按每次 256 字节换算"
+        },
+        {
+          "name": "aiv_ub_write_bw_vector(GB/s)",
+          "meaning": "Vector 到 UB 方向的数据写入带宽",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "GB/s",
+          "dependencies": [
+            "Vector 到 UB 传输次数、`D`"
+          ],
+          "formula": "`BW(Vector 到 UB 传输次数, 256, D)`",
+          "na_conditions": [
+            "非 AIV 行、Vector 到 UB 传输次数缺失或 `D` 无效"
+          ],
+          "analysis_notes": "计数按每次 256 字节换算"
+        },
+        {
+          "name": "aiv_ub_read_bw_gm(GB/s)",
+          "meaning": "UB 与 GM 读取方向的预留带宽字段",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "GB/s",
+          "dependencies": [
+            "当前实现未提供所需 DBI 数据"
+          ],
+          "formula": "固定输出 `NA`",
+          "na_conditions": [
+            "所有数据行均为 `NA`"
+          ],
+          "analysis_notes": "不能据此判断该方向的实际带宽"
+        },
+        {
+          "name": "aiv_ub_write_bw_gm(GB/s)",
+          "meaning": "当前实现按 GM 主存读计数扣除指定子项后计算的 UB/GM 带宽",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "GB/s",
+          "dependencies": [
+            "AIV 主存读取次数、两类修正次数、`D`"
+          ],
+          "formula": "`BW(GM 到 UB 相关计数, 128, D)`",
+          "na_conditions": [
+            "非 AIV 行、任一计算所需计数缺失或 `D` 无效"
+          ],
+          "analysis_notes": "按当前代码公式解释，不根据字段名反推相反的数据方向"
+        }
+      ]
+    },
+    "L2Cache": {
+      "output_file": "L2Cache.csv",
+      "fields": [
+        {
+          "name": "block_id",
+          "meaning": "PMU 聚合记录所属的 Block 标识",
+          "core_types": [
+            "common"
+          ],
+          "unit": "无",
+          "dependencies": [
+            "PMU 键中的 `blockId`"
+          ],
+          "formula": "直接输出 `blockId`",
+          "na_conditions": [
+            "正常 PMU 行不为 `NA`"
+          ],
+          "analysis_notes": "与 `sub_block_id` 共同定位数据行"
+        },
+        {
+          "name": "sub_block_id",
+          "meaning": "Core 类型和 Sub-block 的组合标识",
+          "core_types": [
+            "common"
+          ],
+          "unit": "无",
+          "dependencies": [
+            "`coreType`、`subBlockId`"
+          ],
+          "formula": "AIC 为 `cubeN`，AIV 为 `vectorN`",
+          "na_conditions": [
+            "正常 PMU 行不为 `NA`"
+          ],
+          "analysis_notes": "`N` 是 `subBlockId`，不是 `coreId`"
+        },
+        {
+          "name": "aic_time(us)",
+          "meaning": "AIC 行总执行时长",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "us",
+          "dependencies": [
+            "AIC `C`、`F_AIC`"
+          ],
+          "formula": "`C / F_AIC`",
+          "na_conditions": [
+            "非 AIC 行或频率无效"
+          ],
+          "analysis_notes": "用于观察本行 AIC 周期对应的时间"
+        },
+        {
+          "name": "aic_total_cycles",
+          "meaning": "AIC 行总周期数",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "cycle",
+          "dependencies": [
+            "AIC `C`"
+          ],
+          "formula": "直接输出 `C`",
+          "na_conditions": [
+            "非 AIC 行"
+          ],
+          "analysis_notes": "L2 计数字段不以该值为分母"
+        },
+        {
+          "name": "aic_read_close_hit",
+          "meaning": "AIC 近端读命中计数",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "次",
+          "dependencies": [
+            "AIC 近端读命中次数"
+          ],
+          "formula": "直接输出 AIC 近端读命中次数",
+          "na_conditions": [
+            "非 AIC 行或近端读命中次数缺失"
+          ],
+          "analysis_notes": "与其他五个 AIC 读计数组合分析"
+        },
+        {
+          "name": "aic_read_close_miss",
+          "meaning": "AIC 近端读未命中计数",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "次",
+          "dependencies": [
+            "AIC 近端读未命中次数"
+          ],
+          "formula": "直接输出 AIC 近端读未命中次数",
+          "na_conditions": [
+            "非 AIC 行或近端读未命中次数缺失"
+          ],
+          "analysis_notes": "与其他五个 AIC 读计数组合分析"
+        },
+        {
+          "name": "aic_read_close_victim",
+          "meaning": "AIC 近端读 Victim 计数",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "次",
+          "dependencies": [
+            "AIC 近端读 Victim 次数"
+          ],
+          "formula": "直接输出 AIC 近端读 Victim 次数",
+          "na_conditions": [
+            "非 AIC 行或近端读 Victim 次数缺失"
+          ],
+          "analysis_notes": "计入读请求总数，不计入命中数"
+        },
+        {
+          "name": "aic_read_far_hit",
+          "meaning": "AIC 远端读命中计数",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "次",
+          "dependencies": [
+            "AIC 远端读命中次数"
+          ],
+          "formula": "直接输出 AIC 远端读命中次数",
+          "na_conditions": [
+            "非 AIC 行或远端读命中次数缺失"
+          ],
+          "analysis_notes": "与近端命中共同计入读命中数"
+        },
+        {
+          "name": "aic_read_far_miss",
+          "meaning": "AIC 远端读未命中计数",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "次",
+          "dependencies": [
+            "AIC 远端读未命中次数"
+          ],
+          "formula": "直接输出 AIC 远端读未命中次数",
+          "na_conditions": [
+            "非 AIC 行或远端读未命中次数缺失"
+          ],
+          "analysis_notes": "与其他五个 AIC 读计数组合分析"
+        },
+        {
+          "name": "aic_read_far_victim",
+          "meaning": "AIC 远端读 Victim 计数",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "次",
+          "dependencies": [
+            "AIC 远端读 Victim 次数"
+          ],
+          "formula": "直接输出 AIC 远端读 Victim 次数",
+          "na_conditions": [
+            "非 AIC 行或远端读 Victim 次数缺失"
+          ],
+          "analysis_notes": "计入读请求总数，不计入命中数"
+        },
+        {
+          "name": "aic_read_hit_rate(%)",
+          "meaning": "AIC L2 读命中率",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "%",
+          "dependencies": [
+            "AIC 近端和远端的读命中、未命中及 Victim 次数"
+          ],
+          "formula": "`100 * (近端读命中次数 + 远端读命中次数) / 六类读计数总和`",
+          "na_conditions": [
+            "非 AIC 行或任一计算所需计数缺失"
+          ],
+          "analysis_notes": "六类读计数总和为零时输出 0"
+        },
+        {
+          "name": "aic_write_close_hit",
+          "meaning": "AIC 近端写命中计数",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "次",
+          "dependencies": [
+            "AIC 近端写命中次数"
+          ],
+          "formula": "直接输出 AIC 近端写命中次数",
+          "na_conditions": [
+            "非 AIC 行或近端写命中次数缺失"
+          ],
+          "analysis_notes": "与其他五个 AIC 写计数组合分析"
+        },
+        {
+          "name": "aic_write_close_miss",
+          "meaning": "AIC 近端写未命中计数",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "次",
+          "dependencies": [
+            "AIC 近端写未命中次数"
+          ],
+          "formula": "直接输出 AIC 近端写未命中次数",
+          "na_conditions": [
+            "非 AIC 行或近端写未命中次数缺失"
+          ],
+          "analysis_notes": "与其他五个 AIC 写计数组合分析"
+        },
+        {
+          "name": "aic_write_close_victim",
+          "meaning": "AIC 近端写 Victim 计数",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "次",
+          "dependencies": [
+            "AIC 近端写 Victim 次数"
+          ],
+          "formula": "直接输出 AIC 近端写 Victim 次数",
+          "na_conditions": [
+            "非 AIC 行或近端写 Victim 次数缺失"
+          ],
+          "analysis_notes": "计入写请求总数，不计入命中数"
+        },
+        {
+          "name": "aic_write_far_hit",
+          "meaning": "AIC 远端写命中计数",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "次",
+          "dependencies": [
+            "AIC 远端写命中次数"
+          ],
+          "formula": "直接输出 AIC 远端写命中次数",
+          "na_conditions": [
+            "非 AIC 行或远端写命中次数缺失"
+          ],
+          "analysis_notes": "与近端命中共同计入写命中数"
+        },
+        {
+          "name": "aic_write_far_miss",
+          "meaning": "AIC 远端写未命中计数",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "次",
+          "dependencies": [
+            "AIC 远端写未命中次数"
+          ],
+          "formula": "直接输出 AIC 远端写未命中次数",
+          "na_conditions": [
+            "非 AIC 行或远端写未命中次数缺失"
+          ],
+          "analysis_notes": "与其他五个 AIC 写计数组合分析"
+        },
+        {
+          "name": "aic_write_far_victim",
+          "meaning": "AIC 远端写 Victim 计数",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "次",
+          "dependencies": [
+            "AIC 远端写 Victim 次数"
+          ],
+          "formula": "直接输出 AIC 远端写 Victim 次数",
+          "na_conditions": [
+            "非 AIC 行或远端写 Victim 次数缺失"
+          ],
+          "analysis_notes": "计入写请求总数，不计入命中数"
+        },
+        {
+          "name": "aic_write_hit_rate(%)",
+          "meaning": "AIC L2 写命中率",
+          "core_types": [
+            "AIC"
+          ],
+          "unit": "%",
+          "dependencies": [
+            "AIC 近端和远端的写命中、未命中及 Victim 次数"
+          ],
+          "formula": "`100 * (近端写命中次数 + 远端写命中次数) / 六类写计数总和`",
+          "na_conditions": [
+            "非 AIC 行或任一计算所需计数缺失"
+          ],
+          "analysis_notes": "六类写计数总和为零时输出 0"
+        },
+        {
+          "name": "aiv_time(us)",
+          "meaning": "AIV 行总执行时长",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "us",
+          "dependencies": [
+            "AIV `C`、`F_AIV`"
+          ],
+          "formula": "`C / F_AIV`",
+          "na_conditions": [
+            "非 AIV 行或频率无效"
+          ],
+          "analysis_notes": "用于观察本行 AIV 周期对应的时间"
+        },
+        {
+          "name": "aiv_total_cycles",
+          "meaning": "AIV 行总周期数",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "cycle",
+          "dependencies": [
+            "AIV `C`"
+          ],
+          "formula": "直接输出 `C`",
+          "na_conditions": [
+            "非 AIV 行"
+          ],
+          "analysis_notes": "L2 计数字段不以该值为分母"
+        },
+        {
+          "name": "aiv_read_close_hit",
+          "meaning": "AIV 近端读命中计数",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "次",
+          "dependencies": [
+            "AIV 近端读命中次数"
+          ],
+          "formula": "直接输出 AIV 近端读命中次数",
+          "na_conditions": [
+            "非 AIV 行或近端读命中次数缺失"
+          ],
+          "analysis_notes": "与其他五个 AIV 读计数组合分析"
+        },
+        {
+          "name": "aiv_read_close_miss",
+          "meaning": "AIV 近端读未命中计数",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "次",
+          "dependencies": [
+            "AIV 近端读未命中次数"
+          ],
+          "formula": "直接输出 AIV 近端读未命中次数",
+          "na_conditions": [
+            "非 AIV 行或近端读未命中次数缺失"
+          ],
+          "analysis_notes": "与其他五个 AIV 读计数组合分析"
+        },
+        {
+          "name": "aiv_read_close_victim",
+          "meaning": "AIV 近端读 Victim 计数",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "次",
+          "dependencies": [
+            "AIV 近端读 Victim 次数"
+          ],
+          "formula": "直接输出 AIV 近端读 Victim 次数",
+          "na_conditions": [
+            "非 AIV 行或近端读 Victim 次数缺失"
+          ],
+          "analysis_notes": "计入读请求总数，不计入命中数"
+        },
+        {
+          "name": "aiv_read_far_hit",
+          "meaning": "AIV 远端读命中计数",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "次",
+          "dependencies": [
+            "AIV 远端读命中次数"
+          ],
+          "formula": "直接输出 AIV 远端读命中次数",
+          "na_conditions": [
+            "非 AIV 行或远端读命中次数缺失"
+          ],
+          "analysis_notes": "与近端命中共同计入读命中数"
+        },
+        {
+          "name": "aiv_read_far_miss",
+          "meaning": "AIV 远端读未命中计数",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "次",
+          "dependencies": [
+            "AIV 远端读未命中次数"
+          ],
+          "formula": "直接输出 AIV 远端读未命中次数",
+          "na_conditions": [
+            "非 AIV 行或远端读未命中次数缺失"
+          ],
+          "analysis_notes": "与其他五个 AIV 读计数组合分析"
+        },
+        {
+          "name": "aiv_read_far_victim",
+          "meaning": "AIV 远端读 Victim 计数",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "次",
+          "dependencies": [
+            "AIV 远端读 Victim 次数"
+          ],
+          "formula": "直接输出 AIV 远端读 Victim 次数",
+          "na_conditions": [
+            "非 AIV 行或远端读 Victim 次数缺失"
+          ],
+          "analysis_notes": "计入读请求总数，不计入命中数"
+        },
+        {
+          "name": "aiv_read_hit_rate(%)",
+          "meaning": "AIV L2 读命中率",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "%",
+          "dependencies": [
+            "AIV 近端和远端的读命中、未命中及 Victim 次数"
+          ],
+          "formula": "`100 * (近端读命中次数 + 远端读命中次数) / 六类读计数总和`",
+          "na_conditions": [
+            "非 AIV 行或任一计算所需计数缺失"
+          ],
+          "analysis_notes": "六类读计数总和为零时输出 0"
+        },
+        {
+          "name": "aiv_write_close_hit",
+          "meaning": "AIV 近端写命中计数",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "次",
+          "dependencies": [
+            "AIV 近端写命中次数"
+          ],
+          "formula": "直接输出 AIV 近端写命中次数",
+          "na_conditions": [
+            "非 AIV 行或近端写命中次数缺失"
+          ],
+          "analysis_notes": "与其他五个 AIV 写计数组合分析"
+        },
+        {
+          "name": "aiv_write_close_miss",
+          "meaning": "AIV 近端写未命中计数",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "次",
+          "dependencies": [
+            "AIV 近端写未命中次数"
+          ],
+          "formula": "直接输出 AIV 近端写未命中次数",
+          "na_conditions": [
+            "非 AIV 行或近端写未命中次数缺失"
+          ],
+          "analysis_notes": "与其他五个 AIV 写计数组合分析"
+        },
+        {
+          "name": "aiv_write_close_victim",
+          "meaning": "AIV 近端写 Victim 计数",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "次",
+          "dependencies": [
+            "AIV 近端写 Victim 次数"
+          ],
+          "formula": "直接输出 AIV 近端写 Victim 次数",
+          "na_conditions": [
+            "非 AIV 行或近端写 Victim 次数缺失"
+          ],
+          "analysis_notes": "计入写请求总数，不计入命中数"
+        },
+        {
+          "name": "aiv_write_far_hit",
+          "meaning": "AIV 远端写命中计数",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "次",
+          "dependencies": [
+            "AIV 远端写命中次数"
+          ],
+          "formula": "直接输出 AIV 远端写命中次数",
+          "na_conditions": [
+            "非 AIV 行或远端写命中次数缺失"
+          ],
+          "analysis_notes": "与近端命中共同计入写命中数"
+        },
+        {
+          "name": "aiv_write_far_miss",
+          "meaning": "AIV 远端写未命中计数",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "次",
+          "dependencies": [
+            "AIV 远端写未命中次数"
+          ],
+          "formula": "直接输出 AIV 远端写未命中次数",
+          "na_conditions": [
+            "非 AIV 行或远端写未命中次数缺失"
+          ],
+          "analysis_notes": "与其他五个 AIV 写计数组合分析"
+        },
+        {
+          "name": "aiv_write_far_victim",
+          "meaning": "AIV 远端写 Victim 计数",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "次",
+          "dependencies": [
+            "AIV 远端写 Victim 次数"
+          ],
+          "formula": "直接输出 AIV 远端写 Victim 次数",
+          "na_conditions": [
+            "非 AIV 行或远端写 Victim 次数缺失"
+          ],
+          "analysis_notes": "计入写请求总数，不计入命中数"
+        },
+        {
+          "name": "aiv_write_hit_rate(%)",
+          "meaning": "AIV L2 写命中率",
+          "core_types": [
+            "AIV"
+          ],
+          "unit": "%",
+          "dependencies": [
+            "AIV 近端和远端的写命中、未命中及 Victim 次数"
+          ],
+          "formula": "`100 * (近端写命中次数 + 远端写命中次数) / 六类写计数总和`",
+          "na_conditions": [
+            "非 AIV 行或任一计算所需计数缺失"
+          ],
+          "analysis_notes": "六类写计数总和为零时输出 0"
+        }
+      ]
+    }
+  }
+}

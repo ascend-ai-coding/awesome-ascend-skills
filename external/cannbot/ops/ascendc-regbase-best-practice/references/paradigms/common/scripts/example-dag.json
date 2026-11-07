@@ -1,0 +1,9 @@
+{
+  "steps": [
+    {"id": "S1", "op": "CopyIn x",             "inputs": [],              "outputs": ["x"]},
+    {"id": "S2", "op": "ReduceMean(axis=-1)",  "inputs": ["x"],           "outputs": ["mu"]},
+    {"id": "S3", "op": "CopyIn gamma",         "inputs": [],              "outputs": ["gamma"]},
+    {"id": "S4", "op": "Mul(brc(mu), gamma)",  "inputs": ["mu", "gamma"], "outputs": ["y"]}
+  ],
+  "pinned": [], "excluded": [], "exclusive_branches": []
+}

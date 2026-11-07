@@ -1,0 +1,82 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "SIMT API 分类概述",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A5"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "Ascend C SIMT 算子开发中有哪些可用的 API 类别？请列出主要分类及其用途。不需要执行任何工具调用。",
+      "expected_output": "回复应介绍 Ascend C SIMT 算子开发中可用的 API 类别，按功能分类说明各类 API 的用途。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "SIMT vs SIMD 差异与选型",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A5"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "Ascend C 中 SIMT 和 SIMD 两种编程模型有什么区别？分别在什么场景下使用？不需要执行任何工具调用。",
+      "expected_output": "回复应对比 SIMT 和 SIMD 两种编程模型的差异。SIMD 是向量编程模型，适合计算密集、数据访问规律的场景；SIMT 是线程级编程模型，适合索引复杂有分支条件逻辑的场景。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "细粒度随机访存的数据搬运选型",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A5"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "SIMT 算子访问 GM 时如何选择数据搬运方案？按索引逐元素随机读（如 y[g]=x[idx[g]]）能直接 GM 直读吗？为什么？不需要执行任何工具调用。",
+      "expected_output": "回复应说明选型首要判据是访存粒度而非是否逐元素：连续/规则访问可直接 GM 直读（硬件合并）；但细粒度随机读（每次随机访问有效字节 <128B，如按索引逐元素取值 y[g]=x[idx[g]]）直接 GM 直读会触发 128B 扇区放大——GM 经 Data Cache 以 128B 扇区为最小传输单位，读放大 = 128B/单元素字节（int8 128x、fp16/bf16 64x、int32 32x、int64 16x），DRAM 总线被无效扇区占满、有效带宽骤降。判据：单次随机访问覆盖的连续字节 e≥128B 则无放大、GM 直读可行；e<128B 则读放大 128/e，不应默认逐元素 GM 直读，其化解（读侧驻留/重排等）属架构与数据通路选型，须在方案期结合访存形态与工作块大小（对照 UB 容量）单独评估。调线程数/迭代序/缓存提示不能改变放大倍数。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 4,
+      "title": "写侧随机访存的搬运选型",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A5"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "SIMT 算子按索引把值写到随机目标（如 y[index[i]] += update[i]）时，数据搬运/写回策略应如何选择？需要注意什么？不需要执行任何工具调用。",
+      "expected_output": "回复应说明写侧随机的核心矛盾是同址写冲突：多线程/核写同一目标发生数据竞争，无原子时可能丢更新。策略按目标 dtype 的原子能力与确定性需求选：目标 dtype 有原子指令且无需确定性→目标地址原子直写；无原子指令或低精度→workspace 升位宽三段式（cast→宽类型原子→cast 回）；需确定性或重复度高→排序归并去重 + 每目标单写（先分组后单写者）；目标可按核/槽位切分且无跨核同址→按目标分区。关键判据：写侧首要目标是减少同址写次数而非优化单次写，重复度高时即使无需确定性也不应裸用原子直写（原子在目标地址排队、重复度越高串行化越重）。可优先采用分层归约：把原子的目标从 GM 迁移到线程块私有的 UB 局部归约，再整块汇总到 GM。",
+      "files": [],
+      "expectations": []
+    }
+  ],
+  "skill_name": "ascendc-simt-best-practices"
+}

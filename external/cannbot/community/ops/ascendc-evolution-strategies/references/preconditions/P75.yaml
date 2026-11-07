@@ -1,0 +1,40 @@
+strategy_id: P75
+
+strategy_meta:
+  id: "P75"
+  slug: "P75_dual_aiv_workload_split"
+  title: "P75: 双 AIV M/S1 轴工作量分裂 (Dual AIV M/S1-Axis Workload Split)"
+  bottlenecks: [tiling_imbalance]
+  op_families: [cv_fusion, moe]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p75_dual_aiv_workload_split.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p75_dual_aiv_workload_split.md"
+  playbook_slug: "P75_dual_aiv_workload_split"
+checks:
+  - id: has_cube
+    type: grep_count
+    pattern: "Cube.*Vector|Vector.*Cube|CV|MIX"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 Cube+Vector 融合模式 → 无 AIV 分裂需求，不适用 P75。检查 P51 或 P73。"
+
+  - id: has_getblockidx
+    type: grep_count
+    pattern: "GetBlockIdx|GetBlockNum|BLOCK_DIM|coreNum"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到多核分块逻辑 → 无 AIV 分裂空间，不适用 P75。"
+
+  - id: has_vecstart
+    type: grep_count
+    pattern: "vecStart|vecDeal|aivIdx|aivNum"
+    files: [kernel]
+    expected: ">= 0"
+    fail_msg: "已存在 AIV 分裂逻辑 → 可能冗余，优先验证现有策略效果。"

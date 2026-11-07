@@ -1,0 +1,691 @@
+/**
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
+
+/*!
+ * \file gather_tiling.h
+ * \brief Gather 族算子 Host 侧 Tiling 决策树参考模板（dav-3510 / Ascend950）。
+ *
+ * 参考 ops-nn gather_v2_tiling.cpp 的 DoOpTiling() 决策逻辑，实现 7 路分支选择：
+ *   1. IsSimdTwoDim()           → TILING_SIMD_TWO_DIM   (二维 SIMD 行拷贝)
+ *   2. IsLastGatherAndFullLoad()→ TILING_LAST_GATHER     (末轴 Gather)
+ *   3. IsGaAllLoad()            → TILING_GA_ALL_LOAD      (GA 全载 + VF/Gather)
+ *   4. IsSimtTwoDim()           → TILING_SIMT_TWO_DIM     (二维 SIMT 散点读)
+ *   5. IsAfterGdimFullLoad()    → TILING_AFTER_GDIM       (全载 UB + SIMT from UB)
+ *   6. SIMD 阈值满足            → TILING_SIMD             (通用 SIMD 行拷贝)
+ *   7. 兜底                     → TILING_SIMT             (通用 SIMT 散点读)
+ *
+ * 三维模型统一为 x[batch, outer, gatherDim, inner]，index[batch, gatherSize]，
+ * y[batch, outer, gatherSize, inner]。
+ */
+
+#ifndef GATHER_TILING_H
+#define GATHER_TILING_H
+
+#include "gather_tiling_data.h"
+#include <algorithm>
+#include <cstdint>
+
+namespace gatherv2 {
+
+// ============================================================================
+// Tiling 模式常量
+// ============================================================================
+constexpr int32_t TILING_SIMT = 0;
+constexpr int32_t TILING_SIMD = 1;
+constexpr int32_t TILING_LAST_GATHER = 2;
+constexpr int32_t TILING_GA_ALL_LOAD = 3;
+constexpr int32_t TILING_AFTER_GDIM = 4;
+constexpr int32_t TILING_SIMD_TWO_DIM = 5;
+constexpr int32_t TILING_SIMT_TWO_DIM = 6;
+constexpr int32_t TILING_EMPTY = 7;
+
+// ============================================================================
+// 阈值常量
+// ============================================================================
+constexpr int64_t SIMD_THRES = 2048;
+constexpr int64_t SIMD_TWO_DIM_THRES = 2048;
+constexpr int64_t SIMD_B8_THRES = 218;
+constexpr int64_t SIMD_B16_THRES = 360;
+constexpr int64_t SIMD_B32_THRES = 620;
+constexpr int64_t BUFFER_NUM = 2;
+constexpr int64_t INDICES_SIZE = 8192;
+constexpr int32_t DCACHE_SIZE = 128 * 1024;
+constexpr int64_t SMALL_CASE_THREAD_NUM = 128;
+constexpr int64_t MAX_THREAD_NUM = 2048;
+constexpr int32_t DCACHE = 32 * 1024;
+constexpr int64_t MIN_OUTPUT_FULL_LOAD_SIZE = 2048;
+constexpr int64_t PER_BLOCK_MIN_NUM = 256;
+constexpr int32_t B8_AND_B16_GATHER_UPPER = 65536;
+constexpr int64_t SPLIT_OUT_THRES = 2048;
+constexpr int32_t MIN_INDICES_UB_SIZE = 1024;
+constexpr int32_t WARP_THREAD_NUM = 32;
+constexpr int32_t SIMD_VECTOR_REG = 256;
+constexpr int32_t HELP_BUFFER_SIZE = 256;
+constexpr int32_t DATA_CACHE_SIZE = 512;
+constexpr int64_t MIN_TILING_BITS_SIZE_PER_CORE = 32768;
+constexpr int64_t BITS_NUM = 8;
+constexpr int32_t MIN_OUT_UB_SIZE = 16 * 1024;
+
+constexpr int64_t INPUT_DTYPE_B64 = 8;
+constexpr int64_t INPUT_DTYPE_B32 = 4;
+constexpr int64_t INPUT_DTYPE_B16 = 2;
+constexpr int64_t INPUT_DTYPE_B8 = 1;
+
+constexpr int32_t NUM_FOUR = 4;
+constexpr int32_t NUM_TWO = 2;
+constexpr int32_t NUM_ONE = 1;
+
+// ============================================================================
+// 辅助函数
+// ============================================================================
+template <typename T1, typename T2>
+static inline auto CeilDiv(T1 a, T2 b) -> T1
+{
+    return (a + b - 1) / b;
+}
+
+template <typename T1, typename T2>
+static inline auto CeilAlign(T1 a, T2 b) -> T1
+{
+    return CeilDiv(a, b) * b;
+}
+
+// ============================================================================
+// 平台参数
+// ============================================================================
+struct GatherTilingParams {
+    int64_t ubSize;       // UB 总容量，单位：字节
+    int64_t coreNum;      // AIV 核数
+    int32_t ubBlockSize;  // UB block 大小（通常 32），单位：字节
+    int32_t vRegSize;     // 向量寄存器大小（通常 256），单位：字节
+};
+
+// ============================================================================
+// 输入 Case 形状
+// ============================================================================
+struct GatherCaseShape {
+    int64_t batchSize;          // batch_dims 之前的维度乘积
+    int64_t outerSize;          // gather 轴之前的维度乘积（不含 batch）
+    int64_t gatherDimSize;      // x 沿 gather 轴的长度
+    int64_t gatherSize;         // index 沿 gather 轴的长度
+    int64_t innerSize;          // gather 轴之后的维度乘积（sliceSize）
+    int32_t improveDtypeSize;   // dtype improve 后单元素字节数
+    int32_t indicesDtypeSize;   // index 单元素字节数
+    bool negativeIndexSupport;  // 是否支持负索引
+    int64_t inputBatchDims;     // batch_dims 属性值（IsAfterGdimFullLoad 需要 == 0）
+};
+
+// ============================================================================
+// Tiling 结果
+// ============================================================================
+struct GatherTilingResult {
+    int32_t tilingMode = TILING_SIMT;
+    int64_t needCoreNum = 0;
+    // 各模式对应的 TilingData（仅选中模式的被填充）
+    GatherTilingData baseTilingData;               // SIMT / SIMD / AFTER_GDIM
+    GatherLastTilingData lastGatherTilingData;      // LAST_GATHER
+    GatherGaAllLoadTilingData gaAllLoadTilingData;  // GA_ALL_LOAD
+    GatherSimtTilingData simtTwoDimTilingData;      // SIMT_TWO_DIM
+    GatherSimdTwoDimTilingData simdTwoDimTilingData; // SIMD_TWO_DIM
+};
+
+// ============================================================================
+// 内部上下文
+// ============================================================================
+struct GatherTilingContext {
+    GatherTilingParams params;
+    GatherCaseShape shape;
+    int64_t ySize = 0;
+    int64_t needCoreNum = 0;
+    int64_t threadNum = 2048;
+    GatherTilingResult result;
+};
+
+// ============================================================================
+// XDtypeImprove: dtype 折叠提升。
+//   innerSize × xDtypeSize 可被更大 dtype 整除时，按更大 dtype 搬运以减少搬运次数。
+//   例如 int8 × innerSize=8 → lastAxisBytes=8B，可按 int64(8B) 搬运，burst 满载。
+// ============================================================================
+inline int32_t XDtypeImprove(int32_t xDtypeSize, int64_t innerSize)
+{
+    int64_t lastAxisBytes = innerSize * xDtypeSize;
+    if ((xDtypeSize < INPUT_DTYPE_B64) && (lastAxisBytes % INPUT_DTYPE_B64) == 0) {
+        return INPUT_DTYPE_B64;
+    }
+    if ((xDtypeSize < INPUT_DTYPE_B32) && (lastAxisBytes % INPUT_DTYPE_B32) == 0) {
+        return INPUT_DTYPE_B32;
+    }
+    if ((xDtypeSize < INPUT_DTYPE_B16) && (lastAxisBytes % INPUT_DTYPE_B16) == 0) {
+        return INPUT_DTYPE_B16;
+    }
+    return xDtypeSize;
+}
+
+// ============================================================================
+// 谓词函数：决策树各分支的判定条件
+// ============================================================================
+
+// 1. IsSimdTwoDim: batchSize==1 且 outerSize==1 且 innerSize >= SIMD 阈值 且工作量足够
+inline bool IsSimdTwoDim(const GatherTilingContext& ctx)
+{
+    const auto& s = ctx.shape;
+    bool isTwoDim = (s.batchSize == 1 && s.outerSize == 1);
+    bool isSimd = (s.innerSize * s.improveDtypeSize >= SIMD_TWO_DIM_THRES ||
+                   (s.improveDtypeSize == INPUT_DTYPE_B8 && s.innerSize * s.improveDtypeSize >= SIMD_B8_THRES) ||
+                   (s.improveDtypeSize == INPUT_DTYPE_B16 && s.innerSize * s.improveDtypeSize >= SIMD_B16_THRES) ||
+                   (s.improveDtypeSize == INPUT_DTYPE_B32 && s.innerSize * s.improveDtypeSize >= SIMD_B32_THRES)) &&
+                  s.batchSize * s.outerSize * s.gatherSize >= ctx.params.coreNum / NUM_TWO;
+    return isTwoDim && isSimd;
+}
+
+// 2. IsLastGatherAndFullLoad: innerSize==1 + gatherDimSize 可全载 UB + batchSize==1 + 索引重复
+inline bool IsLastGatherAndFullLoad(const GatherTilingContext& ctx)
+{
+    const auto& s = ctx.shape;
+    const int64_t ubSize = ctx.params.ubSize;
+    bool isGatherDimFullLoad = (s.gatherDimSize * s.improveDtypeSize <= ubSize / NUM_TWO ||
+                                s.gatherDimSize * s.improveDtypeSize <= ubSize - NUM_TWO * MIN_OUT_UB_SIZE);
+    bool isLastGather = (s.innerSize == 1);
+    bool isVGatherSupport = (s.improveDtypeSize <= static_cast<int32_t>(sizeof(int16_t))) ?
+                                s.gatherDimSize < B8_AND_B16_GATHER_UPPER :
+                                s.gatherDimSize < INT32_MAX;
+    bool enableUbGather = (s.batchSize == 1 && isLastGather && isGatherDimFullLoad && isVGatherSupport &&
+                           s.gatherSize / s.gatherDimSize > 1 && s.gatherSize * s.improveDtypeSize >= 32 &&
+                           s.improveDtypeSize <= static_cast<int32_t>(sizeof(int64_t)));
+    return enableUbGather;
+}
+
+// 3. IsGaAllLoad: innerSize 适中 + gatherDim×inner 可全载 UB + batchSize==1 + 索引重复
+inline bool IsGaAllLoad(const GatherTilingContext& ctx)
+{
+    const auto& s = ctx.shape;
+    const int64_t ubSize = ctx.params.ubSize;
+    const int32_t ubBlockSize = ctx.params.ubBlockSize;
+    int64_t aSize = s.innerSize * s.improveDtypeSize;
+    int64_t gSize = s.gatherDimSize;
+    int64_t aSizeAligned = (aSize + ubBlockSize - 1) / ubBlockSize * ubBlockSize;
+    if (aSizeAligned == SIMD_VECTOR_REG || aSizeAligned == SIMD_VECTOR_REG / NUM_TWO) {
+        aSizeAligned += ubBlockSize;
+    }
+    int64_t gaSizeInUb = aSizeAligned * (gSize + 1);
+    if (aSize <= WARP_THREAD_NUM || aSize >= SIMD_THRES) {
+        return false;
+    }
+    if (aSizeAligned * gSize <= DATA_CACHE_SIZE && s.improveDtypeSize == INPUT_DTYPE_B64) {
+        return false;
+    }
+    int64_t minIndicesSize = std::min(s.gatherSize, static_cast<int64_t>(MIN_INDICES_UB_SIZE / s.indicesDtypeSize));
+    int64_t remainSpace = ubSize - HELP_BUFFER_SIZE - NUM_FOUR * MIN_OUT_UB_SIZE -
+                          minIndicesSize * s.indicesDtypeSize - gaSizeInUb;
+    return (s.batchSize == 1 && s.gatherSize / s.gatherDimSize > 1 && remainSpace >= 0);
+}
+
+// 4. IsSimtTwoDim: batchSize==1 且 outerSize==1（二维 Gather，不满足 SIMD 阈值时兜底）
+inline bool IsSimtTwoDim(const GatherTilingContext& ctx)
+{
+    return (ctx.shape.batchSize == 1 && ctx.shape.outerSize == 1);
+}
+
+// 5. IsAfterGdimFullLoad: gatherDim×inner 可全载 UB + batchSize==1 + outerSize==1 + 索引重复
+inline bool IsAfterGdimFullLoad(const GatherTilingContext& ctx)
+{
+    const auto& s = ctx.shape;
+    const int64_t ubSize = ctx.params.ubSize;
+    bool isInputAfterGdim = s.gatherDimSize * s.innerSize * s.improveDtypeSize < (ubSize - DCACHE);
+    bool isAllInputSize = (s.batchSize * s.outerSize * s.gatherDimSize * s.innerSize) < INT32_MAX;
+    bool isAllOutputSize = ctx.ySize < INT32_MAX;
+    bool isMinOutputFullLoad = ctx.ySize * s.improveDtypeSize > MIN_OUTPUT_FULL_LOAD_SIZE;
+    bool isInputAndOutputRepeat = (s.gatherSize / s.gatherDimSize) > 1;
+    bool enableFullLoad = (isInputAfterGdim && isAllInputSize && isMinOutputFullLoad && isInputAndOutputRepeat &&
+                           isAllOutputSize && s.batchSize == 1 && s.outerSize == 1 && s.inputBatchDims == 0 &&
+                           s.innerSize * s.improveDtypeSize < MAX_THREAD_NUM);
+    return enableFullLoad;
+}
+
+// ============================================================================
+// 各模式 Tiling 计算函数
+// ============================================================================
+
+// CalcSimdTiling: SIMD 行拷贝 tiling
+//   核间按 blockFactor 均分 batchSize × outerSize × gatherSize
+//   UB: (ubSize - INDICES_SIZE) / ubBlockSize / dtypeSize / BUFFER_NUM
+inline void CalcSimdTiling(GatherTilingContext& ctx)
+{
+    const auto& s = ctx.shape;
+    const auto& p = ctx.params;
+    int64_t blockFactor = s.batchSize * s.outerSize * s.gatherSize / p.coreNum;
+    int64_t tailBlockFactor = s.batchSize * s.outerSize * s.gatherSize - blockFactor * p.coreNum;
+    int64_t ubAviable = (p.ubSize - INDICES_SIZE) / p.ubBlockSize * p.ubBlockSize / s.improveDtypeSize / BUFFER_NUM;
+    ctx.needCoreNum = (blockFactor > 0) ? p.coreNum : tailBlockFactor;
+
+    auto& td = ctx.result.baseTilingData;
+    td.needCoreNum = static_cast<int32_t>(ctx.needCoreNum);
+    td.threadNum = static_cast<int32_t>(ctx.threadNum);
+    td.batchSize = s.batchSize;
+    td.outerSize = s.outerSize;
+    td.gatherDimSize = s.gatherDimSize;
+    td.gatherSize = s.gatherSize;
+    td.innerSize = s.innerSize;
+    td.perCoreElements = blockFactor;
+    td.lastCoreElements = tailBlockFactor;
+    td.maxElement = ubAviable;
+    td.indiceUbSize = INDICES_SIZE;
+    td.dtypeSize = static_cast<int8_t>(s.improveDtypeSize);
+    td.negativeIndexSupport = static_cast<int8_t>(s.negativeIndexSupport ? 1 : 0);
+}
+
+// CalcCoreElement: SIMT 通用散点读 tiling
+//   线程数自适应：ySize / threadNum < coreNum/2 时减半线程
+//   perCoreElements 对齐到 threadNum 倍数
+inline void CalcCoreElement(GatherTilingContext& ctx)
+{
+    const auto& s = ctx.shape;
+    const auto& p = ctx.params;
+    while ((ctx.threadNum >= NUM_TWO * SMALL_CASE_THREAD_NUM) &&
+           (CeilDiv(ctx.ySize, ctx.threadNum) < (p.coreNum / NUM_TWO))) {
+        ctx.threadNum = ctx.threadNum / NUM_TWO;
+    }
+    int64_t perCoreElements = CeilDiv(ctx.ySize, p.coreNum);
+    if (ctx.ySize < ctx.threadNum) {
+        ctx.needCoreNum = 1;
+        auto& td = ctx.result.baseTilingData;
+        td.needCoreNum = 1;
+        td.threadNum = static_cast<int32_t>(ctx.threadNum);
+        td.batchSize = s.batchSize;
+        td.outerSize = s.outerSize;
+        td.gatherDimSize = s.gatherDimSize;
+        td.gatherSize = s.gatherSize;
+        td.innerSize = s.innerSize;
+        td.perCoreElements = ctx.ySize;
+        td.lastCoreElements = ctx.ySize;
+        td.dtypeSize = static_cast<int8_t>(s.improveDtypeSize);
+        td.negativeIndexSupport = static_cast<int8_t>(s.negativeIndexSupport ? 1 : 0);
+        return;
+    }
+    perCoreElements = (perCoreElements + ctx.threadNum - 1) / ctx.threadNum * ctx.threadNum;
+    ctx.needCoreNum = CeilDiv(ctx.ySize, perCoreElements);
+    int64_t lastCoreElements = ctx.ySize - perCoreElements * (ctx.needCoreNum - 1);
+
+    auto& td = ctx.result.baseTilingData;
+    td.needCoreNum = static_cast<int32_t>(ctx.needCoreNum);
+    td.threadNum = static_cast<int32_t>(ctx.threadNum);
+    td.batchSize = s.batchSize;
+    td.outerSize = s.outerSize;
+    td.gatherDimSize = s.gatherDimSize;
+    td.gatherSize = s.gatherSize;
+    td.innerSize = s.innerSize;
+    td.perCoreElements = perCoreElements;
+    td.lastCoreElements = lastCoreElements;
+    td.dtypeSize = static_cast<int8_t>(s.improveDtypeSize);
+    td.negativeIndexSupport = static_cast<int8_t>(s.negativeIndexSupport ? 1 : 0);
+}
+
+// SimdTwoDimTiling: 二维 SIMD 行拷贝 tiling
+//   核间按 blockFactor 均分 gatherSize
+inline void SimdTwoDimTiling(GatherTilingContext& ctx)
+{
+    const auto& s = ctx.shape;
+    const auto& p = ctx.params;
+    int64_t blockFactor = s.gatherSize / p.coreNum;
+    int64_t tailBlockFactor = s.gatherSize - blockFactor * p.coreNum;
+    int64_t ubAviable = (p.ubSize - INDICES_SIZE) / p.ubBlockSize * p.ubBlockSize / s.improveDtypeSize / BUFFER_NUM;
+    int32_t indiceFactor = INDICES_SIZE / s.indicesDtypeSize;
+    ctx.needCoreNum = (blockFactor > 0) ? p.coreNum : tailBlockFactor;
+
+    auto& td = ctx.result.simdTwoDimTilingData;
+    td.needCoreNum = static_cast<int32_t>(ctx.needCoreNum);
+    td.negativeIndexSupport = static_cast<int8_t>(s.negativeIndexSupport ? 1 : 0);
+    td.indiceFactor = indiceFactor;
+    td.dtypeSize = static_cast<int8_t>(s.improveDtypeSize);
+    td.gatherDimSize = s.gatherDimSize;
+    td.gatherSize = s.gatherSize;
+    td.innerSize = s.innerSize;
+    td.blockFactor = blockFactor;
+    td.tailBlockFactor = tailBlockFactor;
+    td.maxElement = ubAviable;
+}
+
+// LastGatherTiling: 末轴 Gather tiling
+//   核间按 blockFactor 切分 outerSize，可选 coreInCols 列切分提升并行度
+//   UB 分配: inputUbSize(gatherDim×dtype) + outUbSize(ubRows×ubCols×dtype) + indiceUbSize(ubCols×idxDtype)
+inline void CalcMaxUbcolAndIndiceFactor(int32_t& ubCols, int32_t ubRows, int32_t ubSize, int32_t minCols,
+                                        int32_t inputNum, int32_t improveDtypeSize, int32_t gatherDimSize,
+                                        int32_t indicesDtypeSize, int32_t outputNum, int32_t indiceNUm,
+                                        int32_t castUbRatio)
+{
+    ubCols = minCols;
+    int32_t castTargetDtypeSize = static_cast<int32_t>(sizeof(int32_t));
+    while (ubRows * (inputNum * improveDtypeSize * gatherDimSize + outputNum * ubCols * improveDtypeSize) +
+               indiceNUm * ubCols * indicesDtypeSize + castUbRatio * ubCols * castTargetDtypeSize <=
+           ubSize) {
+        ubCols += minCols;
+    }
+    ubCols -= minCols;
+}
+
+inline void LastGatherUbTiling(GatherTilingContext& ctx, int32_t& inputUbSize, int32_t& indiceUbSize,
+                               int32_t& outUbSize, int32_t& indiceCastUbSize, int32_t& inputNum,
+                               int32_t& indicesNum, int32_t& ubCols, int32_t& ubRows, int64_t blockFactor,
+                               int64_t gFactor)
+{
+    const auto& s = ctx.shape;
+    const auto& p = ctx.params;
+    int32_t minCols = ((s.improveDtypeSize == static_cast<int32_t>(sizeof(int64_t))) ? NUM_TWO * p.vRegSize :
+                                                                               p.vRegSize) / s.improveDtypeSize;
+    int32_t indicesUbAlign = (s.improveDtypeSize <= static_cast<int32_t>(sizeof(int16_t))) ? NUM_TWO * p.vRegSize :
+                                                                                             p.vRegSize;
+    indicesUbAlign = (s.indicesDtypeSize == static_cast<int32_t>(sizeof(int64_t))) ? NUM_TWO * indicesUbAlign :
+                                                                                     indicesUbAlign;
+    int32_t castUbRatio = (s.indicesDtypeSize == static_cast<int32_t>(sizeof(int64_t))) ? 1 : 0;
+    int32_t castTargetDtypeSize = static_cast<int32_t>(sizeof(int32_t));
+
+    if (NUM_TWO * ((s.gatherDimSize * s.improveDtypeSize + p.ubBlockSize) + minCols * s.improveDtypeSize +
+                   (minCols * s.indicesDtypeSize + p.ubBlockSize) + MIN_OUT_UB_SIZE) +
+                (castUbRatio * minCols * castTargetDtypeSize + indicesUbAlign) <
+            p.ubSize &&
+        blockFactor > 1) {
+        inputNum = NUM_TWO;
+        int32_t tmpUbsize = p.ubSize - (inputNum + NUM_TWO) * p.ubBlockSize - indicesUbAlign;
+        ubRows = ((tmpUbsize - castUbRatio * minCols * castTargetDtypeSize) / NUM_TWO - minCols * s.indicesDtypeSize) /
+                 (s.improveDtypeSize * s.gatherDimSize + minCols * s.improveDtypeSize);
+        ubRows = std::min(static_cast<int64_t>(ubRows), blockFactor);
+        ubCols = minCols;
+        CalcMaxUbcolAndIndiceFactor(ubCols, ubRows, tmpUbsize, minCols, inputNum, s.improveDtypeSize,
+                                    s.gatherDimSize, s.indicesDtypeSize, NUM_TWO, NUM_TWO, castUbRatio);
+        while (ubRows * ubCols * s.improveDtypeSize < MIN_OUT_UB_SIZE && ubRows >= NUM_TWO && ubCols < gFactor) {
+            ubRows -= 1;
+            CalcMaxUbcolAndIndiceFactor(ubCols, ubRows, tmpUbsize, minCols, inputNum, s.improveDtypeSize,
+                                        s.gatherDimSize, s.indicesDtypeSize, NUM_TWO, NUM_TWO, castUbRatio);
+        }
+    } else {
+        inputNum = 1;
+        int32_t tmpUbsize = p.ubSize - (inputNum + NUM_TWO + indicesNum) * p.ubBlockSize - indicesUbAlign;
+        ubRows = (tmpUbsize - NUM_TWO * minCols * s.indicesDtypeSize - castUbRatio * minCols * castTargetDtypeSize) /
+                 s.improveDtypeSize / (s.gatherDimSize + NUM_TWO * minCols);
+        ubRows = std::min(static_cast<int64_t>(ubRows), blockFactor);
+        ubCols = minCols;
+        CalcMaxUbcolAndIndiceFactor(ubCols, ubRows, tmpUbsize, minCols, inputNum, s.improveDtypeSize,
+                                    s.gatherDimSize, s.indicesDtypeSize, NUM_TWO, NUM_TWO, castUbRatio);
+        while (ubRows * ubCols * s.improveDtypeSize < MIN_OUT_UB_SIZE && ubRows >= NUM_TWO && ubCols < gFactor) {
+            ubRows -= 1;
+            CalcMaxUbcolAndIndiceFactor(ubCols, ubRows, tmpUbsize, minCols, inputNum, s.improveDtypeSize,
+                                        s.gatherDimSize, s.indicesDtypeSize, NUM_TWO, NUM_TWO, castUbRatio);
+        }
+    }
+    outUbSize = CeilAlign(ubRows * ubCols * s.improveDtypeSize, p.ubBlockSize);
+    inputUbSize = CeilAlign(ubRows * s.gatherDimSize * s.improveDtypeSize, static_cast<int64_t>(p.ubBlockSize));
+    indiceUbSize = CeilAlign(ubCols * s.indicesDtypeSize, p.ubBlockSize);
+    indiceCastUbSize = CeilAlign(castUbRatio * ubCols * castTargetDtypeSize, indicesUbAlign);
+    indiceCastUbSize = std::max(indiceCastUbSize, indicesUbAlign);
+    if (ubCols >= gFactor && ubRows * gFactor * s.improveDtypeSize >= SPLIT_OUT_THRES && gFactor > minCols) {
+        ubCols = CeilDiv(gFactor, static_cast<int64_t>(NUM_TWO));
+        ubCols = CeilAlign(ubCols, minCols);
+    }
+}
+
+inline void LastGatherTiling(GatherTilingContext& ctx)
+{
+    const auto& s = ctx.shape;
+    const auto& p = ctx.params;
+    int64_t blockFactor = CeilDiv(s.outerSize, p.coreNum);
+    ctx.needCoreNum = CeilDiv(s.outerSize, blockFactor);
+    int64_t tailBlockFactor = s.outerSize - (ctx.needCoreNum - 1) * blockFactor;
+    int64_t gFactor = s.gatherSize;
+    int32_t minCols = ((s.improveDtypeSize == sizeof(int64_t)) ? NUM_TWO * p.vRegSize : p.vRegSize) /
+                      s.improveDtypeSize;
+    int16_t coreInCols = 1;
+    if (ctx.needCoreNum <= p.coreNum / NUM_TWO && gFactor >= s.gatherDimSize && gFactor > minCols &&
+        ctx.needCoreNum != 0) {
+        coreInCols = std::min(CeilDiv(gFactor, minCols), p.coreNum / ctx.needCoreNum);
+        gFactor = CeilDiv(gFactor, static_cast<int64_t>(coreInCols));
+        ctx.needCoreNum = ctx.needCoreNum * coreInCols;
+    }
+
+    int32_t inputUbSize = 0;
+    int16_t splitIndices = 1;
+    int32_t indiceUbSize = 0;
+    int32_t outUbSize = 0;
+    int32_t indiceCastUbSize = 0;
+    int32_t indicesNum = NUM_TWO;
+    int32_t inputNum = NUM_TWO;
+    int32_t ubCols = 0;
+    int32_t ubRows = 0;
+    int16_t splitMode = 0;
+
+    LastGatherUbTiling(ctx, inputUbSize, indiceUbSize, outUbSize, indiceCastUbSize, inputNum, indicesNum, ubCols,
+                       ubRows, blockFactor, gFactor);
+
+    if (indiceUbSize >= gFactor * s.indicesDtypeSize) {
+        splitMode = 0;
+    } else {
+        splitMode = 1;
+    }
+
+    auto& td = ctx.result.lastGatherTilingData;
+    td.needCoreNum = static_cast<int32_t>(ctx.needCoreNum);
+    td.indicesNum = indicesNum;
+    td.splitIndices = splitIndices;
+    td.inputNum = static_cast<int16_t>(inputNum);
+    td.splitMode = splitMode;
+    td.coreInCols = coreInCols;
+    td.inputUbSize = inputUbSize;
+    td.outUbSize = outUbSize;
+    td.indiceCastUbSize = indiceCastUbSize;
+    td.indiceUbSize = indiceUbSize;
+    td.ubCols = ubCols;
+    td.ubRows = ubRows;
+    td.gatherDimSize = s.gatherDimSize;
+    td.gatherSize = s.gatherSize;
+    td.blockFactor = blockFactor;
+    td.tailBlockFactor = tailBlockFactor;
+    td.gFactor = static_cast<int32_t>(gFactor);
+}
+
+// GaAllLoadTiling: GA 全载 tiling
+//   2D 多核切分 [pOuter(outer), indicesOuter(gather)]
+//   UB 分配: xBufferSize(GA block 全载) + indicesBufferSize + yBufferSize(双 buffer)
+inline void GaAllLoadTiling(GatherTilingContext& ctx)
+{
+    const auto& s = ctx.shape;
+    const auto& p = ctx.params;
+    int64_t ubBlockSize = p.ubBlockSize;
+    int64_t indicesDtypeSize = s.indicesDtypeSize;
+    int64_t aSize = s.innerSize * s.improveDtypeSize;
+    int64_t gSize = s.gatherDimSize;
+    int64_t pSize = s.outerSize;
+    int64_t totalCoreNum = p.coreNum;
+    int64_t aSizeAligned = (aSize + ubBlockSize - 1) / ubBlockSize * ubBlockSize;
+    if (aSizeAligned == SIMD_VECTOR_REG || aSizeAligned == SIMD_VECTOR_REG / NUM_TWO) {
+        aSizeAligned += ubBlockSize;
+    }
+
+    int64_t gaSizeInUb = aSizeAligned * (gSize + 1);
+
+    auto& td = ctx.result.gaAllLoadTilingData;
+    td.gSize = gSize;
+    td.aSize = aSize;
+    td.aSizeAligned = aSizeAligned;
+    td.indicesSize = s.gatherSize;
+
+    int64_t ubSizeAdj = p.ubSize - HELP_BUFFER_SIZE;
+    int64_t minIndicesSize = std::min(s.gatherSize, static_cast<int64_t>(MIN_INDICES_UB_SIZE / indicesDtypeSize));
+    int64_t maxGaNumLoad = (ubSizeAdj - NUM_FOUR * MIN_OUT_UB_SIZE - minIndicesSize * indicesDtypeSize) / gaSizeInUb;
+
+    // 先分核再分 UB
+    int64_t pOuter = std::min(CeilDiv(pSize, maxGaNumLoad), totalCoreNum);
+    int64_t pInner = CeilDiv(pSize, pOuter);
+    pOuter = CeilDiv(pSize, pInner);
+    int64_t pTail = pSize - pInner * (pOuter - 1);
+
+    int64_t indicesOuter = std::max(int64_t(1), totalCoreNum / pOuter);
+    int64_t indicesInner = CeilDiv(s.gatherSize, indicesOuter);
+    indicesOuter = CeilDiv(s.gatherSize, indicesInner);
+    int64_t indicesTail = s.gatherSize - indicesInner * (indicesOuter - 1);
+
+    ctx.needCoreNum = pOuter * indicesOuter;
+    td.usedCoreNum = ctx.needCoreNum;
+    td.indicesOuter = indicesOuter;
+    td.normalCoreIndicesNum = indicesInner;
+    td.tailCoreIndicesNum = indicesTail;
+    td.pOuter = pOuter;
+    td.normalCoreGaNum = pInner;
+    td.tailCoreGaNum = pTail;
+
+    // 尝试是否能全载 x
+    int64_t allLoadXBytes = CeilAlign(pInner * gaSizeInUb, ubBlockSize);
+    bool isAllLoadX = (ubSizeAdj - NUM_FOUR * MIN_OUT_UB_SIZE - allLoadXBytes - MIN_INDICES_UB_SIZE) >= 0;
+    int64_t xBufferSize, indicesBufferSize, yBufferSize;
+    if (isAllLoadX) {
+        xBufferSize = allLoadXBytes;
+        indicesBufferSize = std::min(indicesInner * indicesDtypeSize,
+                                     (ubSizeAdj - NUM_FOUR * MIN_OUT_UB_SIZE - allLoadXBytes));
+        indicesBufferSize = CeilAlign(indicesBufferSize, ubBlockSize);
+        yBufferSize = (ubSizeAdj - indicesBufferSize - xBufferSize) / NUM_TWO;
+    } else {
+        xBufferSize = CeilAlign(maxGaNumLoad * gaSizeInUb, ubBlockSize);
+        indicesBufferSize = std::min(indicesInner * indicesDtypeSize,
+                                     (ubSizeAdj - NUM_FOUR * MIN_OUT_UB_SIZE - xBufferSize));
+        indicesBufferSize = CeilAlign(indicesBufferSize, ubBlockSize);
+        yBufferSize = (ubSizeAdj - indicesBufferSize - xBufferSize) / NUM_TWO;
+    }
+
+    td.xBufferSize = xBufferSize;
+    td.indicesBufferSize = indicesBufferSize;
+    td.yBufferSize = yBufferSize;
+}
+
+// SimtTwoDimTiling: 二维 SIMT 散点读 tiling
+//   线程数自适应 + perCoreElements 对齐到 threadNum
+inline void SimtTwoDimTiling(GatherTilingContext& ctx)
+{
+    const auto& s = ctx.shape;
+    const auto& p = ctx.params;
+    int32_t threadNum = MAX_THREAD_NUM;
+    while ((threadNum >= NUM_TWO * SMALL_CASE_THREAD_NUM) &&
+           (CeilDiv(ctx.ySize, static_cast<int64_t>(threadNum)) < (p.coreNum / NUM_TWO))) {
+        threadNum = threadNum / NUM_TWO;
+    }
+    auto& td = ctx.result.simtTwoDimTilingData;
+    td.threadNum = threadNum;
+    td.negativeIndexSupport = static_cast<int8_t>(s.negativeIndexSupport ? 1 : 0);
+    td.gatherDimSize = s.gatherDimSize;
+    td.innerSize = s.innerSize;
+
+    int64_t perCoreElements = CeilDiv(ctx.ySize, p.coreNum);
+    if (ctx.ySize < threadNum) {
+        ctx.needCoreNum = 1;
+        td.needCoreNum = 1;
+        td.perCoreElements = ctx.ySize;
+        td.lastCoreElements = ctx.ySize;
+        return;
+    }
+    perCoreElements = (perCoreElements + threadNum - 1) / threadNum * threadNum;
+    ctx.needCoreNum = CeilDiv(ctx.ySize, perCoreElements);
+    int64_t lastCoreElements = ctx.ySize - perCoreElements * (ctx.needCoreNum - 1);
+    td.needCoreNum = static_cast<int32_t>(ctx.needCoreNum);
+    td.perCoreElements = perCoreElements;
+    td.lastCoreElements = lastCoreElements;
+}
+
+// CalFullLoadTiling: 全载 UB + SIMT from UB tiling
+//   perCoreElements 按 outerSize × gatherSize 切分
+//   threadNum = min(perCoreElements × innerSize, 2048)
+inline void CalFullLoadTiling(GatherTilingContext& ctx)
+{
+    const auto& s = ctx.shape;
+    const auto& p = ctx.params;
+    int64_t pgDataSize = s.outerSize * s.gatherSize;
+    int64_t perCoreMinElements = std::max<int64_t>(PER_BLOCK_MIN_NUM / s.innerSize / s.improveDtypeSize,
+                                                    static_cast<int64_t>(1));
+    int64_t perCoreElements;
+    if ((s.outerSize * s.gatherSize) < p.coreNum * perCoreMinElements) {
+        perCoreElements = std::min(perCoreMinElements, pgDataSize);
+    } else {
+        perCoreElements = (pgDataSize + p.coreNum - 1) / p.coreNum;
+    }
+    ctx.needCoreNum = (pgDataSize + perCoreElements - 1) / perCoreElements;
+    int64_t tailBlockData = pgDataSize - (ctx.needCoreNum - 1) * perCoreElements;
+    ctx.threadNum = std::min(perCoreElements * s.innerSize, MAX_THREAD_NUM);
+
+    int64_t ubAviable = (p.ubSize - DCACHE) / p.ubBlockSize * p.ubBlockSize / s.improveDtypeSize;
+
+    auto& td = ctx.result.baseTilingData;
+    td.needCoreNum = static_cast<int32_t>(ctx.needCoreNum);
+    td.threadNum = static_cast<int32_t>(ctx.threadNum);
+    td.batchSize = s.batchSize;
+    td.outerSize = s.outerSize;
+    td.gatherDimSize = s.gatherDimSize;
+    td.gatherSize = s.gatherSize;
+    td.innerSize = s.innerSize;
+    td.perCoreElements = perCoreElements;
+    td.lastCoreElements = tailBlockData;
+    td.maxElement = ubAviable;
+    td.dtypeSize = static_cast<int8_t>(s.improveDtypeSize);
+    td.negativeIndexSupport = static_cast<int8_t>(s.negativeIndexSupport ? 1 : 0);
+}
+
+// ============================================================================
+// GatherSelectTiling: 主决策树函数
+//   输入: 平台参数 + Case 形状
+//   输出: 选中模式 + 填充的 TilingData
+// ============================================================================
+inline GatherTilingResult GatherSelectTiling(const GatherTilingParams& params, const GatherCaseShape& shape)
+{
+    GatherTilingContext ctx;
+    ctx.params = params;
+    ctx.shape = shape;
+    ctx.ySize = shape.batchSize * shape.outerSize * shape.gatherSize * shape.innerSize;
+    ctx.threadNum = MAX_THREAD_NUM;
+
+    // 空输入
+    if (shape.gatherDimSize == 0) {
+        ctx.result.tilingMode = TILING_EMPTY;
+        ctx.needCoreNum = 1;
+        return ctx.result;
+    }
+
+    // 决策树（顺序敏感，前面的优先级更高）
+    if (IsSimdTwoDim(ctx)) {
+        ctx.result.tilingMode = TILING_SIMD_TWO_DIM;
+        SimdTwoDimTiling(ctx);
+    } else if (IsLastGatherAndFullLoad(ctx)) {
+        ctx.result.tilingMode = TILING_LAST_GATHER;
+        LastGatherTiling(ctx);
+    } else if (IsGaAllLoad(ctx)) {
+        ctx.result.tilingMode = TILING_GA_ALL_LOAD;
+        GaAllLoadTiling(ctx);
+    } else if (IsSimtTwoDim(ctx)) {
+        ctx.result.tilingMode = TILING_SIMT_TWO_DIM;
+        SimtTwoDimTiling(ctx);
+    } else if (IsAfterGdimFullLoad(ctx)) {
+        ctx.result.tilingMode = TILING_AFTER_GDIM;
+        CalFullLoadTiling(ctx);
+    } else if (((ctx.shape.improveDtypeSize == INPUT_DTYPE_B8 &&
+                 ctx.shape.innerSize * ctx.shape.improveDtypeSize >= SIMD_B8_THRES) ||
+                (ctx.shape.improveDtypeSize == INPUT_DTYPE_B16 &&
+                 ctx.shape.innerSize * ctx.shape.improveDtypeSize >= SIMD_B16_THRES) ||
+                (ctx.shape.improveDtypeSize == INPUT_DTYPE_B32 &&
+                 ctx.shape.innerSize * ctx.shape.improveDtypeSize >= SIMD_B32_THRES) ||
+                ctx.shape.innerSize * ctx.shape.improveDtypeSize >= SIMD_THRES) &&
+               ctx.params.ubSize >= NUM_TWO * INDICES_SIZE &&
+               ctx.shape.batchSize * ctx.shape.outerSize * ctx.shape.gatherSize >= ctx.params.coreNum / NUM_TWO) {
+        ctx.result.tilingMode = TILING_SIMD;
+        CalcSimdTiling(ctx);
+    } else {
+        ctx.result.tilingMode = TILING_SIMT;
+        CalcCoreElement(ctx);
+    }
+
+    ctx.result.needCoreNum = ctx.needCoreNum;
+    return ctx.result;
+}
+
+}  // namespace gatherv2
+#endif  // GATHER_TILING_H

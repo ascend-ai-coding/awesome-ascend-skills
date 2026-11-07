@@ -1,0 +1,247 @@
+{
+  "schema_version": 5,
+  "architecture": "dav-3510",
+  "api_namespace": "AscendC::Reg",
+  "readiness_policy": {
+    "integration_skeleton": "local VF functions provide an integration skeleton; supply target context and validate compilation, precision and performance in the target project",
+    "annotated_excerpt": "key VF code is vendored locally with explanations; supply omitted class context and branches, then validate in the target project",
+    "reference_only": "local material supports algorithm and shape/layout selection; establish the target build contract before implementation"
+  },
+  "examples": [
+    {
+      "id": "reduce-small-axis-transpose",
+      "pattern": "short reduction axis; transpose so the companion axis becomes the vectorized direction",
+      "match_hints": [
+        "short reduction axis",
+        "small reduce dimension",
+        "transpose before reduce",
+        "R<=32",
+        "cross entropy with small class axis"
+      ],
+      "form": "integration_skeleton",
+      "readiness": "integration_skeleton",
+      "implementation_path": "references/reduce/templates/dav310/softmax_v2_ar_small_r.template",
+      "guide_path": "references/common/arch35/regbase/reduce_small_axis_transpose.md",
+      "sha256": "abdcd3d7ebedabbbc1ca973c7bb9572501cccfd451aa65e906724a74b8765cbd",
+      "entry_points": [
+        "CopyInAndTransPose",
+        "CalcMaxSubExp",
+        "CalcReduceSum",
+        "CalcOutput"
+      ],
+      "preconditions": [
+        "2D [A1,R] with A0=1",
+        "FP32 R<=16 or FP16/BF16 R<=32",
+        "transpose and inverse-transpose stay paired"
+      ],
+      "example_build_contract": {
+        "type": "device_only",
+        "probe_path": "tests/run_template_npu_checks.py",
+        "note": "Template header requires device-only compilation; guard its include with __NPU_DEVICE__ in a combined .asc translation unit"
+      }
+    },
+    {
+      "id": "reduce-row-full-load",
+      "pattern": "row reduction fits UB; stable max-exp-sum-normalize in registers",
+      "match_hints": [
+        "row fits UB",
+        "full-load reduction",
+        "max exp sum normalize",
+        "softmax row",
+        "logsumexp",
+        "cross entropy",
+        "softmax plus NLL"
+      ],
+      "form": "integration_skeleton",
+      "readiness": "integration_skeleton",
+      "implementation_path": "references/reduce/templates/dav310/softmax_v2_ar_full_load.template",
+      "guide_path": "references/common/arch35/regbase/reduce_row_full_load.md",
+      "sha256": "44729ec643bb1eeb790e2f0eea0d6fd45a3b76383e935ea658c8c918b8181455",
+      "entry_points": [
+        "FirstNormCompute",
+        "SecondNormCompute",
+        "LoadTensorForDtypeTIn",
+        "StoreTensorForDtypeTOut"
+      ],
+      "preconditions": [
+        "2D [A1,R] reducing the last axis",
+        "input rows and FP32 intermediates fit the documented UB budget",
+        "FP16/BF16 accumulate in FP32"
+      ],
+      "example_build_contract": {
+        "type": "device_only",
+        "probe_path": "tests/run_template_npu_checks.py",
+        "note": "Template header requires device-only compilation; guard its include with __NPU_DEVICE__ in a combined .asc translation unit"
+      }
+    },
+    {
+      "id": "reduce-online-max-sum",
+      "pattern": "reduction axis exceeds one UB tile; maintain running max and sum across chunks",
+      "match_hints": [
+        "reduction exceeds UB",
+        "online softmax",
+        "running max",
+        "running sum",
+        "chunked reduction",
+        "long-axis logsumexp",
+        "cross entropy with large class axis"
+      ],
+      "form": "integration_skeleton",
+      "readiness": "integration_skeleton",
+      "implementation_path": "references/reduce/templates/dav310/softmax_v2_ara_online.template",
+      "guide_path": "references/common/arch35/regbase/reduce_online_max_sum.md",
+      "sha256": "bd013ff52ee4deae1ae3dd8e9a5190e72a55748f55c212c9b0dfb3b0dfa4b213",
+      "entry_points": [
+        "CalcOnlineMaxSum",
+        "CalcOutput"
+      ],
+      "preconditions": [
+        "3D [A1,R,A0] reducing R with A0>1",
+        "running max and sum remain FP32",
+        "history sum is rescaled when running max changes"
+      ],
+      "example_build_contract": {
+        "type": "device_only",
+        "probe_path": "tests/run_template_npu_checks.py",
+        "note": "Template header requires device-only compilation; guard its include with __NPU_DEVICE__ in a combined .asc translation unit"
+      }
+    },
+    {
+      "id": "paired-segment-rotate",
+      "pattern": "two aligned segments exchange values and complete multiply-add in registers",
+      "match_hints": [
+        "rope",
+        "rotary",
+        "rotary position embedding",
+        "rotate-half",
+        "x*cos + rotate(x)*sin",
+        "two aligned halves"
+      ],
+      "form": "integration_skeleton",
+      "readiness": "integration_skeleton",
+      "implementation_path": "references/common/arch35/regbase/code/paired_segment_rotate_vf.h",
+      "guide_path": "references/common/arch35/regbase/paired_segment_rotate.md",
+      "sha256": "41e0d88ab4d03dba0659ab20b1a6d7bff1fcc532f5c3aa0f85ce8205fa4cf552",
+      "entry_points": [
+        "LoadOneTensorForDtypeT",
+        "LoadTwoTensorForDtypeT",
+        "StoreOneTensorForDtypeT",
+        "CopyInHalfMode",
+        "CopyOutHalfMode",
+        "HalfAlignVF"
+      ],
+      "preconditions": [
+        "A5/dav-3510 AIV path",
+        "GM-to-UB layout and VF offsets use the same alignment",
+        "FP16/BF16 store rounding remains CAST_RINT"
+      ],
+      "example_build_contract": {
+        "type": "device_only",
+        "probe_path": "references/common/arch35/regbase/probes/paired_segment_rotate_compile_probe.cpp"
+      }
+    },
+    {
+      "id": "two-pass-amax-cast",
+      "pattern": "amax or min-max scale followed by quantization over the same UB-resident row",
+      "match_hints": [
+        "dynamic quant",
+        "per-row dynamic quant",
+        "per-token dynamic quant",
+        "amax then cast",
+        "min max scale",
+        "two-pass quantization",
+        "smooth quant",
+        "symmetric quant",
+        "asymmetric quant"
+      ],
+      "form": "annotated_excerpt",
+      "readiness": "annotated_excerpt",
+      "implementation_path": "references/common/arch35/regbase/code/two_pass_amax_cast_vf.h",
+      "guide_path": "references/common/arch35/regbase/two_pass_amax_cast.md",
+      "sha256": "9d2a86c222c8c15d7fad0898ebce9047c6bb1c625c361e991f627496ff6d80d4",
+      "entry_points": [
+        "DataCopyInputVF",
+        "ComputeScaleVF",
+        "ComputeYVF",
+        "ComputeVF"
+      ],
+      "preconditions": [
+        "Arch35/dav-3510",
+        "scale formula and symmetric mode match the target interface",
+        "CastTrait and Pack path match the output dtype"
+      ],
+      "example_build_contract": {
+        "type": "unverified",
+        "note": "local annotated excerpt has no standalone compiler command"
+      }
+    },
+    {
+      "id": "shared-exponent-pack",
+      "pattern": "shared-exponent construction, reciprocal and low-bit packing remain one register pipeline",
+      "match_hints": [
+        "mx quant",
+        "mxfp4",
+        "mxfp8",
+        "microscaling",
+        "shared exponent",
+        "block scale",
+        "e8m0 scale",
+        "reciprocal scale",
+        "fp4 pack",
+        "fp8 pack"
+      ],
+      "form": "annotated_excerpt",
+      "readiness": "annotated_excerpt",
+      "implementation_path": "references/common/arch35/regbase/code/shared_exponent_pack_vf.h",
+      "guide_path": "references/common/arch35/regbase/shared_exponent_pack.md",
+      "sha256": "2e8bfc5d09c17ff85d74308474fb7a5ebff14d882e6b5f74e03b92c5c92d91bf",
+      "entry_points": [
+        "ComputeMaxExponents",
+        "ComputeScalesAndSharedExp",
+        "ComputeReciprocalScale",
+        "QuantizeValues"
+      ],
+      "preconditions": [
+        "Arch35/dav-3510",
+        "calcMode and dtype dispatch match the target",
+        "bit masks, special-value correction, Pack halves and StoreDist move together"
+      ],
+      "example_build_contract": {
+        "type": "unverified",
+        "note": "local annotated excerpt has no standalone compiler command"
+      }
+    },
+    {
+      "id": "register-resident-vector-chain",
+      "pattern": "any vector computation chain stays in registers end-to-end: load once, chain in RegTensor, store once",
+      "match_hints": [
+        "vector chain",
+        "elementwise chain",
+        "activation chain",
+        "per-API UB read and write",
+        "UB-resident chain",
+        "deep VEC bound",
+        "register-resident",
+        "VEC ratio over 80 percent"
+      ],
+      "form": "integration_skeleton",
+      "readiness": "integration_skeleton",
+      "implementation_path": "references/common/arch35/regbase/code/register_resident_vector_chain_vf.h",
+      "guide_path": "references/common/arch35/regbase/register_resident_vector_chain.md",
+      "sha256": "f8b9006a683f075c7e5f894400e244b7710438bb5e95ba2fbb0826fd1dabc429",
+      "entry_points": [
+        "VectorChainVF"
+      ],
+      "preconditions": [
+        "A5/dav-3510 AIV path",
+        "chain already UB-resident with VEC time dominant",
+        "B16-class in/out dtypes use the unpack/pack load/store forms",
+        "active RegTensor count within register budget"
+      ],
+      "example_build_contract": {
+        "type": "device_only",
+        "probe_path": "references/common/arch35/regbase/probes/register_resident_vector_chain_compile_probe.cpp"
+      }
+    }
+  ]
+}

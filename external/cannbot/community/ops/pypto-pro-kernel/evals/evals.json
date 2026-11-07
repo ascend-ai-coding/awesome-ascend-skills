@@ -1,0 +1,91 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "适用场景与边界",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "pypto-pro-kernel 这个 skill 面向什么场景？它用的是 PyPTO 还是 PyPTO-Pro 的 API？能不能用它来开发 PyPTO 框架本身？",
+      "expected_output": "回复应说明 pypto-pro-kernel 的适用边界：\n- 面向在 Ascend NPU 上用原生 pypto_pro.language 编写、验证、调试和优化 kernel\n- 使用 @pl.jit、VF、SIMT 和 Cube API\n- 附带可运行 examples、静态检查（scripts/check.py）和 native-task 计时能力\n- 用于 kernel 开发，而不是 PyPTO 框架本身的开发",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "向量计算必须使用 VF",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "写 pypto_pro kernel 时，向量计算可以直接用 tile Vector 的 pl.* 计算 API 吗？哪些情况例外？Cube 矩阵乘从哪个 API 开始？",
+      "expected_output": "回复应说明向量计算必须使用 VF：在 @pl.vector_function 内使用真实的 vf.* 操作，仅排序（pl.sort32、pl.mrgsort、pl.mrgsort2）可以使用 tile 计算，其余 tile Vector 计算被禁止（包括教学示例）；把 pl.* 换成前缀并不等于存在等价 VF API。分配、数据搬运/padding、同步、标量控制和 SIMT 仍可用。Cube 矩阵乘从 pl.gemm / pl.gemm_mx 开始。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "算子包交付物五件套",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "用 pypto-pro-kernel 交付一个算子包时，最终应该包含哪些文件？可以使用 kernel factory 模式吗？",
+      "expected_output": "回复应说明五文件交付格式：README、一个带内部 tiling-key 入口的实现模块、CPU golden、可执行测试、精度比较器（precision comparator）；不允许 kernel factories。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 4,
+      "title": "设备计时与性能覆盖的门禁",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我想先拿到 kernel 在设备上的耗时再扩大性能测试范围，只跑通数值正确性够吗？pypto-pro-kernel 对计时有什么硬性要求？",
+      "expected_output": "回复应说明：仅数值通过不够，必须先完成一个完整 benchmark 用例（含仅正确性阶段）再做全矩阵；保持供给评估器（supplied evaluator）原有计时策略；要求 raw report 中有正的 native-task duration 且性能贡献字段已填充，缺失时先按 capture preflight 修复采集/导出再扩大覆盖；计时结果与数值结果各自绑定其来源、配置与工具链。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 5,
+      "title": "静态检查与源码门禁",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "scripts/check.py 的 rules 检查退出码为 0，是不是代表 kernel 数值正确？要跑依赖 PyPTO 源码的检查怎么指定源码树？设备命令前的门禁怎么做？",
+      "expected_output": "回复应说明：check.py 退出码 0 不是数值通过的证明，advisory 需要人工复核；源码相关检查通过 PYPTO_SRC 环境变量或 --pypto-root 指定与目标安装版本匹配的 PyPTO 源码 checkout（--examples-root 可切换样例库）；设备命令使用 check.py run --source <trial-dir> -- <cmd> 的 source-gated runner 门禁。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 6,
+      "title": "问题定位入口",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "pypto_pro kernel 编译报错或结果错误时，这个 skill 建议的排查路径是什么？去哪里查某个报错的确切含义？",
+      "expected_output": "回复应说明按 references/workflows/debugging.md 的症状 → 首要检查 → owner 路由排查；报错含义查 references/api/constraints.md，框架缺陷用 references/index.md 的 troubleshooting 诊断入口；只读当前不确定点所属的文档，不把路由表当作必读顺序。",
+      "files": [],
+      "expectations": []
+    }
+  ],
+  "skill_name": "pypto-pro-kernel"
+}

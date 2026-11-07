@@ -1,0 +1,751 @@
+/**
+ * Host-side BasicBlock tiling for Conv2D (cann-bench / A5 / dav-3510).
+ * Port of tools/basic_block_tiling.py — compiled with g++ (plugin TU).
+ */
+
+/*!
+ * \file conv2d_tiling.cpp
+ * \brief Conv2D BasicBlock host tiling 实现。对应 templates/conv2d_cube.md。
+ *
+ * ── 集成说明 ──────────────────────────────────────────────────────────────────
+ *   去掉 .template 后缀落地为 conv2d_tiling.cpp，加入 PLUGIN 源（g++），勿用 bisheng 编。
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+
+#include "conv2d_tiling.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <limits>
+#include <set>
+#include <utility>
+#include <vector>
+
+namespace {
+
+constexpr uint32_t kL1Bytes = 512 * 1024;
+constexpr uint32_t kL0A = 32 * 1024;
+constexpr uint32_t kL0B = 32 * 1024;
+constexpr uint32_t kL0C = 256 * 1024;
+constexpr uint32_t kM0 = 16;
+constexpr uint32_t kN0 = 16;
+constexpr uint32_t kMaxML0 = 1024;
+constexpr float kSweetAiFp16 = 144.0f;
+
+// A/B knob for the splitN window. Off pins nBL1 to nL0, i.e. the pre-splitN
+// search, so the same build can measure what the wider window bought.
+bool SplitNEnabled()
+{
+    static const bool on = [] {
+        const char* e = std::getenv("CONV2D_SPLIT_N");
+        return e == nullptr || std::atoi(e) != 0;
+    }();
+    return on;
+}
+
+uint32_t CeilDiv(uint32_t a, uint32_t b) { return b ? (a + b - 1) / b : 0; }
+uint32_t AlignUp(uint32_t a, uint32_t b) { return CeilDiv(a, b) * b; }
+uint32_t AlignDown(uint32_t a, uint32_t b) { return b ? (a / b) * b : 0; }
+uint32_t DBytes(ConvDType dt) { return dt == ConvDType::FP32 ? 4U : 2U; }
+uint32_t K0(ConvDType dt) { return dt == ConvDType::FP32 ? 8U : 16U; }
+
+uint32_t Gcd(uint32_t a, uint32_t b)
+{
+    while (b) {
+        uint32_t t = a % b;
+        a = b;
+        b = t;
+    }
+    return a;
+}
+
+std::vector<uint32_t> Factors(uint32_t n)
+{
+    std::vector<uint32_t> f;
+    for (uint32_t i = 1; i * i <= n; ++i) {
+        if (n % i == 0) {
+            f.push_back(i);
+            if (i != n / i) f.push_back(n / i);
+        }
+    }
+    std::sort(f.begin(), f.end());
+    return f;
+}
+
+uint32_t HOut(const Conv2DTilingIn& s)
+{
+    return (s.hi + s.padTop + s.padBottom - s.dilationH * (s.kh - 1) - 1) / s.strideH + 1;
+}
+uint32_t WOut(const Conv2DTilingIn& s)
+{
+    return (s.wi + s.padLeft + s.padRight - s.dilationW * (s.kw - 1) - 1) / s.strideW + 1;
+}
+uint32_t TotalM(const Conv2DTilingIn& s) { return HOut(s) * WOut(s); }
+uint32_t CiAligned(const Conv2DTilingIn& s) { return AlignUp(s.ci, K0(s.dtype)); }
+uint32_t CoAligned(const Conv2DTilingIn& s) { return AlignUp(s.co, kN0); }
+
+void GetInitMN(const Conv2DTilingIn& s, uint32_t& bm, uint32_t& bn)
+{
+    const uint32_t howo = TotalM(s);
+    if (s.co <= 64) {
+        bm = 1024;
+        bn = 64;
+    } else if (s.co <= 128) {
+        bm = 512;
+        bn = 128;
+    } else if (howo <= 64) {
+        bm = 64;
+        bn = 1024;
+    } else if (howo <= 128) {
+        bm = 128;
+        bn = 512;
+    } else {
+        bm = 256;
+        bn = 256;
+    }
+}
+
+bool AdjustMnTile(const Conv2DTilingIn& s, uint32_t basicM, uint32_t basicN, uint32_t& mTile,
+                  uint32_t& nTile)
+{
+    const int64_t avail = static_cast<int64_t>(kL1Bytes) - static_cast<int64_t>(DBytes(s.dtype) * s.co);
+    if (avail <= 0) return false;
+    const int64_t maxHiWi = avail / DBytes(s.dtype) / K0(s.dtype) / 2;
+    if (maxHiWi <= 0) return false;
+    const int64_t maxHi = maxHiWi / s.wi;
+    if (maxHi <= 2) return false;
+    const int64_t hoMax =
+        (maxHi - static_cast<int64_t>(s.dilationH) * (s.kh - 1) - 1) / s.strideH + 1 - 2;
+    if (hoMax <= 0) return false;
+    const uint32_t maxHoWo = static_cast<uint32_t>(hoMax) * WOut(s);
+    const uint32_t cmpM = TotalM(s);
+    const uint32_t cmpN = static_cast<uint32_t>(avail / DBytes(s.dtype) / 2 / K0(s.dtype) / s.kh / s.kw);
+    if (AlignUp(cmpM, kM0) <= std::min(basicM, maxHoWo)) {
+        mTile = AlignUp(cmpM, kM0);
+    } else {
+        mTile = std::min({cmpM, maxHoWo, basicM});
+    }
+    nTile = std::min({s.co, cmpN, basicN});
+    mTile = AlignDown(mTile, kM0);
+    nTile = AlignDown(nTile, kN0);
+    return mTile >= kM0 && nTile >= kN0;
+}
+
+using Pair = std::pair<uint32_t, uint32_t>;
+
+void AddNear(uint32_t cores, uint64_t cut1, uint32_t cut2, float candidateCut, std::set<Pair>& cands)
+{
+    const auto facs = Factors(cores);
+    auto upper = std::lower_bound(facs.begin(), facs.end(), static_cast<uint32_t>(candidateCut));
+    auto lower = upper;
+    if (lower != facs.begin()) --lower;
+    for (auto it : {upper == facs.end() ? facs.end() : upper, lower == facs.end() ? facs.end() : lower}) {
+        if (it == facs.end()) continue;
+        uint32_t dim = std::min<uint64_t>(*it, cut1);
+        if (dim == 0) continue;
+        uint32_t other = cores / dim;
+        if (other > cut2) continue;
+        cands.emplace(dim, std::min(other, cut2));
+    }
+}
+
+std::set<Pair> GenerateCandidates(uint32_t cores, uint64_t cut1, uint32_t cut2, uint32_t cal1,
+                                  uint32_t cal2)
+{
+    std::set<Pair> cands;
+    AddNear(cores, cut1, cut2, static_cast<float>(std::max(cal1, 1U)), cands);
+    AddNear(cores, cut1, cut2, static_cast<float>(std::max(cal2, 1U)), cands);
+    const uint32_t g1 = cut1 ? Gcd(cores, static_cast<uint32_t>(cut1)) : 0;
+    const uint32_t g2 = cut2 ? Gcd(cores, cut2) : 0;
+    if (g1 && g2 && std::min(cut2, cores) && std::min<uint64_t>(cut1, cores)) {
+        cands.emplace(g1, std::min(cut2, cores / g1));
+        cands.emplace(static_cast<uint32_t>(std::min<uint64_t>(cut1, cores / g2)), g2);
+        if (g1 == 1) {
+            uint32_t d = static_cast<uint32_t>(std::min<uint64_t>(cut1, cores));
+            cands.emplace(d, cores / d);
+        }
+        if (g2 == 1) {
+            uint32_t d = std::min(cut2, cores);
+            cands.emplace(cores / d, d);
+        }
+        if (g1 == cores || g2 == cores) {
+            AddNear(cores, cut1, cut2, std::sqrt(static_cast<float>(cores)), cands);
+        }
+    }
+    cands.emplace(cores, 1);
+    std::set<Pair> out;
+    for (auto& p : cands) {
+        if (p.first >= 1 && p.second >= 1 && p.first * p.second <= cores) out.insert(p);
+    }
+    return out;
+}
+
+bool BoundCube(const Conv2DTilingIn& s, uint32_t mCut, uint32_t nCut)
+{
+    const double denom =
+        static_cast<double>(s.n) * s.wi * s.hi * nCut + static_cast<double>(s.kh) * s.kw * s.co * mCut;
+    if (denom <= 0) return false;
+    const double inAi = (2.0 * s.n * WOut(s) * HOut(s) * s.co * s.kh * s.kw) / denom / DBytes(s.dtype);
+    const double outAi = (2.0 * s.ci * s.kh * s.kw) / DBytes(s.dtype);
+    const double realAi = std::min(inAi, outAi);
+    const double sweet = s.dtype == ConvDType::FP32 ? kSweetAiFp16 / 4.0 : kSweetAiFp16;
+    return realAi > sweet;
+}
+
+uint32_t InferHiL1Rows(const Conv2DTilingIn& s, uint32_t mTile)
+{
+    const uint32_t wo = WOut(s);
+    const uint32_t hoL1 = CeilDiv(mTile, wo) + 2;
+    const uint32_t khDil = s.dilationH * (s.kh - 1) + 1;
+    return (hoL1 - 1) * s.strideH + khDil;
+}
+
+struct CoreSplit {
+    uint32_t batchDim, mDim, nDim, coreM, mTile, nTile;
+    bool cubeBound;
+};
+
+// M rows a core pays for. Above kMaxML0 the core walks several M tiles and the
+// last one is padded, so a coreM of 1152 costs the same as 2048: that rounding
+// is why the M-heavy splits that win on 36 cores lose on 28, where the same
+// case lands just past the tile boundary instead of just under it.
+uint32_t CoreMCost(uint32_t coreM)
+{
+    return coreM <= kMaxML0 ? AlignUp(coreM, kM0) : CeilDiv(coreM, kMaxML0) * kMaxML0;
+}
+
+// What one core carries under a split: the batches it walks, times the M rows
+// and N columns it holds. A partial pass costs a full one, which is what makes
+// an ill-fitting batchDim so expensive — 7 batch groups over 8 batches leaves
+// one group walking two batches while the other six idle through the second.
+uint64_t SplitWork(const Conv2DTilingIn& s, uint32_t bd, uint32_t md, uint32_t nd)
+{
+    return static_cast<uint64_t>(CeilDiv(s.n, bd)) * CoreMCost(CeilDiv(TotalM(s), md)) *
+           (CoAligned(s) / nd);
+}
+
+// The split heuristics above are tuned against a 36-core part; on 28 cores they
+// land on grids that leave cores idle or walk a second pass (case4 came out
+// 7x1x4). Re-pick the split by per-core work, restricted to batchDims that
+// divide the batch so no pass is partial, and keep the mDim cap that encodes
+// how much M a core should hold. Only fires when the pick is more than a tenth
+// off the best reachable one, so the splits measured on 36 cores stand.
+void RebalanceSplit(const Conv2DTilingIn& s, uint32_t cores, uint32_t maxMd, uint32_t maxNd,
+                    uint32_t& batchDim, uint32_t& mDim, uint32_t& nDim)
+{
+    // Every one of the 20 hand-tuned cases gives the batch its own dimension,
+    // and the measurements agree: splitting the batch is the only split that
+    // costs no re-reads, and the grids the work model liked with batchDim=1
+    // (case17 at 32 cores) measured half the speed of the batch-major ones.
+    const uint32_t bd = std::min(s.n, cores);
+    // Splits of near-equal per-core work still differ in what they drag in from
+    // memory: every N split re-reads the feature map, every M split re-reads
+    // the weights. Cases 3/18/20 have M two orders of magnitude over N, and the
+    // 8-way N split moved four times the bytes of the M-heavy split that costs
+    // the same compute. The work figures there sit within 2% of each other, so
+    // work is compared with a tolerance and traffic settles the rest.
+    auto traffic = [&](uint32_t md, uint32_t nd) {
+        return static_cast<uint64_t>(nd) * TotalM(s) + static_cast<uint64_t>(md) * CoAligned(s);
+    };
+    const uint64_t curWork = SplitWork(s, batchDim, mDim, nDim);
+    const uint64_t curTraffic = traffic(mDim, nDim);
+
+    uint64_t minWork = UINT64_MAX;
+    for (uint32_t nd = 1; nd <= maxNd && bd * nd <= cores; ++nd) {
+        if (CoAligned(s) % nd != 0 || (CoAligned(s) / nd) % kN0 != 0) continue;
+        minWork = std::min(minWork, SplitWork(s, bd, std::max(1U, std::min(maxMd, cores / (bd * nd))), nd));
+    }
+    if (minWork == UINT64_MAX) return;
+
+    uint64_t bestWork = 0, bestTraffic = UINT64_MAX;
+    uint32_t bestMd = 0, bestNd = 0, bestBal = UINT32_MAX;
+    for (uint32_t nd = 1; nd <= maxNd && bd * nd <= cores; ++nd) {
+        if (CoAligned(s) % nd != 0 || (CoAligned(s) / nd) % kN0 != 0) continue;
+        const uint32_t md = std::max(1U, std::min(maxMd, cores / (bd * nd)));
+        const uint64_t work = SplitWork(s, bd, md, nd);
+        if (work * 16 > minWork * 17) continue;
+        const uint64_t tr = traffic(md, nd);
+        const uint32_t bal = (md > nd) ? (md - nd) : (nd - md);
+        if (std::tie(tr, bal) < std::tie(bestTraffic, bestBal)) {
+            bestWork = work;
+            bestTraffic = tr;
+            bestMd = md;
+            bestNd = nd;
+            bestBal = bal;
+        }
+    }
+    if (bestNd == 0) return;
+    // Take a clear work win, a large traffic win at no extra compute, or an
+    // equal-work split that puts more of the grid on the batch: case20 gained
+    // 70% moving from a 4-way M split to the batch-major grid of the same cost.
+    if (bestWork * 10 < curWork * 9 ||
+        (bestWork * 16 <= curWork * 17 && bestTraffic * 4 <= curTraffic * 3) ||
+        (bestWork <= curWork && bd > batchDim)) {
+        batchDim = bd;
+        mDim = bestMd;
+        nDim = bestNd;
+    }
+}
+
+CoreSplit DecideCoreSplit(const Conv2DTilingIn& s)
+{
+    uint32_t basicM, basicN, mTile, nTile;
+    GetInitMN(s, basicM, basicN);
+    if (!AdjustMnTile(s, basicM, basicN, mTile, nTile)) {
+        mTile = std::min(AlignUp(TotalM(s), kM0), 256U);
+        nTile = std::min(CoAligned(s), 256U);
+    }
+    const uint32_t mCut = CeilDiv(TotalM(s), mTile);
+    const uint32_t nCut = CeilDiv(CoAligned(s), nTile);
+    const bool cube = BoundCube(s, mCut, nCut);
+    const uint32_t cores = s.aicoreNum;
+    const uint32_t maxNd = std::max(1U, CoAligned(s) / kN0);
+    const uint32_t totalBlocks = s.n * mCut * nCut;
+    // Large maps: keep ~256 M/core. Tiny spatial + modest Co: allow M0-grain M
+    // splits (case9/12/14). Large-Co 1x1 (case6) must keep maxMd=1 so leftover
+    // cores go to nDim (hand-tune 2x1x16).
+    const uint32_t maxMd = (TotalM(s) <= 256 && CoAligned(s) <= 256)
+                               ? std::max(1U, CeilDiv(TotalM(s), kM0))
+                               : std::max(1U, CeilDiv(TotalM(s), std::min(mTile, 256U)));
+
+    if (totalBlocks <= cores) {
+        // Bind batch first, then search (mDim, nDim) to maximize used cores.
+        // Cap mDim so each core keeps ~mTile (min 256) of M — unconstrained
+        // mDim made case11 FillL0L1 fail and fall back to 2x1x1.
+        // Preferring max nDim alone left case17 at 3x1x8=24 (hand-tune 3x3x4=36).
+        const uint32_t bd = std::min(s.n, cores);
+        const uint32_t rem = cores / bd;
+        uint32_t bestMd = 1, bestNd = 1, bestUsed = 0, bestBal = UINT32_MAX;
+        for (uint32_t d = 1; d <= std::min(rem, maxNd); ++d) {
+            if (CoAligned(s) % d != 0) continue;
+            // nL0 is a multiple of 16 that must divide coreN=CoAligned/d.
+            // case11: nDim=4 → coreN=20 has no legal nL0 → FillL0L1 fails.
+            if ((CoAligned(s) / d) % kN0 != 0) continue;
+            uint32_t m = std::min(maxMd, rem / d);
+            if (m < 1) continue;
+            while (bd * m * d > cores && m > 1) --m;
+            const uint32_t used = bd * m * d;
+            const uint32_t bal = (m > d) ? (m - d) : (d - m);
+            if (used > bestUsed || (used == bestUsed && bal < bestBal) ||
+                (used == bestUsed && bal == bestBal && m > bestMd)) {
+                bestUsed = used;
+                bestBal = bal;
+                bestMd = m;
+                bestNd = d;
+            }
+        }
+        uint32_t batchDim = bd;
+        RebalanceSplit(s, cores, maxMd, maxNd, batchDim, bestMd, bestNd);
+        return {batchDim, bestMd, bestNd, AlignUp(CeilDiv(TotalM(s), bestMd), kM0), mTile, nTile,
+                cube};
+    }
+
+    const uint32_t nCutCore = std::max(nCut, CeilDiv(CoAligned(s), kN0));
+    const uint32_t fCut = s.n * mCut;
+    const uint32_t mIn = InferHiL1Rows(s, mTile) * s.wi;
+    const uint32_t cal1 = static_cast<uint32_t>(
+        std::sqrt(static_cast<double>(cores) * nTile * s.kh * s.kw / std::max(1U, mIn)));
+    const uint32_t cal2 = static_cast<uint32_t>(std::sqrt(
+        static_cast<double>(cores) * fCut * std::max(1U, mIn) / std::max(1U, nCutCore) /
+        std::max(1U, nTile * s.kh * s.kw)));
+    auto cands = GenerateCandidates(cores, fCut, nCutCore, std::max(cal1, 1U), std::max(cal2, 1U));
+    const uint32_t maxF = std::max(1U, std::min(cores, CoAligned(s)) / std::max(nCut, 1U));
+    for (uint32_t i = maxF; i > 0; --i) {
+        cands.emplace(i, std::min(cores / i, CeilDiv(CoAligned(s), kN0)));
+    }
+    cands.emplace(cores, 1);
+
+    struct Scored {
+        uint32_t fDim, nDim, bbNum, fwDiff, balPen;
+        float util, l1Score;
+    };
+    std::vector<Scored> scored;
+    for (auto [fDim, nDim] : cands) {
+        if (fDim * nDim > cores || fDim < 1 || nDim < 1) continue;
+        if (mCut * s.n >= cores && nTile <= 128 && s.kh == 1 && s.kw == 1 && nDim > 1) continue;
+        uint32_t nd = std::min(nDim, maxNd);
+        if (CoAligned(s) % nd != 0 || (CoAligned(s) / nd) % kN0 != 0) {
+            bool ok = false;
+            for (uint32_t d = nd; d >= 1; --d) {
+                if (CoAligned(s) % d == 0 && (CoAligned(s) / d) % kN0 == 0 &&
+                    fDim * d <= cores) {
+                    nd = d;
+                    ok = true;
+                    break;
+                }
+            }
+            if (!ok) continue;
+        }
+        const bool mFull = (s.n * mCut) <= fDim;
+        const bool nFull = nCut <= nd;
+        const uint32_t bbNum = CeilDiv(s.n * mCut, fDim) * CeilDiv(nCutCore, nd);
+        const float util = (std::min(fDim, s.n * mCut) * std::min(nd, nCutCore)) /
+                           static_cast<float>(cores);
+        const uint32_t fwDiff = fDim > nd ? fDim - nd : nd - fDim;
+        const uint32_t balPen = (nd > 1 || nCutCore == 1) ? 0 : 10;
+        float l1 = 1.0f + (mFull ? 2.0f : 0.0f) + (nFull ? 2.0f : 0.0f) + util;
+        scored.push_back({fDim, nd, bbNum, fwDiff, balPen, util, l1});
+    }
+    if (scored.empty()) {
+        uint32_t bd = std::min(s.n, cores);
+        uint32_t nd = std::min(maxNd, std::max(1U, cores / bd));
+        while (nd > 1 && (CoAligned(s) % nd || (CoAligned(s) / nd) % kN0)) --nd;
+        uint32_t md = 1;
+        return {bd, md, nd, AlignUp(CeilDiv(TotalM(s), md), kM0), mTile, nTile, cube};
+    }
+    // bbNum is how many block iterations a core walks, so a candidate that
+    // packs in more cores at the cost of an extra iteration is strictly slower.
+    // The non-cube ordering below ranks by util first, which on a 28-core part
+    // picked 7x1x4 for case4 — n=8, so every core walks two batches for the
+    // same wall time as 8x1x3 on fewer cores.
+    const uint32_t minBb =
+        std::min_element(scored.begin(), scored.end(), [](const Scored& a, const Scored& b) {
+            return a.bbNum < b.bbNum;
+        })->bbNum;
+    scored.erase(std::remove_if(scored.begin(), scored.end(),
+                                [minBb](const Scored& c) { return c.bbNum > minBb; }),
+                 scored.end());
+    std::sort(scored.begin(), scored.end(), [&](const Scored& a, const Scored& b) {
+        if (cube) {
+            return std::tie(a.balPen, a.bbNum, b.util, a.fwDiff, b.l1Score) <
+                   std::tie(b.balPen, b.bbNum, a.util, b.fwDiff, a.l1Score);
+        }
+        return std::tie(a.balPen, b.util, b.l1Score, a.fwDiff, a.bbNum) <
+               std::tie(b.balPen, a.util, a.l1Score, b.fwDiff, b.bbNum);
+    });
+    const auto& best = scored.front();
+    // Batch × M on fDim plane
+    auto batchMCands = GenerateCandidates(best.fDim, best.fDim /*placeholder*/, s.n, 1, 1);
+    // regenerate properly
+    const uint32_t calBm1 = static_cast<uint32_t>(
+        std::sqrt(static_cast<double>(best.fDim) * s.n / std::max(mCut, 1U)));
+    const uint32_t calBm2 = static_cast<uint32_t>(
+        std::sqrt(static_cast<double>(best.fDim) * mCut / std::max(s.n, 1U)));
+    batchMCands = GenerateCandidates(best.fDim, mCut, s.n, std::max(calBm1, 1U), std::max(calBm2, 1U));
+    uint32_t mDim = 1, batchDim = 1;
+    float bestCost = 1e30f;
+    for (auto [md, bd] : batchMCands) {
+        if (md * bd > best.fDim || bd > s.n) continue;
+        float cost = static_cast<float>(CeilDiv(s.n, bd) * CeilDiv(mCut, md)) + 1.0f / bd;
+        if (cost < bestCost) {
+            bestCost = cost;
+            mDim = md;
+            batchDim = bd;
+        }
+    }
+    while (batchDim * mDim > best.fDim && mDim > 1) --mDim;
+    while (batchDim * mDim > best.fDim && batchDim > 1) --batchDim;
+    uint32_t nDim = best.nDim;
+    while (batchDim * mDim * nDim > cores) {
+        if (mDim > 1) --mDim;
+        else if (nDim > 1) {
+            --nDim;
+            while (nDim > 1 && (CoAligned(s) % nDim || (CoAligned(s) / nDim) % kN0)) --nDim;
+        } else if (batchDim > 1)
+            --batchDim;
+        else
+            break;
+    }
+    RebalanceSplit(s, cores, maxMd, maxNd, batchDim, mDim, nDim);
+    return {batchDim, mDim, nDim, AlignUp(CeilDiv(TotalM(s), mDim), kM0), mTile, nTile, cube};
+}
+
+uint32_t ValidInputRows(const Conv2DTilingIn& s, uint32_t mStart, uint32_t mCount)
+{
+    const uint32_t wo = WOut(s);
+    const uint32_t hoStart = mStart / wo;
+    const uint32_t hoEnd = (mStart + mCount - 1) / wo;
+    const int32_t hiStart = static_cast<int32_t>(hoStart * s.strideH) - static_cast<int32_t>(s.padTop);
+    const int32_t hiEnd =
+        static_cast<int32_t>(hoEnd * s.strideH + s.dilationH * (s.kh - 1)) - static_cast<int32_t>(s.padTop);
+    const int32_t vs = std::max(hiStart, 0);
+    const int32_t ve = std::min(hiEnd, static_cast<int32_t>(s.hi) - 1);
+    return ve >= vs ? static_cast<uint32_t>(ve - vs + 1) : 1U;
+}
+
+uint32_t MaxInputRows(const Conv2DTilingIn& s, uint32_t mDim, uint32_t coreM, uint32_t mAl1)
+{
+    uint32_t best = 1;
+    const uint32_t totalM = TotalM(s);
+    for (uint32_t core = 0; core < mDim; ++core) {
+        const uint32_t start = core * coreM;
+        if (start >= totalM) continue;
+        const uint32_t count = std::min(coreM, totalM - start);
+        for (uint32_t off = 0; off < count; off += mAl1) {
+            best = std::max(best, ValidInputRows(s, start + off, std::min(mAl1, count - off)));
+        }
+    }
+    return best;
+}
+
+uint32_t L1Bytes(const Conv2DTilingIn& s, uint32_t mDim, uint32_t coreM, uint32_t mAl1, uint32_t kAl1,
+                 uint32_t kBl1, uint32_t nBl1, uint8_t l1pp)
+{
+    const uint32_t cinA = kAl1 / (s.kh * s.kw);
+    const uint32_t al1One =
+        AlignUp(MaxInputRows(s, mDim, coreM, mAl1) * s.wi * cinA * DBytes(s.dtype), 32);
+    const uint32_t bl1One = AlignUp(kBl1 * nBl1 * DBytes(s.dtype), 32);
+    const uint32_t al1N = (l1pp & 1) ? 2 : 1;
+    const uint32_t bl1N = (l1pp & 2) ? 2 : 1;
+    return AlignUp(al1N * al1One + bl1N * bl1One + nBl1 * DBytes(s.dtype), 32);
+}
+
+uint32_t ChooseKAccum(const Conv2DTilingIn& s, uint32_t kL0, uint32_t cinStep)
+{
+    if (s.dtype != ConvDType::FP32) return 0;
+    const uint32_t khkw = s.kh * s.kw;
+    const uint32_t fullK = CiAligned(s) * khkw;
+    if (fullK <= 576) return 0;
+    uint32_t target = fullK >= 4096 ? 96 : 72;
+    uint32_t kAcc = AlignUp(target, kL0);
+    if ((cinStep * khkw) % kL0) return 0;
+    return kAcc < fullK ? kAcc : 0;
+}
+
+// HF32 ≈ TF32: Cube rounds FP32 mantissa. Empirically (HANDOFF / hf32_selective
+// + local RelativeErrorChecker):
+//   pass: cases 8 / 17 / 20
+//   fail: case 2 (mid-K PoT Ci, cancellation), case 5 (deep K), case 13 (K=567)
+// Shape-only gate — value_range is unknown at tiling time.
+uint8_t DecideHf32(const Conv2DTilingIn& s)
+{
+    if (s.dtype != ConvDType::FP32) {
+        return 0;
+    }
+    const uint64_t kDepth = static_cast<uint64_t>(s.ci) * s.kh * s.kw;
+    // Deep reduce-K: HF32 error compounds past FLOAT32 checker limits (case 5).
+    if (kDepth > 4096ULL) {
+        return 0;
+    }
+    // Mid-K power-of-two Ci: near-zero outs → cancellation FAIL (case 2).
+    if ((s.ci % 16U) == 0U && kDepth >= 1024ULL) {
+        return 0;
+    }
+    // Strict lower bound: case 13 (K=567) fails MERE under HF32; cases that
+    // historically pass all have K >= 1143. Tiny FP32 also gains nothing.
+    if (kDepth < 1024ULL) {
+        return 0;
+    }
+    return 1;
+}
+
+bool FillL0L1(const Conv2DTilingIn& s, const CoreSplit& core, Conv2DTilingOut& out)
+{
+    const uint32_t k0 = K0(s.dtype);
+    const uint32_t khkw = s.kh * s.kw;
+    const uint32_t coreN = CoAligned(s) / core.nDim;
+    std::vector<uint32_t> nCands;
+    for (uint32_t n = kN0; n <= coreN; n += kN0) {
+        if (coreN % n == 0) nCands.push_back(n);
+    }
+    if (nCands.empty()) return false;
+    uint32_t nPref = AlignDown(std::min(core.nTile, coreN), kN0);
+    if (nPref < kN0) nPref = kN0;
+    std::sort(nCands.begin(), nCands.end(), [&](uint32_t a, uint32_t b) {
+        return std::abs(static_cast<int>(a) - static_cast<int>(nPref)) <
+                   std::abs(static_cast<int>(b) - static_cast<int>(nPref)) ||
+               (std::abs(static_cast<int>(a) - static_cast<int>(nPref)) ==
+                    std::abs(static_cast<int>(b) - static_cast<int>(nPref)) &&
+                a > b);
+    });
+
+    std::vector<uint32_t> cinTiles;
+    for (uint32_t t = k0; t <= CiAligned(s); t += k0) {
+        if (t == CiAligned(s) || CiAligned(s) % t == 0) cinTiles.push_back(t);
+    }
+
+    bool found = false;
+    // Lexicographic cost (lower better). Hand-tuned large cases (3/4/6) pick
+    // large mL0/nL0 + L1 pingpong + split-K; the old key preferred fullA/fullB
+    // first and collapsed those shapes onto tiny single-buffered tiles.
+    //   0: -mL0          maximize Cube M
+    //   1: -nL0          maximize Cube N
+    //   2: pp rank       prefer double-buffer (3) when it fits
+    //   3: -kL0          thicker K step (fewer K iterations)
+    //   4: fullK rank    mild tiebreak — full K only after big tiles
+    //   5: -mAL1         prefer AL1 covering more of coreM (splitM)
+    //   6: -nBL1         prefer BL1 covering more of coreN (splitN)
+    //   7: |n-nPref|
+    //   8: -nbytes       prefer denser L1 packing
+    int64_t bestKey[9] = {};
+    Conv2DTilingOut best{};
+
+    // One candidate tiling: what the key ranks plus what it writes out.
+    struct Cand {
+        uint32_t mL0, nL0, kL0, mAl1, kAl1, kBl1, nBl1, cinStep, nbytes;
+        uint8_t pp;
+        bool fullA, fullB;
+    };
+    auto consider = [&](const Cand& c) {
+        // Full-K: single-buffer (pp=0) matches hand-tune (case1/7/10) and
+        // enables hoistWeight. Split-K: double-buffer hides MTE2 (case3/4/6).
+        const int64_t ppRank = (c.fullA && c.fullB)
+                                   ? ((c.pp == 0) ? 0 : ((c.pp == 3) ? 1 : 2))
+                                   : ((c.pp == 3) ? 0 : ((c.pp == 0) ? 2 : 1));
+        const int64_t fullRank = (c.fullA && c.fullB) ? 0 : ((c.fullA || c.fullB) ? 1 : 2);
+        const int64_t key[9] = {
+            -static_cast<int64_t>(c.mL0),
+            -static_cast<int64_t>(c.nL0),
+            ppRank,
+            -static_cast<int64_t>(c.kL0),
+            fullRank,
+            -static_cast<int64_t>(c.mAl1),
+            -static_cast<int64_t>(c.nBl1),
+            std::abs(static_cast<int64_t>(c.nL0) - static_cast<int64_t>(nPref)),
+            -static_cast<int64_t>(c.nbytes),
+        };
+        bool better = !found;
+        if (found) {
+            for (int k = 0; k < 9; ++k) {
+                if (key[k] < bestKey[k]) {
+                    better = true;
+                    break;
+                }
+                if (key[k] > bestKey[k]) break;
+            }
+        }
+        if (!better) return;
+        found = true;
+        for (int k = 0; k < 9; ++k) bestKey[k] = key[k];
+        best = {};
+        best.batchDim = core.batchDim;
+        best.mDim = core.mDim;
+        best.nDim = core.nDim;
+        best.coreM = core.coreM;
+        best.mAL1 = c.mAl1;
+        best.kAL1 = c.kAl1;
+        best.kBL1 = c.kBl1;
+        best.nBL1 = c.nBl1;
+        best.mL0 = c.mL0;
+        best.kL0 = c.kL0;
+        best.nL0 = c.nL0;
+        best.innerBatch = 1;
+        best.kAccum = ChooseKAccum(s, c.kL0, c.cinStep);
+        best.l1PingPong = c.pp;
+        best.l0PingPong = 3;
+        best.mTile = core.mTile;
+        best.nTile = core.nTile;
+        best.boundType = core.cubeBound ? 1 : 0;
+        best.kAl1FullLoad = c.fullA ? 1 : 0;
+        best.kBl1FullLoad = c.fullB ? 1 : 0;
+    };
+
+    for (uint32_t nL0 : nCands) {
+        for (uint32_t ca : cinTiles) {
+            for (uint32_t cb : cinTiles) {
+                const uint32_t kAl1 = ca * khkw;
+                const uint32_t kBl1 = cb * khkw;
+                for (uint32_t kL0 = k0; kL0 <= std::min(kAl1, kBl1); kL0 += k0) {
+                    if (kAl1 % kL0 || kBl1 % kL0) continue;
+                    const uint32_t mMax = std::min(
+                        {kL0A / (kL0 * DBytes(s.dtype)), kL0C / (nL0 * 4U), core.coreM});
+                    const uint32_t mCap = AlignDown(mMax, kM0);
+                    if (mCap < kM0) continue;
+                    uint32_t preferM = AlignDown(std::min({core.mTile, core.coreM, mCap}), kM0);
+                    if (preferM < kM0) preferM = mCap;
+                    // Always try the largest legal mL0 first; a few smaller
+                    // geometric steps keep search cheap while covering splitM.
+                    std::vector<uint32_t> mL0Cands;
+                    for (uint32_t m = mCap; m >= kM0; m = (m == kM0) ? 0 : std::max(kM0, m / 2)) {
+                        const uint32_t ma = AlignDown(m, kM0);
+                        if (ma >= kM0) mL0Cands.push_back(ma);
+                        if (m <= kM0) break;
+                    }
+                    mL0Cands.push_back(preferM);
+                    mL0Cands.push_back(AlignDown(std::min(core.coreM, mCap), kM0));
+                    std::sort(mL0Cands.begin(), mL0Cands.end());
+                    mL0Cands.erase(std::unique(mL0Cands.begin(), mL0Cands.end()), mL0Cands.end());
+                    std::reverse(mL0Cands.begin(), mL0Cands.end());
+
+                    for (uint32_t mL0 : mL0Cands) {
+                        if (mL0 < kM0) continue;
+                        // splitM only when AL1 can hold full K (ValidateCase).
+                        const uint32_t mAl1Cands[2] = {mL0, core.coreM};
+                        for (uint32_t mAl1 : mAl1Cands) {
+                            if (mAl1 < mL0) continue;
+                            const bool fullA = ca == CiAligned(s);
+                            const bool fullB = cb == CiAligned(s);
+                            if (mAl1 > mL0 && !fullA) continue;
+                            // Prefer double-buffer first; fall back if L1 overflows.
+                            const uint8_t ppOpts[4] = {3, 1, 2, 0};
+                            for (uint8_t pp : ppOpts) {
+                                if (mAl1 > mL0 && (pp & 1)) continue;
+                                const uint32_t cinStep = std::min(ca, cb);
+                                if (ca % cinStep || cb % cinStep) continue;
+                                if (ca != cinStep && CiAligned(s) % ca) continue;
+                                if (cb != cinStep && CiAligned(s) % cb) continue;
+                                if (mL0 * kL0 * DBytes(s.dtype) > kL0A) continue;
+                                if (nL0 * kL0 * DBytes(s.dtype) > kL0B) continue;
+                                if (mL0 * nL0 * 4U > kL0C) continue;
+                                // A BL1 window wider than nL0 (splitN) only pays
+                                // when the fmap window it reuses is resident:
+                                // AL1 must hold all of K in a single buffer, the
+                                // same contract splitM asks for.
+                                for (uint32_t nBl1 = nL0; nBl1 <= coreN; nBl1 += nL0) {
+                                    if (coreN % nBl1) continue;
+                                    if (nBl1 > nL0 && (!fullA || (pp & 1) || !SplitNEnabled()))
+                                        continue;
+                                    const uint32_t nbytes = L1Bytes(s, core.mDim, core.coreM,
+                                                                    mAl1, kAl1, kBl1, nBl1, pp);
+                                    if (nbytes > kL1Bytes) continue;
+                                    consider({mL0, nL0, kL0, mAl1, kAl1, kBl1, nBl1, cinStep,
+                                              nbytes, pp, fullA, fullB});
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (!found) return false;
+    out = best;
+    return true;
+}
+
+} // namespace
+
+bool Conv2DDoTiling(const Conv2DTilingIn& in, Conv2DTilingOut& out)
+{
+    if (in.n == 0 || in.ci == 0 || in.co == 0 || in.kh == 0 || in.kw == 0 || in.hi == 0 || in.wi == 0 ||
+        in.aicoreNum == 0) {
+        return false;
+    }
+    if (HOut(in) == 0 || WOut(in) == 0) return false;
+    CoreSplit core = DecideCoreSplit(in);
+    if (core.batchDim * core.mDim * core.nDim == 0 ||
+        core.batchDim * core.mDim * core.nDim > in.aicoreNum) {
+        return false;
+    }
+    if (!FillL0L1(in, core, out)) {
+        // Minimal legal fallback
+        const uint32_t k0 = K0(in.dtype);
+        const uint32_t khkw = in.kh * in.kw;
+        out = {};
+        out.batchDim = std::min(in.n, in.aicoreNum);
+        out.mDim = 1;
+        out.nDim = 1;
+        out.coreM = AlignUp(TotalM(in), kM0);
+        out.mAL1 = kM0;
+        out.mL0 = kM0;
+        out.kAL1 = CiAligned(in) * khkw;
+        out.kBL1 = out.kAL1;
+        out.nBL1 = kN0;
+        out.nL0 = kN0;
+        out.kL0 = k0;
+        out.l0PingPong = 3;
+        out.mTile = core.mTile;
+        out.nTile = core.nTile;
+    }
+    // Selective HF32: only under DecideHf32. HF32 + split-K GM atomics is
+    // accuracy-hostile, so force kAccum=0 whenever HF32 is on.
+    out.hf32 = DecideHf32(in);
+    if (out.hf32) {
+        out.kAccum = 0;
+    }
+    const Conv2DCase view = ToCaseView(in, out);
+    return ValidateCase(view);
+}

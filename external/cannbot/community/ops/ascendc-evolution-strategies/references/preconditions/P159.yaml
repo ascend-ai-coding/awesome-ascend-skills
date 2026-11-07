@@ -1,0 +1,33 @@
+strategy_id: P159
+description: logits 有可证明上界，fp16 fast path 适用性检查。
+
+strategy_meta:
+  id: "P159"
+  slug: "P159_frozen_shift_free_softmax"
+  title: "P159: 有界 logits 下 softmax 去 frozen-shift"
+  bottlenecks: [vec_underutilization, compute_bound]
+  op_families: [attention, softmax]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p159_frozen_shift_free_softmax.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p159_frozen_shift_free_softmax.md"
+  playbook_slug: "P159_frozen_shift_free_softmax"
+checks:
+  - id: has_softmax
+    type: grep_count
+    pattern: "Exp|Sub|reduce_max|softmax"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未发现 softmax shift 路径 → P159 不适用。"
+  - id: has_scale
+    type: grep_count
+    pattern: "scale|mask"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未发现 scale/mask 处理 → P159 不适用。"

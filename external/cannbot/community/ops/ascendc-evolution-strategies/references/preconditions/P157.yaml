@@ -1,0 +1,33 @@
+strategy_id: P157
+description: 输入最后一维 stride==1，wrapper 做全张量拷贝 适用性检查。
+
+strategy_meta:
+  id: "P157"
+  slug: "P157_native_stride_addressing"
+  title: "P157: attention 前向按原生 stride 寻址，删除布局转换的全张量拷贝"
+  bottlenecks: [mte2_stall, memory_bound]
+  op_families: [attention, datapath]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p157_native_stride_addressing.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p157_native_stride_addressing.md"
+  playbook_slug: "P157_native_stride_addressing"
+checks:
+  - id: has_stride
+    type: grep_count
+    pattern: "stride|contiguous|permute|transpose"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未发现 stride/布局转换路径 → P157 不适用。"
+  - id: has_copy
+    type: grep_count
+    pattern: "DataCopy|GM"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未发现 GM 拷贝路径 → P157 不适用。"

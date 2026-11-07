@@ -1,0 +1,18 @@
+strategy_id: P108
+description: "P108: Matmul 平台路由（Platform Routing）"
+
+strategy_meta:
+  id: "P108"
+  slug: "P108_matmul_platform_routing"
+  title: "P108: Matmul 平台路由（Platform Routing）"
+  bottlenecks: [portability]
+  op_families: [matmul]
+  conflicts_with: []
+  synergizes_with: [P46]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: false
+  has_playbook: false
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p108_matmul_platform_routing.md"

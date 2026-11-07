@@ -1,0 +1,42 @@
+strategy_id: P133
+description: 块内预计算 CV 流水适用性检查 — Stage1 块内预计算存在多级 matmul + 向量预处理交错，且当前用 SyncAll 全局屏障同步（AIC/AIV 互相停等）。
+
+strategy_meta:
+  id: "P133"
+  slug: "P133_ssm_stage1_cv_pipeline"
+  title: "P133: 块内预计算 AIC/AIV CV 流水（cube 算 KKT/求逆、vector 算 cumsum/exp/前代，6-flag 定向握手）"
+  bottlenecks: [no_overlap, partial_overlap, compute_bound]
+  op_families: [ssm, linear_attention, recurrent, cv_fusion, matmul]
+  conflicts_with: []
+  synergizes_with: [P132, P134, P135, P136]
+  requires: [P132]
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p133_ssm_stage1_cv_pipeline.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p133_ssm_stage1_cv_pipeline.md"
+  playbook_slug: "P133_ssm_stage1_cv_pipeline"
+
+checks:
+  - id: has_stage1_precompute
+    type: grep_count
+    pattern: "kkt|qkt|cumsum|k_cumdecay|v_inner|g_cum|Inverse|inverse|cumprod"
+    files: [kernel, header, model]
+    expected: ">= 1"
+    fail_msg: "未检测到块内预计算证据（kkt/qkt/cumsum/求逆等）→ 可能无 stage1 或已是其他结构，需人工确认。"
+
+  - id: has_syncall_or_no_flag
+    type: grep_count
+    pattern: "SyncAll|sync_all"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未检测到 SyncAll → 可能已用定向 flag 或单核实现；确认是否仍需 P133（无 SyncAll 但无 flag 时也适用）。"
+
+  - id: has_cube_and_vector_mix
+    type: grep_count
+    pattern: "__DAV_C220_CUBE__|__DAV_C220_VEC__|Mmad|mmad|AICProcess|GetSubBlockNum"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未检测到 AIC/AIV 分工证据 → 可能纯 cube 或纯 vector；需确认混核程度后再应用 P133。"

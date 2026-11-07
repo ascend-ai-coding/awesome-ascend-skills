@@ -1,0 +1,272 @@
+/*!
+ * \file merge_sort_with_index.h
+ * \brief merge_sort_with_index entry
+ */
+#ifndef MERGE_SORT_WITH_INDEX_H
+#define MERGE_SORT_WITH_INDEX_H
+
+#include <cmath>
+#include "kernel_operator.h"
+#include "merge_sort.h"
+#include "merge_sort_with_index_simd.h"
+#include "op_kernel/platform_util.h"
+#include "../sort/common/util_type_simd.h" // 引入使用 ROUND_UP_AGLIN
+#include <algorithm>
+#include "sort_with_index_common.h"
+
+namespace SortWithIndex {
+
+using namespace AscendC;
+
+template <typename T, typename CONVERT_TYPE, typename TILING_DATA_TYPE, bool IS_LARGEST, typename INDEX_TYPE>
+struct MergeSortWithIndex : public MergeSort<T, CONVERT_TYPE, TILING_DATA_TYPE, IS_LARGEST, INDEX_TYPE> {
+    __aicore__ inline MergeSortWithIndex()
+    {
+    }
+    __aicore__ inline void Init(GM_ADDR inputValue, GM_ADDR presetIndex, GM_ADDR value, GM_ADDR indices,
+                                GM_ADDR workSpace, const TILING_DATA_TYPE* tilingData, TPipe* pipe);
+    __aicore__ inline void ProcessSort();
+    __aicore__ inline void ProcessSingleBlockSort(GlobalTensor<T> inputX, GlobalTensor<INDEX_TYPE> presetIndices);
+    __aicore__ inline void CopyDataIn(GlobalTensor<T> inputX, GlobalTensor<INDEX_TYPE> presetIndices,
+                                      LocalTensor<INDEX_TYPE> presetIndexLocal, uint64_t tileOffset,
+                                      uint32_t currTileSize, uint32_t oneCoreRowNum);
+    __aicore__ inline void CopyDataIn4Int64Case(GlobalTensor<T> inputX, GlobalTensor<INDEX_TYPE> presetIndices, 
+                                                     uint64_t tileOffset, uint32_t currTileSize, uint32_t oneCoreRowNum);
+     __aicore__ inline void CopyDataOut4Int64Case(GlobalTensor<T> outValueGm, GlobalTensor<INDEX_TYPE> outIndexGm, uint64_t tileOffset, 
+                                                        uint32_t currTileSize);                                                    
+    __aicore__ inline void RadixSortProcess4Index64Case(GlobalTensor<T> outValueGm, GlobalTensor<INDEX_TYPE> outIndexGm, 
+                                                        uint64_t tileOffset, uint32_t currTileSize, uint32_t oneCoreRowNum);
+
+public:
+    const int32_t INT_32_MIN_VALUE = -2147483648;
+    const int64_t  INT_64_MIN_VALUE = 0x8000000000000000LL;
+
+    static constexpr SortConfig sortConfigDesend{ SortType::RADIX_SORT, true };
+    static constexpr SortConfig sortConfigAscend{ SortType::RADIX_SORT, false };
+
+    GlobalTensor<INDEX_TYPE> presetIndexGm_;
+    // merge sort kernel
+    KernelVbsMergeSortWithIndex<T, CONVERT_TYPE, IS_LARGEST> vbsSortMe;
+};
+
+template <typename T, typename CONVERT_TYPE, typename TILING_DATA_TYPE, bool IS_LARGEST, typename INDEX_TYPE>
+__aicore__ inline void MergeSortWithIndex<T, CONVERT_TYPE, TILING_DATA_TYPE, IS_LARGEST, INDEX_TYPE>::Init(
+    GM_ADDR inputValue, GM_ADDR presetIndex, GM_ADDR value, GM_ADDR indices, GM_ADDR workSpace,
+    const TILING_DATA_TYPE* tilingData, TPipe* pipe)
+{
+    this->InitTilingData(tilingData);
+    this->InitBuffers(inputValue, value, indices, workSpace, pipe);
+    this->presetIndexGm_.SetGlobalBuffer((__gm__ INDEX_TYPE*)(presetIndex));
+    // vbs init
+    vbsSortMe.SetPipe(pipe);
+    vbsSortMe.MergeSortInitBuffer(this->numTileData_, this->oneCoreRowNum_, this->mergSortAcApiNeedBufferSize_);
+}
+
+// 处理入口
+template <typename T, typename CONVERT_TYPE, typename TILING_DATA_TYPE, bool IS_LARGEST, typename INDEX_TYPE>
+__aicore__ inline void MergeSortWithIndex<T, CONVERT_TYPE, TILING_DATA_TYPE, IS_LARGEST, INDEX_TYPE>::ProcessSort()
+{
+    for (int32_t i = 0; i < this->sortLoopTimes_; i++) { 
+        this->sortLoopRound_ = i;
+        uint64_t loopOffset = i * this->unsortedDimParallel_ * this->oneCoreRowNum_ * this->numTileData_;
+        ProcessSingleBlockSort(this->inputValueGm_[loopOffset], this->presetIndexGm_[loopOffset]);
+    }
+}
+
+template <typename T, typename CONVERT_TYPE, typename TILING_DATA_TYPE, bool IS_LARGEST, typename INDEX_TYPE>
+__aicore__ inline void MergeSortWithIndex<T, CONVERT_TYPE, TILING_DATA_TYPE, IS_LARGEST, INDEX_TYPE>::ProcessSingleBlockSort(
+    GlobalTensor<T> inputX, GlobalTensor<INDEX_TYPE> presetIndices)
+{
+    uint32_t tileId = GetBlockIdx();
+    uint32_t unsortedDimIndex = (GetBlockIdx() + this->sortLoopRound_ * this->unsortedDimParallel_) * this->oneCoreRowNum_;
+    if (unsortedDimIndex >= this->unsortedDimNum_) {
+        return;
+    }
+    uint32_t nowCoreRealRowNum = SortGetMin<uint32_t>((this->unsortedDimNum_ - unsortedDimIndex), this->oneCoreRowNum_);
+    AscendC::LocalTensor<uint32_t> tmpSortedValueIndexLocal;
+    // offset
+    uint64_t tileOffset = tileId * this->numTileData_ * this->oneCoreRowNum_;
+    if  (is_same<int32_t, INDEX_TYPE>::value) {
+        // int32 index get buffer
+        AscendC::LocalTensor<T> sortedValueLocal = this->outValueQueue_.template AllocTensor<T>();
+        AscendC::LocalTensor<INDEX_TYPE> sortedValueIndexLocal = this->outIndexQueue_.template AllocTensor<INDEX_TYPE>();
+        this->CopyDataIn(inputX, presetIndices, sortedValueIndexLocal, tileOffset, this->numTileData_, nowCoreRealRowNum);
+        AscendC::LocalTensor<T> xLocal = this->inQueueX_.template DeQue<T>();
+        tmpSortedValueIndexLocal = sortedValueIndexLocal.template ReinterpretCast<uint32_t>();
+        if constexpr (is_same<bfloat16_t, T>::value) {
+            this->vbsSortMe.VbsMergeSortBf16(xLocal, sortedValueLocal, tmpSortedValueIndexLocal, this->numTileData_,
+                                            nowCoreRealRowNum);
+        } else {
+            this->vbsSortMe.VbsMergeSort(xLocal, sortedValueLocal, tmpSortedValueIndexLocal, this->numTileData_,
+                                    nowCoreRealRowNum);
+        }
+        this->outValueQueue_.template EnQue<T>(sortedValueLocal);
+        this->outIndexQueue_.template EnQue<INDEX_TYPE>(sortedValueIndexLocal);
+        this->inQueueX_.FreeTensor(xLocal);
+        // copy result out
+        uint64_t gmOffset =
+            this->sortLoopRound_ * this->unsortedDimParallel_ * this->outputLastDimValue_ * this->oneCoreRowNum_;
+        uint64_t answerTileOffset = tileId * this->outputLastDimValue_ * this->oneCoreRowNum_;
+        this->CopyValue2Gm(gmOffset, answerTileOffset, this->outputLastDimValue_, nowCoreRealRowNum);
+    } else {
+        // int64 index
+        this->CopyDataIn4Int64Case(inputX, presetIndices, tileOffset, this->numTileData_, nowCoreRealRowNum);
+        this->RadixSortProcess4Index64Case(this->outValueGm_, this->outIndexGm_, tileOffset, this->numTileData_, nowCoreRealRowNum);
+    }
+}
+
+// 并发写入GM
+template <typename T, typename INDEX_TYPE>
+__simt_vf__ LAUNCH_BOUND(THREAD_DIM_NUM)__aicore__ void CopyResultToGm(
+    uint64_t tileOffset, 
+    uint32_t currTileSize,
+    uint32_t oneCoreRowNum, 
+    uint32_t aglinNum, 
+    uint32_t loopOffset, 
+    __ubuf__ T *inputValueLocalAddr,            // 输入的value
+    __ubuf__ INDEX_TYPE *inputIndexLocalAddr,   // 输入的index
+    __ubuf__ uint32_t *sortedIndexLocalAddr,    // 排序之后的索引
+    __gm__ volatile T *valueGmAddr,             // 输出workspcae的value
+    __gm__ volatile INDEX_TYPE *indexGmAddr)    // 输出workspace的index
+{
+    uint32_t oneCoreTotalNum = aglinNum * oneCoreRowNum; 
+    for (int i = Simt::GetThreadIdx(); i < oneCoreTotalNum; i += THREAD_DIM_NUM) {
+        uint32_t inLinePos = i % aglinNum;
+        uint32_t rowNumber = i / aglinNum;
+        uint32_t rowOffset = rowNumber * currTileSize;
+        if (currTileSize > inLinePos) {
+            uint32_t localSortedPosition = static_cast<uint32_t>(sortedIndexLocalAddr[i]) + rowNumber * aglinNum;
+            uint32_t dataFinalGlobalPos = loopOffset + tileOffset + rowOffset +  inLinePos;
+            // store to gm
+            valueGmAddr[dataFinalGlobalPos] = inputValueLocalAddr[localSortedPosition];
+            indexGmAddr[dataFinalGlobalPos] = inputIndexLocalAddr[localSortedPosition];
+        }
+    }
+}
+
+template <typename T, typename CONVERT_TYPE, typename TILING_DATA_TYPE, bool IS_LARGEST, typename INDEX_TYPE>
+__aicore__ inline void MergeSortWithIndex<T, CONVERT_TYPE, TILING_DATA_TYPE, IS_LARGEST, INDEX_TYPE>::RadixSortProcess4Index64Case(
+    GlobalTensor<T> outValueGm, GlobalTensor<INDEX_TYPE> outIndexGm, uint64_t tileOffset, 
+    uint32_t currTileSize, uint32_t oneCoreRowNum)
+{
+    // 拷贝数据进来, 逐行处理
+    AscendC::LocalTensor<T> inputValueLocal = this->inQueueXValue_.template DeQue<T>();
+    AscendC::LocalTensor<INDEX_TYPE> inputIndexLocal = this->inQueueXInt64Index_.template DeQue<INDEX_TYPE>();
+    AscendC::LocalTensor<uint32_t> sortedIndexLocal = this->outIdxQueue_.template AllocTensor<uint32_t>();
+    uint32_t aglinNum = ROUND_UP_AGLIN(this->numTileData_);
+
+    for (uint32_t i = 0; i < oneCoreRowNum; i++) {
+        AscendC::LocalTensor<T> sortedValueLocal = this->outPutValueQueue_.template AllocTensor<T>();    
+        AscendC::LocalTensor<uint32_t> tmpSortedIndexLocal = sortedIndexLocal[i * aglinNum];
+        AscendC::LocalTensor<T> tmpInPutDataLocal = inputValueLocal[i * aglinNum];
+        LocalTensor<uint8_t> shareTmpBuffer = this->tmpSortApiUbSpace_.template Get<uint8_t>();
+        if (IS_LARGEST) {
+            AscendC::Sort<T, false, sortConfigDesend>(sortedValueLocal, tmpSortedIndexLocal, inputValueLocal[i * aglinNum],
+                shareTmpBuffer, static_cast<uint32_t>(currTileSize));
+        } else {
+            AscendC::Sort<T, false, sortConfigAscend>(sortedValueLocal, tmpSortedIndexLocal, inputValueLocal[i * aglinNum],
+                shareTmpBuffer, static_cast<uint32_t>(currTileSize));
+        }    
+        this->outPutValueQueue_.FreeTensor(sortedValueLocal);
+    }  
+
+    // copy data to gm
+    this->outIdxQueue_.template EnQue<uint32_t>(sortedIndexLocal);
+    uint64_t loopOffset = this->sortLoopRound_* this->unsortedDimParallel_ * this->oneCoreRowNum_ * this->numTileData_;
+
+    Simt::VF_CALL<CopyResultToGm<T, INDEX_TYPE>>(Simt::Dim3(THREAD_DIM_NUM), tileOffset, currTileSize,
+        oneCoreRowNum, aglinNum, loopOffset, (__ubuf__ T *)(inputValueLocal.GetPhyAddr()),
+        (__ubuf__ INDEX_TYPE *)(inputIndexLocal.GetPhyAddr()), (__ubuf__ uint32_t *)(sortedIndexLocal.GetPhyAddr()), 
+        (__gm__ T *)(outValueGm.GetPhyAddr()), (__gm__ INDEX_TYPE *)(outIndexGm.GetPhyAddr()));    
+}
+
+
+template <typename T, typename CONVERT_TYPE, typename TILING_DATA_TYPE, bool IS_LARGEST, typename INDEX_TYPE>
+__aicore__ inline void MergeSortWithIndex<T, CONVERT_TYPE, TILING_DATA_TYPE, IS_LARGEST, INDEX_TYPE>::CopyDataIn(
+    GlobalTensor<T> inputX, GlobalTensor<INDEX_TYPE> presetIndices, LocalTensor<INDEX_TYPE> presetIndexLocal,
+    uint64_t tileOffset, uint32_t currTileSize, uint32_t oneCoreRowNum)
+{
+    LocalTensor<T> xLocal = this->inQueueX_.template AllocTensor<T>();
+    uint32_t aglinOneRowTileSize = ROUND_UP_AGLIN(currTileSize);
+    uint32_t localTensorLen = aglinOneRowTileSize * oneCoreRowNum;
+    T defaultValue = IS_LARGEST ? static_cast<T>(-INFINITY) : static_cast<T>(NAN);
+    Duplicate(xLocal, defaultValue, localTensorLen);
+    event_t eventId = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::V_MTE2));
+    SetFlag<HardEvent::V_MTE2>(eventId);
+    WaitFlag<HardEvent::V_MTE2>(eventId);
+    uint32_t currTileSizeAlign = ROUND_UP_AGLIN(currTileSize * sizeof(T)) / sizeof(T);
+    uint32_t dstStride = ((aglinOneRowTileSize - currTileSizeAlign) * sizeof(T)) / UB_AGLIN_VALUE;
+    DataCopyPadExtParams<T> padParams;
+    padParams.isPad = true;
+    padParams.rightPadding = currTileSizeAlign - currTileSize;
+    padParams.paddingValue = static_cast<T>(defaultValue);
+    DataCopyExtParams dataCopyParam;
+    dataCopyParam.blockCount = oneCoreRowNum;
+    dataCopyParam.blockLen = currTileSize * sizeof(T);
+    dataCopyParam.srcStride = 0;
+    dataCopyParam.dstStride = dstStride;
+    DataCopyPad(xLocal, inputX[tileOffset], dataCopyParam, padParams);
+
+    uint32_t currTileSizeAlign4Indice = ROUND_UP_AGLIN(currTileSize * sizeof(INDEX_TYPE)) / sizeof(INDEX_TYPE);
+    uint32_t dstStride4Indice = ((aglinOneRowTileSize - currTileSizeAlign4Indice) * sizeof(INDEX_TYPE)) / UB_AGLIN_VALUE;
+    DataCopyPadExtParams<INDEX_TYPE> padParams4Indice;
+    padParams4Indice.isPad = true;
+    padParams4Indice.rightPadding = currTileSizeAlign4Indice - currTileSize;
+    padParams4Indice.paddingValue = static_cast<uint32_t>(0xffffffff);
+    DataCopyExtParams dataCopyParam4Indice;
+    dataCopyParam4Indice.blockCount = oneCoreRowNum;
+    dataCopyParam4Indice.blockLen = currTileSize * sizeof(INDEX_TYPE);
+    dataCopyParam4Indice.srcStride = 0;
+    dataCopyParam4Indice.dstStride = dstStride4Indice;
+    DataCopyPad(presetIndexLocal, presetIndices[tileOffset], dataCopyParam4Indice, padParams4Indice);
+
+    this->inQueueX_.EnQue(xLocal);
+}
+
+template <typename T, typename CONVERT_TYPE, typename TILING_DATA_TYPE, bool IS_LARGEST, typename INDEX_TYPE>
+__aicore__ inline void MergeSortWithIndex<T, CONVERT_TYPE, TILING_DATA_TYPE, IS_LARGEST, INDEX_TYPE>::CopyDataIn4Int64Case(
+    GlobalTensor<T> inputX, GlobalTensor<INDEX_TYPE> presetIndices, uint64_t tileOffset, uint32_t currTileSize, uint32_t oneCoreRowNum)
+{
+    LocalTensor<T> xLocal = this->inQueueXValue_.template AllocTensor<T>();
+    uint32_t currTileSizeAglin = ROUND_UP_AGLIN(currTileSize);
+    uint32_t localTensorLen = currTileSizeAglin * oneCoreRowNum;
+    T defaultDataValue = IS_LARGEST ? static_cast<T>(-INFINITY) : static_cast<T>(NAN);
+    Duplicate(xLocal, defaultDataValue, localTensorLen);
+    event_t eventDataId = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::V_MTE2));
+    SetFlag<HardEvent::V_MTE2>(eventDataId);
+    WaitFlag<HardEvent::V_MTE2>(eventDataId);
+    for (uint32_t i = 0; i < oneCoreRowNum; i++) {
+        DataCopyPadExtParams<T> valuePadParams{ false, 0, 0, 0 };
+        DataCopyExtParams dataCopyParam;
+        dataCopyParam.blockCount = 1;
+        dataCopyParam.blockLen = currTileSize * sizeof(T);
+        dataCopyParam.srcStride = 0;
+        dataCopyParam.dstStride = 0;
+        DataCopyPad(xLocal[i * currTileSizeAglin], inputX[tileOffset + i * currTileSize], dataCopyParam, valuePadParams);
+    }
+    this->inQueueXValue_.EnQue(xLocal); 
+
+    LocalTensor<INDEX_TYPE> indexLocal = this->inQueueXInt64Index_.template AllocTensor<INDEX_TYPE>();
+    INDEX_TYPE defaultIndexValue = 0;
+    if (is_same<int32_t, INDEX_TYPE>::value) {
+        defaultIndexValue = INT_32_MIN_VALUE;
+    } else {
+        defaultIndexValue = INT_64_MIN_VALUE;
+    }
+    Duplicate(indexLocal, defaultIndexValue, localTensorLen);
+    event_t eventIndexId = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::V_MTE2));
+    SetFlag<HardEvent::V_MTE2>(eventIndexId);
+    WaitFlag<HardEvent::V_MTE2>(eventIndexId);
+    for (uint32_t i = 0; i < oneCoreRowNum; i++) {
+        DataCopyPadExtParams<INDEX_TYPE> indexPadParams{ false, 0, 0, 0 };
+        DataCopyExtParams indexCopyParam;
+        indexCopyParam.blockCount = 1;
+        indexCopyParam.blockLen = currTileSize * sizeof(INDEX_TYPE);
+        indexCopyParam.srcStride = 0;
+        indexCopyParam.dstStride = 0;
+        DataCopyPad(indexLocal[i * currTileSizeAglin], presetIndices[tileOffset + i * currTileSize], indexCopyParam, indexPadParams);
+    }  
+    this->inQueueXInt64Index_.EnQue(indexLocal);
+}
+}
+#endif
