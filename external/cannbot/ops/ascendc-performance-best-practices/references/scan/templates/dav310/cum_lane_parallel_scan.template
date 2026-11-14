@@ -1,0 +1,410 @@
+/**
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
+
+/*!
+ * \file cum_lane_parallel_scan.h
+ * \brief UB 内的 lane 并行顺序前缀扫描，含 argmin/argmax 索引跟踪。
+ *
+ * 用来替掉行内 Kogge-Stone：VLC 条 lane 各领一段连续区间沿段内顺序推进，
+ * 向量指令条数从 log2(R)·(R/VLC) 降到 ~15·(R/VLC) + 14·log2(VLC)，与 log2(R) 脱钩。
+ * 段内元素在 UB 上按 lane 跨步，故用 Gather/Scatter 做「虚拟转置」。
+ *
+ * 前置条件：
+ *   1. 扫描段已完整躺在 UB 里（本模板不负责搬运）
+ *   2. **比较类型 C 必须是 4 字节**（fp16/bf16 一律升 fp32 再进来，见下）
+ *   3. 索引类型 I 与 C 等宽，即恒为 int32（不等宽时索引侧要拆包，收益被吃掉）
+ *   4. R > 2 * VLC（更小的话相位二那固定的 log2(VLC) 级不划算，改回 Kogge-Stone）
+ *
+ * ⚠️ 关于 16 位输入：**必须升到 fp32 再走本模板，不要用原生 16 位比较。**
+ * 16 位的 Gather/Scatter 没有全速路径。同为 1152x1024 个元素的实测：
+ *
+ *                          Kogge-Stone   lane 并行
+ *     fp16（原生 16 位比较）    18.55us      15.05us
+ *     fp32                     28.58us       9.27us
+ *
+ * Kogge-Stone 下 fp16 比 fp32 快 1.54 倍（符合 128 vs 64 lane 的预期），换到 lane 并行
+ * 却慢 1.62 倍——注意 fp16 的 gather 指令数只有 fp32 的一半、元素触达数也相当，
+ * 方向反了就只能是 gather 本身的位宽路径问题（已用 ResourceConflictRatio 排除 bank 冲突，
+ * bank_cflt 仅 0.1%）。升 fp32 后 fp16 降到 9.39us、与 fp32 打平，6 个 16 位用例快 25%~38%。
+ * 代价只是进出各一趟 Cast（LaneFlatten 顺带做，出口用 CastOut），远小于 gather 的损失。
+ *
+ * 判断值不值得换：把 indices 的搬出（int64，占总流量 2/3）临时注掉跑一次，
+ * 耗时不变即纯算力受限，此时收益最大。实测提速 25%~61%。
+ *
+ * 详见同名 .md 文档。
+ */
+
+#ifndef CUM_LANE_PARALLEL_SCAN_H
+#define CUM_LANE_PARALLEL_SCAN_H
+
+#include "scan_base.h"
+
+namespace ScanOps {
+
+// vgather2 要求索引宽度与数据宽度一致。比较类型恒为 4 字节（见文件头），故这里恒取 u32；
+// 保留模板形式只为让 static_assert 的报错更直白。
+template <int BYTES>
+struct GatherIdxBySize {
+    using Type = uint32_t;
+};
+
+// ---------------------------------------------------------------------------
+// 段长决策：段长同时就是 lane 间的 UB 地址步长。步长是 16B 的整数倍时 VLC 条 lane
+// 的 gather 会全撞同一批 bank（实测 2 的幂步长慢 5.5 倍），这时取奇数错开。
+// 步长本来就细碎则保持原样——错位会把补齐区从 R 撑到 VLC*S，白算一截。
+// 注意 host 侧算 UB 预算时必须用同一个函数，否则会溢出。
+// ---------------------------------------------------------------------------
+__aicore__ inline int64_t LaneSegLen(int64_t rLen, int64_t lanes, int64_t cBytes)
+{
+    int64_t s = CeilDiv(rLen, lanes);
+    return (s * cBytes % 16 == 0) ? (s | 1) : s;
+}
+
+// ---------------------------------------------------------------------------
+// 把输入摊进工作区并把补齐区填成幺元。段长统一后扫描的每一步都是满掩码，
+// 不必逐步算尾部掩码。存储类型比比较类型窄时（fp16/bf16 走 fp32）顺带做展宽。
+// total 传 VLC * segLen。
+//
+// ⚠️ 必须照抄的两个细节：
+//   1. 只有落在 rLen 之后的块才需要铺幺元，前面的块整块都会被数据覆盖，铺了是白写一趟。
+//   2. 铺幺元这件事**必须单独成环**，不能写成主循环里的 `if (j + 1 == dataLoops)` 条件分支。
+//      vec scope 内的数据相关分支会打断软流水，实测 fp32 用例慢 40%——
+//      省下的那趟写远抵不上流水断掉的代价。
+//      正确写法见下方：先一个循环铺尾块+补齐块，再一个循环铺数据块，两个循环互不交叉。
+// ---------------------------------------------------------------------------
+template <typename T, typename C>
+__aicore__ inline void LaneFlatten(
+    const LocalTensor<T>& xUb, const LocalTensor<C>& valUb, int64_t rLen, int64_t total)
+{
+    constexpr int64_t VLC = 256 / (int64_t)sizeof(C);
+    __ubuf__ T* xp = (__ubuf__ T*)xUb.GetPhyAddr();
+    __ubuf__ C* vp = (__ubuf__ C*)valUb.GetPhyAddr() + VLC;
+    C ident = Identity<C>();
+    uint16_t loops = (uint16_t)CeilDiv(total, VLC);
+    uint16_t dataLoops = (uint16_t)CeilDiv(rLen, VLC);
+    __VEC_SCOPE__
+    {
+        AscendC::Reg::RegTensor<C> xReg, idReg;
+        AscendC::Reg::MaskReg full, mk;
+        uint32_t g = (uint32_t)VLC;
+        full = AscendC::Reg::UpdateMask<C>(g);
+        AscendC::Reg::Duplicate(idReg, ident);
+        AscendC::Reg::StoreAlign(vp - VLC, idReg, full);  // 哨兵区，供 lane 间扫描往低地址读
+
+        // 尾块（会被数据部分覆盖）和纯补齐块，先铺幺元
+        for (uint16_t j = (uint16_t)(dataLoops - 1); j < loops; j++) {
+            AscendC::Reg::StoreAlign(vp + j * VLC, idReg, full);
+        }
+        uint32_t cnt = (uint32_t)rLen;
+        for (uint16_t j = 0; j < dataLoops; j++) {
+            mk = AscendC::Reg::UpdateMask<C>(cnt);
+            if constexpr (IsSameType<T, C>::value) {
+                AscendC::Reg::LoadAlign(xReg, (__ubuf__ C*)(xp + j * VLC));
+            } else {
+                // 16 位 -> fp32：一次取 VLC 个 16 位值并展宽（DIST_UNPACK_B16）
+                AscendC::Reg::RegTensor<T> b16;
+                AscendC::Reg::LoadAlign<T, AscendC::Reg::LoadDist::DIST_UNPACK_B16>(b16, xp + j * VLC);
+                Cast<C, T, castTraitToFp32>(xReg, b16, mk);
+            }
+            AscendC::Reg::StoreAlign(vp + j * VLC, xReg, mk);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 出口：工作区（比较类型）收窄回存储类型。T == C 时调用方直接从工作区搬出、不必调本函数。
+// 收窄结果可以就地写在已经读完的 xUb 上，省一块缓冲；但要等本批所有行都读完 x 才能动手。
+// ---------------------------------------------------------------------------
+template <typename T, typename C>
+__aicore__ inline void LaneCastOut(
+    const LocalTensor<C>& valUb, const LocalTensor<T>& outUb, int64_t rLen)
+{
+    if constexpr (!IsSameType<T, C>::value) {
+        constexpr int64_t VLC = 256 / (int64_t)sizeof(C);
+        __ubuf__ C* vp = (__ubuf__ C*)valUb.GetPhyAddr();
+        __ubuf__ T* op = (__ubuf__ T*)outUb.GetPhyAddr();
+        uint16_t loops = (uint16_t)CeilDiv(rLen, VLC);
+        __VEC_SCOPE__
+        {
+            AscendC::Reg::RegTensor<C> vReg;
+            AscendC::Reg::RegTensor<T> b16;
+            AscendC::Reg::MaskReg mk;
+            uint32_t cnt = (uint32_t)rLen;
+            for (uint16_t j = 0; j < loops; j++) {
+                mk = AscendC::Reg::UpdateMask<uint32_t>(cnt);
+                AscendC::Reg::LoadAlign(vReg, vp + j * VLC);
+                Cast<T, C, castTraitFromFp32>(b16, vReg, mk);
+                AscendC::Reg::StoreAlign<T, AscendC::Reg::StoreDist::DIST_PACK_B32>(op + j * VLC, b16, mk);
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 三个相位放在同一个 vec scope 里：段结果、lane 间前缀全程留在寄存器，
+// 既省掉每级的 UB 回写（拆成多个 scope 实测倒退 19%），也省掉相位间的暂存缓冲。
+//
+//   相位一  每条 lane 沿自己那段顺序推进 segLen 步，得到 VLC 个段结果
+//   相位二  对 VLC 个段结果做 log2(VLC) 级扫描，寄存器间 Gather 平移
+//   相位三  每条 lane 带上 exclusive 前缀重扫一遍，就地写回值与索引
+//
+// lane l 覆盖的是位置上靠后的连续区间，按 lane 序合并即按位置序合并，
+// 所以相位二能直接沿用同一个 combine，不必为「并列取更晚 / NaN 粘滞」额外裁决。
+//
+// rBase：本段在整行里的起始位置，用来把 lane 内偏移换成绝对下标。
+// carry*/hasCarry：跨块（或跨核）进位，无进位时传 Identity/0/false。
+// ---------------------------------------------------------------------------
+template <typename C, typename I>
+__aicore__ inline void LaneParallelScan(
+    const LocalTensor<C>& valUb, const LocalTensor<I>& idxUb, int64_t segLen, int32_t rBase, C carryVal,
+    I carryIdx, bool hasCarry)
+{
+    constexpr int64_t VLC = 256 / (int64_t)sizeof(C);
+    static_assert(sizeof(C) == sizeof(I), "lane 并行扫描要求索引与比较类型等宽");
+    // 16 位没有全速的 gather/scatter，实测比升 fp32 慢 1.6~1.9 倍（见文件头实测表）
+    static_assert(sizeof(C) == 4, "lane 并行扫描的比较类型必须是 4 字节：16 位输入请先升 fp32");
+    using G = typename GatherIdxBySize<sizeof(C)>::Type;
+
+    __ubuf__ C* vp = (__ubuf__ C*)valUb.GetPhyAddr() + VLC;
+    __ubuf__ I* ip = (__ubuf__ I*)idxUb.GetPhyAddr() + VLC;
+    C ident = Identity<C>();
+    uint16_t steps = (uint16_t)segLen;
+    uint16_t levels = (uint16_t)CalLog2(VLC);
+
+    __VEC_SCOPE__
+    {
+        AscendC::Reg::RegTensor<C> curMin, xReg, vA, seedV;
+        AscendC::Reg::RegTensor<I> curIdx, gIdx, posReg, iA, laneReg, shIdx, dReg, seedI;
+        AscendC::Reg::MaskReg full, leMask, nanMask, takeB, before;
+        uint32_t g = (uint32_t)VLC;
+        full = AscendC::Reg::UpdateMask<C>(g);
+
+        // lane 0 的 exclusive 前缀：有块间进位时取进位，否则取幺元
+        AscendC::Reg::Duplicate(seedV, hasCarry ? carryVal : ident);
+        AscendC::Reg::Duplicate(seedI, hasCarry ? carryIdx : (I)0);
+        // Arange 不支持无符号类型，索引寄存器用同宽有符号算，调用 gather 时再强转
+        AscendC::Reg::Arange(laneReg, (I)0);
+
+        // ---- 相位一：每条 lane 沿自己那段顺序归约 ----
+        AscendC::Reg::Muls(gIdx, laneReg, (I)segLen, full);
+        AscendC::Reg::Adds(posReg, gIdx, (I)rBase, full);
+        AscendC::Reg::Duplicate(curMin, ident);
+        AscendC::Reg::Duplicate(curIdx, (I)0);
+        for (uint16_t t = 0; t < steps; t++) {
+            AscendC::Reg::Gather(xReg, vp, (AscendC::Reg::RegTensor<G>&)gIdx, full);
+            // combine：takeB = isNaN(x) || x <= cur（<= 实现并列取更晚，NaN 靠 Or 粘滞）
+            AscendC::Reg::Compare<C, CMPMODE::LE>(leMask, xReg, curMin, full);
+            AscendC::Reg::Compare<C, CMPMODE::NE>(nanMask, xReg, xReg, full);
+            AscendC::Reg::Or(takeB, leMask, nanMask, full);
+            AscendC::Reg::Select<C>(curMin, xReg, curMin, takeB);
+            AscendC::Reg::Select<I>(curIdx, posReg, curIdx, takeB);
+            AscendC::Reg::Adds(gIdx, gIdx, (I)1, full);
+            AscendC::Reg::Adds(posReg, posReg, (I)1, full);
+        }
+
+        // 进位先并进 lane 0 的段结果，相位二的 lane 间扫描会把它一路带下去。
+        // 不能等相位二之后对所有 lane 统一并一次：lane 0 的 exclusive 是幺元，
+        // combine(carry, identity) 在 carry 也是幺元时会取到下标 0 而不是 carry 的下标。
+        AscendC::Reg::Compare<C, CMPMODE::LE>(leMask, curMin, seedV, full);
+        AscendC::Reg::Compare<C, CMPMODE::NE>(nanMask, curMin, curMin, full);
+        AscendC::Reg::Or(takeB, leMask, nanMask, full);
+        AscendC::Reg::Select<C>(vA, curMin, seedV, takeB);
+        AscendC::Reg::Select<I>(iA, curIdx, seedI, takeB);
+        AscendC::Reg::Duplicate(dReg, (I)1);
+        AscendC::Reg::Compare<I, CMPMODE::LT>(before, laneReg, dReg, full);
+        AscendC::Reg::Select<C>(curMin, vA, curMin, before);
+        AscendC::Reg::Select<I>(curIdx, iA, curIdx, before);
+
+        // ---- 相位二：VLC 个段结果正好一个 vreg，寄存器间 Gather 按 lane 平移做 Kogge-Stone ----
+        // 平移后 lane < d 取到的是越界 lane（寄存器内置换，不访存，不会触发地址异常），
+        // 用 before 掩码把它们判成「保持自己」。
+        I d = 1;
+        for (uint16_t lv = 0; lv < levels; lv++) {
+            AscendC::Reg::Arange(shIdx, (I)(-d));
+            AscendC::Reg::Gather(vA, curMin, (AscendC::Reg::RegTensor<G>&)shIdx);
+            AscendC::Reg::Gather(iA, curIdx, (AscendC::Reg::RegTensor<G>&)shIdx);
+            AscendC::Reg::Duplicate(dReg, d);
+            AscendC::Reg::Compare<I, CMPMODE::LT>(before, laneReg, dReg, full);
+            AscendC::Reg::Compare<C, CMPMODE::LE>(leMask, curMin, vA, full);
+            AscendC::Reg::Compare<C, CMPMODE::NE>(nanMask, curMin, curMin, full);
+            AscendC::Reg::Or(takeB, leMask, nanMask, full);
+            AscendC::Reg::Or(takeB, takeB, before, full);
+            AscendC::Reg::Select<C>(curMin, curMin, vA, takeB);
+            AscendC::Reg::Select<I>(curIdx, curIdx, iA, takeB);
+            d <<= 1;
+        }
+
+        // inclusive 前缀右移一格即 exclusive；lane 0 取上面备好的 seed
+        AscendC::Reg::Arange(shIdx, (I)(-1));
+        AscendC::Reg::Gather(vA, curMin, (AscendC::Reg::RegTensor<G>&)shIdx);
+        AscendC::Reg::Gather(iA, curIdx, (AscendC::Reg::RegTensor<G>&)shIdx);
+        AscendC::Reg::Duplicate(dReg, (I)1);
+        AscendC::Reg::Compare<I, CMPMODE::LT>(before, laneReg, dReg, full);
+        AscendC::Reg::Select<C>(curMin, seedV, vA, before);
+        AscendC::Reg::Select<I>(curIdx, seedI, iA, before);
+
+        // ---- 相位三：带上 exclusive 前缀重扫一遍，就地写回 ----
+        AscendC::Reg::Muls(gIdx, laneReg, (I)segLen, full);
+        AscendC::Reg::Adds(posReg, gIdx, (I)rBase, full);
+        for (uint16_t t = 0; t < steps; t++) {
+            AscendC::Reg::Gather(xReg, vp, (AscendC::Reg::RegTensor<G>&)gIdx, full);
+            AscendC::Reg::Compare<C, CMPMODE::LE>(leMask, xReg, curMin, full);
+            AscendC::Reg::Compare<C, CMPMODE::NE>(nanMask, xReg, xReg, full);
+            AscendC::Reg::Or(takeB, leMask, nanMask, full);
+            AscendC::Reg::Select<C>(curMin, xReg, curMin, takeB);
+            AscendC::Reg::Select<I>(curIdx, posReg, curIdx, takeB);
+            AscendC::Reg::Scatter(vp, curMin, (AscendC::Reg::RegTensor<G>&)gIdx, full);
+            AscendC::Reg::Scatter(ip, curIdx, (AscendC::Reg::RegTensor<G>&)gIdx, full);
+            AscendC::Reg::Adds(gIdx, gIdx, (I)1, full);
+            AscendC::Reg::Adds(posReg, posReg, (I)1, full);
+        }
+        // scatter 写回的前缀随后要被 MTE3 搬走。这道屏障必须落在 vec scope 内：
+        // 写在外面能编译通过，但运行时报 device error type 3 / 507035，
+        // 且只在数据量过阈值后才崩，极易误判成 gather/scatter 的地址范围限制。
+        AscendC::Reg::LocalMemBar<AscendC::Reg::MemType::VEC_STORE,
+                                       AscendC::Reg::MemType::VEC_LOAD>();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 两行交错版本（仅用于无块间进位、rBase == 0 的整行扫描，如 N==1 的行批处理）。
+//
+// 单行扫描每一步都依赖上一步的 (curMin, curIdx)，依赖链把指令延迟全暴露出来，
+// 实测约 4.6 cycle/指令。两行塞进同一个 vec scope，两条独立链互相填空，
+// 实测再快 8%~18%（R 越小、行数越多收益越大）。
+//
+// rowStride 是两行在 UB 上的元素间距（含哨兵）。奇数尾行退回单行版本。
+// 寄存器预算：每行独占 6 个，laneReg/shIdx/dReg/identReg/zeroI 共享，合计 17 vreg + 8 掩码。
+//
+// 三个相位与单行版完全对应，只是变量各开两套（0/1 后缀），去掉 seed/posReg/进位相关语句
+// （rBase == 0 时 gIdx 兼作绝对下标）。
+// ---------------------------------------------------------------------------
+template <typename C, typename I>
+__aicore__ inline void LaneParallelScanPair(
+    const LocalTensor<C>& valUb, const LocalTensor<I>& idxUb, int64_t rowStride, int64_t segLen)
+{
+    constexpr int64_t VLC = 256 / (int64_t)sizeof(C);
+    static_assert(sizeof(C) == sizeof(I), "lane 并行扫描要求索引与比较类型等宽");
+    static_assert(sizeof(C) == 4, "lane 并行扫描的比较类型必须是 4 字节：16 位输入请先升 fp32");
+    using G = typename GatherIdxBySize<sizeof(C)>::Type;
+
+    __ubuf__ C* vp0 = (__ubuf__ C*)valUb.GetPhyAddr() + VLC;
+    __ubuf__ I* ip0 = (__ubuf__ I*)idxUb.GetPhyAddr() + VLC;
+    __ubuf__ C* vp1 = vp0 + rowStride;
+    __ubuf__ I* ip1 = ip0 + rowStride;
+    C ident = Identity<C>();
+    uint16_t steps = (uint16_t)segLen;
+    uint16_t levels = (uint16_t)CalLog2(VLC);
+
+    __VEC_SCOPE__
+    {
+        AscendC::Reg::RegTensor<C> cur0, cur1, x0, x1, a0, a1, identReg;
+        AscendC::Reg::RegTensor<I> ci0, ci1, g0, g1, ia0, ia1, laneReg, shIdx, dReg, zeroI;
+        AscendC::Reg::MaskReg full, le0, le1, nan0, nan1, tk0, tk1, before;
+        uint32_t g = (uint32_t)VLC;
+        full = AscendC::Reg::UpdateMask<C>(g);
+
+        AscendC::Reg::Duplicate(identReg, ident);
+        AscendC::Reg::Duplicate(zeroI, (I)0);
+        AscendC::Reg::Arange(laneReg, (I)0);
+        AscendC::Reg::Muls(g0, laneReg, (I)segLen, full);
+        AscendC::Reg::Muls(g1, laneReg, (I)segLen, full);
+        AscendC::Reg::Duplicate(cur0, ident);
+        AscendC::Reg::Duplicate(cur1, ident);
+        AscendC::Reg::Duplicate(ci0, (I)0);
+        AscendC::Reg::Duplicate(ci1, (I)0);
+
+        // ---- 相位一：两行各沿自己的段顺序归约，交错填延迟 ----
+        for (uint16_t t = 0; t < steps; t++) {
+            AscendC::Reg::Gather(x0, vp0, (AscendC::Reg::RegTensor<G>&)g0, full);
+            AscendC::Reg::Gather(x1, vp1, (AscendC::Reg::RegTensor<G>&)g1, full);
+            AscendC::Reg::Compare<C, CMPMODE::LE>(le0, x0, cur0, full);
+            AscendC::Reg::Compare<C, CMPMODE::LE>(le1, x1, cur1, full);
+            AscendC::Reg::Compare<C, CMPMODE::NE>(nan0, x0, x0, full);
+            AscendC::Reg::Compare<C, CMPMODE::NE>(nan1, x1, x1, full);
+            AscendC::Reg::Or(tk0, le0, nan0, full);
+            AscendC::Reg::Or(tk1, le1, nan1, full);
+            AscendC::Reg::Select<C>(cur0, x0, cur0, tk0);
+            AscendC::Reg::Select<C>(cur1, x1, cur1, tk1);
+            AscendC::Reg::Select<I>(ci0, g0, ci0, tk0);
+            AscendC::Reg::Select<I>(ci1, g1, ci1, tk1);
+            AscendC::Reg::Adds(g0, g0, (I)1, full);
+            AscendC::Reg::Adds(g1, g1, (I)1, full);
+        }
+
+        // ---- 相位二：VLC 个段结果做 log2(VLC) 级 Kogge-Stone，两行同步平移 ----
+        I d = 1;
+        for (uint16_t lv = 0; lv < levels; lv++) {
+            AscendC::Reg::Arange(shIdx, (I)(-d));
+            AscendC::Reg::Duplicate(dReg, d);
+            AscendC::Reg::Compare<I, CMPMODE::LT>(before, laneReg, dReg, full);
+            AscendC::Reg::Gather(a0, cur0, (AscendC::Reg::RegTensor<G>&)shIdx);
+            AscendC::Reg::Gather(a1, cur1, (AscendC::Reg::RegTensor<G>&)shIdx);
+            AscendC::Reg::Gather(ia0, ci0, (AscendC::Reg::RegTensor<G>&)shIdx);
+            AscendC::Reg::Gather(ia1, ci1, (AscendC::Reg::RegTensor<G>&)shIdx);
+            AscendC::Reg::Compare<C, CMPMODE::LE>(le0, cur0, a0, full);
+            AscendC::Reg::Compare<C, CMPMODE::LE>(le1, cur1, a1, full);
+            AscendC::Reg::Compare<C, CMPMODE::NE>(nan0, cur0, cur0, full);
+            AscendC::Reg::Compare<C, CMPMODE::NE>(nan1, cur1, cur1, full);
+            AscendC::Reg::Or(tk0, le0, nan0, full);
+            AscendC::Reg::Or(tk1, le1, nan1, full);
+            AscendC::Reg::Or(tk0, tk0, before, full);
+            AscendC::Reg::Or(tk1, tk1, before, full);
+            AscendC::Reg::Select<C>(cur0, cur0, a0, tk0);
+            AscendC::Reg::Select<C>(cur1, cur1, a1, tk1);
+            AscendC::Reg::Select<I>(ci0, ci0, ia0, tk0);
+            AscendC::Reg::Select<I>(ci1, ci1, ia1, tk1);
+            d <<= 1;
+        }
+
+        // inclusive 右移一格即 exclusive；lane 0 取幺元
+        AscendC::Reg::Arange(shIdx, (I)(-1));
+        AscendC::Reg::Duplicate(dReg, (I)1);
+        AscendC::Reg::Compare<I, CMPMODE::LT>(before, laneReg, dReg, full);
+        AscendC::Reg::Gather(a0, cur0, (AscendC::Reg::RegTensor<G>&)shIdx);
+        AscendC::Reg::Gather(a1, cur1, (AscendC::Reg::RegTensor<G>&)shIdx);
+        AscendC::Reg::Gather(ia0, ci0, (AscendC::Reg::RegTensor<G>&)shIdx);
+        AscendC::Reg::Gather(ia1, ci1, (AscendC::Reg::RegTensor<G>&)shIdx);
+        AscendC::Reg::Select<C>(cur0, identReg, a0, before);
+        AscendC::Reg::Select<C>(cur1, identReg, a1, before);
+        AscendC::Reg::Select<I>(ci0, zeroI, ia0, before);
+        AscendC::Reg::Select<I>(ci1, zeroI, ia1, before);
+
+        // ---- 相位三：带上 exclusive 前缀重扫，就地写回 ----
+        AscendC::Reg::Muls(g0, laneReg, (I)segLen, full);
+        AscendC::Reg::Muls(g1, laneReg, (I)segLen, full);
+        for (uint16_t t = 0; t < steps; t++) {
+            AscendC::Reg::Gather(x0, vp0, (AscendC::Reg::RegTensor<G>&)g0, full);
+            AscendC::Reg::Gather(x1, vp1, (AscendC::Reg::RegTensor<G>&)g1, full);
+            AscendC::Reg::Compare<C, CMPMODE::LE>(le0, x0, cur0, full);
+            AscendC::Reg::Compare<C, CMPMODE::LE>(le1, x1, cur1, full);
+            AscendC::Reg::Compare<C, CMPMODE::NE>(nan0, x0, x0, full);
+            AscendC::Reg::Compare<C, CMPMODE::NE>(nan1, x1, x1, full);
+            AscendC::Reg::Or(tk0, le0, nan0, full);
+            AscendC::Reg::Or(tk1, le1, nan1, full);
+            AscendC::Reg::Select<C>(cur0, x0, cur0, tk0);
+            AscendC::Reg::Select<C>(cur1, x1, cur1, tk1);
+            AscendC::Reg::Select<I>(ci0, g0, ci0, tk0);
+            AscendC::Reg::Select<I>(ci1, g1, ci1, tk1);
+            AscendC::Reg::Scatter(vp0, cur0, (AscendC::Reg::RegTensor<G>&)g0, full);
+            AscendC::Reg::Scatter(vp1, cur1, (AscendC::Reg::RegTensor<G>&)g1, full);
+            AscendC::Reg::Scatter(ip0, ci0, (AscendC::Reg::RegTensor<G>&)g0, full);
+            AscendC::Reg::Scatter(ip1, ci1, (AscendC::Reg::RegTensor<G>&)g1, full);
+            AscendC::Reg::Adds(g0, g0, (I)1, full);
+            AscendC::Reg::Adds(g1, g1, (I)1, full);
+        }
+        AscendC::Reg::LocalMemBar<AscendC::Reg::MemType::VEC_STORE,
+                                       AscendC::Reg::MemType::VEC_LOAD>();
+    }
+}
+
+}  // namespace ScanOps
+
+#endif  // CUM_LANE_PARALLEL_SCAN_H

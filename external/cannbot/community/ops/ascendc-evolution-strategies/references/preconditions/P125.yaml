@@ -1,0 +1,47 @@
+strategy_id: P125
+description: 跨任务 Cube 预取适用性检查 — 算子为多任务循环（per-batch/per-token task）结构且已实施 CV 流水（P121），任务边界无预取，Cube 在任务切换时断流。
+strategy_meta:
+  id: "P125"
+  slug: "P125_cross_task_cube_prefetch"
+  title: "P125: 跨任务 Cube 预取（任务边界提前发射下一任务首个 QK^T，消除切换空泡）"
+  bottlenecks: [no_overlap, partial_overlap]
+  op_families: [attention, flash_attention, cv_fusion]
+  conflicts_with: []
+  synergizes_with: [P121, P14, P107, P122]
+  requires: [P121]
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p125_cross_task_cube_prefetch.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p125_cross_task_cube_prefetch.md"
+  playbook_slug: "P125_cross_task_cube_prefetch"
+checks:
+  - id: has_task_loop
+    type: grep_count
+    pattern: "process|taskNum|formerTaskNum|blockLength|blkLen"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未检测到多任务循环结构 → 单任务算子无任务边界，P125 不适用。"
+
+  - id: has_cv_pipeline
+    type: grep_count
+    pattern: "CrossCoreSetFlag|CrossCoreWaitFlag"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未实施 CV 跨核流水 → 先实施 P121 建流水拓扑，P125 只堵任务边界空泡。"
+
+  - id: no_cross_task_prefetch
+    type: grep_count
+    pattern: "nextProcess|nextRealProcess|nextGMOffset|nextNLoop"
+    files: [kernel, header]
+    expected: "== 0"
+    fail_msg: "已存在 nextProcess 式跨任务预取 → P125 已实施。"
+
+  - id: has_cube_mmad
+    type: grep_count
+    pattern: "Mmad|mmad|BlockMmad|Matmul"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "无 Cube mmad → 先实施 P120，P125 是 cube 流水的高级补齐。"

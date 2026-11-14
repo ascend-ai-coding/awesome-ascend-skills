@@ -1,0 +1,42 @@
+# ----------------------------------------------------------------------------
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+# ----------------------------------------------------------------------------
+strategy_id: P152
+description: QK→PV 相位、K/V 共 L1 槽、L1 有余量 适用性检查。
+
+strategy_meta:
+  id: "P152"
+  slug: "P152_v_independent_ring"
+  title: "P152: 把 V 从共享 L1 页槽拆成独立环，并在 PV 头部预取"
+  bottlenecks: [no_overlap, mte2_stall]
+  op_families: [attention, cv_fusion]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p152_v_independent_ring.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p152_v_independent_ring.md"
+  playbook_slug: "P152_v_independent_ring"
+checks:
+  - id: has_pv_phase
+    type: grep_count
+    pattern: "PhasePV|M_MTE2|V"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未发现 QK/PV 相位结构 → P152 不适用。"
+  - id: has_l1
+    type: grep_count
+    pattern: "L1|l1|kv"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未发现 L1 K/V 槽 → P152 不适用。"

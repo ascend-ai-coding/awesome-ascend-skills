@@ -1,0 +1,40 @@
+strategy_id: P45
+
+strategy_meta:
+  id: "P45"
+  slug: "P45_topk_index_cache_iterator"
+  title: "P45: 稀疏 Attention 离散块处理"
+  bottlenecks: [undersize_transfer]
+  op_families: [attention, flash_attention]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p45_topk_index_cache_iterator.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p45_topk_index_cache_iterator.md"
+  playbook_slug: "P45_topk_index_cache_iterator"
+checks:
+  - id: has_topk
+    type: grep_count
+    pattern: "topk|TopK|sparse|Sparse|block|Block|attention|Attention"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 topK/sparse attention 相关逻辑 → 无离散块处理需求，不适用 P45。"
+
+  - id: has_index
+    type: grep_count
+    pattern: "index|Index|indices|Indices|cache|Cache"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到索引/缓存相关逻辑 → 无索引缓存优化空间，不适用 P45。"
+
+  - id: has_iterator
+    type: grep_count
+    pattern: "Iterator|iterator|迭代器|chunk|Chunk"
+    files: [kernel]
+    expected: ">= 0"
+    fail_msg: "已存在迭代器/分块逻辑 → 可能冗余，优先验证现有策略效果。"

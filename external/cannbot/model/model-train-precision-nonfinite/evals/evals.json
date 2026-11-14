@@ -1,0 +1,141 @@
+{
+  "skill_name": "model-train-precision-nonfinite",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "前向非有限值定位",
+      "config": {"ascend_platforms": ["A2"], "max_tokens": 150000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "训练第 20 步 logits 首次出现 Inf，loss 随后 NaN，怎么定位首个节点？",
+      "expected_output": "回复应识别 E04，先检查 logits 是否有限；logits 首先出现 Inf 时判定非有限值发生在前向。优先验证 Preflight 单一差异，未闭环时再使用 statistics/overflow_check；targeted tensor 仅在最小算子复现需要真实输入时使用。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "detect_anomaly 正确语义",
+      "config": {"ascend_platforms": ["A2"], "max_tokens": 150000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "前向 loss 正常，但 backward 产生 NaN。detect_anomaly 能检查所有前向和反向 NaN/Inf 吗？",
+      "expected_output": "回复应说明 detect_anomaly 提供失败反向对应的前向 traceback，并在反向生成 NaN 时抛错；它不是通用前向/反向 NaN/Inf 检查器，仍需 isfinite 或 dump。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "overflow_check 主产物",
+      "config": {"ascend_platforms": ["A2"], "max_tokens": 120000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "msprobe overflow_check 报告找到了异常节点，主分析文件叫什么？是不是 diff_analyze？",
+      "expected_output": "1. 回复应明确：工具报告找到异常节点时，主分析产物是现场实际生成的 `anomaly_analyze_{timestamp}.json`。\n2. 回复应说明 `compare_result*` 与 `diff_analyze*` 属于 `msprobe compare -da`，不是 overflow_check 的产物，不得用它们代替。\n3. 回复应要求先核对现场实际（现场 msprobe 版本与命令 help、实际输出目录），说明只有命令成功且实际生成时才读取 `anomaly_analyze_*.json`，不得凭文档假定现场产物名。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 4,
+      "title": "无分析文件的解释",
+      "config": {"ascend_platforms": ["A2"], "max_tokens": 120000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "overflow_check 命令成功并提示没有异常节点，但输出目录没有 JSON，可以证明整次训练没有 NaN 吗？",
+      "expected_output": "回复应说明当前无异常时可能不生成分析文件，但结论仅覆盖已采集数据，不能证明未 dump 范围不存在异常。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 5,
+      "title": "合法 mask 负无穷",
+      "config": {"ascend_platforms": ["A2"], "max_tokens": 120000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "attention mask 的 where 输出里有 -Inf，能直接忽略整条链路吗？",
+      "expected_output": "1. 回复应说明合法 -Inf 不能直接忽略整条链路，需先核对 mask/条件语义与预期位置：-Inf 只应出现在被遮蔽位置、未遮蔽位置必须全部有限，并核对消费者语义（直接进 softmax 时安全，在 softmax 之前参与运算可能产生 NaN）。\n2. 回复应说明合法 -Inf 不豁免下游首次 NaN 或 +Inf，仍需继续向后定位首个非预期的非有限转换点，而不是停在 attention 上。\n3. 回复应说明过滤该节点时需记录算子、Tensor、Rank、理由及下游检查结果，不能靠过滤或白名单直接认证根因。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 6,
+      "title": "与有限值偏差区分",
+      "config": {"ascend_platforms": ["A2"], "max_tokens": 120000, "distractor_skills": ["model-train-precision-numerical-mismatch", "model-train-precision-determinism"], "timeout": 900, "eval_mode": "text"},
+      "prompt": "训练 loss 与标杆有 2% 偏差，但所有值都 finite，也能用 overflow_check 找吗？",
+      "expected_output": "回复应说明这不是 E04，应转有限值 mismatch；overflow_check 面向 NaN/Inf 非有限转换边界与传播分析。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 7,
+      "title": "无外部标杆仍可定位非有限值",
+      "config": {"ascend_platforms": ["A2"], "max_tokens": 120000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "训练首次出现 Inf，但没有 CPU 或其他版本标杆，还能做 E04 吗？",
+      "expected_output": "1. 回复应说明 E04 不以外部标杆为进入条件：训练中首次观测到 NaN/Inf/Overflow 即可进入，外部标杆只影响归因可信度。\n2. 回复应说明缺少标杆时仍可只依赖现场自身的证据完成内部定位：保留显式 isfinite 或 dump 证据，使用 statistics 与 overflow_check，并沿真实数据依赖追溯首个非有限转换点与传播链。\n3. 回复应说明没有健康标杆或项目数值约束时，单次运行中的大有限值只能形成风险候选，不设跨模型通用倍数或阈值。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 9,
+      "title": "detect_anomaly 分片策略兼容错误",
+      "config": {"ascend_platforms": ["A2"], "max_tokens": 120000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "启用 detect_anomaly 后报错：NotImplementedError: Operator aten._is_any_true.default does not have a sharding strategy registered。应该怎么处理？",
+      "expected_output": "回复应要求记录现场 PyTorch 版本和原始报错，并参考 PyTorch PR #170951 核对临时规避方法；不得把该工具兼容错误直接判为训练非有限值根因。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 10,
+      "title": "loss scale 差异可无 dump 闭环",
+      "config": {"ascend_platforms": ["A2"], "max_tokens": 120000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "Preflight 发现只有 target 的 loss scale 配置与正常运行不同。只对齐这一项后，原复现窗口内多次运行都不再出现 Inf。必须继续 overflow_check 或 tensor dump 才能认定根因吗？",
+      "expected_output": "回复应允许依据已确认差异、单变量对齐和重复复跑形成配置粒度的 verified root cause；不强制 detect_anomaly、overflow_check 或 tensor dump，不适用的 Module/API/Tensor 应记录原因。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 11,
+      "title": "ignore_rules 现场版本核对",
+      "config": {"ascend_platforms": ["A2"], "max_tokens": 120000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "网上说 overflow_check 的 ignore_rules.yaml 会过滤 empty、通信野值和 masked_fill_ 输入，我能直接假设现场版本也有这些规则吗？",
+      "expected_output": "回复应要求从实际导入的 msprobe 包目录定位现场 ignore_rules.yaml，记录绝对路径、内容摘要和采用规则；缺失、多份或不一致时写 unknown。只有现场文件含相应规则时才能称已由内置规则过滤。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 12,
+      "title": "初始化和传播节点复核",
+      "config": {"ascend_platforms": ["A2"], "max_tokens": 120000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "anomaly_analyze 里 full/zeros 初始化节点和后面的 clone 都出现非有限统计，可以把其中一个直接定为根因吗？",
+      "expected_output": "回复应把 full/zeros 标为初始化或占位候选并检查实际写入者和消费者；clone 通常继承异常，应继续追生产者并保留证据，不能直接定根因。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 13,
+      "title": "过滤审计字段",
+      "config": {"ascend_platforms": ["A2"], "max_tokens": 120000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "确认某个 overflow_check 节点属于合法过滤场景后，证据里至少要记录什么？",
+      "expected_output": "回复应记录算子、Tensor、Rank、命中的内置规则或人工理由，以及实际写入者、生产者或下游消费者的检查结果。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 14,
+      "title": "overflow_check 前 dump 完整性门禁",
+      "config": {"ascend_platforms": ["A2"], "max_tokens": 150000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "64 卡 E04 statistics dump 后进程异常退出，只有部分 .pt，两个 rank 缺 dump.json，dump_error_info.log 还有写盘失败。可以直接对剩余目录跑 overflow_check 吗？",
+      "expected_output": "回复应判定 dump 为 incomplete，说明异常退出时 .pt 存在不代表 JSON 完整；核对预期 Step×Rank、stop/step、JSON 可解析性、范围和错误日志。valid 前禁止 overflow_check，补采需审批，无法补采则证据不足。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 15,
+      "title": "完整 dump 但非有限值未复现",
+      "config": {"ascend_platforms": ["A2"], "max_tokens": 150000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "E04 statistics dump 的 Step×Rank、JSON 和日志都完整，但启用 dump 后原来的 backward NaN 没再出现。能否跑 overflow_check，并把没有 anomaly_analyze 文件当成无异常？",
+      "expected_output": "回复应记录 dump_integrity=valid、symptom_reproduction=not-reproduced，阻断 overflow_check，且不得用 anomaly_analyze 是否生成反推复现。完整产物只作观察者效应/反证；回退 instrumentation 后复核 R0，再经批准尝试更轻量采集。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 16,
+      "title": "E04 有限放大趋势与定位后 CPU 对照",
+      "config": {"ascend_platforms": ["A2"], "max_tokens": 150000, "timeout": 900, "eval_mode": "text"},
+      "prompt": "E04 statistics dump 中，模块 A 的有限输出开始沿依赖链逐步变大，模块 C 才首次由有限输入产生 Inf；把 C 移到 CPU 后 Inf 消失。请先加载并使用 model-train-precision-nonfinite 技能（可 Read SKILL.md 与 references/experiment-and-analysis.md），按 Step 6/Step 7 逐条回答：A、C 分别在传播链中扮演什么角色、各应怎样定级，C 最靠近 Inf 能否直接写成根因；统计量来源应以什么为准，字段缺失、为 null 或现场版本语义不明时写什么；CPU 对照应在什么前提下执行、要保持哪些量不变、需要记录什么，CPU 上 Inf 消失后结论能定到什么级别、还缺哪一步。沙箱内没有对应训练工程与 dump 数据，不需要实际执行命令或运行测试。",
+      "expected_output": "1. 回复应从 C 向前按真实依赖区分有限放大起点、后续放大器和首个非有限转换点：A 可作为有限放大起点候选，C 只界定非有限值出现边界，不因最靠近 Inf 就成为根因；二者都需单变量修复/回退验证，不能直接写成根因。\n2. 回复应说明量级优先读取本次有效 dump.json 的原始 max/min/mean/norm（L2norm）等统计量，字段缺失、为 null 或现场版本语义不明时写 unknown，不得补造。\n3. 回复应说明 CPU 对照仅在具体 API/Module 已定位后执行，保持输入/权重/dtype/shape/非 Tensor 参数并记录搬运、cast、同步；CPU 消失只形成 NPU 路径强候选，仍需 R0′ 和 NPU 正式修复复跑。",
+      "files": [],
+      "expectations": []
+    }
+  ]
+}

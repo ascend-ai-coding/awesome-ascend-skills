@@ -1,0 +1,184 @@
+/*!
+ * \file radix_sort_with_index.h
+ * \brief radix_sort_with_index kernel entry
+ */
+
+#ifndef RADIX_SORT_WITH_INDEX_SINGLE_BLOCK_H
+#define RADIX_SORT_WITH_INDEX_SINGLE_BLOCK_H
+
+#include "../sort/common/util_type_simd.h" // 使用 ROUND_UP_AGLIN
+
+namespace SortWithIndex {
+
+using namespace AscendC;
+
+template <typename XType, bool IsDescend, typename IndexType>
+class RadixSortWithIndexSingleBlock {
+public:
+    __aicore__ inline RadixSortWithIndexSingleBlock() {}
+    __aicore__ inline void Init(GM_ADDR x, GM_ADDR index, GM_ADDR y, GM_ADDR sortedIndex,
+                                GM_ADDR workspace, const SortWithIndexTilingDataSimt* tilingData, TPipe* pipe);
+    __aicore__ inline void Process();
+    __aicore__ inline void ProcessSingleBlock(GlobalTensor<XType> xGm, GlobalTensor<IndexType> indexGm, uint64_t loopRound);
+
+private:
+    __aicore__ inline void CopyIn(GlobalTensor<XType> inputX, uint64_t tileOffset, uint32_t tileData);
+    __aicore__ inline void CopyIndexIn(GlobalTensor<IndexType> inputIndex, uint64_t tileOffset, uint32_t tileData);
+
+protected:
+    // 输入GlobalTensor
+    GlobalTensor<XType> xGm_;
+    GlobalTensor<IndexType> indexGm_;
+    // 输出GlobalTensor
+    GlobalTensor<XType> yGm_;
+    GlobalTensor<IndexType> sortedIndexGm_;
+    // 输入输出队列
+    TPipe* pipe_;
+    TQue<QuePosition::VECIN, 1> inQueueX_;
+    TQue<QuePosition::VECIN, 1> inQueueIndex_;
+    TQue<QuePosition::VECOUT, 1> yQueue_;
+    TQue<QuePosition::VECOUT, 1> sortedIndexQueue_;
+    TBuf<TPosition::VECCALC> sortedShareMemTbuf_;
+    // LocalTensor
+    LocalTensor<uint32_t> sortedLocalIndex_;
+    
+    static constexpr SortConfig sortConfigSingle{SortType::RADIX_SORT, IsDescend};
+    uint32_t blockIdx_ = 0;
+    uint32_t totalDataNum_ = 0;
+    uint32_t numTileData_ = 0;
+    uint32_t sortLoopRound_ = 0;
+    uint32_t unsortedDimNum_ = 0;
+    uint32_t unsortedDimParallel_ = 0;
+    uint32_t lastDimTileNum_ = 0;
+    uint32_t sortLoopTimes_ = 0;
+    uint32_t lastDimRealCore_ = 0;
+    uint32_t sortAcApiNeedTmpBufferSize_ = 0;
+    uint32_t oneCoreRowNum_ = 0;
+};
+
+template <typename XType, bool IsDescend, typename IndexType>
+__aicore__ inline void RadixSortWithIndexSingleBlock<XType, IsDescend, IndexType>::Init(
+                                                                            GM_ADDR x,
+                                                                            GM_ADDR index,
+                                                                            GM_ADDR y,
+                                                                            GM_ADDR sortedIndex,
+                                                                            GM_ADDR workspace,
+                                                                            const SortWithIndexTilingDataSimt* tilingData,
+                                                                            TPipe* pipe)
+{
+    xGm_.SetGlobalBuffer((__gm__ XType*)(x));
+    indexGm_.SetGlobalBuffer((__gm__ IndexType*)(index));
+    yGm_.SetGlobalBuffer((__gm__ XType*)(y));
+    sortedIndexGm_.SetGlobalBuffer((__gm__ IndexType*)(sortedIndex));
+
+    numTileData_ = tilingData->numTileDataSize;
+    lastDimRealCore_ = tilingData->lastDimNeedCore;
+    totalDataNum_ = tilingData->lastAxisNum;
+    unsortedDimNum_ = tilingData->unsortedDimNum;
+    sortLoopTimes_ = tilingData->sortLoopTimes;
+    lastDimTileNum_  = tilingData->lastDimTileNum;
+    unsortedDimParallel_ = tilingData->unsortedDimParallel;
+    oneCoreRowNum_ = tilingData->oneCoreRowNum;
+    sortAcApiNeedTmpBufferSize_ = tilingData->sortAcApiNeedBufferSize;
+
+    blockIdx_ = GetBlockIdx();
+
+    pipe_ = pipe;
+    pipe_->InitBuffer(inQueueX_, 1, ROUND_UP_AGLIN(numTileData_ * sizeof(XType)));
+    pipe_->InitBuffer(inQueueIndex_, 1, ROUND_UP_AGLIN(numTileData_ * sizeof(IndexType)));
+    pipe_->InitBuffer(yQueue_, 1, ROUND_UP_AGLIN(numTileData_ * sizeof(XType)));
+    pipe_->InitBuffer(sortedIndexQueue_, 1, ROUND_UP_AGLIN(numTileData_ * sizeof(IndexType)));
+    pipe_->InitBuffer(sortedShareMemTbuf_, ROUND_UP_AGLIN(sortAcApiNeedTmpBufferSize_)); 
+}
+
+template <typename XType, bool IsDescend, typename IndexType>
+__aicore__ inline void RadixSortWithIndexSingleBlock<XType, IsDescend, IndexType>::Process()
+{
+    for (uint64_t i = 0; i < sortLoopTimes_; i++) {
+        uint64_t loopOffset = i * unsortedDimParallel_ * totalDataNum_ * oneCoreRowNum_;
+        ProcessSingleBlock(xGm_[loopOffset], indexGm_[loopOffset], i);
+    } 
+}
+
+template <typename XType, bool IsDescend, typename IndexType>
+__aicore__ inline void RadixSortWithIndexSingleBlock<XType, IsDescend, IndexType>::CopyIn(GlobalTensor<XType> inputX, uint64_t tileOffset, uint32_t currTileSize)
+{
+    LocalTensor<XType> xLocal = inQueueX_.AllocTensor<XType>();
+    uint32_t currTileSizeAlign = ROUND_UP_AGLIN(currTileSize * sizeof(XType)) / sizeof(XType);
+    DataCopyPadExtParams<XType> padParams;
+    padParams.isPad = true;
+    padParams.rightPadding = currTileSizeAlign - currTileSize;
+    padParams.paddingValue = static_cast<XType>(0);
+    DataCopyExtParams dataCopyParam;
+    dataCopyParam.blockCount = 1;
+    dataCopyParam.blockLen = currTileSize * sizeof(XType);
+    dataCopyParam.srcStride = 0;
+    dataCopyParam.dstStride = 0;
+    DataCopyPad(xLocal, inputX[tileOffset], dataCopyParam, padParams);
+    inQueueX_.EnQue(xLocal);
+}
+
+template <typename XType, bool IsDescend, typename IndexType>
+__aicore__ inline void RadixSortWithIndexSingleBlock<XType, IsDescend, IndexType>::CopyIndexIn(GlobalTensor<IndexType> inputIndex, uint64_t tileOffset, uint32_t currTileSize)
+{
+    LocalTensor<IndexType> xLocal = inQueueIndex_.AllocTensor<IndexType>();
+    uint32_t currTileSizeAlign = ROUND_UP_AGLIN(currTileSize * sizeof(IndexType)) / sizeof(IndexType);
+    DataCopyPadExtParams<IndexType> padParams;
+    padParams.isPad = true;
+    padParams.rightPadding = currTileSizeAlign - currTileSize;
+    padParams.paddingValue = static_cast<IndexType>(0);
+    DataCopyExtParams dataCopyParam;
+    dataCopyParam.blockCount = 1;
+    dataCopyParam.blockLen = currTileSize * sizeof(IndexType);
+    dataCopyParam.srcStride = 0;
+    dataCopyParam.dstStride = 0;
+    DataCopyPad(xLocal, inputIndex[tileOffset], dataCopyParam, padParams);
+    inQueueIndex_.EnQue(xLocal);
+}
+
+template <typename XType, bool IsDescend, typename IndexType>
+__aicore__ inline void RadixSortWithIndexSingleBlock<XType, IsDescend, IndexType>::ProcessSingleBlock(GlobalTensor<XType> inputXGm, GlobalTensor<IndexType> indexGm, uint64_t loop)
+{
+    uint32_t currTileSize = numTileData_;
+    uint32_t tileId = GetBlockIdx();
+    uint32_t unsortedDimIndex = (GetBlockIdx() + loop * unsortedDimParallel_) * oneCoreRowNum_;
+    if (unsortedDimIndex >= unsortedDimNum_) {
+        return;
+    }
+    // get buffer
+    AscendC::LocalTensor<XType> sortedValueLocal = yQueue_.template AllocTensor<XType>();
+    AscendC::LocalTensor<IndexType> sortedValueIndexLocal = sortedIndexQueue_.template AllocTensor<IndexType>();
+    // offset
+    uint64_t gmOffset = loop * unsortedDimParallel_ * totalDataNum_ * oneCoreRowNum_;
+    uint64_t tileOffset = tileId * numTileData_ * oneCoreRowNum_;
+    CopyIn(inputXGm, tileOffset, currTileSize);
+    CopyIndexIn(indexGm, tileOffset, currTileSize);
+
+    AscendC::LocalTensor<XType> xLocal = inQueueX_.template DeQue<XType>();
+    AscendC::LocalTensor<IndexType> xIndexLocal = inQueueIndex_.template DeQue<IndexType>();
+    AscendC::LocalTensor<uint8_t> shareTmpBuffer = sortedShareMemTbuf_.template Get<uint8_t>();
+    // need add static
+    AscendC::Sort<XType, IndexType, false, sortConfigSingle>(sortedValueLocal, sortedValueIndexLocal, xLocal,
+                                                               xIndexLocal, shareTmpBuffer, currTileSize);                                                      
+    PipeBarrier<PIPE_ALL>();
+    yQueue_.template EnQue<XType>(sortedValueLocal);
+    sortedIndexQueue_.template EnQue<IndexType>(sortedValueIndexLocal);
+    inQueueX_.FreeTensor(xLocal);
+    inQueueIndex_.FreeTensor(xIndexLocal);
+    // copy result out
+    // copy sorted value
+    AscendC::LocalTensor<XType> sortedValueOutLocal = yQueue_.template DeQue<XType>();
+    AscendC::DataCopyExtParams dataCopyParamValue{
+        static_cast<uint16_t>(1), static_cast<uint32_t>(currTileSize * sizeof(XType) * oneCoreRowNum_), 0, 0, 0};
+    AscendC::DataCopyPad(yGm_[gmOffset + tileOffset], sortedValueOutLocal, dataCopyParamValue);
+    yQueue_.FreeTensor(sortedValueOutLocal);
+    // copy sorted value index
+    AscendC::LocalTensor<IndexType> sortedValueIndexOutLocal = sortedIndexQueue_.template DeQue<IndexType>();
+    AscendC::DataCopyExtParams dataCopyParamIndex{
+        static_cast<uint16_t>(1), static_cast<uint32_t>(currTileSize * sizeof(IndexType) * oneCoreRowNum_), 0, 0, 0};
+    AscendC::DataCopyPad(sortedIndexGm_[gmOffset + tileOffset], sortedValueIndexOutLocal, dataCopyParamIndex);
+    sortedIndexQueue_.FreeTensor(sortedValueIndexOutLocal);
+}
+} // namespace
+
+#endif // RADIX_SORT_WITH_INDEX_SINGLE_BLOCK_H

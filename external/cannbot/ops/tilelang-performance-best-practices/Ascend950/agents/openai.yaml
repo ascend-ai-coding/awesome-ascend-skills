@@ -1,0 +1,4 @@
+interface:
+  display_name: "TileLang Ascend/PTO 性能实践"
+  short_description: "核对并验证 TileLang Ascend/PTO 算子实现、模板与性能证据"
+  default_prompt: "Use $tilelang-performance-best-practices to review, implement, and validate a TileLang Ascend/PTO kernel against the installed TileLang source and current repository contracts."

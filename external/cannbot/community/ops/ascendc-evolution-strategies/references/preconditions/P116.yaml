@@ -1,0 +1,47 @@
+strategy_id: P116
+description: GQA Grouped-M 头合并适用性检查 — 算子为 GQA（N_q = N_kv * G, G > 1），存在 cube matmul 路径，且尚未做 G→M 维合并。
+strategy_meta:
+  id: "P116"
+  slug: "P116_gqa_grouped_m_head_merge"
+  title: "P116: GQA Grouped-M 头合并（G 个 Query Head 合并进 Matmul M 维）"
+  bottlenecks: [cube_underutilization, tiling_imbalance]
+  op_families: [attention, flash_attention]
+  conflicts_with: []
+  synergizes_with: [P57, P106, P115]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p116_gqa_grouped_m_head_merge.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p116_gqa_grouped_m_head_merge.md"
+  playbook_slug: "P116_gqa_grouped_m_head_merge"
+checks:
+  - id: is_gqa_structure
+    type: grep_count
+    pattern: "nkv|kvHeadNum|kv_head|N_kv|n2Size"
+    files: [kernel, header, host]
+    expected: ">= 1"
+    fail_msg: "未检测到 kv head / GQA 结构（可能为 MHA，G=1 无合并空间）→ P116 不适用。"
+
+  - id: has_cube_matmul
+    type: grep_count
+    pattern: "Mmad|Matmul|IterateAll|MatmulApiTiling|bmm1"
+    files: [kernel, host]
+    expected: ">= 1"
+    fail_msg: "算子尚无 cube matmul 路径 → 先走 P13/P46 把伪 matmul 路由到 Cube，再考虑 P116。"
+
+  - id: no_grouped_m_yet
+    type: grep_count
+    pattern: "groupedQueryM|logicalG|grouped.*query.*m|g.*merge.*m"
+    files: [kernel, host, header]
+    expected: "== 0"
+    fail_msg: "已实现 G→M 头合并（groupedQueryM 或等价逻辑）→ P116 主要价值已发挥，转向 P57 G 分核或 P86 matmul 调优。"
+
+  - id: per_head_small_matmul
+    type: grep_count
+    pattern: 'headsPerBlock|heads_per_block|for.*hidx|h_q\\b'
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到逐头循环/小 M matmul 证据 → 确认 M 维是否已足够大（Sq>4 时 P116 收益有限）。"

@@ -1,0 +1,44 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "系统测试用例设计工作流程",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "如何为 Ascend C 算子设计系统测试（ST）用例？请介绍完整的工作流程。不需要执行任何工具调用。",
+      "expected_output": "回复应说明 Ascend C ST 测试设计的完整工作流程，基于 aclnn 接口文档按四步完成：算子参数定义、测试因子提取、约束关系分析、测试用例生成（L0/L1/L2）。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "ST 设计输出产物",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "ascendc-st-design skill 完成测试设计后会输出哪些文件？存放在什么路径下？可以加载技能，不需要执行其他外部工具调用。",
+      "expected_output": "回复应说明完成 ST 测试设计后产出的文件类型和内容，包括参数定义、测试因子、约束分析和测试用例等输出产物。",
+      "files": [],
+      "expectations": []
+    }
+  ],
+  "skill_name": "ascendc-st-design"
+}

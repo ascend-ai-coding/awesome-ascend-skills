@@ -1,0 +1,34 @@
+{
+  "skill_name": "tool-aml",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "aic 算子新增前收集参数",
+      "prompt": "帮我在 ascend960dt_aicore_stl 里新增一个 aic 算子 cube_covery，kernel cce 代码我稍后提供。",
+      "expected_output": "回复应先确认缺失的必备参数，不能直接生成文件：需要形态已给定（960DT）、算子类型 aic 已给定，但仍缺算子名对应目录名（aic_cube_covery）、1 个 aic kernel cce 代码、每个输入的 size/填充方式/dtype、每个输出每 block 的 size（字节）、下发标量参数（如 l2Read/l2Write/burst_len 等）及下发方式（单次/循环）。应先回问这些项，明确输出每 block size 以用户输入为准、不由 skill 推断。",
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "mix 算子需要两个 cce",
+      "prompt": "新增一个 mix 算子 all_method_sync，我只有一个 aic 的 cce 文件，可以吗？",
+      "expected_output": "回复应说明不可以：mix 类型需要 aic + aiv 两个 cce（AIC 端与 AIV 端各一个 device 函数），只有 aic cce 无法生成完整算子。应向用户索要缺失的 aiv kernel cce，并说明生成目录为 mix_all_method_sync，产物包含 aic_all_method_sync.cce 与 aiv_all_method_sync.cce，960DT 用 __mix__(1,1) + KERNEL_TYPE_MIX_AIC_1_1。",
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "输出块大小越界自检",
+      "prompt": "生成算子后帮我跑一下自检脚本，注意看会不会越界写。",
+      "expected_output": "回复应运行 python3 scripts/check_stl_op.py --op-dir <FORM>/ops/<TYPE>_<NAME>，并用中文按问题分段反馈：问题（含文件/函数名）、严重级别（ERROR/WARN/INFO）、修改方案（建议代码或应改常量/表达式）。应重点核对 host desc.outputs[].byteSize / blockDim 是否等于 kernel 里 block_idx 步长、输出字节是否 4 的倍数、copy_ubuf_to_gm_align_v2 的 nBurst*burstLen 是否超每块输出。不能只回“通过”。",
+      "expectations": []
+    },
+    {
+      "id": 4,
+      "title": "960DT 禁用 subblock",
+      "prompt": "我在 960DT 形态的 cce 里用了 get_subblockid() 做偏移，检查脚本会报错吗？",
+      "expected_output": "回复应说明会报错：960DT 每 core 是 1 AIC:1 AIV，无 subblock，使用 get_subblockid()/subblock 属于禁用模式，自检脚本会报 [ERROR]。应给出修改方案：删除 subblock 相关逻辑与偏移，改用 block_idx 对应的偏移。",
+      "expectations": []
+    }
+  ]
+}

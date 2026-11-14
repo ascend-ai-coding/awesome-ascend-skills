@@ -1,0 +1,42 @@
+# ----------------------------------------------------------------------------
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+# ----------------------------------------------------------------------------
+strategy_id: P160
+description: 连续 q-block 共享 kv_end，ring 填/排空占比高 适用性检查。
+
+strategy_meta:
+  id: "P160"
+  slug: "P160_n2_mg_merge"
+  title: "P160: 把 kv_end 相同的连续 q-block 合进一个 ring（n2_mg 合并）"
+  bottlenecks: [tiling_imbalance, sync_overhead]
+  op_families: [attention, cv_fusion]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p160_n2_mg_merge.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p160_n2_mg_merge.md"
+  playbook_slug: "P160_n2_mg_merge"
+checks:
+  - id: has_mgroup
+    type: grep_count
+    pattern: "MGROUP|kv_end|ring"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未发现 n2_mg/ring 结构 → P160 不适用。"
+  - id: has_prelaunch
+    type: grep_count
+    pattern: "PRELAUNCH|FIX"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未发现 ring 填/排空 → P160 不适用。"

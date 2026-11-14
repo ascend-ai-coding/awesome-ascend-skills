@@ -1,0 +1,84 @@
+/*!
+ * \file radix_sort_top_k_base.h
+ * \brief radix_sort_top_k_base impl
+ */
+#ifndef RADIX_SORT_TOP_K_BASE_H
+#define RADIX_SORT_TOP_K_BASE_H
+
+#include "kernel_operator.h"
+
+using namespace AscendC;
+
+template <typename T, typename T_INDEX, typename T_INDEX_TO>
+struct RadixSortTopKBase {
+    __aicore__ inline RadixSortTopKBase() {};
+    __aicore__ inline void BaseInit(
+        GM_ADDR inputValue,
+        GM_ADDR k,
+        GM_ADDR value,
+        GM_ADDR indices,
+        const TopKTilingDataSimd* tilingData,
+        TPipe* tPipe);
+          
+protected:
+    // input value
+    GlobalTensor<T> inputXGm_;
+    // output value
+    GlobalTensor<T> valuesGm_;
+    // output index
+    GlobalTensor<T_INDEX_TO> indicesGm_;
+    // 调用高阶APITopK时，配合isInitIndex使用，isInitIndex为false时，只需要定义，无需赋值
+    LocalTensor<int32_t> srcIndexLocal;  
+
+    // 尾轴的大小
+    uint32_t lastAxisNum_ = 0;
+    // 外轴的大小
+    uint32_t unsortedDimNum_ = 0;
+    // 分块大小
+    uint32_t numTileData_ = 0;
+    // 每个核处理的次数
+    uint32_t sortLoopTimes_ = 0;
+    // K的值
+    uint32_t k_ = 0;
+    // 调用API所需的空间大小
+    uint32_t topKApiTmpSize_ = 0;
+    // 核索引
+    uint32_t blockIndex_ = 0;
+
+    TPipe* tPipe_;
+    // Memory of input and output in pipe
+    TQue<QuePosition::VECIN, 1> inputXQue_;
+    TQue<QuePosition::VECOUT, 1> valuesQue_;
+    TQue<QuePosition::VECOUT, 1> indicesQue_;
+    TBuf<TPosition::VECCALC> indicesOutTbuf_;
+
+    // Memory of API in pipe
+    TBuf<TPosition::VECCALC> topKApiTmpTBuf_;  
+};
+
+template <typename T, typename T_INDEX, typename T_INDEX_TO>
+__aicore__ inline void RadixSortTopKBase<T, T_INDEX, T_INDEX_TO>::BaseInit(
+    GM_ADDR inputValue,
+    GM_ADDR k,
+    GM_ADDR value,
+    GM_ADDR indices,
+    const TopKTilingDataSimd* tilingData,
+    TPipe* tPipe)
+{
+    inputXGm_.SetGlobalBuffer((__gm__ T*)(inputValue));
+    valuesGm_.SetGlobalBuffer((__gm__ T*)(value));
+    indicesGm_.SetGlobalBuffer((__gm__ T_INDEX_TO*)(indices));
+
+     // init queue
+    tPipe_ = tPipe;
+    
+    lastAxisNum_ = tilingData->lastAxisNum;
+    unsortedDimNum_ = tilingData->unsortedDimNum;
+    numTileData_ = tilingData->numTileDataSize;
+    sortLoopTimes_ = tilingData->sortLoopTimes;
+    k_ = tilingData->topKRealValue;
+    topKApiTmpSize_ = tilingData->topkAcApiTmpBufferSize;
+
+    blockIndex_ = GetBlockIdx();
+}
+#endif // RADIX_SORT_TOP_K_H

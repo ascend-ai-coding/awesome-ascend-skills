@@ -1,0 +1,228 @@
+/*
+ * Runtime tiling contract for the standalone depthwise conv2d demo.
+ *
+ * This header is shared by the host (which computes a DwTiling from a shape and
+ * attribute description) and the kernel (which receives the same struct by value
+ * as a launch argument). It must therefore compile both with g++ and with the
+ * ASC compiler, so it depends on nothing but <cstdint>.
+ *
+ * DwTiling is the subset of the ops-nn arch35 Conv2DTilingData that the
+ * depthwise-simplify kernel actually reads, plus the two values the direct-launch
+ * form needs on the host side (blockDim and the L1 ping-pong selector that the
+ * mainline carries in the tiling key rather than in the tiling data). Field names
+ * match ops-nn so the two can be compared field by field.
+ */
+
+
+/*!
+ * \file dwconv2d_tiling.h
+ * \brief Depthwise Conv2D 运行期 DwTiling / DwTilingIn 契约 + host API。
+ *        对应说明文档 templates/dwconv2d_mix.md。
+ *
+ * ── 集成说明（使用前必读）─────────────────────────────────────────────────────
+ *   1. 去掉 .template 后缀落地为 dwconv2d_tiling.h（host/device 共用，仅依赖 cstdint）。
+ *   2. 实现见 dwconv2d_tiling_impl.template → dwconv2d_tiling.cpp（g++）。
+ *   3.  * ─────────────────────────────────────────────────────────────────────────────
+ */
+
+#ifndef DWCONV2D_TILING_H
+#define DWCONV2D_TILING_H
+
+#include <cstdint>
+
+namespace dwconv2d {
+
+enum class DwDType : uint8_t { FP16 = 0, FP32 = 1, BF16 = 2 };
+
+// Which of the three arch35 tiling algorithms produced the result. Kept in the
+// struct so tools can report the decision; the kernel ignores it.
+enum class DwTilingAlgo : uint8_t { BASIC_BLOCK = 0, M_MODE = 1, HW_MODE = 2 };
+
+struct DwTiling {
+    // --- Problem geometry (mirrors ops-nn shapeInfo/attrInfo) ---
+    uint64_t hin, win, hout, wout;
+    uint32_t batch, cin, cout, kh, kw;
+
+    // --- Opt-group packing: `enlarge` channels share one Mmad ---
+    uint32_t groups, enlarge, cinOpt, coutOpt, groupOpt;
+
+    // --- Core split. nDim/woDim are forced to 1 by the simplified template ---
+    uint32_t batchDim, groupDim, nDim, hoDim, woDim, singleCoreGroupOpt;
+
+    // --- L1 / L0 tiles. hoL1/hoL0 are M-space tiles, not output rows ---
+    uint32_t aL1SpaceSize, hoL1, hoL0, kL0, nL0;
+
+    // --- Attributes ---
+    uint32_t strideH, strideW, dilationH, dilationW;
+    uint32_t padTop, padBottom, padLeft, padRight;
+    uint8_t hasBias, hf32Enable, hf32TransMode;
+
+    // --- Direct-launch extras (mainline keeps these in the tiling key) ---
+    uint32_t blockDim;      // batchDim * groupDim * nDim * hoDim * woDim
+    uint8_t l1PingPong;     // bit0 = AL1 double, bit1 = BL1 double; only 0 or 3
+    DwDType dtype;
+    DwTilingAlgo algo;
+
+    // --- Derived scalars, filled by FinalizeDerived() -----------------------
+    // Appended after `algo` so derived fields don't shift the layout of
+    // primary fields that callers initialise positionally.
+    //
+    // Only values that retire a runtime integer divide or modulo in the kernel
+    // belong here. Measured on this part they buy nothing: the kernel is bound
+    // by the AIV/AIC scalar and cross-core sync path, not by this arithmetic
+    // (README section 5). They are kept because the host knows them for free and
+    // the kernel then states its contract rather than recomputing it, but do not
+    // grow this list expecting a speedup - a wider argument struct is not free.
+    uint32_t maxMPerCore;   // AlignUp(ceil(hout*wout, hoDim), m0)
+    uint32_t batchCount;    // ceil(batch, batchDim)
+    uint32_t enlargeTail;   // groups % enlarge, 0 when the split is exact
+    uint32_t woLocal;       // output columns of the padded AL1 window
+    uint32_t al1HalfSize;   // elements in one AL1 ping-pong half; replaces the
+                            // kernel's aL1SpaceSize / (win * cinAligned * bytes)
+};
+
+// What the host is given by the framework, before any tiling decision.
+struct DwTilingIn {
+    uint32_t n = 0, c = 0, hi = 0, wi = 0;
+    uint32_t kh = 0, kw = 0;
+    uint32_t strideH = 1, strideW = 1;
+    uint32_t padH = 0, padW = 0;
+    uint32_t dilationH = 1, dilationW = 1;
+    DwDType dtype = DwDType::FP16;
+    bool hasBias = true;
+    // Default matches Ascend950PR_957c (cannbench.com 950pr runner). The
+    // full-fat Ascend950PR_9599 has 36; callers that know the part should
+    // override, and the plugin exposes DWCONV2D_AICORE_NUM for that.
+    uint32_t aicoreNum = 28;
+
+    // Cap on the opt-group packing factor. 0 means "let the tiling decide".
+    // Forcing 1 disables the block-diagonal zero padding, which is the only way
+    // to avoid 0*inf -> NaN when the feature map contains infinities; see
+    // docs/TILING_ALGORITHMS.md.
+    uint32_t enlargeLimit = 0;
+
+    // Round fp32 operands to HF32 (1-8-10, the Ascend TF32) inside Mmad. Ignored
+    // for fp16/bf16. Mirrors the mainline `enable_hf32` attribute, which is also
+    // caller-supplied rather than inferred - it trades mantissa bits for Cube
+    // throughput, and only the caller knows if that is acceptable.
+    bool enableHf32 = false;
+};
+
+// --- Small helpers shared by the host algorithm and the compile-time checks ---
+
+constexpr uint32_t CeilDivU32(uint32_t a, uint32_t b) { return b == 0 ? 0 : (a + b - 1) / b; }
+constexpr uint32_t AlignUpU32(uint32_t a, uint32_t b) { return CeilDivU32(a, b) * b; }
+constexpr uint32_t CubeK0(DwDType dt) { return dt == DwDType::FP32 ? 8U : 16U; }
+constexpr uint32_t CubeN0() { return 16U; }
+constexpr uint32_t CubeM0() { return 16U; }
+constexpr uint32_t DTypeBytes(DwDType dt) { return dt == DwDType::FP32 ? 4U : 2U; }
+
+// Hardware budgets the kernel hard-codes. L0A/L0B/L0C are halved because the
+// kernel statically splits each buffer into two ping-pong halves.
+constexpr uint32_t kL1Bytes = 512U * 1024U;
+constexpr uint32_t kUbBytes = 256U * 1024U;
+constexpr uint32_t kL0AHalfBytes = 32U * 1024U;
+constexpr uint32_t kL0BHalfBytes = 32U * 1024U;
+constexpr uint32_t kL0CHalfBytes = 128U * 1024U;
+constexpr uint32_t kUbIndexBytes = 256U;
+constexpr uint32_t kL1AlignBytes = 32U;
+
+// Every constraint the kernel relies on. The host must not emit a tiling that
+// fails this, and ValidateAll asserts on it too.
+constexpr bool ValidateTiling(const DwTiling& t)
+{
+    return t.kh != 0 && t.kw != 0 && t.hout != 0 && t.wout != 0 && t.enlarge != 0 &&
+           t.groupOpt != 0 && t.hoL0 != 0 && t.kL0 != 0 && t.nL0 != 0 && t.hoL1 != 0 &&
+           t.singleCoreGroupOpt != 0 &&
+           // The simplified template only exists for depthwise with no Cout split.
+           t.nDim == 1 && t.woDim == 1 && t.cin == t.groups && t.cout == t.cin &&
+           t.blockDim == t.batchDim * t.groupDim * t.nDim * t.hoDim * t.woDim &&
+           t.blockDim != 0 && (t.l1PingPong == 0 || t.l1PingPong == 3) &&
+           t.singleCoreGroupOpt * t.groupDim >= t.groupOpt && t.hoL1 >= t.hoL0 &&
+           // Cube tile granularity.
+           t.kL0 % CubeK0(t.dtype) == 0 && t.nL0 % CubeN0() == 0 &&
+           t.nL0 >= AlignUpU32(t.coutOpt, CubeN0()) &&
+           // L0A / L0B / L0C halves.
+           AlignUpU32(t.hoL0, CubeM0()) * t.kL0 * DTypeBytes(t.dtype) <= kL0AHalfBytes &&
+           t.nL0 * t.kL0 * DTypeBytes(t.dtype) <= kL0BHalfBytes &&
+           AlignUpU32(t.hoL0, CubeM0()) * t.nL0 * 4U <= kL0CHalfBytes &&
+           // AL1 must hold at least one row of input for the M tile it serves.
+           t.aL1SpaceSize >= t.win * AlignUpU32(t.cinOpt, CubeK0(t.dtype)) * DTypeBytes(t.dtype);
+}
+
+// Byte footprint of the NZ-staged packed weight for one opt-group. Used for both
+// the BL1 reservation and the UB check on the vector side.
+constexpr uint32_t WeightNzBytes(const DwTiling& t)
+{
+    return CeilDivU32(AlignUpU32(t.cinOpt, CubeK0(t.dtype)) * t.kh * t.kw, CubeK0(t.dtype)) *
+           CeilDivU32(t.coutOpt, CubeN0()) * CubeN0() * CubeK0(t.dtype) * DTypeBytes(t.dtype);
+}
+
+constexpr uint32_t L1UsedBytes(const DwTiling& t)
+{
+    return ((t.l1PingPong & 1U) ? 2U : 1U) * t.aL1SpaceSize +
+           ((t.l1PingPong & 2U) ? 2U : 1U) * WeightNzBytes(t) +
+           AlignUpU32(t.coutOpt * DTypeBytes(t.dtype), kL1AlignBytes);
+}
+
+constexpr bool ValidateMemory(const DwTiling& t)
+{
+    return L1UsedBytes(t) <= kL1Bytes && 2U * WeightNzBytes(t) + kUbIndexBytes <= kUbBytes;
+}
+
+// Output columns the padded AL1 window yields, i.e. the kernel's woLocal.
+constexpr uint32_t DwWoLocal(const DwTiling& t)
+{
+    const uint32_t virtualW = t.padLeft + static_cast<uint32_t>(t.win) + t.padRight;
+    const uint32_t dilatedKW = (t.kw - 1) * t.dilationW + 1;
+    return (t.strideW && virtualW >= dilatedKW) ? (virtualW - dilatedKW) / t.strideW + 1 : 0;
+}
+
+// Elements in one AL1 ping-pong half, i.e. the kernel's al1HalfSize_.
+constexpr uint32_t Al1HalfElems(const DwTiling& t)
+{
+    const uint32_t win = static_cast<uint32_t>(t.win);
+    const uint32_t cinAligned = AlignUpU32(t.cinOpt, CubeK0(t.dtype));
+    const uint32_t rowBytes = win * cinAligned * DTypeBytes(t.dtype);
+    const uint32_t rows = (rowBytes == 0 || t.aL1SpaceSize / rowBytes == 0) ? 1U : t.aL1SpaceSize / rowBytes;
+    return rows * win * cinAligned;
+}
+
+// The kernel uses these raw, so a tiling that never went through
+// FinalizeDerived - or was edited afterwards - must not reach it. Deliberately
+// a second spelling of what FinalizeDerived writes: ValidateAll fails
+// immediately if the two ever drift apart.
+constexpr bool ValidateDerived(const DwTiling& t)
+{
+    return t.hoDim != 0 && t.batchDim != 0 && t.enlarge != 0 && t.strideW != 0 &&
+           t.maxMPerCore == AlignUpU32(CeilDivU32(static_cast<uint32_t>(t.hout * t.wout), t.hoDim), CubeM0()) &&
+           t.batchCount == CeilDivU32(t.batch, t.batchDim) && t.enlargeTail == t.groups % t.enlarge &&
+           t.woLocal == DwWoLocal(t) && t.al1HalfSize == Al1HalfElems(t);
+}
+
+constexpr bool ValidateAll(const DwTiling& t)
+{
+    return ValidateTiling(t) && ValidateMemory(t) && ValidateDerived(t);
+}
+
+// Fill every derived field of `t` from the primaries. DwConv2dDoTiling calls
+// this before returning; anything that hand-writes a DwTiling must call it
+// too, or ValidateAll will reject the result.
+void FinalizeDerived(DwTiling& t);
+
+// Entry point: turn a shape + attribute description into a launchable tiling.
+// Returns false when no legal tiling exists for the request.
+bool DwConv2dDoTiling(const DwTilingIn& in, DwTiling& out);
+
+// Memoised DwConv2dDoTiling, keyed on the whole DwTilingIn. Callers on the
+// per-invocation path must use this: the search enumerates core splits and L1
+// tiles and costs 6-30 us of CPU per shape, which is more than the kernel itself
+// takes on the small cases, and the host then becomes the bottleneck rather than
+// the NPU. Shapes repeat on essentially every real workload, so the search runs
+// once and later calls pay a hash lookup. Not a shape table: a miss just runs
+// the same automatic algorithm.
+bool DwConv2dGetTiling(const DwTilingIn& in, DwTiling& out);
+
+} // namespace dwconv2d
+
+#endif

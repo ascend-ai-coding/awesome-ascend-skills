@@ -1,0 +1,107 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "逐 case 证据驱动的 PTO 优化方案",
+      "config": {
+        "max_tokens": 120000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "请使用 tilelang-perf-optimization，为当前仓库中一个 PTO Reduction kernel 制定性能优化方案。已有全部 case 的 latency 和 profiling 指标，但不同 shape 进入不同 dispatch 分支。说明分析顺序、如何调用 tilelang-performance-best-practices，以及最终方案必须包含什么。不要执行外部工具。",
+      "expected_output": "应先固定仓库、实际 TileLang/PTOAS 环境和测量口径，再将每个 case 映射到真实 dispatch 分支并按语义、dtype、尾块和瓶颈分组；建立核数、tile、buffer versions、padding、读写和归约状态模型；候选必须由证据支持，并用 tilelang-performance-best-practices 核对 API 与 lowering，复用 bundled reference 时再核对真实 Python 路径和模板成熟度；最多输出三个状态为 IMPLEMENTABLE 或 EXPERIMENT 的已准入方案，包含全部 case 覆盖、参数、验证命令、性能口径和回退条件；DESIGN_ONLY 单列为未准入候选，不占名额且不交给实施。",
+      "files": [],
+      "expectations": [
+        {
+          "name": "maps_every_case_to_real_branch",
+          "description": "逐 case 基于真实执行路径分析",
+          "assertion_text": "每个 case 都映射到实际 dispatch/kernel 分支，并在覆盖表中出现"
+        },
+        {
+          "name": "uses_tilelang_feasibility_gate",
+          "description": "调用实现知识 Skill 核验可落地性",
+          "assertion_text": "加载 tilelang-performance-best-practices，并按目标仓库、实际 TileLang 源码和 PTO lowering 筛选候选；只有复用 bundled reference 时才强制核对其成熟度"
+        },
+        {
+          "name": "limits_and_validates_plans",
+          "description": "方案数量和验证条件明确",
+          "assertion_text": "最多三个 IMPLEMENTABLE/EXPERIMENT 已准入方案，每个方案包含证据、参数、适用 case、精度与性能验证和回退条件；DESIGN_ONLY 单列且不交给实施"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "缺少 profiling 证据时不臆测",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "请使用 tilelang-perf-optimization 分析一个 TileLang/PTO elementwise kernel。用户只给了源码和一句‘性能很差’，没有逐 case latency、profiling 数据，也没有说明测试 case。你应当如何处理？不要执行外部工具。",
+      "expected_output": "应说明当前证据不足，先收集公开接口与全部目标 case、确认基线精度和 PTO 编译、校验目标 kernel 后按同条件逐 case 采集 latency 和可用 profiling；在数据回来前只能列采集计划或待验证假设，不能宣称 VEC/MEM/SCALAR bound，也不能给确定性 tile 参数或预期加速比。",
+      "files": [],
+      "expectations": [
+        {
+          "name": "does_not_invent_bottleneck",
+          "description": "缺少证据不下 bound 结论",
+          "assertion_text": "没有逐 case profiling 时不宣称具体 bound，只输出数据采集计划和待验证假设"
+        },
+        {
+          "name": "requires_complete_case_scope",
+          "description": "先固定目标 case 与基线",
+          "assertion_text": "要求完整 case、基线精度、PTO 编译状态和同条件逐 case latency"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "拒绝把底层能力当作 TileLang API",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "某优化建议只证明 PTOAS 内部支持一种指令，但在当前 TileLang 源码、examples/ascend 和当前仓库中找不到对应前端 API 或可 lowering 示例。请使用 tilelang-perf-optimization 判断该建议能否进入直接实施方案。不要执行外部工具。",
+      "expected_output": "不能进入直接实施方案。PTOAS 能力不证明 TileLang 前端可表达；应继续在实际导入的 TileLang 源码、lowering 和可运行 Python 实现中核验。仍无依据时标为 DESIGN_ONLY，单列为未准入候选，不占最多三个已准入方案名额，并给出需要补齐的 API、lowering、精度和性能证据。",
+      "files": [],
+      "expectations": [
+        {
+          "name": "separates_frontend_from_backend",
+          "description": "区分 TileLang 前端和 PTOAS",
+          "assertion_text": "PTOAS 内部能力不能反推 TileLang 前端已有可用 API"
+        },
+        {
+          "name": "marks_unverified_as_design_only",
+          "description": "未经验证的候选不会直接实施",
+          "assertion_text": "找不到当前源码和 lowering 依据时标为 DESIGN_ONLY，单列为未准入候选、不占已准入方案名额，并要求补充验证证据"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "当前源码证据不受模板登记限制",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": ["A2"],
+        "eval_mode": "text"
+      },
+      "prompt": "当前算子分支已有一个可运行 TileLang/PTO 实现：能在实际 TileLang 源码中定位 API 与 lowering，目标 case 精度通过，但 tilelang-performance-best-practices 的 template_status.md 尚未登记它。请使用 tilelang-perf-optimization 判断它能否作为优化方案依据。不要执行外部工具。",
+      "expected_output": "不能仅因模板状态表未登记就降为 DESIGN_ONLY。当前仓库和实际 TileLang 源码属于直接事实源；若瓶颈证据、API、lowering、精度、适用 case 和验证方法齐全，可独立判断为 IMPLEMENTABLE 或 EXPERIMENT。只有复用 bundled reference 时才必须引用其路径和成熟度；未登记实现不能冒充已验证模板。",
+      "files": [],
+      "expectations": [
+        {
+          "name": "prefers_direct_source_evidence",
+          "description": "当前真实源码证据优先于模板登记",
+          "assertion_text": "当前仓库或实际 TileLang 源码的 API、lowering 和精度证据可独立支持方案准入，不因 template_status.md 未登记而自动降为 DESIGN_ONLY"
+        },
+        {
+          "name": "still_gates_bundled_templates",
+          "description": "模板成熟度门禁仍只约束 bundled reference",
+          "assertion_text": "复用 tilelang-performance-best-practices bundled reference 时仍必须读取真实路径和成熟度，未登记实现不得冒充已验证模板"
+        }
+      ]
+    }
+  ],
+  "skill_name": "tilelang-perf-optimization"
+}

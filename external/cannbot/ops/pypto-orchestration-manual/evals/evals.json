@@ -1,0 +1,135 @@
+{
+  "skill_name": "pypto-orchestration-manual",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "首次调度前的必读顺序",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "disabled": false
+      },
+      "prompt": "作为 pypto-op-orchestrator，第一次调度子 agent 之前要读哪些文档？",
+      "expected_output": "应先读 pypto-orchestration-manual（SKILL.md 入口），按阅读顺序 principles.md → agents.md 后才进行首次调度；agents.md 含每个子 agent 的输入/交付物/门禁/交接，足以支撑调度与把关而不需要知道子 agent 内部工作方式；rules.md 只在按需执行细节时加载，不用于调度。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "子 agent 之间的共享状态与交接",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "disabled": false
+      },
+      "prompt": "PyPTO 开发团队里子 agent 之间如何交接进度与状态？",
+      "expected_output": "所有子 agent 读写同一个共享文件 custom/<op>/MEMORY.md，它是阶段状态、门禁证据、调试日志、模块契约的单一事实来源；每次交接是一次 memory 更新而非直接消息；模板来自 pypto-memory-template 的 templates/MEMORY.template.md。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "子 agent 误加载本 skill 的处理",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ]
+      },
+      "prompt": "我作为子 agent 不小心加载了 pypto-orchestration-manual 这个 skill，该怎么办？",
+      "expected_output": "应停止：该 skill 仅限 pypto-op-orchestrator 加载，子 agent（planner/mathematician/architect/designer/coder/verifier/debugger/optimizer）都不应读取；若发现被误调度，应交还控制权给 orchestrator，不继续使用该 skill 的内容。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 4,
+      "title": "rules.md 的加载时机",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ]
+      },
+      "prompt": "编排 PyPTO 开发团队时，rules.md 什么时候需要加载？",
+      "expected_output": "rules.md 包含强制规则、模块级执行、三项禁止，子 agent 通过自身 skill 执行这些规则；编排时 rules.md 只在按需执行细节时加载，不用于首次调度。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 5,
+      "title": "调度子 agent 前需掌握的信息",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ]
+      },
+      "prompt": "我要调度 planner 子 agent，需要掌握它的哪些信息才能把关？",
+      "expected_output": "应读 agents.md 获取子 agent 的输入、交付物、门禁、交接信息来支撑调度与把关，无需知道子 agent 内部工作方式；并结合 principles.md 的行为准则。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 6,
+      "title": "Stage 术语只能由编排手册集中管理",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "为什么 pypto-orchestration-manual 里保留完整 Stage 词汇，而普通子技能不应该复制这套状态机？",
+      "expected_output": "回复应说明该手册是 stage-management knowledge 的唯一规范来源，集中定义 roster、dispatch、gate 和 handoff；子 agent 只按自身职责执行，复制阶段状态机会形成多套控制真值，因此只由 orchestrator 加载和管理。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "agents.md 不替代子代理内部 Mandatory reads",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "orchestrator 已读 agents.md，是否需要替每个子 agent 再加载其所有内部技能和参考？",
+      "expected_output": "回复应说明不需要：agents.md 只提供编排所需的输入、交付物、门禁和交接合同；每个子 agent 的内部技能加载由其 agents/<name>.md Mandatory reads 自主管理，orchestrator 不应预加载或干预内部实现。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 8,
+      "title": "强制规则按需加载但仍约束交付物",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "rules.md 不是首次调度必读，是否意味着子 agent 的输出可以不经过其中的模块逐步执行和三项禁止检查？",
+      "expected_output": "回复应说明不是：rules.md 对所有子 agent 输出仍是强制门禁，只是由各自 skill 落实，orchestrator 在需要执行细节或核对违规时按需加载；progressive disclosure 不等于规则可选。",
+      "expectations": [],
+      "files": []
+    }
+  ]
+}
