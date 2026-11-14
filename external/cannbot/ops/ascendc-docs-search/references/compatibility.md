@@ -20,7 +20,7 @@
 |-----|-----|
 | 当前版本 | **9.0.0** |
 | 版本目录 | cann |
-| 代码位置 | `asc-devkit/`（项目根目录下） |
+| 代码位置 | `$ASC_DEVKIT_DIR/`（项目根目录下） |
 
 ---
 
@@ -129,7 +129,7 @@
    - 注意数据类型限制
 
 4. **遇到兼容性问题时**：
-   - 查阅 `examples/10_compatibility_cases/` 示例
+   - 查阅 `examples/01_simd_cpp_api/06_compatibility_guide/` 兼容性迁移适配示例
    - 参考 asc-devkit 的兼容性处理方法
    - 降级使用旧版本 API
 

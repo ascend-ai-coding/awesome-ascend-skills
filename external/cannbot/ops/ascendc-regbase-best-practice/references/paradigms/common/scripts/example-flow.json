@@ -1,0 +1,51 @@
+{
+  "inputs": [
+    "x",
+    "gamma"
+  ],
+  "outputs": [
+    "y"
+  ],
+  "pinned": [
+    "B1"
+  ],
+  "steps": [
+    {
+      "id": "S1",
+      "op": "CopyIn x → B0",
+      "reads": [],
+      "writes": [
+        "B0"
+      ]
+    },
+    {
+      "id": "S2",
+      "op": "ReduceMean(高阶API) → B1",
+      "reads": [
+        "B0"
+      ],
+      "writes": [
+        "B1"
+      ]
+    },
+    {
+      "id": "S3",
+      "op": "CopyIn gamma → B0",
+      "reads": [],
+      "writes": [
+        "B0"
+      ]
+    },
+    {
+      "id": "S4",
+      "op": "VF: Mul(brc) → B2",
+      "reads": [
+        "B0",
+        "B1"
+      ],
+      "writes": [
+        "B2"
+      ]
+    }
+  ]
+}

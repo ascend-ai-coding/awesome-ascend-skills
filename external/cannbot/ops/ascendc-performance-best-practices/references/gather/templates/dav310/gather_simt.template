@@ -1,0 +1,208 @@
+/**
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
+
+/*!
+ * \file gather_simt.h
+ * \brief SIMT 标量并行 Gather 参考模板（通用兜底路径，dav-3510 / Ascend950）。
+ *
+ * 参考 ops-nn gather_v2.h 的 SIMT 实现模式：2048 SIMT 线程并行，每线程直接 GM 标量读
+ * index + x 并写 y，无 UB 中转；fast-division（GetUintDivMagicAndShift + Simt::UintDiv）
+ * 替代 div/mod。是所有 Gather 场景（尤其散点读 torch.gather dim=0）的最通用高性能路径。
+ *
+ * 三维模型：x[outerSize, gatherDimSize, innerSize]，index[outerSize, gatherSize, innerSize]，
+ *           y[outerSize, gatherSize, innerSize]。
+ *           对每个输出元素 y[o, g, c]：idx = index[o, g, c]；y[o,g,c] = x[o, idx, c]。
+ *
+ * 两条地址路径（编译期模板 bool 选择，消除 SIMT 分支发散）：
+ *   - OUTER_SAME=true  快路径：index 仅沿 gather 轴低维（index.shape[i]==x.shape[i] for i!=dim），
+ *                      innerI==innerX，idx = index[oOuter*gatherSize + gatherI]，地址公式简化。
+ *   - OUTER_SAME=false 通用 stride 路径：index 与输出同形，idx = index[yIndex]，按 stride 计算 xAddr。
+ */
+
+#ifndef GATHER_SIMT_H
+#define GATHER_SIMT_H
+
+#ifndef K_MAX_SHAPE_DIM
+#define K_MAX_SHAPE_DIM 0
+#endif
+
+#include "kernel_tiling/kernel_tiling.h"
+#include "kernel_operator.h"
+#include "simt_api/asc_simt.h"
+#include "gather_tiling_data.h"
+
+#ifdef __DAV_FPGA__
+constexpr uint32_t GATHER_SIMT_LAUNCH_BOUND = 512;
+#else
+constexpr uint32_t GATHER_SIMT_LAUNCH_BOUND = 2048;
+#endif
+
+namespace gatherv2 {
+using namespace AscendC;
+
+template <typename X_T, typename INDICES_T, typename INDEX_SIZE_T>
+class GatherSimt {
+public:
+    __aicore__ inline GatherSimt(){};
+    __aicore__ inline void Init(GM_ADDR x, GM_ADDR indices, GM_ADDR y, const GatherTilingData *tilingData);
+    __aicore__ inline void Process();
+
+private:
+    // NIS: Negative Index Support 编译期开关，消除 SIMT 内 if 分支发散。
+    // OUTER_SAME: outer/inner 维度 index 与 x 同形时走快路径，否则走通用 stride 路径。
+    template <const bool NIS, const bool OUTER_SAME>
+    static __simt_vf__ __aicore__ LAUNCH_BOUND(GATHER_SIMT_LAUNCH_BOUND) inline void GatherSimtVF(
+        const INDEX_SIZE_T yIndexBase, const INDEX_SIZE_T currentCoreElements,
+        const INDEX_SIZE_T m0Outer, const INDEX_SIZE_T shift0Outer,
+        const INDEX_SIZE_T m0Inner, const INDEX_SIZE_T shift0Inner,
+        const INDEX_SIZE_T outerSize, const INDEX_SIZE_T gatherDimSize,
+        const INDEX_SIZE_T gatherSize, const INDEX_SIZE_T innerSize,
+        __gm__ X_T *x, __gm__ INDICES_T *indices, __gm__ volatile X_T *y);
+
+private:
+    GlobalTensor<X_T> xGm_;
+    GlobalTensor<INDICES_T> indicesGm_;
+    GlobalTensor<X_T> yGm_;
+    const GatherTilingData *tilingData_ = nullptr;
+    int32_t blockIdxVal_ = 0;
+    int32_t needCoreNum_ = 0;
+    uint32_t threadNum_ = 0;
+    bool negativeIndexSupport_ = false;
+    bool outerSame_ = true;
+    INDEX_SIZE_T outerSize_ = 0;
+    INDEX_SIZE_T gatherDimSize_ = 0;
+    INDEX_SIZE_T gatherSize_ = 0;
+    INDEX_SIZE_T innerSize_ = 0;
+    INDEX_SIZE_T perCoreElements_ = 0;
+    INDEX_SIZE_T currentCoreElements_ = 0;
+    // fast-division magic / shift（device 侧由 GetUintDivMagicAndShift 计算）
+    INDEX_SIZE_T m0Outer_ = 0;
+    INDEX_SIZE_T shift0Outer_ = 0;
+    INDEX_SIZE_T m0Inner_ = 0;
+    INDEX_SIZE_T shift0Inner_ = 0;
+};
+
+template <typename X_T, typename INDICES_T, typename INDEX_SIZE_T>
+template <const bool NIS, const bool OUTER_SAME>
+__simt_vf__ __aicore__ LAUNCH_BOUND(GATHER_SIMT_LAUNCH_BOUND)
+inline void GatherSimt<X_T, INDICES_T, INDEX_SIZE_T>::GatherSimtVF(
+    const INDEX_SIZE_T yIndexBase, const INDEX_SIZE_T currentCoreElements,
+    const INDEX_SIZE_T m0Outer, const INDEX_SIZE_T shift0Outer,
+    const INDEX_SIZE_T m0Inner, const INDEX_SIZE_T shift0Inner,
+    const INDEX_SIZE_T outerSize, const INDEX_SIZE_T gatherDimSize,
+    const INDEX_SIZE_T gatherSize, const INDEX_SIZE_T innerSize,
+    __gm__ X_T *x, __gm__ INDICES_T *indices, __gm__ volatile X_T *y)
+{
+    const INDEX_SIZE_T outerStride = gatherSize * innerSize;   // y 中一个 outer 块的元素数
+    const INDEX_SIZE_T xOuterStride = gatherDimSize * innerSize; // x 中一个 outer 块的元素数
+    for (INDEX_SIZE_T idx = static_cast<INDEX_SIZE_T>(threadIdx.x); idx < currentCoreElements;
+         idx += static_cast<INDEX_SIZE_T>(blockDim.x)) {
+        const INDEX_SIZE_T yIndex = yIndexBase + idx;
+
+        // 地址分解：yIndex -> (oOuter, gatherI, innerCoord) via fast-div
+        INDEX_SIZE_T oOuter = Simt::UintDiv(yIndex, m0Outer, shift0Outer);
+        INDEX_SIZE_T rem = yIndex - oOuter * outerStride;
+        INDEX_SIZE_T gatherI = Simt::UintDiv(rem, m0Inner, shift0Inner);
+        INDEX_SIZE_T innerCoord = rem - gatherI * innerSize;
+
+        INDICES_T indicesValue;
+        if constexpr (OUTER_SAME) {
+            // 快路径：index 沿 gather 轴低维，innerI==innerX，一个索引取整个 slice
+            indicesValue = indices[oOuter * gatherSize + gatherI];
+        } else {
+            // 通用 stride 路径：index 与输出同形，每个输出位置有独立索引
+            indicesValue = indices[yIndex];
+        }
+
+        INDEX_SIZE_T indicesValueI = static_cast<INDEX_SIZE_T>(indicesValue);
+        if constexpr (NIS) {
+            // 负索引补偿：idx < 0 时 idx += gatherDimSize
+            if (indicesValueI < 0) {
+                indicesValueI += gatherDimSize;
+            }
+        }
+
+        const INDEX_SIZE_T xIndex = oOuter * xOuterStride + indicesValueI * innerSize + innerCoord;
+        y[yIndex] = x[xIndex];
+    }
+}
+
+template <typename X_T, typename INDICES_T, typename INDEX_SIZE_T>
+__aicore__ inline void GatherSimt<X_T, INDICES_T, INDEX_SIZE_T>::Init(
+    GM_ADDR x, GM_ADDR indices, GM_ADDR y, const GatherTilingData *tilingData)
+{
+    tilingData_ = tilingData;
+    xGm_.SetGlobalBuffer((__gm__ X_T *)x);
+    indicesGm_.SetGlobalBuffer((__gm__ INDICES_T *)indices);
+    yGm_.SetGlobalBuffer((__gm__ X_T *)y);
+
+    blockIdxVal_ = static_cast<int32_t>(GetBlockIdx());
+    needCoreNum_ = tilingData_->needCoreNum;
+    threadNum_ = static_cast<uint32_t>(tilingData_->threadNum);
+    negativeIndexSupport_ = (tilingData_->negativeIndexSupport != 0);
+    outerSame_ = (tilingData_->batchSize <= 1);  // batch==1 且 index 低维时走快路径
+    outerSize_ = static_cast<INDEX_SIZE_T>(tilingData_->outerSize);
+    gatherDimSize_ = static_cast<INDEX_SIZE_T>(tilingData_->gatherDimSize);
+    gatherSize_ = static_cast<INDEX_SIZE_T>(tilingData_->gatherSize);
+    innerSize_ = static_cast<INDEX_SIZE_T>(tilingData_->innerSize);
+    perCoreElements_ = static_cast<INDEX_SIZE_T>(tilingData_->perCoreElements);
+    currentCoreElements_ = perCoreElements_;
+    if (blockIdxVal_ == needCoreNum_ - 1) {
+        currentCoreElements_ = static_cast<INDEX_SIZE_T>(tilingData_->lastCoreElements);
+    }
+
+    // fast-division magic：outerStride = gatherSize * innerSize，innerStride = innerSize
+    const INDEX_SIZE_T outerStride = gatherSize_ * innerSize_;
+    GetUintDivMagicAndShift(m0Outer_, shift0Outer_, outerStride);
+    GetUintDivMagicAndShift(m0Inner_, shift0Inner_, innerSize_);
+}
+
+template <typename X_T, typename INDICES_T, typename INDEX_SIZE_T>
+__aicore__ inline void GatherSimt<X_T, INDICES_T, INDEX_SIZE_T>::Process()
+{
+    if (blockIdxVal_ >= needCoreNum_) {
+        return;
+    }
+    const INDEX_SIZE_T yIndexBase = static_cast<INDEX_SIZE_T>(blockIdxVal_) * perCoreElements_;
+
+    // 编译期分发：NIS 与 OUTER_SAME 均为模板 bool，消除 SIMT VF 内分支发散
+    if (negativeIndexSupport_) {
+        if (outerSame_) {
+            asc_vf_call<GatherSimtVF<true, true>>(
+                dim3(threadNum_), yIndexBase, currentCoreElements_, m0Outer_, shift0Outer_, m0Inner_, shift0Inner_,
+                outerSize_, gatherDimSize_, gatherSize_, innerSize_,
+                (__gm__ X_T *)(xGm_.GetPhyAddr()), (__gm__ INDICES_T *)(indicesGm_.GetPhyAddr()),
+                (__gm__ volatile X_T *)(yGm_.GetPhyAddr()));
+        } else {
+            asc_vf_call<GatherSimtVF<true, false>>(
+                dim3(threadNum_), yIndexBase, currentCoreElements_, m0Outer_, shift0Outer_, m0Inner_, shift0Inner_,
+                outerSize_, gatherDimSize_, gatherSize_, innerSize_,
+                (__gm__ X_T *)(xGm_.GetPhyAddr()), (__gm__ INDICES_T *)(indicesGm_.GetPhyAddr()),
+                (__gm__ volatile X_T *)(yGm_.GetPhyAddr()));
+        }
+    } else {
+        if (outerSame_) {
+            asc_vf_call<GatherSimtVF<false, true>>(
+                dim3(threadNum_), yIndexBase, currentCoreElements_, m0Outer_, shift0Outer_, m0Inner_, shift0Inner_,
+                outerSize_, gatherDimSize_, gatherSize_, innerSize_,
+                (__gm__ X_T *)(xGm_.GetPhyAddr()), (__gm__ INDICES_T *)(indicesGm_.GetPhyAddr()),
+                (__gm__ volatile X_T *)(yGm_.GetPhyAddr()));
+        } else {
+            asc_vf_call<GatherSimtVF<false, false>>(
+                dim3(threadNum_), yIndexBase, currentCoreElements_, m0Outer_, shift0Outer_, m0Inner_, shift0Inner_,
+                outerSize_, gatherDimSize_, gatherSize_, innerSize_,
+                (__gm__ X_T *)(xGm_.GetPhyAddr()), (__gm__ INDICES_T *)(indicesGm_.GetPhyAddr()),
+                (__gm__ volatile X_T *)(yGm_.GetPhyAddr()));
+        }
+    }
+}
+
+}  // namespace gatherv2
+#endif  // GATHER_SIMT_H

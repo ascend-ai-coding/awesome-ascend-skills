@@ -1,0 +1,47 @@
+strategy_id: P122
+description: KV 堆叠大块化 + L1 自适应划分适用性检查 — attention 类算子已有 cube 路径，但 KV tile 较小（<=128）或 L1 划分硬编码，未做 KV 堆叠与容量自适应。
+strategy_meta:
+  id: "P122"
+  slug: "P122_kv_stack_large_tile_l1_adaptive"
+  title: "P122: KV 堆叠大块化 + L1 容量自适应 Q/KV 划分"
+  bottlenecks: [cube_bound, mte1_stall, no_overlap]
+  op_families: [attention, flash_attention, matmul]
+  conflicts_with: []
+  synergizes_with: [P18, P83, P120, P121]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p122_kv_stack_large_tile_l1_adaptive.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p122_kv_stack_large_tile_l1_adaptive.md"
+  playbook_slug: "P122_kv_stack_large_tile_l1_adaptive"
+checks:
+  - id: is_fa_with_kv_loop
+    type: grep_count
+    pattern: 'for.*kv|for.*KV|for.*s2|for.*kl|kvS|\\bks\\b|S2|Sk'
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未检测到 KV 维循环 → 非典型 attention 结构，P122 不适用。"
+
+  - id: has_cube_path
+    type: grep_count
+    pattern: "Mmad|mmad|BlockMmad|Matmul"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "尚无 cube 路径 → 堆叠大块化服务于 mmad 维度与握手摊薄，请先应用 P120。"
+
+  - id: no_kv_stacking_yet
+    type: grep_count
+    pattern: "KV_STACK|STACK_LEN|stackSeq|blockStackNum|kKvStack|kvStack"
+    files: [kernel, header]
+    expected: "== 0"
+    fail_msg: "已实现 KV 堆叠（KV_STACK/kKvStack/stackSeq）→ P122 主要价值已发挥，检查 L1 自适应部分是否可单独落地。"
+
+  - id: no_l1_adaptive_partition
+    type: grep_count
+    pattern: "L1_MAX_SIZE|L1_MAX|nDyn|kDyn"
+    files: [kernel, header]
+    expected: "== 0"
+    fail_msg: "L1 划分已按容量公式自适应 → 仅核对堆叠基准值（512）与对齐（128/32）即可，无需重构。"

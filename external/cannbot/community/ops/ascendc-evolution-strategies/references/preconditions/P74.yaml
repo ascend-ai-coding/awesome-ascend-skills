@@ -1,0 +1,40 @@
+strategy_id: P74
+
+strategy_meta:
+  id: "P74"
+  slug: "P74_selective_l2_cache_disable"
+  title: "P74: L2 Cache 选择性禁用 (Selective L2 Cache Disable)"
+  bottlenecks: [l2_cache_thrash]
+  op_families: [datapath]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p74_selective_l2_cache_disable.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p74_selective_l2_cache_disable.md"
+  playbook_slug: "P74_selective_l2_cache_disable"
+checks:
+  - id: has_cache
+    type: grep_count
+    pattern: "L2|l2|Cache|cache|缓存"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 L2 Cache 相关逻辑 → 无缓存优化空间，不适用 P74。"
+
+  - id: has_infer
+    type: grep_count
+    pattern: "KV|kv|推理|infer|decode|Decode"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 KV/推理场景 → L2 thrashing 风险低，不适用 P74。"
+
+  - id: has_setl2cachehint
+    type: grep_count
+    pattern: "SetL2CacheHint|CACHE_MODE|Disable|disable"
+    files: [kernel]
+    expected: ">= 0"
+    fail_msg: "已存在 L2 Cache 控制逻辑 → 可能冗余，优先验证现有策略效果。"

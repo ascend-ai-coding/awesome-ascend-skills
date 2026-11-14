@@ -1,0 +1,626 @@
+/**
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
+
+/*!
+ * \file cum_row_kogge_stone.h
+ * \brief N == 1（dim 落在最后一维）时的行内 Kogge-Stone 前缀扫描，含 argmin/argmax 索引跟踪。
+ *
+ * 适用：融合成 (M, R, N) 后 N == 1，即扫描轴在 GM 上连续。
+ * 此时整行（或一段）只需 1 个搬运描述符即可进 UB，扫描全部在 UB 内完成。
+ *
+ * 反面做法：沿用 N > 1 的 lane 折叠（借 M 轴进向量道），每行要发 R 个
+ * `blockLen = elemBytes` 的搬运描述符，且 32B 对齐把每个元素撑成一个 32B 槽位
+ * （fp16 浪费 16x、fp32 浪费 8x）。cann-bench Cummin 实测 0.19x，换本模板后 0.32x，
+ * 叠加 int64 索引直写与 16 位原生比较后到 0.40x 量级。
+ *
+ * 三个入口参数化点：
+ *   T —— values 的存储类型（half / bfloat16_t / float / int32_t）
+ *   P —— 需要标量比较进位时的提升类型（16 位提升到 float，其余同 T）
+ *   C —— 实际参与向量比较的类型。**单核独占整行时取 T**（16 位就原生比较，
+ *        每 vreg 128 lane 且省掉进出各一趟 Cast）；需要跨段标量比较时只能取 P。
+ *
+ * 依赖调用方提供的成员：
+ *   xGm_ / valGm_ / idxGm_   输入、values、int64 indices 的 GlobalTensor
+ *   xBuf_ / valBuf_ / idxBuf_  UB buffer（尺寸见 §buffer）
+ *   idxWorkOff_              idxBuf_ 内 int32 扫描区的起始元素偏移，**必须按 vreg 对齐**
+ *   tl_->R / tl_->rChunk     扫描轴长度与单次进 UB 的分块长度
+ *
+ * buffer 备量（按最宽的比较类型算，两种实例化共用同一块 UB）：
+ *   xBuf_   : rChunk * sizeof(T)
+ *   valBuf_ : 256 + rChunk * sizeof(P)          // 头 256B 是哨兵区 = 1 个 vreg
+ *   idxBuf_ : (idxWorkOff_ + 128 + rChunk) * 4  // 低半区放 Cast 后的 int64，高半区是 int32 扫描区
+ *   其中 idxWorkOff_ = CeilAlign(128 + rChunk, VL)
+ *
+ * combine 语义（min，对齐 torch.cummin）：
+ *   combine(A 靠前段, B 靠后段) = takeB ? B : A,  takeB = isNaN(vB) || (vB <= vA)
+ *   即"NaN 视作最小、并列取更晚下标"，满足结合律与幂等，可安全用于 Kogge-Stone。
+ *   改 Cummax 只需把 LE 换成 GE；改 Cumsum 换成 Add 并去掉索引侧。
+ */
+
+#ifndef CUM_ROW_KOGGE_STONE_H
+#define CUM_ROW_KOGGE_STONE_H
+
+#include "scan_base.h"
+// ScanRowRange 中的 lane 并行路径依赖以下两个函数（由 cum_lane_parallel_scan.h 提供）：
+//   LaneFlatten<T, C>     — 把输入摊进工作区并铺幺元
+//   LaneParallelScan<C, I> — 三相位 lane 并行扫描
+// 使用本模板时必须同时 #include "cum_lane_parallel_scan.h"
+#include "cum_lane_parallel_scan.h"
+
+namespace ScanOps {
+
+// 以下成员函数直接挂进扫描类（如 CumScan<T, P>）内使用。
+#if 0  // ==== 类体内粘贴区开始 ====
+
+    // 扫描幺元：min 取 +inf（整型取 INT_MAX）。
+    // fp16/bf16 直接给出 +inf 的位模式——编译器不支持 16 位浮点的标量类型转换。
+    template <typename C>
+    __aicore__ inline static C KsIdentity()
+    {
+        if constexpr (IsSameType<C, int32_t>::value) {
+            return (C)2147483647;
+        } else if constexpr (IsSameType<C, float>::value) {
+            return (C)CUMMIN_INFINITY;
+        } else {
+            uint16_t bits = IsSameType<C, half>::value ? (uint16_t)0x7C00 : (uint16_t)0x7F80;
+            return *reinterpret_cast<C*>(&bits);
+        }
+    }
+
+    __aicore__ inline static P Identity() { return KsIdentity<P>(); }
+
+    // ---------------- Kogge-Stone 路径（N == 1，即 dim=-1）----------------
+    //
+    // 扫描行 m 的 [r0, r0+rLen) 段：该段在 GM 上连续，故一次 DataCopyPad 只需 1 个搬运描述符
+    // （相较 lane 折叠路径的每元素一个 2B 描述符，描述符数量下降约 R 倍，这是该形状的主要瓶颈）。
+    // 扫描在 UB 内沿 R 做 Kogge-Stone：第 k 级把 val[i] 与 val[i-2^k] 合并，深度 log2(R)、全程向量化。
+    // carry 进出：入参 carry/carryIdx 在 hasCarry 时先合并进本段，出参带回本段末尾的合并结果。
+    // writeOut=false 时只求 carry 不落 GM（跨核借 R 的第一阶段）。
+    //
+    // 比较类型 C 由调用方选：单核独占整行时 fp16/bf16 直接用 T 原生比较（每 vreg 128 lane，
+    // 且省掉进出各一趟 Cast），需要跨段标量比较时用提升后的 P。原生 16 位时一个值寄存器要配 NI=2 个
+    // int32 索引寄存器，比较掩码需按 LOWEST/HIGHEST 拆成两半分别驱动索引侧的 Select。
+    template <typename C>
+    __aicore__ inline void ScanRowRange(
+        int64_t m, int64_t r0, int64_t rLen0, C& carryVal, int32_t& carryIdx, bool hasCarry, bool writeOut)
+    {
+        constexpr int64_t GUARDC = 256 / (int64_t)sizeof(C);
+        LocalTensor<T> xUb = xBuf_.template Get<T>();
+        LocalTensor<C> valUb = valBuf_.template Get<C>();
+        LocalTensor<int32_t> idxUb = idxBuf_.template Get<int32_t>()[idxWorkOff_];
+        LocalTensor<int64_t> idxOut = idxBuf_.template Get<int64_t>();
+
+        const int64_t rEnd = r0 + rLen0;
+        for (int64_t rBase = r0; rBase < rEnd; rBase += tl_->rChunk) {
+            int64_t rLen = tl_->rChunk;
+            if (rBase + rLen > rEnd) rLen = rEnd - rBase;
+
+            DataCopyExtParams inParams;
+            inParams.blockCount = 1;
+            inParams.blockLen = (uint32_t)(rLen * sizeof(T));
+            inParams.srcStride = 0;
+            inParams.dstStride = 0;
+            DataCopyPadExtParams<T> padParams{false, 0, 0, 0};
+            DataCopyPad(xUb, xGm_[m * tl_->R + rBase], inParams, padParams);
+            SetFlag<HardEvent::MTE2_V>(GetTPipePtr()->FetchEventID(HardEvent::MTE2_V));
+            WaitFlag<HardEvent::MTE2_V>(GetTPipePtr()->FetchEventID(HardEvent::MTE2_V));
+
+            // 索引与比较类型等宽时走 lane 并行（工作量 O(R)），否则退回 Kogge-Stone。
+            // 等宽意味着存储类型也是 4 字节（见 C1 的定义），所以摊平只是一次同类型拷贝。
+            // ⚠️ 这段 lane 并行集成是 mode 1/3/4 性能的关键：大 R 时 Kogge-Stone 的
+            // log2(R) 因子是主要开销，lane 并行把它降到 ~15·(R/VLC)，与 log2(R) 脱钩。
+            bool useGs = false;
+            if constexpr (sizeof(C) == sizeof(int32_t)) {
+                int64_t segLen = rLen > 2 * GUARDC ? GsSegLen(rLen, GUARDC, (int64_t)sizeof(C)) : 0;
+                if (segLen > 0) {
+                    // 调用 cum_lane_parallel_scan.h 中的 LaneFlatten + LaneParallelScan
+                    LaneFlatten<T, C>(xUb, valUb, rLen, GUARDC * segLen);
+                    LaneParallelScan<C, int32_t>(valUb, idxUb, segLen, (int32_t)rBase, carryVal, carryIdx, hasCarry);
+                    useGs = true;
+                }
+            }
+            if (!useGs) {
+                KsInit<C>(xUb, valUb, idxUb, rLen, (int32_t)rBase);
+                for (int64_t d = 1; d < rLen; d <<= 1) {
+                    KsLevel<C>(valUb, idxUb, rLen, d);
+                }
+                if (hasCarry) {
+                KsApplyCarry<C>(valUb, idxUb, rLen, carryVal, carryIdx);
+            }
+
+            // 本块末元素即「到此为止」的合并结果：既是下一块的 carry，也是本段返回给调用方的段结果
+            SetFlag<HardEvent::V_S>(GetTPipePtr()->FetchEventID(HardEvent::V_S));
+            WaitFlag<HardEvent::V_S>(GetTPipePtr()->FetchEventID(HardEvent::V_S));
+            carryVal = valUb.GetValue(GUARDC + rLen - 1);
+            carryIdx = idxUb.GetValue(GUARDC + rLen - 1);
+            SetFlag<HardEvent::S_V>(GetTPipePtr()->FetchEventID(HardEvent::S_V));
+            WaitFlag<HardEvent::S_V>(GetTPipePtr()->FetchEventID(HardEvent::S_V));
+            hasCarry = true;
+
+            if (!writeOut) {
+                // 只求段结果：跳过 cast 与搬出，但仍需保证下一块的 CopyIn 不抢先覆写 xUb
+                SetFlag<HardEvent::V_MTE2>(GetTPipePtr()->FetchEventID(HardEvent::V_MTE2));
+                WaitFlag<HardEvent::V_MTE2>(GetTPipePtr()->FetchEventID(HardEvent::V_MTE2));
+                continue;
+            }
+
+            if constexpr (!IsSameType<T, C>::value) {
+                KsCastOut(valUb, xUb, rLen);
+            }
+            Cast(idxOut, idxUb[GUARDC], RoundMode::CAST_NONE, (uint32_t)rLen);
+
+            SetFlag<HardEvent::V_MTE3>(GetTPipePtr()->FetchEventID(HardEvent::V_MTE3));
+            WaitFlag<HardEvent::V_MTE3>(GetTPipePtr()->FetchEventID(HardEvent::V_MTE3));
+
+            DataCopyExtParams vp;
+            vp.blockCount = 1;
+            vp.blockLen = (uint32_t)(rLen * sizeof(T));
+            vp.srcStride = 0;
+            vp.dstStride = 0;
+            DataCopyExtParams ip;
+            ip.blockCount = 1;
+            ip.blockLen = (uint32_t)(rLen * sizeof(int64_t));
+            ip.srcStride = 0;
+            ip.dstStride = 0;
+            int64_t off = m * tl_->R + rBase;
+            if constexpr (IsSameType<T, C>::value) {
+                DataCopyPad(valGm_[off], valUb[GUARDC].template ReinterpretCast<T>(), vp);
+            } else {
+                DataCopyPad(valGm_[off], xUb, vp);
+            }
+            DataCopyPad(idxGm_[off], idxOut, ip);
+
+            // MTE3_V 防止下一块的 KsInit 覆写仍在搬出的 UB；MTE3_MTE2 借由 V→MTE3→MTE2 的传递序，
+            // 防止下一块的 CopyIn 抢先覆写本块 KsInit 尚未读完的 xUb。
+            SetFlag<HardEvent::MTE3_V>(GetTPipePtr()->FetchEventID(HardEvent::MTE3_V));
+            WaitFlag<HardEvent::MTE3_V>(GetTPipePtr()->FetchEventID(HardEvent::MTE3_V));
+            SetFlag<HardEvent::MTE3_MTE2>(GetTPipePtr()->FetchEventID(HardEvent::MTE3_MTE2));
+            WaitFlag<HardEvent::MTE3_MTE2>(GetTPipePtr()->FetchEventID(HardEvent::MTE3_MTE2));
+        }
+    }
+
+    // 填 GUARDC 幺元哨兵 + 把输入转成比较类型 C + 用 Arange 生成绝对下标
+    template <typename C>
+    __aicore__ inline void KsInit(
+        const LocalTensor<T>& xUb, const LocalTensor<C>& valUb, const LocalTensor<int32_t>& idxUb, int64_t rLen,
+        int32_t rBase)
+    {
+        constexpr uint32_t VLC = 256 / sizeof(C);
+        constexpr uint32_t NI = VLC / 64;  // 每个值寄存器对应的 int32 索引寄存器数
+        C carryVal = KsIdentity<C>();
+        int32_t carryIdx = 0;
+        __ubuf__ T* xp = (__ubuf__ T*)xUb.GetPhyAddr();
+        __ubuf__ C* vp = (__ubuf__ C*)valUb.GetPhyAddr() + VLC;
+        __ubuf__ int32_t* ip = (__ubuf__ int32_t*)idxUb.GetPhyAddr() + VLC;
+        uint16_t loops = (uint16_t)CeilDivK(rLen, VLC);
+
+        __VEC_SCOPE__
+        {
+            AscendC::Reg::RegTensor<C> cReg, xReg;
+            AscendC::Reg::RegTensor<int32_t> cIReg, idxReg0, idxReg1;
+            AscendC::Reg::MaskReg full, fullLo, fullHi, mk, mkLo, mkHi;
+
+            uint32_t g = VLC;
+            full = AscendC::Reg::UpdateMask<C>(g);
+            AscendC::Reg::Duplicate(cReg, carryVal);
+            AscendC::Reg::Duplicate(cIReg, carryIdx);
+            AscendC::Reg::StoreAlign(vp - VLC, cReg, full);
+            if constexpr (NI == 1) {
+                AscendC::Reg::StoreAlign(ip - VLC, cIReg, full);
+            } else {
+                AscendC::Reg::UnPack<AscendC::Reg::HighLowPart::LOWEST>(fullLo, full);
+                AscendC::Reg::UnPack<AscendC::Reg::HighLowPart::HIGHEST>(fullHi, full);
+                AscendC::Reg::StoreAlign(ip - VLC, cIReg, fullLo);
+                AscendC::Reg::StoreAlign(ip - VLC + 64, cIReg, fullHi);
+            }
+
+            uint32_t cnt = (uint32_t)rLen;
+            for (uint16_t j = 0; j < loops; j++) {
+                mk = AscendC::Reg::UpdateMask<C>(cnt);
+                if constexpr (IsSameType<T, C>::value) {
+                    AscendC::Reg::LoadAlign(xReg, (__ubuf__ C*)(xp + j * VLC));
+                } else {
+                    AscendC::Reg::RegTensor<T> b16;
+                    AscendC::Reg::LoadAlign<T, AscendC::Reg::LoadDist::DIST_UNPACK_B16>(b16, xp + j * VLC);
+                    Cast<C, T, castTraitToFp32>(xReg, b16, mk);
+                }
+                AscendC::Reg::StoreAlign(vp + j * VLC, xReg, mk);
+
+                AscendC::Reg::Arange(idxReg0, (int32_t)(rBase + (int32_t)(j * VLC)));
+                if constexpr (NI == 1) {
+                    AscendC::Reg::StoreAlign(ip + j * VLC, idxReg0, mk);
+                } else {
+                    AscendC::Reg::Arange(idxReg1, (int32_t)(rBase + (int32_t)(j * VLC) + 64));
+                    AscendC::Reg::UnPack<AscendC::Reg::HighLowPart::LOWEST>(mkLo, mk);
+                    AscendC::Reg::UnPack<AscendC::Reg::HighLowPart::HIGHEST>(mkHi, mk);
+                    AscendC::Reg::StoreAlign(ip + j * VLC, idxReg0, mkLo);
+                    AscendC::Reg::StoreAlign(ip + j * VLC + 64, idxReg1, mkHi);
+                }
+            }
+        }
+    }
+
+    // Kogge-Stone 第 k 级：val[i] = combine(val[i-d], val[i])，i 从高到低分块以避免 WAR
+    template <typename C>
+    __aicore__ inline void KsLevel(
+        const LocalTensor<C>& valUb, const LocalTensor<int32_t>& idxUb, int64_t rLen, int64_t d)
+    {
+        constexpr uint32_t VLC = 256 / sizeof(C);
+        constexpr uint32_t NI = VLC / 64;
+        __ubuf__ C* vp = (__ubuf__ C*)valUb.GetPhyAddr() + VLC;
+        __ubuf__ int32_t* ip = (__ubuf__ int32_t*)idxUb.GetPhyAddr() + VLC;
+
+        // d < VLC 时从 0 开始（低位 lane 读到哨兵区里的 carry）；d >= VLC 时从 d 开始（d 为 2 的幂，天然对齐）
+        int64_t i0Min = (d < (int64_t)VLC) ? 0 : d;
+        if (i0Min >= rLen) return;
+        uint16_t chunks = (uint16_t)CeilDivK(rLen - i0Min, VLC);
+
+        __VEC_SCOPE__
+        {
+            AscendC::Reg::RegTensor<C> vA, vB, resV;
+            AscendC::Reg::RegTensor<int32_t> iA0, iB0, resI0, iA1, iB1, resI1;
+            AscendC::Reg::MaskReg mk, mkLo, mkHi, leMask, nanMask, takeB, takeLo, takeHi;
+            AscendC::Reg::UnalignRegForLoad uV, uI0, uI1;
+
+            for (uint16_t c = 0; c < chunks; c++) {
+                int64_t i0 = i0Min + (int64_t)(chunks - 1 - c) * VLC;  // 从高地址往低地址处理
+                uint32_t left = (uint32_t)(rLen - i0);
+                uint32_t cnt = left < VLC ? left : VLC;
+                mk = AscendC::Reg::UpdateMask<C>(cnt);
+
+                AscendC::Reg::LoadAlign(vB, vp + i0);
+                AscendC::Reg::LoadUnAlignPre(uV, vp + i0 - d);
+                AscendC::Reg::LoadUnAlign(vA, uV, vp + i0 - d);
+
+                // combine(A=靠前段, B=靠后段)：takeB = isNaN(vB) || (vB <= vA)
+                AscendC::Reg::Compare<C, CMPMODE::LE>(leMask, vB, vA, mk);
+                AscendC::Reg::Compare<C, CMPMODE::NE>(nanMask, vB, vB, mk);
+                AscendC::Reg::Or(takeB, leMask, nanMask, mk);
+                AscendC::Reg::Select<C>(resV, vB, vA, takeB);
+                AscendC::Reg::StoreAlign(vp + i0, resV, mk);
+
+                AscendC::Reg::LoadAlign(iB0, ip + i0);
+                AscendC::Reg::LoadUnAlignPre(uI0, ip + i0 - d);
+                AscendC::Reg::LoadUnAlign(iA0, uI0, ip + i0 - d);
+                if constexpr (NI == 1) {
+                    AscendC::Reg::Select<int32_t>(resI0, iB0, iA0, takeB);
+                    AscendC::Reg::StoreAlign(ip + i0, resI0, mk);
+                } else {
+                    AscendC::Reg::LoadAlign(iB1, ip + i0 + 64);
+                    AscendC::Reg::LoadUnAlignPre(uI1, ip + i0 - d + 64);
+                    AscendC::Reg::LoadUnAlign(iA1, uI1, ip + i0 - d + 64);
+
+                    AscendC::Reg::UnPack<AscendC::Reg::HighLowPart::LOWEST>(takeLo, takeB);
+                    AscendC::Reg::UnPack<AscendC::Reg::HighLowPart::HIGHEST>(takeHi, takeB);
+                    AscendC::Reg::UnPack<AscendC::Reg::HighLowPart::LOWEST>(mkLo, mk);
+                    AscendC::Reg::UnPack<AscendC::Reg::HighLowPart::HIGHEST>(mkHi, mk);
+
+                    AscendC::Reg::Select<int32_t>(resI0, iB0, iA0, takeLo);
+                    AscendC::Reg::Select<int32_t>(resI1, iB1, iA1, takeHi);
+                    AscendC::Reg::StoreAlign(ip + i0, resI0, mkLo);
+                    AscendC::Reg::StoreAlign(ip + i0 + 64, resI1, mkHi);
+                }
+            }
+        }
+    }
+
+    // 把上一块的 carry 合并进本块每个元素。
+    // 不能只靠哨兵区：下标为 2^k-1 的元素在 d>=VLC 的各级不再被更新，其窗口恰好触到 0
+    // 而不会落进哨兵区，因而拿不到 carry；这里用一趟显式 pass 兜住（相对 log2(R) 趟只增约 8%）。
+    template <typename C>
+    __aicore__ inline void KsApplyCarry(
+        const LocalTensor<C>& valUb, const LocalTensor<int32_t>& idxUb, int64_t rLen, C carryVal, int32_t carryIdx)
+    {
+        constexpr uint32_t VLC = 256 / sizeof(C);
+        constexpr uint32_t NI = VLC / 64;
+        __ubuf__ C* vp = (__ubuf__ C*)valUb.GetPhyAddr() + VLC;
+        __ubuf__ int32_t* ip = (__ubuf__ int32_t*)idxUb.GetPhyAddr() + VLC;
+        uint16_t loops = (uint16_t)CeilDivK(rLen, VLC);
+        __VEC_SCOPE__
+        {
+            AscendC::Reg::RegTensor<C> vA, vB, resV;
+            AscendC::Reg::RegTensor<int32_t> iA, iB0, resI0, iB1, resI1;
+            AscendC::Reg::MaskReg mk, mkLo, mkHi, leMask, nanMask, takeB, takeLo, takeHi;
+            AscendC::Reg::Duplicate(vA, carryVal);
+            AscendC::Reg::Duplicate(iA, carryIdx);
+            uint32_t cnt = (uint32_t)rLen;
+            for (uint16_t j = 0; j < loops; j++) {
+                mk = AscendC::Reg::UpdateMask<C>(cnt);
+                AscendC::Reg::LoadAlign(vB, vp + j * VLC);
+                AscendC::Reg::Compare<C, CMPMODE::LE>(leMask, vB, vA, mk);
+                AscendC::Reg::Compare<C, CMPMODE::NE>(nanMask, vB, vB, mk);
+                AscendC::Reg::Or(takeB, leMask, nanMask, mk);
+                AscendC::Reg::Select<C>(resV, vB, vA, takeB);
+                AscendC::Reg::StoreAlign(vp + j * VLC, resV, mk);
+
+                AscendC::Reg::LoadAlign(iB0, ip + j * VLC);
+                if constexpr (NI == 1) {
+                    AscendC::Reg::Select<int32_t>(resI0, iB0, iA, takeB);
+                    AscendC::Reg::StoreAlign(ip + j * VLC, resI0, mk);
+                } else {
+                    AscendC::Reg::LoadAlign(iB1, ip + j * VLC + 64);
+                    AscendC::Reg::UnPack<AscendC::Reg::HighLowPart::LOWEST>(takeLo, takeB);
+                    AscendC::Reg::UnPack<AscendC::Reg::HighLowPart::HIGHEST>(takeHi, takeB);
+                    AscendC::Reg::UnPack<AscendC::Reg::HighLowPart::LOWEST>(mkLo, mk);
+                    AscendC::Reg::UnPack<AscendC::Reg::HighLowPart::HIGHEST>(mkHi, mk);
+
+                    AscendC::Reg::Select<int32_t>(resI0, iB0, iA, takeLo);
+                    AscendC::Reg::Select<int32_t>(resI1, iB1, iA, takeHi);
+                    AscendC::Reg::StoreAlign(ip + j * VLC, resI0, mkLo);
+                    AscendC::Reg::StoreAlign(ip + j * VLC + 64, resI1, mkHi);
+                }
+            }
+        }
+    }
+
+    __aicore__ inline void KsCastOut(const LocalTensor<P>& valUb, const LocalTensor<T>& outUb, int64_t rLen)
+    {
+        __ubuf__ P* vp = (__ubuf__ P*)valUb.GetPhyAddr() + VL;
+        __ubuf__ T* op = (__ubuf__ T*)outUb.GetPhyAddr();
+        uint16_t loops = (uint16_t)CeilDivK(rLen, VL);
+        __VEC_SCOPE__
+        {
+            AscendC::Reg::RegTensor<P> vReg;
+            AscendC::Reg::RegTensor<T> b16;
+            AscendC::Reg::MaskReg mk;
+            uint32_t cnt = (uint32_t)rLen;
+            for (uint16_t j = 0; j < loops; j++) {
+                mk = AscendC::Reg::UpdateMask<uint32_t>(cnt);
+                AscendC::Reg::LoadAlign(vReg, vp + j * VL);
+                Cast<T, P, castTraitFromFp32>(b16, vReg, mk);
+                AscendC::Reg::StoreAlign<T, AscendC::Reg::StoreDist::DIST_PACK_B32>(op + j * VL, b16, mk);
+            }
+        }
+    }
+
+    // ===========================================================================
+    // 行批处理 + ping-pong 双缓冲（N == 1 且整行装得下 UB 时使用）
+    //
+    // 逐行处理时每行都要付一整套固定开销：搬入/搬出共 3 个描述符、3~4 对 flag。
+    // R 小而 M 大的形状（典型 [4097, 511]）下这部分能占到一半以上的时间。
+    // 把连续 cnt 行合成一个描述符集合（行在 GM 上连续，blockCount = cnt），固定开销
+    // 摊薄 cnt 倍；UB 内每行仍各自独立扫描，行间靠步长隔开。
+    //
+    // 三段（搬入 / 计算 / 搬出）用 ping-pong 双缓冲串成流水：批 b 计算的同时预取批 b+1、
+    // 搬出批 b-1。x/val/out 各开两份，idxUb 只在计算期间存活故共用一份。
+    // 不做双缓冲时四条流水占比之和只有 ~101%（完全串行），加上后升到 132%~173%。
+    //
+    // 依赖调用方在 Init 中分配好：
+    //   xBuf_   : 2 * k * xRowStride_ * sizeof(T)     // ping-pong 两份
+    //   valBuf_ : 2 * (k * vRowStride_ + GUARD) * sizeof(C)  // 含哨兵
+    //   idxBuf_ : (k * vRowStride_ + GUARD) * sizeof(I)      // 一份（计算期暂存）
+    //   outBuf_ : 2 * k * oRowStride_ * sizeof(int64_t)
+    //   evMte2V_[2], evVMte3_[2], evMte3V_[2], evMte3Mte2_[2]  // 4 组事件 × 2 份
+    // 其中 xRowStride_/vRowStride_/oRowStride_ 是行间步长（元素数），都取 32B 整数倍。
+    // ===========================================================================
+
+    // 行批处理主循环：每核领 myRows 行，按 bs 行一批做 ping-pong。
+    // bs = ceil(myRows / nb)，nb = ceil(myRows / bs)（由调用方算好传入）。
+    __aicore__ inline void ScanRowBatchLoop(int64_t m0, int64_t myRows, int64_t bs, int64_t nb)
+    {
+        BatchCopyIn(0, m0, myRows < bs ? myRows : bs);
+
+        for (int64_t b = 0; b < nb; b++) {
+            const int64_t p = b & 1;
+            const int64_t s = b * bs;
+            const int64_t cnt = myRows - s < bs ? myRows - s : bs;
+
+            if (b + 1 < nb) {
+                const int64_t q = 1 - p;
+                // buf[q] 上一批的搬出走完，新的搬入才能覆写它
+                if (b >= 1) WaitFlag<HardEvent::MTE3_MTE2>(evMte3Mte2_[q]);
+                int64_t next = myRows - s - cnt;
+                BatchCopyIn(q, m0 + s + cnt, next < bs ? next : bs);
+            }
+
+            WaitFlag<HardEvent::MTE2_V>(evMte2V_[p]);
+            // val/out 的 buf[p] 上一次是批 b-2 在用，它的搬出走完才能覆写
+            if (b >= 2) WaitFlag<HardEvent::MTE3_V>(evMte3V_[p]);
+            BatchCompute(p, cnt);
+            SetFlag<HardEvent::V_MTE3>(evVMte3_[p]);
+
+            WaitFlag<HardEvent::V_MTE3>(evVMte3_[p]);
+            BatchCopyOut(p, m0 + s, cnt);
+            SetFlag<HardEvent::MTE3_V>(evMte3V_[p]);
+            SetFlag<HardEvent::MTE3_MTE2>(evMte3Mte2_[p]);
+        }
+
+        // 最后两批的 MTE3_V / MTE3_MTE2 没有后继来消费，留着会和下一轮的等待错配
+        for (int64_t b = (nb >= 2 ? nb - 2 : 0); b < nb; b++) {
+            WaitFlag<HardEvent::MTE3_V>(evMte3V_[b & 1]);
+            WaitFlag<HardEvent::MTE3_MTE2>(evMte3Mte2_[b & 1]);
+        }
+    }
+
+    // 一次搬 cnt 行进 UB。行在 GM 上连续，故 blockCount = cnt 只需一个描述符集合。
+    // xRowStride_ 含行尾 32B 对齐 padding，dstStride 填的是 padding 的 32B 块数。
+    __aicore__ inline void BatchCopyIn(int64_t p, int64_t m0, int64_t cnt)
+    {
+        const int64_t R = tl_->R;
+        LocalTensor<T> xUb = xBuf_.template Get<T>()[p * xBufElems_];
+        DataCopyExtParams in;
+        in.blockCount = (uint16_t)cnt;
+        in.blockLen = (uint32_t)(R * sizeof(T));
+        in.srcStride = 0;
+        in.dstStride = (uint32_t)((xRowStride_ - R) * sizeof(T) / UB_BLOCK);
+        DataCopyPadExtParams<T> pad{false, 0, 0, 0};
+        DataCopyPad(xUb, xGm_[m0 * R], in, pad);
+        SetFlag<HardEvent::MTE2_V>(evMte2V_[p]);
+    }
+
+    // 批内逐行扫描：gsS_ > 0 时走 lane 并行，否则走 Kogge-Stone。
+    // 两行一组交错（GsScanPair）填指令延迟，奇数尾行退回单行（GsScanOne / ScanRowRange）。
+    // 比较类型比存储类型宽时，Cast 结果落在已读完的 xUb 上（就地复用，省一块缓冲）。
+    __aicore__ inline void BatchCompute(int64_t p, int64_t cnt)
+    {
+        const int64_t R = tl_->R;
+        LocalTensor<T> xUb = xBuf_.template Get<T>()[p * xBufElems_];
+        LocalTensor<C1> valUb = valBuf_.template Get<C1>()[p * valBufElems_];
+        LocalTensor<I1> idxUb = idxBuf_.template Get<I1>();
+        LocalTensor<int64_t> outUb = outBuf_.template Get<int64_t>()[p * outBufElems_];
+
+        // lane 并行路径：两行一组交错扫描；奇数尾行退回单行
+        if (gsS_ > 0) {
+            for (int64_t j = 0; j + 1 < cnt; j += 2) {
+                LaneFlatten<T, C1>(xUb[j * xRowStride_], valUb[j * vRowStride_], R, GUARD1 * gsS_);
+                LaneFlatten<T, C1>(xUb[(j + 1) * xRowStride_], valUb[(j + 1) * vRowStride_], R, GUARD1 * gsS_);
+                LaneParallelScanPair<C1, I1>(valUb[j * vRowStride_], idxUb[j * vRowStride_], vRowStride_, gsS_);
+            }
+            if (cnt & 1) {
+                int64_t j = cnt - 1;
+                LaneFlatten<T, C1>(xUb[j * xRowStride_], valUb[j * vRowStride_], R, GUARD1 * gsS_);
+                LaneParallelScan<C1, I1>(valUb[j * vRowStride_], idxUb[j * vRowStride_], gsS_, 0,
+                                         KsIdentity<C1>(), (I1)0, false);
+            }
+        }
+
+        for (int64_t j = 0; j < cnt; j++) {
+            LocalTensor<C1> vRow = valUb[j * vRowStride_];
+            LocalTensor<I1> iRow = idxUb[j * vRowStride_];
+            if (gsS_ == 0) {
+                // Kogge-Stone 路径（R 很小时 lane 并行的 log2(VLC) 固定开销不划算）
+                KsInit<C1>(xUb[j * xRowStride_], vRow, iRow, R, 0);
+                for (int64_t d = 1; d < R; d <<= 1) {
+                    KsLevel<C1>(vRow, iRow, R, d);
+                }
+            }
+            Cast(outUb[j * oRowStride_], iRow[GUARD1], RoundMode::CAST_NONE, (uint32_t)R);
+        }
+
+        // 比较类型比存储类型宽时把结果收窄回去，就地借用已读完的 xUb 当搬出源
+        if constexpr (!IsSameType<T, C1>::value) {
+            for (int64_t j = 0; j < cnt; j++) {
+                KsCastOut(valUb[j * vRowStride_ + GUARD1], xUb[j * xRowStride_], R);
+            }
+        }
+    }
+
+    // 批量搬出：val 和 int64 indices 各一个 DataCopyPad(blockCount=cnt)
+    __aicore__ inline void BatchCopyOut(int64_t p, int64_t m0, int64_t cnt)
+    {
+        const int64_t R = tl_->R;
+        LocalTensor<C1> valUb = valBuf_.template Get<C1>()[p * valBufElems_];
+        LocalTensor<int64_t> outUb = outBuf_.template Get<int64_t>()[p * outBufElems_];
+
+        // T == C1 时直接从工作区搬出；否则搬 BatchCompute 收窄后落在 xUb 上的结果
+        const int64_t vRowStride = IsSameType<T, C1>::value ? vRowStride_ : xRowStride_;
+        DataCopyExtParams vp;
+        vp.blockCount = (uint16_t)cnt;
+        vp.blockLen = (uint32_t)(R * sizeof(T));
+        vp.srcStride = (uint32_t)((vRowStride - R) * sizeof(T) / UB_BLOCK);
+        vp.dstStride = 0;
+        DataCopyExtParams ip;
+        ip.blockCount = (uint16_t)cnt;
+        ip.blockLen = (uint32_t)(R * sizeof(int64_t));
+        ip.srcStride = (uint32_t)((oRowStride_ - R) * sizeof(int64_t) / UB_BLOCK);
+        ip.dstStride = 0;
+        if constexpr (IsSameType<T, C1>::value) {
+            DataCopyPad(valGm_[m0 * R], valUb[GUARD1].template ReinterpretCast<T>(), vp);
+        } else {
+            DataCopyPad(valGm_[m0 * R], xBuf_.template Get<T>()[p * xBufElems_], vp);
+        }
+        DataCopyPad(idxGm_[m0 * R], outUb, ip);
+    }
+
+    // -- 行批处理相关的成员变量（调用方需在类声明中声明） --
+    // int64_t gsS_ = 0;        // lane 并行扫描时每条 lane 的段长；0 表示走 Kogge-Stone
+    // int64_t xRowStride_ = 0; // 输入区行间步长（元素数，含 32B 对齐 padding）
+    // int64_t vRowStride_ = 0; // 值工作区行间步长（含哨兵 GUARD1 + 补齐后的段长）
+    // int64_t oRowStride_ = 0; // int64 输出区行间步长
+    // int64_t xBufElems_ = 0;  // ping-pong 一份输入区的元素数
+    // int64_t valBufElems_ = 0;
+    // int64_t outBufElems_ = 0;
+    // TEventID evMte2V_[2], evVMte3_[2], evMte3V_[2], evMte3Mte2_[2];
+    // using C1 = P;  // 比较类型（16 位一律升 fp32）
+    // using I1 = int32_t;  // 索引类型（与比较类型等宽）
+    // static constexpr int64_t GUARD1 = 256 / sizeof(C1);  // 哨兵区元素数 = 1 个 vreg
+    // static constexpr int64_t UB_BLOCK = 32;
+
+    // ===========================================================================
+    // Init（mode 5：行批处理 + ping-pong 双缓冲）
+    //
+    // ⚠️ 必须用 AllocEventID 而非 FetchEventID（见 scan_base.h 的警告）。
+    //
+    // 行内布局：valUb/idxUb 每行前置一个 vreg 的哨兵区，outUb 放 Cast 后的 int64 下标。
+    // 各段的行间步长都是 32B 的整数倍——这是搬出时 srcStride 能填出来的前提。
+    //
+    // gsS_ > 0 时走 lane 并行扫描（段长取奇数防 bank conflict），
+    // gsS_ == 0 时走 Kogge-Stone（R 很小时 lane 并行的 log2(VLC) 固定开销不划算）。
+    // ===========================================================================
+    __aicore__ inline void InitMode5(TPipe* pipe, int64_t R, int64_t mFold)
+    {
+        int64_t k = mFold;
+        // R 大到几趟顺序扫描比 log2(R) 趟便宜时走 lane 并行；段长取奇数错开 bank。
+        // R 很小时 lane 间那趟固定的 log2(GUARD1) 反而不划算，仍走 Kogge-Stone。
+        gsS_ = R > 2 * GUARD1 ? GsSegLen(R, GUARD1, (int64_t)sizeof(C1)) : 0;
+        xRowStride_ = CeilAlignK(R, UB_BLOCK / (int64_t)sizeof(T));
+        // 哨兵区（整一个 vreg）+ 数据区。数据区只按 32B 对齐而不按 vreg 对齐，这样
+        // 行间间隙也是 32B 的整数倍，values 才能直接从 valUb 批量搬出、省掉一趟 UB→UB 回写。
+        // lane 并行时数据区要容下补齐后的 GUARD1*gsS_ 个元素
+        int64_t vData = gsS_ > 0 ? GUARD1 * gsS_ : R;
+        vRowStride_ = GUARD1 + CeilAlignK(vData, UB_BLOCK / (int64_t)sizeof(C1));
+        oRowStride_ = CeilAlignK(R, 4);
+        // 输入区与两个输出区各开两份做双缓冲；idxBuf_ 只在计算期间暂存、不跨 DMA 边界，一份即可。
+        // 扫描的整 vreg 读会越过行尾读进下一行的哨兵区，每份末尾多留一个 vreg 兜住最后一行。
+        xBufElems_ = k * xRowStride_;
+        valBufElems_ = k * vRowStride_ + GUARD1;
+        outBufElems_ = k * oRowStride_;
+        pipe->InitBuffer(xBuf_, 2 * xBufElems_ * sizeof(T));
+        pipe->InitBuffer(valBuf_, 2 * valBufElems_ * sizeof(C1));
+        pipe->InitBuffer(idxBuf_, (k * vRowStride_ + GUARD1) * sizeof(I1));
+        pipe->InitBuffer(outBuf_, 2 * outBufElems_ * sizeof(int64_t));
+        // ✅ AllocEventID
+        for (int64_t p = 0; p < 2; p++) {
+            evMte2V_[p] = pipe->AllocEventID<HardEvent::MTE2_V>();
+            evVMte3_[p] = pipe->AllocEventID<HardEvent::V_MTE3>();
+            evMte3V_[p] = pipe->AllocEventID<HardEvent::MTE3_V>();
+            evMte3Mte2_[p] = pipe->AllocEventID<HardEvent::MTE3_MTE2>();
+        }
+    }
+
+    // ===========================================================================
+    // Init（mode 1：Kogge-Stone 逐行扫描，无 ping-pong）
+    //
+    // 单缓冲路径用 FetchEventID 是正确的：每对 Set/Wait 用同一个 ID，程序序即依赖序。
+    // idxBuf_ 一区两用：低半区放 Cast 后的 int64 结果，高半区（自 idxWorkOff_ 起）是扫描过程
+    // 用的 int32 索引。idxWorkOff_ 必须按 vreg（256B）对齐。
+    // ===========================================================================
+    __aicore__ inline void InitMode1(TPipe* pipe, int64_t R, int64_t rChunk)
+    {
+        const int64_t GUARD_MAX = 128;
+        pipe->InitBuffer(xBuf_, (rChunk + 2 * VL) * sizeof(T));
+        pipe->InitBuffer(valBuf_, 256 + (rChunk + 2 * VL) * sizeof(P));
+        int64_t scanElems = GUARD_MAX + rChunk + 2 * VL;
+        idxWorkOff_ = CeilAlignK(scanElems, VL);
+        pipe->InitBuffer(idxBuf_, (idxWorkOff_ + scanElems) * sizeof(int32_t));
+        // mode 1 不需要 ping-pong 事件 ID，ScanRowRange 内部用 FetchEventID
+    }
+
+    // ===========================================================================
+    // Init（mode 3/4：跨核借 R）
+    // 同 mode 1 的 buffer 布局，额外加 segBuf_ 和 laneBuf_。
+    // ===========================================================================
+    __aicore__ inline void InitMode34(TPipe* pipe, int64_t R, int64_t rChunk, int64_t wsSegs)
+    {
+        const int64_t GUARD_MAX = 128;
+        pipe->InitBuffer(xBuf_, (rChunk + 2 * VL) * sizeof(T));
+        pipe->InitBuffer(valBuf_, 256 + (rChunk + 2 * VL) * sizeof(P));
+        int64_t scanElems = GUARD_MAX + rChunk + 2 * VL;
+        idxWorkOff_ = CeilAlignK(scanElems, VL);
+        pipe->InitBuffer(idxBuf_, (idxWorkOff_ + scanElems) * sizeof(int32_t));
+        pipe->InitBuffer(segBuf_, CeilAlignK(wsSegs * WS_SLOT_I32, VL) * sizeof(int32_t));
+        pipe->InitBuffer(laneBuf_, 4 * VL * sizeof(int32_t));
+    }
+
+#endif  // ==== 类体内粘贴区结束 ====
+
+}  // namespace ScanOps
+
+#endif  // CUM_ROW_KOGGE_STONE_H

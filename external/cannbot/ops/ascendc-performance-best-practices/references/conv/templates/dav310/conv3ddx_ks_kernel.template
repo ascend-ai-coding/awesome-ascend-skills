@@ -1,0 +1,1103 @@
+/*!
+ * \file conv3ddx_ks_kernel.h
+ * \brief Conv3DDX kernel split 内核模板 Conv3ddxKsKernel<T>（__mix__(1,2)）。
+ *        对应 templates/conv3ddx_kernel_split.md / ../conv3ddx_kernel_split_tuning_guide.md。
+ *
+ * ── 集成说明（使用前必读）─────────────────────────────────────────────────────
+ *   1. 去掉 .template 后缀落地为 op_kernel/conv3ddx_ks_kernel.h（bisheng 编译）。
+ *   2. 依赖 conv3ddx_ks_tiling.h（Conv3ddxKsCase + ValidateCase）；入口见
+ *      conv3ddx_ks_kernel_entry.template。
+ *   3. 编译期仅按 dtype 特化；子核轮转 / B1 全载 / workspace 中转由 runtime
+ *      Conv3ddxKsCase 驱动。
+ *   4. 架构目标 dav-3510 / Ascend950；L0C→UB Fixpipe 需要 arch35 参数结构
+ *      （FixpipeParamsArch3510），Interleave 使用 AscendC::Reg VF 内建。
+ *   5. 支持域（tiling.splitMode 驱动，两模式共享一份骨架）：
+ *      - SplitHW（mode=1）：strideH=strideW=2、kh/kw∈[1,4]；4 子核核内轮转 +
+ *        AIV Interleave 重排输出（__mix__(1,2) 双侧参与）。
+ *      - SplitH（mode=2）：strideH≥2、kh∈[strideH,16]；相位进核间切分，
+ *        A1 行连续（W 留洞）、B1 GM 行循环取样、L0C 三段直写 GM——AIV 直接
+ *        早退（实际落地可用 __cube__ 单核型，见 tuning guide §10A.4）。
+ *   6. dilation H/W=1、groups=1、dedy/dx=NCDHW、filter=NCDHW、无 bias。
+ *
+ * ── ops-nn 源码对照（完整索引见 tuning guide §15）───────────────────────────
+ *   Conv3ddxKsKernel          ← Conv3dDxKsBlock（conv3d_dx_kernel_split_block.h）
+ *   InitSubKernelTables       ← InitParamsForKernelSplitHW/H（conv3d_bp_kernel_split_func.h）
+ *   DecodeBasic/ComputeBlock  ← CalBasicBlockIdx/CalBasicBlockCoreForSplitH
+ *   AdvanceSubKernel          ← IterateForKernelSplit（HW 轮转）
+ *   ComputePhase              ← ComputeForNoTilingHWk→ComputeForKIter（conv3d_bp_func_arch35.h）
+ *   LoadToA1                  ← CalcLoadToA1Dn2NzParams[4KernelSplit]
+ *   LoadToB1Block(H)          ← LoadToB1Dn2NzTransposeForKernelSplitH（行循环取样）
+ *   LoadBl0                   ← UpdateLoadToB2ParamsKForKernelSplit/ReverseOnlyCommon
+ *   StorePhaseBlock           ← LoadL0c2OutForKernelSplitHW（impl/..._kernelsplit_hw.h）
+ *   StorePhaseBlockDirectGm(H)← LoadL0c2GmDnForKernelSplitH（impl/..._store_l0c.h）
+ *   RearrangeTile/ProcessAiv  ← IterateAllForKernelSplit + InterleaveUbOutForKernelSplit
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+
+#ifndef CONV3DDX_KS_KERNEL_H
+#define CONV3DDX_KS_KERNEL_H
+
+#include "kernel_operator.h"
+#include "conv3ddx_ks_tiling.h"
+
+using namespace AscendC;
+
+namespace conv3ddx_ks {
+
+// ---------------------------------------------------------------------------
+// 硬件预算与常量（与 conv3ddx_ks_tiling.h 保持一致）
+// ---------------------------------------------------------------------------
+constexpr uint32_t kL1Bytes = 512 * 1024;
+constexpr uint32_t kL0ABBytes = 64 * 1024;
+constexpr uint32_t kL0CBytes = 256 * 1024;
+constexpr uint32_t kM0 = 16;
+constexpr uint32_t kN0 = 16;
+
+// Load3D Config0/Config1 位域（同 conv2d_kernel.template，kernel split 增量见 tuning guide §10）
+constexpr uint8_t kMstepOffset = 16;
+constexpr uint8_t kPosMOffset = 48;
+constexpr uint8_t kPosKOffset = 32;
+constexpr uint8_t kStrideHOffset = 6;
+constexpr uint8_t kKernelWOffset = 12;
+constexpr uint8_t kKernelHOffset = 20;
+constexpr uint8_t kDilationWOffset = 28;
+constexpr uint8_t kDilationHOffset = 36;
+constexpr uint8_t kCinOffset = 48;
+constexpr uint64_t kMask16 = 0xffff;
+constexpr uint64_t kMask8 = 0xff;
+constexpr uint64_t kMask6 = 0x3f;
+
+// ---------------------------------------------------------------------------
+// 事件 ID 分配（tuning guide §9）
+//   核内：L0 乒乓 MTE1_M / M_MTE1 {0,1}；Mmad→Fixpipe M_FIX {2}
+//   跨核：AIC↔AIV 相位行握手（每 strideW 个相位块一次）
+// ---------------------------------------------------------------------------
+static constexpr event_t kEvtL0[2] = {static_cast<event_t>(0), static_cast<event_t>(1)};
+static constexpr event_t kEvtCubeFix = static_cast<event_t>(2);
+// CrossCore 同步 id（G_CV_ENHANCE_MODE 模式，PIPE 区分等待类型）
+constexpr uint8_t kSyncAivToAic = 0; // AIV 完成 interleave+UB→GM（AIC 等：UB 相位槽可复用）
+constexpr uint8_t kSyncAicToAiv = 1; // AIC 凑齐 strideW 个相位块（AIV 等：可以重排）
+
+__aicore__ inline uint32_t KMin(uint32_t a, uint32_t b) { return a < b ? a : b; }
+__aicore__ inline uint32_t KCeilDiv(uint32_t a, uint32_t b) { return (a + b - 1) / b; }
+__aicore__ inline uint32_t KAlignUp(uint32_t a, uint32_t b) { return KCeilDiv(a, b) * b; }
+
+// ---------------------------------------------------------------------------
+// Interleave：两相位块交叉排布（tuning guide §8）
+//   [A0 A1 A2..] × [B0 B1 B2..] → [A0 B0 A1 B1 ..]（还原 W 方向 stride=2 交错）
+// ---------------------------------------------------------------------------
+template <typename ReDstT>
+__simd_vf__ inline void InterleavePhase(__ubuf__ ReDstT* src0Ptr, __ubuf__ ReDstT* src1Ptr,
+                                        __ubuf__ ReDstT* dst0Ptr, __ubuf__ ReDstT* dst1Ptr, uint32_t vfLen,
+                                        uint32_t doubleVfLen, uint16_t repeatTimes)
+{
+    AscendC::Reg::MaskReg preg = AscendC::Reg::CreateMask<ReDstT, AscendC::Reg::MaskPattern::ALL>();
+    AscendC::Reg::RegTensor<ReDstT> src0;
+    AscendC::Reg::RegTensor<ReDstT> src1;
+    AscendC::Reg::RegTensor<ReDstT> dst0;
+    AscendC::Reg::RegTensor<ReDstT> dst1;
+    for (uint16_t i = 0; i < repeatTimes; ++i) {
+        AscendC::Reg::LoadAlign(src0, src0Ptr + i * vfLen);
+        AscendC::Reg::LoadAlign(src1, src1Ptr + i * vfLen);
+        AscendC::Reg::Interleave(dst0, dst1, src0, src1);
+        AscendC::Reg::StoreAlign(dst0Ptr + i * doubleVfLen, dst0, preg);
+        AscendC::Reg::StoreAlign(dst1Ptr + i * doubleVfLen, dst1, preg);
+    }
+}
+
+// ===========================================================================
+// Conv3ddxKsKernel：运行期 kernel split 内核
+//
+// AIC 侧：基本块（D-M-N）× kd 归约 × K L0 循环 × 4 子核轮转
+// AIV 侧：每凑齐 strideW 个相位块 interleave 一次，隔行直写 GM(dx NCDHW)
+// ===========================================================================
+template <typename T>
+class Conv3ddxKsKernel {
+public:
+    __aicore__ inline void Init(GM_ADDR filter, GM_ADDR dedy, GM_ADDR dx, GM_ADDR workspace,
+                                const Conv3ddxKsCase& tiling)
+    {
+        c_ = tiling;
+        filter_ = filter;
+        dedy_ = dedy;
+        dx_ = dx;
+        workspace_ = workspace;
+
+        k0_ = (c_.dtype == ConvKsDType::FP32) ? 8U : 16U;
+        elemBytes_ = sizeof(T);
+        isSplitH_ = (c_.splitMode == static_cast<uint8_t>(ConvKsSplitMode::H));
+        splitWi_ = isSplitH_ ? c_.wi : c_.splitWi;  // H 模式行宽 = Wi（W 不压缩）
+        splitHi_ = c_.splitHi;
+        mTotal_ = splitHi_ * splitWi_;             // 相位面 M（新 M 轴）
+        if (isSplitH_) {
+            // SplitH 相位恢复起点（ops-nn CalBasicBlockCoreForSplitH kernelStartIdx）
+            const uint32_t ks = c_.padUp % c_.strideH;
+            kernelStartIdx_ = (ks == 0U) ? 0U : c_.strideH - ks;
+        }
+        nAligned_ = KAlignUp(c_.cin, kN0);
+        cout1G_ = KCeilDiv(c_.cout, kN0);
+        hoWo_ = static_cast<uint64_t>(c_.ho) * c_.wo;
+        doHoWo_ = static_cast<uint64_t>(c_.dout) * hoWo_;
+        hiWi_ = static_cast<uint64_t>(c_.hi) * c_.wi;
+        diHiWi_ = static_cast<uint64_t>(c_.di) * hiWi_;
+        channelSize_ = KMin(c_.stepKa * c_.baseK / k0_, cout1G_);  // L1 单次 Cout 通道数
+        b1FullLoad_ = c_.b1FullLoad != 0;
+        useWorkspace_ = c_.useWorkspace != 0;
+        isKernel1x1_ = (c_.kh == 1U && c_.kw == 1U);
+
+        InitSubKernelTables();   // 子核尺寸 + pad 表（tuning guide §3）
+        InitBuffers();           // L1/UB/工作区布局（tuning guide §1）
+
+        const uint32_t block = GetBlockIdx();
+        active_ = block < c_.usedCoreNum;
+        // 拖尾核多算一轮（与 host calRound/tailCnt 对应）
+        rounds_ = c_.calRound + ((block < c_.tailCnt) ? 1U : 0U);
+
+        // M/N 核间计数（D-M-N 轴序解码）
+        mCnt_ = KCeilDiv(mTotal_, c_.singleCoreM);
+        nCnt_ = KCeilDiv(nAligned_, c_.singleCoreN);
+        l0Toggle_ = 0;
+    }
+
+    __aicore__ inline void Process()
+    {
+        if (!active_) {
+            return;
+        }
+        if ASCEND_IS_AIV {
+            // SplitH：L0C 直写 GM，无重排，AIV 不参与（tuning guide §10A.4）
+            if (isSplitH_) {
+                return;
+            }
+            ProcessAiv();   // AIV：等 AIC 通知 → interleave → UB→GM
+            return;
+        }
+        if ASCEND_IS_AIC {
+            ProcessAic();   // AIC：计算 + 三段对齐 fixpipe（H 模式直写 GM）
+        }
+    }
+
+private:
+    Conv3ddxKsCase c_{};
+    GM_ADDR filter_ = nullptr;
+    GM_ADDR dedy_ = nullptr;
+    GM_ADDR dx_ = nullptr;
+    GM_ADDR workspace_ = nullptr;
+
+    uint32_t k0_ = 16;
+    uint32_t elemBytes_ = 2;
+    bool isSplitH_ = false;
+    uint32_t kernelStartIdx_ = 0;   // SplitH 相位恢复起点
+    uint32_t ksCoreIdx_ = 0;        // SplitH 当前核的 H 相位序号（原始，未恢复）
+    uint32_t kernelIdx_ = 0;        // SplitH 恢复后的物理相位（B/dx 行偏移用）
+    uint32_t splitWi_ = 1, splitHi_ = 1;
+    uint32_t mTotal_ = 0, nAligned_ = 0, cout1G_ = 1;
+    uint32_t channelSize_ = 1;
+    uint64_t hoWo_ = 0, doHoWo_ = 0, hiWi_ = 0, diHiWi_ = 0;
+    bool b1FullLoad_ = false;
+    bool useWorkspace_ = false;
+    bool isKernel1x1_ = false;
+    bool active_ = false;
+    uint32_t rounds_ = 0;
+    uint64_t mCnt_ = 1, nCnt_ = 1;
+    uint8_t l0Toggle_ = 0;
+
+    // 子核表（splitIndex = splitHIndex*strideW + splitWIndex）
+    uint32_t splitHk_[4] = {1, 1, 1, 1};
+    uint32_t splitWk_[4] = {1, 1, 1, 1};
+    uint32_t splitHkWk_[4] = {1, 1, 1, 1};
+    uint32_t splitHkWkC0_[4] = {16, 16, 16, 16};
+
+    // 相位轮转状态
+    uint32_t splitHIndex_ = 0;
+    uint32_t splitWIndex_ = 0;
+    uint32_t rearrangeHIndex_ = 0;
+    uint32_t rearrangeWIndex_ = 0;
+
+    // L1 布局（字节 offset，A1 在前 B1 在后；全载 B1 单缓冲驻留）
+    uint32_t a1BufBytes_ = 0;
+    uint32_t b1BufBytes_ = 0;
+    uint32_t b1Offset_ = 0;
+
+    // 三段切分（StorePhaseBlock）
+    uint32_t headWi_ = 0, midHi_ = 0, tailWi_ = 0;
+    uint32_t hwSize_ = 0;      // 相位块行容量（含对齐 padding）
+
+    // AIC 数据面
+    GlobalTensor<T> dedyGm_;
+    GlobalTensor<T> filterGm_;
+    GlobalTensor<T> dxGm_;
+    GlobalTensor<T> wsGm_;     // workspace 中转
+    TPipe pipe_;
+    TBuf<QuePosition::VECN> vecBuf_;    // AIV interleave 工作区（含相位槽 + 目的槽）
+
+    // -----------------------------------------------------------------------
+    // 子核表（tuning guide §3：十字切 + pad；起始相位由 pad 决定）
+    // -----------------------------------------------------------------------
+    __aicore__ inline void InitSubKernelTables()
+    {
+        if (isSplitH_) {
+            // SplitH：单子核视角（ops-nn InitParamsForKernelSplitH）
+            // splitHk_[0] 每核按 kSCoreIdx 注入（见 InjectSubKernelForCore）；
+            // splitWk_[0] = Kw（W 不拆），splitIndex_ 恒 0
+            splitWk_[0] = c_.kw;
+            splitHk_[0] = c_.splitHkBase;
+            splitHkWk_[0] = splitHk_[0] * splitWk_[0];
+            splitHkWkC0_[0] = splitHkWk_[0] * k0_;
+            splitWIndex_ = 0;
+            splitHIndex_ = 0;
+            return;
+        }
+        splitHk_[0] = c_.splitHk0; splitHk_[1] = c_.splitHk0;
+        splitHk_[2] = c_.splitHk1; splitHk_[3] = c_.splitHk1;
+        splitWk_[0] = c_.splitWk0; splitWk_[1] = c_.splitWk1;
+        splitWk_[2] = c_.splitWk0; splitWk_[3] = c_.splitWk1;
+        for (uint32_t i = 0; i < 4; ++i) {
+            splitHkWk_[i] = splitHk_[i] * splitWk_[i];
+            splitHkWkC0_[i] = splitHkWk_[i] * k0_;
+        }
+        // 起始相位：pad 决定第一个有效子核（ops-nn splitWStartIndex_）
+        splitWIndex_ = c_.padLeft % c_.strideW;
+        splitHIndex_ = c_.padUp % c_.strideH;
+        rearrangeWIndex_ = 0;
+        rearrangeHIndex_ = 0;
+    }
+
+    // SplitH：每核一个固定子核，按 kSCoreIdx 一次注入（ops-nn SetIterateParams）
+    //   子核尺寸/相位 pad 用原始序号 kSCoreIdx（baseIter 长短组按逆序前坐标分配）；
+    //   B 的 GM 偏移与 dx 行相位用恢复后的 kernelIdx
+    __aicore__ inline void InjectSubKernelForCore()
+    {
+        splitHk_[0] = (ksCoreIdx_ < c_.baseHkIter) ? c_.splitHkBase : c_.splitHkTail;
+        splitHkWk_[0] = splitHk_[0] * splitWk_[0];
+        splitHkWkC0_[0] = splitHkWk_[0] * k0_;
+    }
+
+    // -----------------------------------------------------------------------
+    // 缓冲布局：L1 = A1(乒乓) + B1；UB = 2 相位槽 + 2 interleave 目的槽
+    // -----------------------------------------------------------------------
+    __aicore__ inline void InitBuffers()
+    {
+        // A1：相位面 M 块对应 dedy 行 × Wo × channelSize（tuning guide §4 几何）
+        const uint32_t subHk = splitHk_[0];
+        const uint32_t hoCal = CalFmapH(c_.baseM, subHk);
+        a1BufBytes_ = KAlignUp(hoCal * c_.wo * channelSize_ * elemBytes_, 32);
+        if (b1FullLoad_) {
+            // 全载：baseN × kValue（单缓冲驻留）
+            b1BufBytes_ = KAlignUp(c_.baseN * cout1G_ * splitHkWkC0_[0] * elemBytes_, 32);
+        } else {
+            b1BufBytes_ = KAlignUp(c_.baseN * c_.stepKb * c_.baseK * elemBytes_, 32);
+        }
+        b1Offset_ = a1BufBytes_ * c_.a1Db;
+
+        // 三段切分预计算（StorePhaseBlock）：baseM 相位面块在 splitWi 行上的切分
+        const uint32_t alignUnit = (elemBytes_ == 1U) ? 32U : 16U; // 32B 对齐元素数
+        const uint32_t srcWi = KMin(c_.baseM, splitWi_);
+        const uint32_t hiRows = KCeilDiv(c_.baseM, splitWi_);
+        headWi_ = (splitWi_ % alignUnit) == 0U ? 0U : splitWi_ % alignUnit; // 首块对齐尾巴
+        if (splitWi_ % alignUnit != 0U) {
+            // 行宽不对齐：head = 行首至下一个对齐边界，mid = 整行，tail = 余数
+            headWi_ = KMin(alignUnit - (0 % alignUnit), splitWi_);
+            midHi_ = (splitWi_ >= alignUnit) ? hiRows : 0U;
+            tailWi_ = (splitWi_ > headWi_ && midHi_ == 0U) ? splitWi_ - headWi_ : 0U;
+            if (splitWi_ >= alignUnit) {
+                tailWi_ = splitWi_ % alignUnit;
+                headWi_ = 0;
+            }
+        } else {
+            headWi_ = 0;
+            midHi_ = hiRows;
+            tailWi_ = 0;
+        }
+        hwSize_ = KAlignUp(headWi_, alignUnit) + midHi_ * KAlignUp(srcWi, alignUnit) +
+                  KAlignUp(tailWi_, alignUnit);
+
+        if ASCEND_IS_AIV {
+            if (GetSubBlockIdx() != 0) {
+                return; // mix(1,2) 双 AIV，只用 subBlock 0
+            }
+        }
+        // UB：2 个相位槽（AIC fixpipe 写入）+ 2 个 interleave 目的槽
+        // 4 块 hwSize×baseN；workspace 路径下相位槽也在 UB（从 GM 读回）。
+        // AIC 与 AIV 共享同一 UB 面（fixpipe 写 / vector 读）。
+        pipe_.InitBuffer(vecBuf_, hwSize_ * c_.baseN * 4 * elemBytes_);
+    }
+
+    // CalFmapH：相位面 M 块 → dedy 行数（tuning guide §4）
+    __aicore__ inline uint32_t CalFmapH(uint32_t baseM, uint32_t subHk) const
+    {
+        uint32_t hiCal;
+        if (baseM % splitWi_ == 0) {
+            hiCal = baseM / splitWi_;
+        } else if (baseM > splitWi_) {
+            hiCal = baseM / splitWi_ + 2;
+        } else {
+            hiCal = 2;
+        }
+        const uint32_t hoCal = (hiCal - 1) + subHk;
+        return KMin(hoCal, c_.ho);
+    }
+
+    // =======================================================================
+    // AIC 主流程（tuning guide §2/§6）
+    // =======================================================================
+    __aicore__ inline void ProcessAic()
+    {
+        // 初始 flag：L0 两 buffer 标记为 M 已释放；FIX 完成态
+        SetFlag<HardEvent::M_MTE1>(kEvtL0[0]);
+        SetFlag<HardEvent::M_MTE1>(kEvtL0[1]);
+        SetFlag<HardEvent::FIX_M>(kEvtCubeFix);
+
+        const uint32_t block = GetBlockIdx();
+        for (uint32_t r = 0; r < rounds_; ++r) {
+            const uint64_t basicIdx = block + static_cast<uint64_t>(r) * c_.usedCoreNum;
+            uint32_t bIdx, dIdx;
+            uint64_t mIdx, nIdx;
+            DecodeBasic(basicIdx, bIdx, dIdx, mIdx, nIdx);
+            ComputeBlock(bIdx, dIdx, mIdx, nIdx);
+        }
+
+        WaitFlag<HardEvent::FIX_M>(kEvtCubeFix);
+        WaitFlag<HardEvent::M_MTE1>(kEvtL0[0]);
+        WaitFlag<HardEvent::M_MTE1>(kEvtL0[1]);
+    }
+
+    // 轴序解码（dk>1 时换 M-D-N：优先复用 D 滑窗 overlap，见 tuning guide §2）。
+    // SplitH：相位维 kSCnt=strideH 在最外层（ops-nn CalBasicBlockIdx 的 kSCoreIdx 解码）
+    __aicore__ inline void DecodeBasic(uint64_t idx, uint32_t& bIdx, uint32_t& dIdx, uint64_t& mIdx,
+                                       uint64_t& nIdx)
+    {
+        const uint64_t mnCnt = mCnt_ * nCnt_;
+        const uint64_t dmnCnt = c_.di * mnCnt;
+        if (isSplitH_) {
+            const uint64_t ksdmnCnt = static_cast<uint64_t>(c_.strideH) * dmnCnt;
+            bIdx = static_cast<uint32_t>(idx / ksdmnCnt);
+            uint64_t rem = idx % ksdmnCnt;
+            ksCoreIdx_ = static_cast<uint32_t>(rem / dmnCnt);
+            rem = rem % dmnCnt;
+            // 相位恢复（ops-nn kernelIdx = (kSCoreIdx + kernelStartIdx) % strideH）
+            kernelIdx_ = (ksCoreIdx_ + kernelStartIdx_) % c_.strideH;
+            InjectSubKernelForCore();
+            dIdx = static_cast<uint32_t>(rem / mnCnt);
+            rem = rem % mnCnt;
+        } else {
+            bIdx = static_cast<uint32_t>(idx / dmnCnt);
+            uint64_t rem = idx % dmnCnt;
+            dIdx = static_cast<uint32_t>(rem / mnCnt);
+            rem = rem % mnCnt;
+        }
+        mIdx = rem / nCnt_;
+        nIdx = rem % nCnt_;
+    }
+
+    // 一个基本块 = 相位面 M × Cin N × 全部 Dk × 4 子核轮转
+    __aicore__ inline void ComputeBlock(uint32_t bIdx, uint32_t dIdx, uint64_t mIdx, uint64_t nIdx)
+    {
+        const uint32_t mStart = static_cast<uint32_t>(mIdx * c_.singleCoreM);
+        const uint32_t mUse = KMin(c_.singleCoreM, mTotal_ - mStart);
+        const uint32_t nStart = static_cast<uint32_t>(nIdx * c_.singleCoreN);
+        const uint32_t nUse = KMin(c_.singleCoreN, nAligned_ - nStart);
+
+        uint32_t baseUseM = mUse;
+        if (isSplitH_) {
+            // SplitH 尾相位 M 收缩（ops-nn ReCalcMInfo/kSTailM，tuning guide §10A.1）：
+            // kSTailIdx≠0 且本核相位 ≥ kSTailIdx 时，尾相位 M 总长缩为 kSTailM
+            if (c_.kSTailIdx != 0U && kernelIdx_ >= c_.kSTailIdx) {
+                if (mStart >= c_.kSTailM) {
+                    return; // 尾相位越界基本块：直接跳过（ops-nn continue）
+                }
+                if (mStart + baseUseM > c_.kSTailM) {
+                    baseUseM = c_.kSTailM - mStart;
+                }
+            }
+        } else {
+            // SplitHW 尾相位 M 收缩（tuning guide §3 RecalcBaseUseMForKernelSplit）：
+            // Hi 不整除 sH 时下半相位面行数少一行
+            uint32_t subKernelM = (c_.hi / c_.strideH) * splitWi_;
+            if (mStart >= subKernelM) {
+                return; // 该核只服务尾相位且越界
+            }
+            if (mStart + baseUseM > subKernelM) {
+                baseUseM = subKernelM - mStart;
+            }
+        }
+
+        for (uint32_t mOff = 0; mOff < baseUseM; mOff += c_.baseM) {
+            const uint32_t curM = KMin(c_.baseM, baseUseM - mOff);
+            for (uint32_t nOff = 0; nOff < nUse; nOff += c_.baseN) {
+                const uint32_t curN = KMin(c_.baseN, nUse - nOff);
+                if (isSplitH_) {
+                    // 单子核直通：无轮转、无 rearrange、L0C 直写 GM（§10A）
+                    ComputePhase(bIdx, dIdx, mStart + mOff, curM, nStart + nOff, curN, 0U);
+                    StorePhaseBlockDirectGm(dIdx, mStart + mOff, curM, nStart + nOff, curN);
+                } else {
+                    ComputeTile(bIdx, dIdx, mStart + mOff, curM, nStart + nOff, curN);
+                }
+            }
+        }
+    }
+
+    // 一个 tile：kd 归约 × K L0 循环 × 子核轮转（含输出与握手）
+    __aicore__ inline void ComputeTile(uint32_t bIdx, uint32_t dIdx, uint32_t mStart, uint32_t curM,
+                                       uint32_t nStart, uint32_t curN)
+    {
+        // 子核轮转从起始相位开始（pad 决定，InitSubKernelTables）
+        splitWIndex_ = c_.padLeft % c_.strideW;
+        splitHIndex_ = c_.padUp % c_.strideH;
+        rearrangeWIndex_ = 0;
+        rearrangeHIndex_ = 0;
+
+        for (uint32_t sub = 0; sub < c_.strideH * c_.strideW; ++sub) {
+            const uint32_t splitIndex = splitHIndex_ * c_.strideW + splitWIndex_;
+            // 尾相位 M 收缩（子核相关）：上半相位多算的部分跳过
+            uint32_t useM = curM;
+            const uint32_t tailPhaseM = (c_.hi / c_.strideH) * splitWi_;
+            if (splitHIndex_ == 1U && mStart + useM > tailPhaseM) {
+                if (mStart >= tailPhaseM) {
+                    AdvanceSubKernel();
+                    continue;
+                }
+                useM = tailPhaseM - mStart;
+            }
+            if (isKernel1x1_ && rearrangeHIndex_ != 0U) {
+                // 1×1 kernel：第二 H 相位恒零，AIC 跳过（AIV 直搬补零槽）
+                AdvanceSubKernel();
+                continue;
+            }
+
+            ComputePhase(bIdx, dIdx, mStart, useM, nStart, curN, splitIndex);
+            StorePhaseBlock(bIdx, dIdx, mStart, useM, curN, splitIndex);
+
+            AdvanceSubKernel();
+        }
+    }
+
+    // 子核步进：W 先 H 后（tuning guide §3）
+    __aicore__ inline void AdvanceSubKernel()
+    {
+        splitWIndex_ = (splitWIndex_ + 1 >= c_.strideW) ? 0 : splitWIndex_ + 1;
+        const bool wWrapped = (rearrangeWIndex_ + 1 >= c_.strideW);
+        rearrangeWIndex_ = wWrapped ? 0 : rearrangeWIndex_ + 1;
+        if (wWrapped) {
+            splitHIndex_ = (splitHIndex_ + 1 >= c_.strideH) ? 0 : splitHIndex_ + 1;
+            rearrangeHIndex_ = (rearrangeHIndex_ + 1 >= c_.strideH) ? 0 : rearrangeHIndex_ + 1;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // 相位块计算：kd 归约 × K L0 循环 + Mmad（L0 乒乓事件时序见 tuning guide §11.6）
+    //
+    // 注：本骨架按"每 kIdx 串行装载 A1/B1"展示数据通路；完整实现的
+    // L1 乒乓预取（stepKa/stepKb 内 l0aKIdx/l0bKIdx 轮转 + *PreLoad、
+    // 全载 isLoadB1_/isFreeB1_ 的 DeQue/FreeTensor 时机）为 stride=1 内积
+    // 路径的标准流水，见 tuning guide §6/§11 与 ops-nn ComputeForKIter。
+    // -----------------------------------------------------------------------
+    __aicore__ inline void ComputePhase(uint32_t bIdx, uint32_t dIdx, uint32_t mStart, uint32_t curM,
+                                        uint32_t nStart, uint32_t curN, uint32_t splitIndex)
+    {
+        const uint32_t splitHkWkC0 = splitHkWkC0_[splitIndex];
+        // 当前子核 K 总长（单层 kd）：cout1 × splitHkWk × k0
+        //（SplitH 的 splitIndex 恒 0，splitHkWkC0_[0] = 本核相位子核 subHk×Kw×k0）
+        const uint64_t kIterTotal = static_cast<uint64_t>(cout1G_) * splitHkWkC0;
+        const uint32_t kIter = static_cast<uint32_t>((kIterTotal + c_.baseK - 1) / c_.baseK);
+
+        LocalTensor<T> al1(TPosition::A1, 0, a1BufBytes_ / elemBytes_);
+        LocalTensor<T> bl1(TPosition::B1, b1Offset_, b1BufBytes_ / elemBytes_);
+
+        for (uint32_t kd = 0; kd < c_.kd; ++kd) {
+            // D 轴有效性判定（tuning guide §11.1：dTmp 整除 strideD 且在 Do·strideD 内）
+            const int32_t dTmp = static_cast<int32_t>(dIdx) + static_cast<int32_t>(c_.padFront) -
+                                 static_cast<int32_t>(kd) * static_cast<int32_t>(c_.dilationD);
+            if (dTmp < 0 || dTmp >= static_cast<int32_t>(c_.dout * c_.strideD) ||
+                (c_.strideD > 1U && (dTmp % static_cast<int32_t>(c_.strideD)) != 0)) {
+                continue;
+            }
+            const uint32_t od = (c_.strideD > 1U) ? static_cast<uint32_t>(dTmp) / c_.strideD
+                                                  : static_cast<uint32_t>(dTmp);
+
+            // B1 全载：首个有效 kd 装载一次（dk>1 时跨 kd 驻留）
+            if (b1FullLoad_ && !b1Loaded_) {
+                LoadToB1Full(bIdx, nStart, curN);
+                b1Loaded_ = true;
+            }
+
+            bool firstK = true;
+            for (uint32_t kIdx = 0; kIdx < kIter; ++kIdx) {
+                // GM→L1（A 连续无洞；B 非全载时按 kIdx 分块）
+                LoadToA1(bIdx, od, mStart, curM, kIdx, splitIndex);
+                if (!b1FullLoad_) {
+                    LoadToB1Block(nStart, curN, kIdx, splitIndex);
+                }
+                SetFlag<HardEvent::MTE2_MTE1>(kEvtL0[0]); // 模拟 MTE2→MTE1 就绪
+                WaitFlag<HardEvent::MTE2_MTE1>(kEvtL0[0]);
+
+                // L1→L0 + Mmad（L0 乒乓 toggle）
+                const uint8_t l0Buf = l0Toggle_;
+                WaitFlag<HardEvent::M_MTE1>(kEvtL0[l0Buf]);
+                LocalTensor<T> al0(TPosition::A2, l0Buf * (kL0ABBytes / 2 / elemBytes_),
+                                   (kL0ABBytes / 2) / elemBytes_);
+                LocalTensor<T> bl0(TPosition::B2, l0Buf * (kL0ABBytes / 2 / elemBytes_),
+                                   (kL0ABBytes / 2) / elemBytes_);
+                LoadAl0(al0, al1, mStart, curM, kIdx, splitIndex);
+                LoadBl0(bl0, bl1, kIdx, curN, splitIndex);
+                SetFlag<HardEvent::MTE1_M>(kEvtL0[l0Buf]);
+                WaitFlag<HardEvent::MTE1_M>(kEvtL0[l0Buf]);
+
+                MmadParams mp;
+                mp.m = KAlignUp(curM, kM0);
+                mp.n = KAlignUp(curN, kN0);
+                mp.k = c_.baseK;
+                mp.cmatrixInitVal = firstK;
+                mp.cmatrixSource = false;
+                mp.unitFlag = 0;
+                LocalTensor<float> cl0(TPosition::CO1, l0Buf * (kL0CBytes / 2 / sizeof(float)),
+                                       (kL0CBytes / 2) / sizeof(float));
+                Mmad(cl0, al0, bl0, mp);
+                SetFlag<HardEvent::M_MTE1>(kEvtL0[l0Buf]);
+                l0Toggle_ ^= 1;
+                firstK = false;
+            }
+        }
+        b1Loaded_ = false; // tile 结束（简化：每 tile 重载；驻留优化见 ops-nn FreeB1Tensor）
+    }
+    bool b1Loaded_ = false;
+
+    // -----------------------------------------------------------------------
+    // A 装载：GM(dedy)→AL1 连续 NZ（无洞 —— kernel split 的核心收益，tuning guide §4）
+    // -----------------------------------------------------------------------
+    __aicore__ inline void LoadToA1(uint32_t bIdx, uint32_t od, uint32_t mStart, uint32_t curM,
+                                    uint32_t kIdx, uint32_t splitIndex)
+    {
+        const uint32_t subHk = splitHk_[splitIndex];
+        // 相位面行范围 → dedy 行范围
+        const uint32_t hiStart = mStart / splitWi_;
+        const uint32_t hiCount = KCeilDiv((mStart % splitWi_) + curM, splitWi_);
+        // 相位 backprop pad：HW 用 subPadUp[splitIndex]；H 用 subPadUpH[kSCoreIdx_]
+        const int32_t phasePadUp = isSplitH_ ? c_.subPadUpH[ksCoreIdx_] : c_.subPadUp[splitIndex];
+        const int32_t hoStart = static_cast<int32_t>(hiStart) - phasePadUp;
+        const uint32_t hoCal = CalFmapH(curM, subHk);
+        const uint32_t realHoStart = (hoStart < 0) ? 0U : static_cast<uint32_t>(hoStart);
+        const uint32_t realHo = KMin(hoCal, c_.ho - realHoStart);
+
+        // K 方向 Cout 分形范围（kIdx 对应的 Cout 段）
+        const uint32_t coutPerStep = KMin(channelSize_, cout1G_);
+        const uint32_t coutStart = (kIdx * c_.baseK / k0_) / splitHkWk_[splitIndex];
+        const uint32_t curCout = KMin(coutPerStep, cout1G_ - coutStart);
+
+        LocalTensor<T> al1(TPosition::A1, 0, a1BufBytes_ / elemBytes_);
+        const uint64_t src = static_cast<uint64_t>(bIdx) * c_.cout * doHoWo_ +
+                             static_cast<uint64_t>(od + coutStart) * hoWo_ +
+                             static_cast<uint64_t>(realHoStart) * c_.wo;
+        dedyGm_.SetGlobalBuffer(reinterpret_cast<__gm__ T*>(dedy_) + src);
+
+        Dn2NzParams p;
+        p.dValue = curCout;
+        p.srcDValue = hoWo_;             // Cout 层间 stride
+        if (isSplitH_ && c_.strideW > 1U) {
+            // SplitH（strideW>1）：H 相位已拆（等效 strideH=1），W 方向仍留洞
+            //（ops-nn CalcLoadToA1Dn2NzParams 的 TPL_SPLIT_KERNEL_H 分支：strideH 强制 1）
+            p.dnNum = realHo;                        // 逐行搬
+            p.nValue = c_.wo;                        // 每行有效 Wo
+            p.srcDnMatrixStride = c_.wo;             // GM 行距
+            p.dstNzC0Stride = hoCal * ((c_.wo - 1) * c_.strideW + 1);
+            p.dstNzNStride = c_.strideW;             // ★W 洞（地址空洞=零）
+            p.dstNzMatrixStride = (c_.wo - 1) * c_.strideW + 1;
+        } else {
+            // SplitHW 或 SplitH(strideW=1)：整段连续，无任何洞
+            p.dnNum = 1;
+            p.nValue = realHo * c_.wo;   // ★连续（前放大路径用 dstNzNStride=strideW 插零）
+            p.srcDnMatrixStride = 0;
+            p.dstNzC0Stride = realHo * c_.wo;
+            p.dstNzNStride = 1;
+            p.dstNzMatrixStride = 0;
+        }
+        DataCopy(al1, dedyGm_, p);
+    }
+
+    // -----------------------------------------------------------------------
+    // B 装载：filter GM→BL1（全载一次；tuning guide §5.1）
+    // -----------------------------------------------------------------------
+    __aicore__ inline void LoadToB1Full(uint32_t bIdx, uint32_t nStart, uint32_t curN)
+    {
+        (void)bIdx;
+        LocalTensor<T> bl1(TPosition::B1, b1Offset_, b1BufBytes_ / elemBytes_);
+        // filter NCDHW [Cout, Cin, Kd, Kh, Kw]：按 (cout 分形 × 原核 KhKw × Cin0) 装载
+        const uint64_t src = static_cast<uint64_t>(nStart);
+        filterGm_.SetGlobalBuffer(reinterpret_cast<__gm__ T*>(filter_) + src);
+
+        Dn2NzParams p;
+        p.dnNum = c_.cout;                       // 原核行（Cout 方向）
+        p.nValue = c_.kh * c_.kw;                // 原核 KhKw（不拆，驻留原核）
+        p.dValue = curN;
+        p.srcDnMatrixStride = c_.cin * c_.kh * c_.kw * c_.kd;
+        p.srcDValue = c_.kh * c_.kw;
+        p.dstNzC0Stride = c_.kh * c_.kw * c_.baseN;
+        p.dstNzNStride = c_.baseN;
+        p.dstNzMatrixStride = k0_;
+        DataCopy(bl1, filterGm_, p);
+    }
+
+    __aicore__ inline void LoadToB1Block(uint32_t nStart, uint32_t curN, uint32_t kIdx,
+                                         uint32_t splitIndex)
+    {
+        (void)nStart;
+        LocalTensor<T> bl1(TPosition::B1, b1Offset_, b1BufBytes_ / elemBytes_);
+        const uint32_t coutFrags = c_.stepKb * c_.baseK / splitHkWkC0_[splitIndex];
+        if (isSplitH_) {
+            // SplitH：GM 逐行取样重组子核（ops-nn LoadToB1Dn2NzTransposeForKernelSplitH）
+            //   子核第 i 行 = 原核第 (kernelIdx_ + i·strideH) 行（H 相位隔行采样），
+            //   每行整宽 Kw；重排后的紧凑子核在 B1 中按行连续存放
+            const uint32_t subHk = splitHk_[0];
+            Dn2NzParams p;
+            p.dnNum = coutFrags;                       // Cout 方向
+            p.nValue = c_.kw;                          // 一行原核宽度（W 不拆）
+            p.dValue = curN;
+            p.srcDnMatrixStride = c_.cin * c_.kh * c_.kw * c_.kd;
+            p.srcDValue = c_.kh * c_.kw;
+            p.dstNzC0Stride = c_.kw * c_.baseN;
+            p.dstNzNStride = c_.baseN;
+            p.dstNzMatrixStride = k0_;
+            // 相位首行偏移：kernelIdx_（恢复后物理相位）× Kw（NCDHW Kh 维步长）
+            uint64_t srcRow = static_cast<uint64_t>(kIdx) * coutFrags * c_.kh * c_.kw * c_.cin +
+                              static_cast<uint64_t>(kernelIdx_) * c_.kw;
+            uint64_t dstRow = 0;
+            for (uint32_t i = 0; i < subHk; ++i) {
+                filterGm_.SetGlobalBuffer(reinterpret_cast<__gm__ T*>(filter_) + srcRow);
+                DataCopy(bl1[dstRow], filterGm_, p);
+                srcRow += static_cast<uint64_t>(c_.kw) * c_.strideH;  // 跳 strideH−1 行
+                dstRow += static_cast<uint64_t>(c_.kw) * c_.baseN;    // B1 内按子核行连续
+            }
+            return;
+        }
+        const uint64_t src = static_cast<uint64_t>(kIdx) * coutFrags * c_.kh * c_.kw * c_.cin;
+        filterGm_.SetGlobalBuffer(reinterpret_cast<__gm__ T*>(filter_) + src);
+
+        Dn2NzParams p;
+        p.dnNum = coutFrags;
+        p.nValue = c_.kh * c_.kw;
+        p.dValue = curN;
+        p.srcDnMatrixStride = c_.cin * c_.kh * c_.kw * c_.kd;
+        p.srcDValue = c_.kh * c_.kw;
+        p.dstNzC0Stride = c_.kh * c_.kw * c_.baseN;
+        p.dstNzNStride = c_.baseN;
+        p.dstNzMatrixStride = k0_;
+        DataCopy(bl1, filterGm_, p);
+    }
+
+    // -----------------------------------------------------------------------
+    // L1→L0：Load3D（子核 im2col）/ Load2d（B1 全载相位选行，tuning guide §5.2）
+    // -----------------------------------------------------------------------
+    __aicore__ inline void LoadAl0(LocalTensor<T>& al0, LocalTensor<T>& al1, uint32_t mStart,
+                                   uint32_t curM, uint32_t kIdx, uint32_t splitIndex)
+    {
+        const uint32_t subHk = splitHk_[splitIndex];
+        const uint32_t subWk = splitWk_[splitIndex];
+        // FMatrix：子核 pad（Load3D padList 语义，tuning guide §10）
+        // SplitH：W 不拆 → subPadLeft/Right 取 0，padUp 用 subPadUpH[kSCoreIdx_]
+        const int32_t padL = isSplitH_ ? 0 : c_.subPadLeft[splitIndex];
+        const int32_t padR = isSplitH_ ? 0 : c_.subPadRight[splitIndex];
+        const int32_t padU = isSplitH_ ? c_.subPadUpH[ksCoreIdx_] : c_.subPadUp[splitIndex];
+        uint8_t pads[4] = {static_cast<uint8_t>(padL < 0 ? 0 : padL),
+                           static_cast<uint8_t>(padR < 0 ? 0 : padR),
+                           static_cast<uint8_t>(padU < 0 ? 0 : padU),
+                           255};
+        const uint32_t mAlign = KAlignUp(curM, kM0);
+        const uint32_t posM = mStart % splitWi_; // 相位面块内 W 向起点
+        Load3DSetFMatrixCal(mAlign / kM0 * kM0, splitWi_, pads);
+        Load3DSetPaddingCal(0);
+        SetLoadDataRepeatWithStride(
+            LoadDataRepeatParamWithStride(0, 1, 0, static_cast<uint16_t>(mAlign / kM0)));
+
+        // Config0：mStep=mAlign, posM, posK=kIdx*baseK（★stride=1：kernel 拆分后无洞）
+        const uint64_t xm = (static_cast<uint64_t>(mAlign) & kMask16) << kMstepOffset |
+                            ((static_cast<uint64_t>(posM) & kMask16) << kPosMOffset) |
+                            (static_cast<uint64_t>(kIdx * c_.baseK) << kPosKOffset) |
+                            static_cast<uint64_t>(c_.baseK);
+        // Config1：stride=1、子核 kernel、dilation=1、channelSize
+        const uint64_t xt = ((static_cast<uint64_t>(subWk) & kMask8) << kKernelWOffset) |
+                            ((static_cast<uint64_t>(subHk) & kMask8) << kKernelHOffset) |
+                            (1ULL << 0) | (1ULL << kStrideHOffset) |
+                            (1ULL << kDilationWOffset) | (1ULL << kDilationHOffset) |
+                            ((static_cast<uint64_t>(channelSize_) & kMask16) << kCinOffset);
+        Load3DBitModeParam p;
+        p.SetConfig0(xm);
+        p.SetConfig1(xt);
+        LoadData<TPosition::A2, TPosition::A1, T>(al0, al1, p);
+    }
+
+    __aicore__ inline void LoadBl0(LocalTensor<T>& bl0, LocalTensor<T>& bl1, uint32_t kIdx,
+                                    uint32_t curN, uint32_t splitIndex)
+    {
+        const uint32_t subHk = splitHk_[splitIndex];
+        const uint32_t subWk = splitWk_[splitIndex];
+        const uint32_t blockBaseN = KAlignUp(curN, kN0) / kN0 * kN0 / kN0; // n 分形数（curN/16）
+        const uint32_t nFrac = KCeilDiv(curN, kN0);
+
+        Load2DBitModeParam p;
+        if (b1FullLoad_) {
+            // 相位选行（tuning guide §5.2）：从驻留的原核 KhKw 展开中跳格取子核行
+            const uint32_t kRepeat = c_.baseK / splitHkWkC0_[splitIndex];
+            const uint32_t rowOffset = ((subHk - 1) * c_.strideH * c_.kw + (subWk - 1) * c_.strideW +
+                                        (splitHIndex_ * c_.kw + splitWIndex_));
+            p.SetMStartPosition(static_cast<uint16_t>(rowOffset * KCeilDiv(curN, kN0)));
+            p.SetKStartPosition(kIdx * kRepeat * splitHkWk_[splitIndex] / k0_);
+            p.SetMStep(static_cast<uint16_t>(nFrac));
+            p.SetKStep(static_cast<uint16_t>(subWk));     // 子核宽（1 或 2）
+            p.SetSrcStride(-static_cast<int32_t>(blockBaseN)); // 逆序（filter 翻转）
+            p.SetDstStride(0);
+            p.SetIfTranspose(false);
+        } else {
+            // 非全载（含 SplitH 全部场景）：HkWk 分形内逐组逆序（filter 空间翻转）。
+            // SplitH 的 B1 已在 GM→L1 阶段重排为紧凑子核（LoadToB1Block H 分支），
+            // 此处 splitIndex 恒 0、splitHkWk_[0] = subHk×Kw，逆序语义不变
+            p.SetMStartPosition(static_cast<uint16_t>((splitHkWk_[splitIndex] - 1) * nFrac));
+            p.SetKStartPosition(kIdx * c_.baseK / k0_);
+            p.SetMStep(static_cast<uint16_t>(nFrac));
+            p.SetKStep(static_cast<uint16_t>(c_.baseK / k0_));
+            p.SetSrcStride(-static_cast<int32_t>(blockBaseN));
+            p.SetDstStride(0);
+            p.SetIfTranspose(false);
+        }
+        LoadData<TPosition::B2, TPosition::B1, T>(bl0, bl1, p);
+    }
+
+    // -----------------------------------------------------------------------
+    // L0C→UB/GM(ws) 三段对齐 fixpipe + AIC↔AIV 握手（tuning guide §7/§9）
+    // -----------------------------------------------------------------------
+    __aicore__ inline void StorePhaseBlock(uint32_t bIdx, uint32_t dIdx, uint32_t mStart,
+                                           uint32_t curM, uint32_t curN, uint32_t splitIndex)
+    {
+        // rearrangeW==0：等 AIV 完成上一行重排（相位槽可复用）
+        if (rearrangeWIndex_ == 0) {
+            CrossCoreWaitFlag<G_CV_ENHANCE_MODE, PIPE_FIX>(kSyncAivToAic);
+        }
+        // rearrangeW==last：写完本块后通知 AIV 可以 interleave
+        const bool isLastW = (rearrangeWIndex_ == c_.strideW - 1);
+
+        WaitFlag<HardEvent::FIX_M>(kEvtCubeFix);
+        LocalTensor<float> cl0(TPosition::CO1, l0Toggle_ ^ 1, 0);
+        const uint32_t alignUnit = (elemBytes_ == 1U) ? 32U : 16U;
+        const uint32_t srcWi = KMin(curM, splitWi_);
+
+        FixpipeParamsArch3510<CO2Layout::COLUMN_MAJOR> fp;
+        fp.nSize = curN;
+        fp.srcStride = KAlignUp(curM, kM0); // L0C 内 M 行距（单位 C0）
+        fp.reluEn = false;
+        fp.params.srcNzC0Stride = 1;
+
+        if (useWorkspace_) {
+            // L0C→GM(workspace，per-core 分片)，AIV 稍后读回
+            const uint32_t hi = KCeilDiv(c_.baseM, splitWi_);
+            const uint64_t hwAlign = static_cast<uint64_t>(KAlignUp(splitWi_, alignUnit)) * hi * c_.baseN;
+            const uint64_t wsOffset = GetAicBlockIdx() * (hwAlign * 2) +
+                                      static_cast<uint64_t>(hwSize_) * curN * rearrangeWIndex_;
+            wsGm_.SetGlobalBuffer(reinterpret_cast<__gm__ T*>(workspace_) + wsOffset);
+            FixpipeWs(fp, cl0, srcWi, curM, curN, wsGm_);
+        } else {
+            // L0C→UB 相位槽（rearrangeWIndex 分格）
+            LocalTensor<T> vecOut = vecBuf_.Get<T>();
+            const uint64_t ubDst = static_cast<uint64_t>(hwSize_) * curN * rearrangeWIndex_;
+            FixpipeUb(fp, cl0, srcWi, curM, curN, ubDst, vecOut);
+        }
+        SetFlag<HardEvent::FIX_M>(kEvtCubeFix);
+
+        if (isLastW) {
+            CrossCoreSetFlag<G_CV_ENHANCE_MODE, PIPE_MTE2>(kSyncAicToAiv);
+        }
+        (void)bIdx;
+        (void)dIdx;
+        (void)mStart;
+        (void)splitIndex;
+    }
+
+    // 三段对齐：head（1 段）/ mid（dnNum=midHi 循环）/ tail（1 段）。
+    // FixpipeParamsArch3510 为 arch35 devkit 的 L0C→UB 参数结构；若目标工具链
+    // 仅提供 FixpipeParamsC310（L0C→GM），需按 ops-nn LoadL0c2UbFixPipe 的
+    // 封装对齐字段名（dstStride/dnNum/srcNzMatrixStride/dstDnMatrixStride/mSize）。
+    __aicore__ inline void FixpipeUb(FixpipeParamsArch3510<CO2Layout::COLUMN_MAJOR>& fp,
+                                     LocalTensor<float>& cl0, uint32_t srcWi, uint32_t curM,
+                                     uint32_t curN, uint64_t ubDst, LocalTensor<T>& vecOut)
+    {
+        const uint32_t alignUnit = (elemBytes_ == 1U) ? 32U : 16U;
+        uint64_t srcOffset = 0;
+        fp.dstStride = hwSize_; // 目的 N stride（相位槽内行容量）
+        if (headWi_ != 0U) {
+            fp.params.dnNum = 1;
+            fp.params.srcNzMatrixStride = 0;
+            fp.params.dstDnMatrixStride = 0;
+            fp.mSize = headWi_;
+            AscendC::Fixpipe(vecOut[ubDst + srcOffset], cl0[srcOffset], fp);
+            srcOffset += headWi_ * kM0;
+            ubDst += KAlignUp(headWi_, alignUnit);
+        }
+        if (midHi_ != 0U) {
+            fp.params.dnNum = midHi_;
+            fp.params.srcNzMatrixStride = srcWi;
+            fp.params.dstDnMatrixStride = KAlignUp(srcWi, alignUnit);
+            fp.mSize = srcWi;
+            AscendC::Fixpipe(vecOut[ubDst + srcOffset], cl0[srcOffset], fp);
+            srcOffset += static_cast<uint64_t>(midHi_) * srcWi * kM0;
+            ubDst += static_cast<uint64_t>(midHi_) * KAlignUp(srcWi, alignUnit);
+        }
+        if (tailWi_ != 0U) {
+            fp.params.dnNum = 1;
+            fp.params.srcNzMatrixStride = 0;
+            fp.params.dstDnMatrixStride = 0;
+            fp.mSize = tailWi_;
+            AscendC::Fixpipe(vecOut[ubDst + srcOffset], cl0[srcOffset], fp);
+        }
+        (void)curM;
+        (void)curN;
+    }
+
+    __aicore__ inline void FixpipeWs(FixpipeParamsArch3510<CO2Layout::COLUMN_MAJOR>& fp,
+                                     LocalTensor<float>& cl0, uint32_t srcWi, uint32_t curM,
+                                     uint32_t curN, GlobalTensor<T>& wsGm)
+    {
+        // 与 FixpipeUb 同构，目的换 GM(workspace)；源侧 L0C 布局一致
+        const uint32_t alignUnit = (elemBytes_ == 1U) ? 32U : 16U;
+        uint64_t srcOffset = 0;
+        fp.dstStride = hwSize_;
+        if (headWi_ != 0U) {
+            fp.params.dnNum = 1;
+            fp.params.srcNzMatrixStride = 0;
+            fp.params.dstDnMatrixStride = 0;
+            fp.mSize = headWi_;
+            AscendC::Fixpipe(wsGm[srcOffset], cl0[srcOffset], fp);
+            srcOffset += headWi_ * kM0;
+        }
+        if (midHi_ != 0U) {
+            fp.params.dnNum = midHi_;
+            fp.params.srcNzMatrixStride = srcWi;
+            fp.params.dstDnMatrixStride = KAlignUp(srcWi, alignUnit);
+            fp.mSize = srcWi;
+            AscendC::Fixpipe(wsGm[srcOffset], cl0[srcOffset], fp);
+            srcOffset += static_cast<uint64_t>(midHi_) * srcWi * kM0;
+        }
+        if (tailWi_ != 0U) {
+            fp.params.dnNum = 1;
+            fp.params.srcNzMatrixStride = 0;
+            fp.params.dstDnMatrixStride = 0;
+            fp.mSize = tailWi_;
+            AscendC::Fixpipe(wsGm[srcOffset], cl0[srcOffset], fp);
+        }
+        (void)curM;
+        (void)curN;
+    }
+
+    // -----------------------------------------------------------------------
+    // SplitH：L0C 三段对齐直写 GM（ops-nn LoadL0c2GmDnForKernelSplitH，NCDHW）
+    //   H 方向交错还原 = fixpipe 目的地址隔行 stride（skipDstOffset），无需 AIV
+    //   （tuning guide §10A.3：每写一行相位面，跳 strideH−1 行原始 dx）
+    // -----------------------------------------------------------------------
+    __aicore__ inline void StorePhaseBlockDirectGm(uint32_t dIdx, uint32_t mStart, uint32_t curM,
+                                                   uint32_t nStart, uint32_t curN)
+    {
+        dxGm_.SetGlobalBuffer(reinterpret_cast<__gm__ T*>(dx_));
+        WaitFlag<HardEvent::FIX_M>(kEvtCubeFix);
+        LocalTensor<float> cl0(TPosition::CO1, l0Toggle_ ^ 1, 0);
+
+        const int64_t skipDstOffset = static_cast<int64_t>(c_.wi) * (c_.strideH - 1);
+        // 相位面内 M 偏移 → 原始 dx 偏移（非整行时按行补偿，ops-nn curSkipMSize）
+        const uint32_t mSize = mStart % c_.wi == 0U ? mStart : mStart; // mStart 已按 Wi 行对齐
+        const uint32_t curSkipMSize = (mSize / c_.wi) * static_cast<uint32_t>(skipDstOffset);
+        const uint32_t srcWi = KMin(curM, splitWi_);   // H 模式 splitWi_ = Wi
+        int64_t dstOffset = static_cast<int64_t>(nStart) * c_.diHiWi_ +   // cin offset
+                            static_cast<int64_t>(dIdx) * c_.hiWi_ +       // di offset
+                            mSize + curSkipMSize;                          // hi&wi offset
+
+        FixpipeParamsArch3510<CO2Layout::COLUMN_MAJOR> fp;
+        fp.nSize = curN;
+        fp.params.srcNzC0Stride = 1;
+        fp.srcStride = KAlignUp(curM, kM0);       // L0C 内 M 行距（单位 C0）
+        fp.dstStride = c_.diHiWi_;                // 目的 N stride（cin 层间）
+        fp.reluEn = false;
+        int64_t srcOffset = 0;
+        if (headWi_ != 0U) {                      // 首块
+            fp.params.dnNum = 1;
+            fp.params.srcNzMatrixStride = 0;
+            fp.params.dstDnMatrixStride = 0;
+            fp.mSize = headWi_;
+            AscendC::Fixpipe(dxGm_[dstOffset], cl0[srcOffset], fp);
+            srcOffset += headWi_ * kM0;
+            dstOffset += headWi_ + skipDstOffset; // 跳到下一相位行
+        }
+        if (midHi_ != 0U) {                       // 中间整行块
+            fp.params.dnNum = midHi_;
+            fp.params.srcNzMatrixStride = srcWi;
+            fp.params.dstDnMatrixStride = skipDstOffset + c_.wi;  // ★隔行行距
+            fp.mSize = srcWi;
+            AscendC::Fixpipe(dxGm_[dstOffset], cl0[srcOffset], fp);
+            srcOffset += static_cast<int64_t>(midHi_) * srcWi * kM0;
+            dstOffset += static_cast<int64_t>(midHi_) * (skipDstOffset + c_.wi);
+        }
+        if (tailWi_ != 0U) {                      // 尾块
+            fp.params.dnNum = 1;
+            fp.params.srcNzMatrixStride = 0;
+            fp.params.dstDnMatrixStride = 0;
+            fp.mSize = tailWi_;
+            AscendC::Fixpipe(dxGm_[dstOffset], cl0[srcOffset], fp);
+        }
+        SetFlag<HardEvent::FIX_M>(kEvtCubeFix);
+    }
+
+    // =======================================================================
+    // AIV 主流程：等 AIC 凑齐 strideW 个相位块 → interleave → UB→GM（§8）
+    // =======================================================================
+    __aicore__ inline void ProcessAiv()
+    {
+        if (GetSubBlockIdx() != 0) {
+            return; // mix(1,2) 双 AIV，只用 subBlock 0
+        }
+        dxGm_.SetGlobalBuffer(reinterpret_cast<__gm__ T*>(dx_));
+        if (useWorkspace_) {
+            wsGm_.SetGlobalBuffer(reinterpret_cast<__gm__ T*>(workspace_));
+        }
+
+        const uint32_t block = GetBlockIdx();
+        for (uint32_t r = 0; r < rounds_; ++r) {
+            const uint64_t basicIdx = block + static_cast<uint64_t>(r) * c_.usedCoreNum;
+            uint32_t bIdx, dIdx;
+            uint64_t mIdx, nIdx;
+            DecodeBasic(basicIdx, bIdx, dIdx, mIdx, nIdx);
+            RearrangeTile(bIdx, dIdx, mIdx, nIdx);
+        }
+    }
+
+    __aicore__ inline void RearrangeTile(uint32_t bIdx, uint32_t dIdx, uint64_t mIdx, uint64_t nIdx)
+    {
+        const uint32_t mStart = static_cast<uint32_t>(mIdx * c_.singleCoreM);
+        const uint32_t mUse = KMin(c_.singleCoreM, mTotal_ - mStart);
+        const uint32_t nStart = static_cast<uint32_t>(nIdx * c_.singleCoreN);
+        const uint32_t nUse = KMin(c_.singleCoreN, nAligned_ - nStart);
+        const uint32_t baseUseM = KMin(c_.baseM, mUse);
+        const uint32_t srcWi = KMin(baseUseM, splitWi_);
+        const uint32_t dataLen = hwSize_ * nUse;
+        LocalTensor<T> vecOut = vecBuf_.Get<T>();
+
+        // 每个 H 相位行：等 AIC 写满 strideW 个相位槽 → interleave → UB→GM
+        for (uint32_t rearrangeH = 0; rearrangeH < c_.strideH; ++rearrangeH) {
+            rearrangeHGlobal_ = rearrangeH;
+            // 1×1 kernel：第二 H 相位恒零，AIC 已跳过，本行直接补零写 GM
+            if (isKernel1x1_ && rearrangeH != 0U) {
+                WriteZeroPhase(bIdx, dIdx, mStart, nStart, nUse);
+                continue;
+            }
+            CrossCoreWaitFlag<G_CV_ENHANCE_MODE, PIPE_MTE2>(kSyncAicToAiv);
+
+            if (useWorkspace_) {
+                LoadWorkspaceToUb(vecOut, dataLen, nUse, rearrangeH);
+            }
+            // interleave：slot0 × slot1 → 双倍目的区（还原 W 方向 stride=2 交错）
+            const uint32_t vfLen = platform::GetVRegSize() / sizeof(T);
+            const uint32_t doubleVfLen = vfLen * 2;
+            const uint16_t repeatTimes = static_cast<uint16_t>((dataLen + vfLen - 1) / vfLen);
+            auto src0 = (__ubuf__ T*)vecOut[0].GetPhyAddr();
+            auto src1 = (__ubuf__ T*)vecOut[dataLen].GetPhyAddr();
+            auto dst0 = (__ubuf__ T*)vecOut[static_cast<uint64_t>(dataLen) * 2].GetPhyAddr();
+            auto dst1 = (__ubuf__ T*)vecOut[static_cast<uint64_t>(dataLen) * 2 + vfLen].GetPhyAddr();
+            InterleavePhase<T>(src0, src1, dst0, dst1, vfLen, doubleVfLen, repeatTimes);
+
+            event_t e = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::V_MTE3));
+            SetFlag<HardEvent::V_MTE3>(e);
+            WaitFlag<HardEvent::V_MTE3>(e);
+            DataCopyUbToGm(bIdx, dIdx, mStart, nStart, nUse, srcWi, vecOut,
+                           static_cast<int64_t>(dataLen) * 2);
+            // 反向通知 AIC：相位槽已消费
+            CrossCoreSetFlag<G_CV_ENHANCE_MODE, PIPE_FIX>(kSyncAivToAic);
+        }
+    }
+
+    // 1×1 kernel 的零相位行：dx 对应行本就恒零（无第二相位贡献），整行写零
+    __aicore__ inline void WriteZeroPhase(uint32_t bIdx, uint32_t dIdx, uint32_t mStart,
+                                          uint32_t nStart, uint32_t nUse)
+    {
+        const uint32_t hiStart = mStart / splitWi_;
+        const uint32_t hiCount = KCeilDiv(mStart % splitWi_ + KMin(c_.baseM, mTotal_ - mStart), splitWi_);
+        const uint64_t dstBase = static_cast<uint64_t>(bIdx) * c_.cin * diHiWi_ +
+                                 static_cast<uint64_t>(nStart) * diHiWi_ +
+                                 static_cast<uint64_t>(dIdx) * hiWi_ +
+                                 static_cast<uint64_t>(hiStart * c_.strideH + 1) * c_.wi;
+        LocalTensor<T> vecOut = vecBuf_.Get<T>();
+        Duplicate<T>(vecOut, static_cast<T>(0), KAlignUp(c_.wi, 16U));
+        event_t e = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::V_MTE3));
+        SetFlag<HardEvent::V_MTE3>(e);
+        WaitFlag<HardEvent::V_MTE3>(e);
+        DataCopyExtParams p;
+        p.blockLen = c_.wi * elemBytes_;
+        p.blockCount = hiCount;
+        p.srcStride = (KAlignUp(c_.wi, 16U) - c_.wi) * elemBytes_ / 32;
+        p.dstStride = c_.wi * elemBytes_;
+        for (uint32_t n = 0; n < nUse; ++n) {
+            DataCopyPad(dxGm_[dstBase + static_cast<uint64_t>(n) * diHiWi_], vecOut, p);
+        }
+    }
+
+    __aicore__ inline void LoadWorkspaceToUb(LocalTensor<T>& vecOut, uint64_t dataLen, uint32_t nUse,
+                                             uint32_t rearrangeH)
+    {
+        DataCopyExtParams mte2;
+        mte2.blockCount = 1;
+        mte2.blockLen = static_cast<uint32_t>(dataLen * elemBytes_);
+        mte2.srcStride = 0;
+        mte2.dstStride = 0;
+        DataCopyPadExtParams<T> padParams = {false, 0, 0, 0};
+        // workspace 布局：per-core 两相位块（对应 rearrangeW=0/1），按 H 相位行推进
+        const uint32_t hi = KCeilDiv(c_.baseM, splitWi_);
+        const uint64_t hwAlign = static_cast<uint64_t>(KAlignUp(splitWi_, 16U)) * hi * c_.baseN;
+        const uint64_t wsBase = GetAicBlockIdx() * (hwAlign * 2) + rearrangeH * hwAlign * 2;
+        DataCopyPad<T, PaddingMode::Compact>(vecOut[0], wsGm_[wsBase], mte2, padParams);
+        DataCopyPad<T, PaddingMode::Compact>(vecOut[dataLen], wsGm_[wsBase + hwAlign], mte2, padParams);
+        event_t e = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::MTE2_V));
+        SetFlag<HardEvent::MTE2_V>(e);
+        WaitFlag<HardEvent::MTE2_V>(e);
+        (void)nUse;
+    }
+
+    // 隔行直写 GM(dx NCDHW)：mid 段 blockCount=midHi、blockLen=Wi、dstStride=Wi。
+    // interleave 已在 UB 内合并两个 W 相位，GM 写按原始行距 Wi 直落。
+    __aicore__ inline void DataCopyUbToGm(uint32_t bIdx, uint32_t dIdx, uint32_t mStart,
+                                          uint32_t nStart, uint32_t nUse, uint32_t srcWi,
+                                          LocalTensor<T>& vecOut, int64_t srcOffset)
+    {
+        const uint32_t hiStart = mStart / splitWi_;
+        // 相位面坐标 → 原始 dx 坐标（×stride 还原 H 方向交错；W 已由 interleave 还原）
+        const uint64_t dstBase = static_cast<uint64_t>(bIdx) * c_.cin * diHiWi_ +
+                                 static_cast<uint64_t>(nStart) * diHiWi_ +
+                                 static_cast<uint64_t>(dIdx) * hiWi_ +
+                                 static_cast<uint64_t>(hiStart * c_.strideH + rearrangeHGlobal_) * c_.wi;
+        DataCopyExtParams ub2Gm;
+        ub2Gm.srcStride = 0;
+        for (uint32_t n = 0; n < nUse; ++n) {
+            const uint64_t dst0 = dstBase + static_cast<uint64_t>(n) * diHiWi_;
+            // head/mid/tail 三段（与 StorePhaseBlock 对称）
+            if (headWi_ != 0U) {
+                ub2Gm.blockLen = headWi_ * elemBytes_;
+                ub2Gm.blockCount = 1;
+                ub2Gm.dstStride = 0;
+                DataCopyPad(dxGm_[dst0], vecOut[srcOffset], ub2Gm);
+                srcOffset += KAlignUp(headWi_, 16U);
+            }
+            if (midHi_ != 0U) {
+                ub2Gm.blockLen = c_.wi * elemBytes_;
+                ub2Gm.blockCount = midHi_;
+                ub2Gm.srcStride = (static_cast<uint32_t>(KAlignUp(srcWi, 16U)) - c_.wi) * elemBytes_ / 32;
+                ub2Gm.dstStride = c_.wi * elemBytes_;
+                DataCopyPad(dxGm_[dst0 + headWi_], vecOut[srcOffset], ub2Gm);
+                srcOffset += static_cast<int64_t>(KAlignUp(srcWi, 16U)) * midHi_;
+            }
+            if (tailWi_ != 0U) {
+                ub2Gm.blockLen = tailWi_ * elemBytes_;
+                ub2Gm.blockCount = 1;
+                ub2Gm.dstStride = 0;
+                DataCopyPad(dxGm_[dst0 + headWi_ + midHi_ * c_.wi], vecOut[srcOffset], ub2Gm);
+                srcOffset += KAlignUp(tailWi_, 16U);
+            }
+        }
+    }
+    uint32_t rearrangeHGlobal_ = 0;
+};
+
+} // namespace conv3ddx_ks
+
+#endif

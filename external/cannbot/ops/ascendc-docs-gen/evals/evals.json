@@ -1,0 +1,671 @@
+{
+  "eval_mode": "file_based",
+  "evals": [
+    {
+      "id": 1,
+      "title": "为 Add 算子生成需求分析文档",
+      "config": {
+        "max_tokens": 160000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 180000,
+          "glm-5": 200000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "file_based"
+      },
+      "prompt": "我需要开发一个 Add 算子，请帮我生成需求分析文档。算子规格如下：\n\n算子名称：Add\n数学公式：z = x + alpha * y（逐元素加法）\n输入：x fp16 [1024, 4096], y fp16 [1024, 4096]\n输出：z fp16 [1024, 4096]\n目标芯片：Ascend910B\n精度要求：fp16 双千分之一\n调用方式：ACLNN 调用\n\n请生成 REQUIREMENTS.md 文件。",
+      "expected_output": "生成的 REQUIREMENTS.md 应严格遵循需求分析模板结构，包含以下关键章节：\n\n- 修订记录表格（版本、修订内容、修订时间、修订人）\n- §1 需求背景：需求来源、基线对齐（框架API/论文公式/用户给定公式的勾选框）\n- §2 运行环境：服务器型号、芯片号、编译宏架构（DAV_*）\n- §3 调用方式表格：列出 ACLNN 调用、torch_npu 单算子、torch.compile 入图、GE 图模式等调用方式的支持情况\n- §4 算子规格：基本信息（算子名称、数学公式）、输入输出规格（x/y/z 的 shape 和 dtype）、数据类型支持（fp16/fp32/bfloat16/int8 勾选框）、精度要求\n- §5 ACLNN API 接口定义：两段式接口声明（aclnnAddGetWorkspaceSize + aclnnAdd）、参数说明表、约束与限制（类型推导规则、shape 约束、广播规则）\n- §8 约束与要求：计算约束",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "为 Softmax 算子生成详细设计文档",
+      "config": {
+        "max_tokens": 200000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 240000,
+          "glm-5": 300000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "file_based"
+      },
+      "prompt": "我需要开发一个 Softmax 算子，请帮我生成详细设计文档。算子规格如下：\n\n算子名称：Softmax\n数学公式：softmax(x_i) = exp(x_i - max(x)) / sum(exp(x_j - max(x)))\n输入：x fp16 [1024, 4096]\n输出：y fp16 [1024, 4096]\n目标芯片：Ascend910B，架构 arch22\n算子类别：Reduction\n\n请生成 DESIGN.md 文件。",
+      "expected_output": "生成的 DESIGN.md 应严格遵循详细设计模板结构，包含以下关键章节：\n\n- §1 概述：基本信息表（算子名称、算子类别 Reduction、支持数据类型、目标芯片 Ascend910B、目标架构 arch22）、算子功能描述、数学公式\n- §2 架构设计：逻辑视图（op_api/op_host/op_kernel/op_graph 四个模块职责表和依赖关系）、开发视图（目录结构树）、运行视图（数据流 GM→UB→GM、执行流程 aclnnGetWorkspaceSize→aclnn 执行）\n- §3 实现方案：模板划分总览（TilingKey 机制、模板参数定义表、模板划分表）、TilingData 结构体定义、每个模板包含触发条件、Host 侧 Tiling 代码、Kernel 侧模板实例化代码、API 映射表（6列：计算步骤/Ascend C API/参数签名/平台验证/约束说明/替代方案）、API 验证记录表、数据流设计、内存管理表、UB 容量验证（DAV_2201 184KB 限制）\n- §4 性能优化：并行策略、流水线设计\n- §5 风险评估：API 风险、精度风险、应对措施\n- §6 交付件清单\n- §7 迭代规划表（迭代一/二/三的目标和代码开发/UT开发/ST用例）",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "为 Add 算子生成迭代执行计划",
+      "config": {
+        "max_tokens": 160000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 150000,
+          "glm-5": 135000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "file_based"
+      },
+      "prompt": "我需要为 Add 算子制定迭代开发计划，请帮我生成迭代执行计划文档。算子规格如下：\n\n算子名称：Add\n支持数据类型：fp16, fp32\n目标芯片：Ascend910B\n模板划分：模板一（fp16 + small_shape）、模板二（fp32 + small_shape）、模板三（fp16 + large_shape 切分）\n\n请生成 PLAN.md 文件。",
+      "expected_output": "生成的 PLAN.md 应严格遵循迭代计划模板结构，包含以下关键章节：\n\n- 迭代一穿刺列表：表格形式（任务类型/TilingKey/Dtype/Memory Strategy），选择主要 dtype（fp16），包含主线 + 多个穿刺任务，注明并行要求（主线 + 穿刺必须同一次响应发起）\n- 迭代二整合目标：列出需要整合的 TilingKey\n- 迭代二穿刺列表：表格形式验证迭代三任务，包含验证目标\n- 迭代三全覆盖目标：覆盖全 dtype（fp16, fp32）、边界 case、广播用例\n- 穿刺结果判定表：成功/部分成功/失败的处理方式",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 4,
+      "title": "为 Add 算子生成 aclnnAPI 接口文档",
+      "config": {
+        "max_tokens": 400000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 352000,
+          "glm-5": 320000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "file_based"
+      },
+      "prompt": "我需要为 Add 算子编写 aclnnAPI 接口文档，请帮我生成。算子规格如下：\n\n算子名称：Add\n数学公式：out = self + alpha \\* other\n输入：self（aclTensor*）, other（aclTensor*）, alpha（aclScalar*）\n输出：out（aclTensor*）\n支持数据类型：FLOAT, FLOAT16, INT32, INT64, BFLOAT16 等\n支持产品：Ascend 950PR/950DT, Atlas A2, Atlas A3, Atlas 训练系列\n约束：self 和 other 需满足 broadcast 关系，数据类型需满足互推导关系\n\n请生成 aclnnAdd.md 文件。",
+      "expected_output": "生成的 aclnnAdd.md 应严格遵循 aclnnAPI 文档模板结构，包含以下关键章节：\n\n- 产品支持情况：按 Wiki 固定顺序以无序列表列出 Ascend 950PR&950DT系列产品、Atlas A3系列产品、Atlas A2系列产品、Atlas 200I/500 A2推理产品、Atlas推理系列产品、Atlas训练系列产品；用“支持/不支持”说明，产品名带 term 标记且配对 npu 注释标签，不能使用支持表\n- 功能说明：接口功能描述、计算公式（out = self + alpha * other）\n- 函数原型：两段式接口（aclnnAddGetWorkspaceSize 和 aclnnAdd），每行一个参数，参数对齐\n- aclnnAddGetWorkspaceSize 参数说明：8 字段参数表（参数名/输入输出/描述/使用说明/数据类型/数据格式/维度shape/非连续Tensor），使用说明中包含空 Tensor 支持度和数据类型推导规则引用\n- 返回值表：包含错误码（如 ACLNN_ERR_PARAM_NULLPTR 161001、ACLNN_ERR_PARAM_INVALID 161002）\n- aclnnAdd 第二段接口参数说明：workspace/workspaceSize/executor/stream\n- 约束说明：确定性行为应按产品平台分别描述；没有源码证据的字段标注待确认\n- 调用示例：标注编译运行参考路径 涉及产品支持时依据目标版本的实际证据说明支持度，注册是线索而非完整结论；缺证据标注待确认。aclnn文档写“支持/不支持”，README写“√/×”。不要求只问结构或流程的咨询逐字枚举全部取证渠道。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 5,
+      "title": "为 Add 算子生成算子 README",
+      "config": {
+        "max_tokens": 350000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 350000,
+          "glm-5": 350000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "file_based"
+      },
+      "prompt": "我需要为 Add 算子编写开源仓的 README 文档，请帮我生成。算子规格如下：\n\n算子名称：Add\n数学公式：y = x1 + alpha * x2\n输入：x1, x2（支持 FLOAT, FLOAT16, INT32, BFLOAT16 等）\n输出：y\n可选属性：alpha（默认值 1.0）\n支持产品：Ascend 950PR/950DT, Atlas A2, Atlas A3, Atlas 训练系列\n调用方式：aclnn 调用 + 图模式调用\n约束：无特殊约束\n\n请生成 README.md 文件。",
+      "expected_output": "生成的 README.md 应严格遵循算子 README 模板结构，包含以下关键章节：\n\n- 产品支持情况表：按 ops-transformer Wiki 的六类产品及固定顺序列出，用 √/× 标注；按目标算子源码中的平台注册判断产品支持：有对应平台注册则支持，无对应平台注册则不支持；aclnn文档写“支持/不支持”，README写“√/×”。仅在源码支持时扩展其他产品行\n- 功能说明：算子用途、输入输出与有证据的功能特点概述、计算公式（y = x1 + alpha * x2）\n- 参数说明表：5 列表格（参数名/输入输出属性/描述/数据类型/数据格式），包含 x1、x2、alpha（可选属性）、y 四个参数，芯片差异说明（如 Atlas 训练系列不支持 BFLOAT16）\n- 约束说明：无特殊约束时写\"无\"\n- 调用说明：表格形式列出 aclnn 调用和图模式调用，链接到 examples 目录的样例代码\n- 参考资源（可选）：链接到算子设计文档",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 6,
+      "title": "信息不足时主动追问",
+      "config": {
+        "max_tokens": 160000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "帮我写个算子文档",
+      "expected_output": "回复应主动追问关键信息，而不是直接生成文档。应至少询问以下信息中的一项或多项：算子名称、数学公式/功能描述、输入输出规格（shape/dtype）、目标芯片/架构、需要生成哪种类型的文档（需求分析/详细设计/迭代计划/aclnnAPI/README）。不应在缺乏算子规格的情况下直接输出完整的文档模板内容。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 7,
+      "title": "文档类型体系和命名规范知识验证",
+      "config": {
+        "max_tokens": 160000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "ascendc-docs-gen 支持哪些文档类型？每种文档的命名规范是什么？它们之间有什么关系？",
+      "expected_output": "回复应完整列出 5 种文档类型及其命名规范：\n\n- 需求分析文档：REQUIREMENTS.md\n- 详细设计文档：DESIGN.md\n- 迭代执行计划：PLAN.md\n- aclnnAPI 接口文档：aclnn{OperatorName}.md（如 aclnnAdd.md）\n- 算子 README：README.md\n\n应说明文档间的依赖关系：需求分析确认后产出详细设计，详细设计产出迭代计划；aclnnAPI 文档的数据来源于需求文档的算子规格、API 定义和约束部分；算子 README 的数据来源于需求文档、设计文档和代码。应提及文档存放位置（docs/ 目录或算子根目录）。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 8,
+      "title": "需求变更后的文档更新与版本管理",
+      "config": {
+        "max_tokens": 160000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我之前已经为 Add 算子输出了一版需求分析文档 REQUIREMENTS.md（v1.0，已和设计评审确认过）。现在需求变更了：输入数据类型要从只支持 fp16 扩展到同时支持 fp16 和 fp32，对应的详细设计文档也需要跟着改。请告诉我更新这些文档时在版本管理上应该注意什么。",
+      "expected_output": "回复应覆盖版本管理规范要点：算子文档需包含修订记录（修订记录表格含版本、修订内容、修订时间、修订人）；需求变更后应新增一条修订记录并递增版本号（如 v1.0 → v1.1）；修订内容需明确记录\"输入数据类型扩展支持 fp16、fp32\"；版本变更需记录修改人和修改内容；同时应评估下游文档（详细设计 DESIGN.md、迭代计划 PLAN.md）是否需要同步更新。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 9,
+      "title": "设计锁定后的变更处理流程",
+      "config": {
+        "max_tokens": 160000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我们的 Softmax 算子需求分析文档已经评审确认并锁定，详细设计也已经基于它完成。现在需求方提出要新增一个 axis 参数来控制按哪个维度做 softmax，这会改动需求规格和详细设计。这种情况应该怎么处理？",
+      "expected_output": "1. 回复应说明设计锁定与变更门槛：需求分析文档确认后即锁定、详细设计文档确认后即锁定；变更不得直接改动锁定文档，须经确认/评审批准后才更新。\n2. 回复应给出文档更新顺序：先更新需求分析文档中受影响的部分（算子规格/参数、API 定义、约束），重新确认后再同步更新详细设计文档。\n3. 回复应说明变更需在文档修订记录中登记（版本、修改人、修改内容），且 aclnnAPI 接口文档等下游文档需同步更新。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 10,
+      "title": "aclnnAPI 接口文档的数据来源与关键章节",
+      "config": {
+        "max_tokens": 160000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我要为 LayerNorm 算子编写 aclnnAPI 接口文档（aclnnLayerNorm.md），但接口定义、参数约束这些内容我不确定该从哪里获取。帮我梳理一下写这份文档需要哪些输入资料，以及文档本身要包含哪些关键内容。 同时说明该文档与README的产品支持写法有何区别，以及证据不足时如何标注。",
+      "expected_output": "这是写作咨询，只需解释资料、预期输出路径和章节，不要求实际生成 aclnnLayerNorm.md 文件或文档正文，不得以未生成成品判失败。回复应优先询问 LayerNorm 算子源码目录，并说明接口定义、参数类型与顺序来自 op_host/op_api/aclnn_*.h/cpp，ParamType、dtype、format、平台支持来自 *_def.cpp 和 config，shape 来自 *_infershape.cpp，约束、错误码和确定性行为来自 tiling、CheckParam 与 kernel 实现；缺少源码时只能依据已确认规格草拟并标注待确认。文档输出位置遵循<实际算子目录>/docs/aclnnLayerNorm.md，例如 operators/layernorm/docs/aclnnLayerNorm.md，实际目录名须确认，不要求仓库必须使用示例目录名；接口采用两段式声明；应说明文档包含产品支持情况、功能说明、函数原型、8 字段参数表、返回值、按平台描述的约束与确定性行为、调用示例。仍须检查上述全部事实来源、缺源码兜底、输出路径和章节要点，不因咨询模式省略这些要求。 涉及产品支持时依据目标版本的实际证据说明支持度，注册是线索而非完整结论；缺证据标注待确认。aclnn文档写“支持/不支持”，README写“√/×”。不要求只问结构或流程的咨询逐字枚举全部取证渠道。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 11,
+      "title": "算子 README 的数据来源与结构",
+      "config": {
+        "max_tokens": 160000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我负责的 Exp 算子已经完成开发并合入开源仓，现在要为它编写算子 README 文档。请问写 README 需要参考哪些已有资料，README 里要包含哪些核心章节？ 请同时区分README和aclnn的产品支持写法，并说明所有未核验字段的处理。",
+      "expected_output": "回复应覆盖算子 README 的写作要点：最终文档优先以算子源码为事实来源，并结合需求分析和详细设计；输出位置为算子根目录的README.md，例如 operators/exp/README.md；已有分类布局时采用实际分类路径，未知布局可明确待确认，不能把示例目录当作唯一合法路径；应包含产品支持情况表、功能说明（含计算公式）、参数说明表（5 列：参数名/输入输出属性/描述/数据类型/数据格式）、可选的约束说明、调用说明及可选的参考资源。参数分类应以 *_def.cpp 的 Input/Output/Attr 为准，调用说明应列全源码中发现的 aclnn 接口；缺少源码时未核验字段须标注待确认。 涉及产品支持时依据目标版本的实际证据说明支持度，注册是线索而非完整结论；缺证据标注待确认。aclnn文档写“支持/不支持”，README写“√/×”。不要求只问结构或流程的咨询逐字枚举全部取证渠道。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 12,
+      "title": "从算子源码生成最终文档",
+      "config": {
+        "max_tokens": 200000,
+        "ascend_platforms": [
+          "A2",
+          "A3"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "算子源码在 /workspace/operators/foo，请直接生成 aclnn 接口文档和 README。开始写之前你会检查哪些文件，如何保证参数、平台和约束没有编造？ 请将开始写作前的Skill参考文件与目标算子源码分开列出，说明各自的读取顺序及交付前复核范围。",
+      "expected_output": "回复应说明先完整读取 source-extraction-guide、模板和示例；扫描 op_host/op_api 下所有 aclnn_*.h 中的 ACLNN_API 声明，并读取对应 cpp、*_def.cpp、*_base.h、*_infershape.cpp、*_tiling.h/cpp、可用的 *_tiling_arch35.cpp、kernel、config 和 examples。应为每个接口建立事实表和独立文档，按证据优先级处理冲突，对缺失信息标注待确认，并在交付前逐项核对接口数量、签名参数、dtype/format/ParamType、平台分支、约束与链接。 涉及产品支持时依据目标版本的实际证据说明支持度，注册是线索而非完整结论；缺证据标注待确认。aclnn文档写“支持/不支持”，README写“√/×”。不要求只问结构或流程的咨询逐字枚举全部取证渠道。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 13,
+      "title": "多 aclnn 接口与平台差异",
+      "config": {
+        "max_tokens": 160000,
+        "ascend_platforms": [
+          "A5"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "一个算子目录只有两个 aclnn_*.h 文件，但其中一个头文件声明了两个 ACLNN_API；三个接口在 950 上的支持情况还不同。文档生成时怎么处理？这是假设场景，未提供源码目录，本次只解释处理规则与预期交付，不生成文档或README。",
+      "expected_output": "这是未提供源码的流程咨询，评估解释的规则和预期交付，不要求实际生成文件、真实接口签名或平台核验结果；未产出文档不作为失败理由，也不得虚报已经核验。回复应明确按 ACLNN_API 声明而不是按文件数识别接口，实际生成时应共生成三份独立 aclnn 文档；说明须分别核验每个接口的函数签名、参数、示例、平台检查和废弃信息。在产品支持无序列表和约束说明中按接口记录 950 支持差异，废弃接口注明替代接口，但不得将单一接口的不支持错误扩大为整个算子不支持。说明 README 调用说明须列出全部三个入口及相应文档/样例链接。上述内容均必需；给出完整规则和预期交付方案即可，不要求实际源码取证或交付文档成品。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 14,
+      "title": "结合开发者资料与源码生成文档",
+      "config": {
+        "max_tokens": 180000,
+        "ascend_platforms": [
+          "A2",
+          "A5"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我提供了 Foo 算子的规格说明、REQUIREMENTS.md、DESIGN.md 和源码目录。需求文档写支持 FP32，但当前 def.cpp 只注册了 FP16。你生成 aclnn 文档和 README 时会怎么处理？ 本次只解释处理计划，不读取工作区或生成文件；请交代资料与源码的读取顺序，并用上述已知事实示范一条对照记录，未给出的路径、行号和核验结论标待确认。 如果没有提供任何规格、需求或设计文档，上述处理方式应如何变化？",
+      "expected_output": "回复应说明先完整读取规格、需求和设计文档，提取设计意图，再完整扫描源码核验实际实现；不得只选其中一类输入。应建立资料—源码对照表，记录资料结论、源码结论、证据位置、一致性和待确认项。由于当前 def.cpp 只有 FP16，最终文档应将 FP16描述为当前实现，不能把 FP32写成已经支持；同时在冲突清单中记录需求预期支持 FP32，提示开发者确认是源码未实现还是需求文档未同步。若没有提供任何规格/需求/设计文档，则直接根据源码生成。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 15,
+      "title": "缺少源码时的 README 写作咨询",
+      "config": {
+        "max_tokens": 160000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "Exp 算子已开发完成，但我现在只有需求和设计文档，没有源码目录。请说明 README 放在哪里、需要哪些章节，以及未核验的参数和平台信息如何处理。",
+      "expected_output": "应说明 README 位于算子根目录，例如 operators/exp/README.md，已有分类目录时使用实际分类路径；参考需求和设计提取意图，但缺少源码时只能草拟，所有未经源码核验的参数、dtype、平台和约束字段均标注“待确认”，不能只标注资料冲突。核心章节包括产品支持情况表、功能说明和公式、5 列参数说明表、可选约束说明、调用说明、可选参考资源。 涉及产品支持时依据目标版本的实际证据说明支持度，注册是线索而非完整结论；缺证据标注待确认。aclnn文档写“支持/不支持”，README写“√/×”。不要求只问结构或流程的咨询逐字枚举全部取证渠道。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 16,
+      "title": "Wiki 产品格式与确定性配置接口",
+      "config": {
+        "max_tokens": 160000,
+        "ascend_platforms": [
+          "A2",
+          "A5"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "准备更新 aclnn 文档和算子 README：aclnn 产品支持情况还用表格吗？Ascend 950 和 Atlas A2/A3 的正式产品名怎么写？已确认支持手动开启确定性的接口应写哪个配置 API？ 请说明格式规范的来源、示例的适用边界，以及各平台支持度和确定性默认行为的核验要求。 evals配置中的A5可以作为对外产品名吗？",
+      "expected_output": "应依据 ops-transformer Wiki 说明：aclnn 产品支持情况用无序列表和“支持/不支持”，产品名用 term 标记且配对 npu 注释标签；README 产品支持情况仍用表格和 √/×。现行名称为 Ascend 950PR&950DT系列产品、Atlas A3系列产品、Atlas A2系列产品。确定性配置接口使用 aclrtSetSysParamOpt；默认行为与支持度逐平台核验，不把示例当成其他算子的事实。 A5仅为本仓评测框架的平台筛选标识，不是对外产品名；成品使用Ascend 950PR&950DT系列产品，不输出“A5产品”或“Atlas A5系列产品”。保留框架筛选标识，不将配置值直接复制为产品名称。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 17,
+      "title": "源码不可访问时仍区分写作规范与事实证据",
+      "config": {
+        "max_tokens": 160000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我准备同时生成 Foo 的 aclnn 文档和 README，但提供的算子源码目录目前不可访问。请只说明开始写之前要读取哪些 Skill 参考文件、之后要核验哪些源码，以及现在能交付什么，不要生成文档。 计划中也请交代两类文档各自的产品支持写法。",
+      "expected_output": "应区分写作规范和算子事实：先完整读取 Skill 内的 references/source-extraction-guide.md、references/aclnn-api-doc-template.md、references/operator-readme-template.md、references/example-aclnn-md.md、references/example-readme.md；grep 章节标题不能代替完整读取，源码缺失不影响读取这些参考。随后说明待获取源码后的接口声明、对应实现、def、infershape、tiling、kernel、config 和样例核验计划，示例不能作为 Foo 的参数或平台事实。当前只能交付流程、读取状态和缺失证据清单，请求正确源码目录，不能声称已核验或生成最终文档，也不能拿其他算子源码替代；后续经要求草拟时，未经核验字段标注待确认。 涉及产品支持时依据目标版本的实际证据说明支持度，注册是线索而非完整结论；缺证据标注待确认。aclnn文档写“支持/不支持”，README写“√/×”。不要求只问结构或流程的咨询逐字枚举全部取证渠道。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 18,
+      "title": "功能说明解释实际特点",
+      "config": {
+        "max_tokens": 20000,
+        "ascend_platforms": [
+          "A2",
+          "A5"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "草拟重排归一化算子的功能说明：先按外部索引重排，再按组执行归一化；索引由调用者提供，不在接口内选择。说明输入输出、与仅做归一化的差异，不写约束清单。",
+      "expected_output": "须说明外部索引重排与分组归一化的计算特点及结果差异，不只复述算子名，不推断索引算法；约束不混入概述。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 19,
+      "title": "layout说明覆盖辅助表与支持范围",
+      "config": {
+        "max_tokens": 20000,
+        "ascend_platforms": [
+          "A2",
+          "A5"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "按以下已确认的假设规格草拟aclnn的layout对应关系，不将本题规格推广为真实算子能力：x布局AB为[M,N]，out布局BA为[N,M]，这两种shape均描述每个batch内的逻辑矩阵；M和N分别为x的行数和列数，out交换这两个轴。layoutMode只支持1，对应上述x为AB、out为BA的组合。indices为[B,J,C]、counts为[B,J]；B为batch数，J为每个batch的分组数，分组对象为x的M轴元素，同一组内的M轴元素共享一份索引。C为每组索引的容量；indices[b,j,:]存储该batch该组的索引，counts[b,j]记录其中的有效索引数，满足0<=counts[b,j]<=C，容量不等于有效数量。不展开无关枚举。另说明README应如何链接这些细节；尚未确定接口名和最终章节时，不编造实际链接。",
+      "expected_output": "设置layout对应关系说明；解释B/J/C/M/N、各Tensor轴和共享关系、支持组合；未实现枚举不当作支持，README仅链接细节。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 20,
+      "title": "调用示例省略文件许可头",
+      "config": {
+        "max_tokens": 20000,
+        "ascend_platforms": [
+          "A2",
+          "A5"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "把带有Copyright/License头的源样例摘入文档。说明代码块起始位置及原文件如何处理，不实际生成其他代码。",
+      "expected_output": "文档从必要include开始，不复制或新加文件头；原源码许可保留，不改动原文件。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 21,
+      "title": "示例遵守目标代码规范",
+      "config": {
+        "max_tokens": 20000,
+        "ascend_platforms": [
+          "A2",
+          "A5"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "源样例宏未对齐、指针未初始化且遗漏aclIntArray释放。目标仓库4空格缩进，存在.clang-format。说明生成和验证要求，不假定已编译。",
+      "expected_output": "读取仓库规范，格式化或手工核对缩进及宏；初始化指针、检查返回值并释放数组和其他资源；未编译运行不得声称通过。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 22,
+      "title": "相同错误码合并",
+      "config": {
+        "max_tokens": 20000,
+        "ascend_platforms": [
+          "A2",
+          "A5"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "已核验三个分支：x dtype错、shape错、mode错均返回ACLNN_ERR_PARAM_INVALID(161002)。输出返回值表。",
+      "expected_output": "161002只一行，合并三个原因，不使用rowspan或三个重复/空白返回码行，不添加未经确认错误码。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 23,
+      "title": "依据源码判断产品支持",
+      "config": {
+        "max_tokens": 20000,
+        "ascend_platforms": [
+          "A2",
+          "A5"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "已完整核验目标算子：B平台有AddConfig注册且目标API、Tiling和Kernel均支持；A平台没有注册且目标API明确拒绝A平台，当前发布范围也不包含A。输出产品支持情况。",
+      "expected_output": "根据已核验的目标接口、实现和发布范围，A项写不支持（README为×），B项写支持（README为√）；已确认的结论不得写“不确定”，不能仅用未查到注册代替不支持证据。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 24,
+      "title": "具体API入参声明与IR名称对齐",
+      "config": {
+        "max_tokens": 20000,
+        "ascend_platforms": [
+          "A2",
+          "A5"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "外部声明为metadataOptional、attenMaskOptional；L0日志简称metadata、attenMask；OpDef字符串metadata、atten_mask。分别说明aclnn和README如何命名，函数原型和正文也需一致。",
+      "expected_output": "aclnn原型、表格及正文的参数名从具体API接口入参声明逐字获取，使用metadataOptional和attenMaskOptional；README使用OpDef原名metadata、atten_mask；映射取自转发，不用日志或局部变量名替代，也不按命名风格猜测。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 25,
+      "title": "组合约束与可理解精度说明",
+      "config": {
+        "max_tokens": 20000,
+        "ascend_platforms": [
+          "A2",
+          "A5"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "已确认Validate限制maskType==1、winLeft==-1、winRight==-1、attenMaskOptional==nullptr；L0把scaleValue由double转float；未发现特殊值限制。写约束说明。",
+      "expected_output": "集中列出模式、双窗口及可选mask要求，不只说“不启用”；精度说明FLOAT32参与及低位舍入，不添加低精度中间量、全程精度或NaN/Inf无保证等泛化。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 26,
+      "title": "aclnn参数名带声明类型",
+      "config": {
+        "max_tokens": 20000,
+        "ascend_platforms": [
+          "A2",
+          "A5"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "声明按顺序为const aclTensor *x、const aclTensor *metadataOptional、double scaleValue、aclTensor *out、uint64_t *workspaceSize、aclOpExecutor **executor。只列出参数表的参数名列，采用“参数名（C/C++类型）”，原型保留完整声明。",
+      "expected_output": "参数名列依次为x（const aclTensor*）、metadataOptional（const aclTensor*）、scaleValue（double）、out（aclTensor*）、workspaceSize（uint64_t*）、executor（aclOpExecutor**）；名称及顺序逐字对应具体API接口的入参声明，保留Optional后缀、const和指针层级，不把Tensor的dtype当作C/C++类型。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 27,
+      "title": "显式通用异常码入表且同码合并",
+      "config": {
+        "max_tokens": 20000,
+        "ascend_platforms": [
+          "A2",
+          "A5"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "根据以下已确认的最小接口实现和错误码定义，只生成两段接口的返回值章节；不需要其他源码或文档。第一段：workspaceSize或executor为空时CHECK_RET返回ACLNN_ERR_INNER_NULLPTR；创建执行器为空时CHECK_RET返回ACLNN_ERR_INNER_CREATE_EXECUTOR；x为空时Validate返回ACLNN_ERR_PARAM_NULLPTR，入口原样返回Validate状态；x dtype或shape错误时Validate返回ACLNN_ERR_PARAM_INVALID，入口原样返回；Contiguous结果为空或ViewCopy失败时CHECK_RET返回ACLNN_ERR_INNER_NULLPTR；成功返回ACLNN_SUCCESS。第二段仅return CommonOpExecutorRun(workspace, workspaceSize, executor, stream)，没有其他显式分支。错误码定义：ACLNN_ERR_PARAM_NULLPTR=161001、ACLNN_ERR_PARAM_INVALID=161002、ACLNN_ERR_INNER_CREATE_EXECUTOR=561101、ACLNN_ERR_INNER_NULLPTR=561103、ACLNN_SUCCESS=0；通用返回码文档还列有ACLNN_ERR_RUNTIME_ERROR=361001，但未给出CommonOpExecutorRun内部实现。Tiling日志出现shape invalid，未给出aclnn错误码映射。",
+      "expected_output": "表头为“返回码/状态码、码值、描述”，分别填写返回码符号、数值和异常原因。第一段异常返回表包含161001、161002、561101、561103四行：161001对应x为空；161002合并dtype和shape错误；561101对应创建执行器失败；561103合并workspaceSize或executor为空、Contiguous结果为空、ViewCopy失败。不得因INNER前缀或通用异常属性排除561101/561103，不得只在表外提及；不添加没有证据的错误码，不把成功码列为异常。第二段说明状态由CommonOpExecutorRun透传并保留通用返回码链接，不推测其内部错误码列表；不能仅因通用文档列有361001便追加为已确认分支，也不能从Tiling日志推断161002。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 28,
+      "title": "稀疏layout沿用完整规格表且区分支持范围",
+      "config": {
+        "max_tokens": 20000,
+        "ascend_platforms": [
+          "A2",
+          "A5"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "只生成layout对应关系说明。已确认设计规格中layoutSparsePattern=0～7的索引方向、共享方式和shape与本Skill提供的稀疏布局参考表一致，要求保留完整规格表；但当前API Validate只允许1，其余值均拒绝。API参数名为layoutSparsePattern、sparseBlockIdx、sparseBlockCount。维度采用batch、headNum、numKeyValueHeads、maxQBlockCount、maxKvBlockCount、totalQBlocks、totalKBlocks，分别解释B/N1/N2映射。当前支持TND、BNSD、BSND且模式1保留batch维；blockShapeX=1，maxQBlockCount对应maxS1容量，定长要求maxS1>=S1，所有计数不超过该容量；maxKvBlockCount=ceilDiv(maxS2,blockShapeY)。totalQBlocks/totalKBlocks为各批按存储长度分块后的块数之和。Q/K/V等常规shape已经在参数表说明。另已核验BSND时Arch22的lse为[B,S1,N1]，Arch35为[B,N1,S1]，这项差异需要保留。",
+      "expected_output": "先说明仅1受支持，0和2～7不支持，且当前支持模式在TND/BNSD/BSND下保留batch维；再按0～7顺序呈现完整四列表，表头逐字为layoutSparsePattern、sparseBlockIdx、sparseBlockCount、描述，枚举列只写数值，shape使用给定维度名，不改成J/M。描述交代Group共享或独立以及Q选KV或KV选Q。表后解释各维度、maxS1映射、ceilDiv、计数与容量及total块数，不把maxS1>=S1写成等于。最后保留带产品标签的LSE平台差异；不在稀疏表前增加所有Tensor总表，不重复Q/K/V参数表，不将全部枚举描述为当前支持。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 29,
+      "title": "缺少完整枚举证据时不套用稀疏参考表",
+      "config": {
+        "max_tokens": 20000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "只依据以下确认规格生成稀疏layout说明，不获取其他资料：实际声明参数为patternMode、rowIndices、rowCounts，patternMode只支持9，其余值均拒绝；仅确认模式9表示每个KV块选择Q行，同一Group共享，rowIndices=[batch,kvHeads,kvBlocks,qCapacity]，rowCounts=[batch,kvHeads,kvBlocks]；qCapacity是索引容量，rowCounts不超过它。不知道0～7的枚举定义，现有参数表已写明其他Tensor的shape。",
+      "expected_output": "按用户要求的稀疏layout说明，可沿用支持范围说明、稀疏模式四列表、维度与容量解释的顺序，表头使用实际原名patternMode、rowIndices、rowCounts、描述，表中仅9一行；shape保留确认维度名，不擅自替换为模板维度。说明共享及KV选Q语义、有效计数与容量；不复制0～7，不改成layoutSparsePattern/sparseBlockIdx/sparseBlockCount，不为全部Tensor添加总表。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 30,
+      "title": "常规多布局和简单稀疏关系不强制独立章节",
+      "config": {
+        "max_tokens": 20000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "只审查两个接口的文档组织，不生成完整文档：甲的inputLayout有BSND、BNSD、BNSD_BSND三值，各Tensor参数表已经准确列出相应shape和输出转换，表前定义B/S/N/D，无其他跨Tensor条件。乙只有patternMode=9的简单稀疏关系，rowIndices=[B,N,J,C]、rowCounts=[B,N,J]，每KV块选择Q索引、组内共享、计数在[0,C]，这些内容已在参数表清楚写明。是否还必须为甲、乙新增layout对应关系说明标题及表格？若不新增，还需要补写什么或创建链接吗？",
+      "expected_output": "两个接口都无需因layout参数、多种输入输出排布或稀疏索引而新增独立layout章节。已有参数表完整、无额外关系时不重复补表，不输出空标题或无layout占位，不创建指向不存在章节的链接；仍核对布局事实和支持范围，无遗漏即可。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 31,
+      "title": "复杂布局组合按需集中解释而非套用稀疏表",
+      "config": {
+        "max_tokens": 20000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "为一个新接口选择并草拟必要的布局说明。已确认qMode支持TND和BSND，kvMode支持TND、BSND、PA_BBND；合法组合只有(TND,TND)、(BSND,BSND)、(TND,PA_BBND)。PA_BBND的cache为[numBlocks,blockSize,N2,D]，由blockTable=[B,maxBlocks]提供页号，TND的批起点由cuOffsets=[B+1]确定。输出shape跟随qMode。现有参数表逐项列出shape，但交叉组合散落在多处，请集中说明以便读者对照。该接口没有稀疏模式枚举或sparseBlockIdx/sparseBlockCount参数。",
+      "expected_output": "可增加约束下的layout对应关系说明，优先使用qMode、kvMode、描述的合法组合表，并按需解释cache、blockTable、cuOffsets与输出关系，定义本次使用的维度，不要求所有Tensor总表或固定顺序。不因没有layout字样参数而忽略复杂关系，不强制两个模式相同，不添加0～7或稀疏四列表；支持组合仅限给定三组。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 32,
+      "title": "配套接口引用已有布局说明而不重复创建章节",
+      "config": {
+        "max_tokens": 20000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "给配套Metadata接口和README提出布局说明方案，不生成完整文档。已确认本接口的indices、counts、patternMode与Main接口含义相同，Main文档docs/aclnnMain.md有完整layout对应关系说明，文件与锚点已确认有效且版本匹配；Metadata只支持patternMode=1，Main支持0和1。README需链接Metadata接口文档。是否需要在Metadata和README各复制完整layout表？另若某接口完全没有独立layout章节，README应该怎样链接？",
+      "expected_output": "Metadata可在相关参数处链接Main已有layout对应关系说明，并就近明确自身仅支持1；不复制完整表，不因主接口支持0而扩大自身支持范围。README保留必要语义并链接Metadata接口文档，无需复制或强制创建layout章节。无独立章节时链接接口文件或实际存在的相关章节，不生成悬空#layout对应关系说明锚点。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 33,
+      "title": "普通输入输出不重复必传且保留实际约束",
+      "config": {
+        "max_tokens": 20000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "按aclnn模板输出两行参数表。已确认query为普通输入，含义是注意力输入Q，不支持空Tensor，每个维度大于0；layoutQ=TND时shape为[T1,N1,D]，layoutQ=BNSD时为[B,N1,S1,D]。dQuery为普通输出，含义是Q的梯度，shape与dtype均与query一致。两者dtype均支持FLOAT16/BFLOAT16，format=ND，支持非连续Tensor。请不要重复输入/输出列已经表达的必选性。",
+      "expected_output": "HTML参数表保持8列；query/dQuery分类分别为输入/输出，使用说明不重复必传、必须配置或无信息增量的显式传入。query保留不支持空Tensor、维度为正，dQuery明确shape和dtype与query一致。dtype/format/shape分别放对应列；query的shape写清layoutQ各取值对应的轴顺序，不只写3或4。列表置于所属td内，不散落为表外项目或破碎Markdown表格。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 34,
+      "title": "条件必需参数明确何时传入什么",
+      "config": {
+        "max_tokens": 20000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "改写cuSeqLengthsQOptional的一行aclnn参数说明。原文为：TND必传；INT64前缀和，推荐一维[B+1]；定长布局传nullptr。已确认：该参数分类为可选输入，记录各batch的Q序列累计token偏移；layoutQ为TND时不允许nullptr，元素数必须为B+1，dtype=INT64，首元素为0，末元素为T1，非递减；layoutQ为BNSD或BSND时必须传nullptr。实现只限制元素数，没有检查一维rank。format=ND，支持非连续Tensor。",
+      "expected_output": "保留可选输入分类，使用说明用完整条件说明layoutQ为TND时须传入记录各batch的Q序列累计偏移的Tensor，layoutQ为BNSD或BSND时传nullptr。dtype列为INT64，shape按元素数B+1表述，不将未校验的一维rank升级为强制要求，不用推荐模糊元素数约束。首项、末项和单调性说明保持有据且清晰；不能仅写TND必传或只链接别处让读者推断传什么。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 35,
+      "title": "可选空指针行为与实际不可选例外说清内容来源",
+      "config": {
+        "max_tokens": 20000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "仅改写以下参数的使用说明。maskOptional：可选输入，BOOL掩码Tensor，nullptr表示不施加外部掩码，非空Tensor必须与query的前两维一致。metadataOptional：分类为可选输入，但当前入口明确拒绝nullptr，调用者须在相同设备先运行aclnnFooMetadata生成元数据Tensor后传入。scaleValue：普通double输入，数值由调用者指定，内部转换为FLOAT32进行计算；不需要再写显式传入。",
+      "expected_output": "maskOptional说明nullptr表示不使用外部掩码，并明确非空时与query前两维的shape关系，不能只写允许nullptr。metadataOptional明确当前接口不接受nullptr，并说明传入同一设备上由aclnnFooMetadata生成的元数据Tensor；不写名称含Optional但当前必传等命名分析，不因分类为可选而遗漏实际例外。scaleValue直接说明以FLOAT32参与计算及相应转换，不重复普通参数必选性，不臆造数值范围或默认值。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 36,
+      "title": "README按模式保留关键约束而不泛化分支限制",
+      "config": {
+        "max_tokens": 20000,
+        "ascend_platforms": [
+          "A2",
+          "A5"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "只生成Foo的README约束说明。以下目标版本事实已确认：mode=0时metadata须为空，D在[1,64]，group<=32且blockSize<=128，mask只支持0；mode=1时须先调用FooMetadata生成metadata，D固定128，group<=16，blockSize>=128且是64的倍数，mask只支持1。两种模式的precision都只支持0。单参数dtype已在参数表说明；详细shape和数值说明位于docs/aclnnFoo.md#约束说明。不要生成其他章节。",
+      "expected_output": "在README正文保留两个模式各自的Metadata前置条件、D/group/blockSize及mask组合限制，并说明公共precision=0。可以分组或逐条带条件说明，不将D=128、需要Metadata或mask=1推广为全局条件；不以几条泛化摘要或外链替代任一模式关键边界。详细shape/数值说明可链接，dtype无需整表重复。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 37,
+      "title": "版本差异不误判为约束遗漏或混入新能力",
+      "config": {
+        "max_tokens": 20000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "为冻结在提交vOld的源码生成README，并说明与已有资料的差异。已确认vOld只支持mode=1，D=128且需要Metadata；用户提供的vNew文档新增mode=0、D在[1,64]且不需要Metadata。用户要求保持vOld版本，不更新源码。请给出约束说明及内部核验记录应如何处理，不查询其他仓库。",
+      "expected_output": "成品准确说明vOld仅支持mode=1、D=128、需要Metadata，不将vNew模式0并入旧版或仅因新文档更全而声称旧版提取遗漏。核验记录绑定目标版本、资料版本、冲突事实和采用依据；不更新源码，不虚构新版本分支已存在于目标实现。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 38,
+      "title": "约束分配有覆盖位置且区分失败与忽略",
+      "config": {
+        "max_tokens": 20000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "检查Foo文档约束覆盖。已核验：mode=2须先运行Prepare，length<=4096且mask=1；FLOAT16/BFLOAT16写在参数表；确定性开关非0时入口返回错误。旧README写确定性配置不会生效。现生成README只有'支持mode=2，完整约束见接口文档'；aclnn文档已给详细shape和确定性失败说明，却没写Prepare、length和mask要求。说明问题及修改和核验方法，不生成无关内容。",
+      "expected_output": "指出Prepare、length<=4096、mask=1在成品中遗漏，关键前置条件及组合应直接保留于README，接口文档也须有明确覆盖；不能以泛化外链视为覆盖。dtype可留在参数表，确定性可在aclnn层说明并引用，不必把所有细节重复到README；旧文档的不会生效与源码返回错误不同，应记录冲突并采用实际失败行为。核验记录逐条标明适用模式、证据与最终位置，区分保留、移动和冲突不采用。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 39,
+      "prompt": "使用 ascendc-docs-gen 为 aclnnDemo 生成 API 文档。尚未执行外部预处理，也未提供预处理产物。",
+      "expected_output": "先获取缺失的算子源码目录；输入齐备后由父入口主 Agent 执行预处理、分析、候选组装、完整审阅和最终化。不要求用户先手动执行预处理，不生成虚构的最终文档；仅在用户明确选择手动模式时交接工具步骤。",
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "预处理",
+          "description": "输出说明当前输入或流程关口"
+        }
+      ],
+      "title": "完整生成流程：ascendc-docs-gen workflow case 1",
+      "config": {
+        "max_tokens": 8192,
+        "eval_mode": "text"
+      },
+      "files": []
+    },
+    {
+      "id": 40,
+      "prompt": "使用 ascendc-docs-gen 解释：5_review_patch.json 的 status 为 fail 时，可以直接使用 4_generate.md 交付吗？",
+      "expected_output": "拒绝将未审阅正文作为最终交付物，说明必须修复失败原因并重新通过审阅。",
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "review",
+          "description": "输出说明当前输入或流程关口"
+        }
+      ],
+      "title": "完整生成流程：ascendc-docs-gen workflow case 2",
+      "config": {
+        "max_tokens": 8192,
+        "eval_mode": "text"
+      },
+      "files": []
+    },
+    {
+      "id": 41,
+      "title": "局部文字修订不强制迁移完整格式",
+      "config": {
+        "max_tokens": 160000,
+        "eval_mode": "text"
+      },
+      "prompt": "已有 ACLNN 文档中包含 <!-- npu=\"A3,910b\" id7 --> 的产品段落。本次只将功能说明中的一个错别字改正，产品信息和原型均未变化。请说明修改范围及是否需要先运行完整生成工具。",
+      "expected_output": "只修正目标文字，保留未受影响的产品段落和原型，不要求完整生成会话或运行全量格式检查；不把旧标签与完整生成格式不同直接等同为技术内容错误。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 42,
+      "title": "完整流程与 README 组合交付约定",
+      "config": {
+        "max_tokens": 160000,
+        "eval_mode": "text"
+      },
+      "prompt": "我同时要求生成某算子的完整 ACLNN API 文档和 README。请先说明完整生成完成后正式文档、过程产物和 README 应分别放在哪里，以及多接口如何核对；本轮不要生成文件。",
+      "expected_output": "先读取适用的父级指南、模板和示例。过程产物保留 outputs/<interface>，正式文档为算子目录下 docs/<interface>.md，README 在算子根目录；README 逐一列出全部接口及实际文档和样例链接，不链接过程目录，不因仅重生成单个接口而删除其他入口。咨询不运行生成工具。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "ascendc-docs-gen"
+}

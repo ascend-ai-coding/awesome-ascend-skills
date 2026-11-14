@@ -1,0 +1,1020 @@
+/**
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
+
+/*!
+ * \file euclidean_norm_tiling.h (完整驱动版：normal + group/BlockSplitR + 交错 fast/fast-RARA)
+ * \brief EuclideanNorm host 侧 tiling（直调版，纯 C++，无 gert / platform 依赖）。
+ *
+ * 本文件是 EuclideanNorm 的**完整 host tiling 驱动** ComputeEuclideanNormTiling：
+ *   输入 (xShape, reduceAxes, dtypeCode, coreNum, ubSize) → 输出 EuclideanNormTilingData
+ *   + templateType（0=normal/empty, 1=group, 2=fast, 3=fast-RARA）+ blockDim + workspaceBytes。
+ *
+ * ── R 轴分核 group（BlockSplitR）选型（本模板文档聚焦，见 euclidean_norm_group_block_split_r.md）──
+ *   ShouldUseGroup（本文件）：aLoopCntTotal > coreNum/2 → 不用 group（切 A 已够满核）；
+ *                            rLoopCntTotal <= 1        → 不用 group（R 未分块，无跨核 R 可切）；
+ *                            否则 → group。
+ *   ComputeGroupSplit（本文件）：算 rGroupCnt / usedCoreNum（2D 网格 aLoopCntTotal×rGroupCnt）。
+ *   workspaceBytes = rGroupCnt × aTotal × 4（fp32），aTotal = ∏(所有 A 轴 size)。
+ *
+ * 说明：交错 fast/fast-RARA 门控（TryComputeFastTiling / TryComputeFastRARATiling）也在本文件，
+ *   与 templates/euclidean_norm_tiling.template（仅交错快路径的精简版）逻辑一致；本文件是含
+ *   normal/group 的完整驱动，group 与 normal 的自检用它编译（见 .md 第 6 节）。
+ * 使用：去 .template 后缀落地为 euclidean_norm_tiling.h；依赖 euclidean_norm_tiling_data.h。
+ */
+
+#ifndef EUCLIDEAN_NORM_TILING_HOST_H
+#define EUCLIDEAN_NORM_TILING_HOST_H
+
+#include <algorithm>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <set>
+#include <vector>
+
+#include "euclidean_norm_tiling_data.h"
+
+namespace euclidean_norm_host {
+
+// ─── 整数工具（替代 Ops::Base）───
+inline int64_t CeilDiv(int64_t a, int64_t b) { return (b == 0) ? 0 : ((a + b - 1) / b); }
+inline int64_t CeilAlign(int64_t a, int64_t b) { return (b == 0) ? a : (CeilDiv(a, b) * b); }
+inline int64_t FloorAlign(int64_t a, int64_t b) { return (b == 0) ? a : ((a / b) * b); }
+
+// dtypeCode: 0=fp32, 1=fp16, 2=bf16, 3=int32
+inline int64_t DtypeSize(int dtypeCode) { return (dtypeCode == 0 || dtypeCode == 3) ? 4 : 2; }
+
+// UB 分配预算常量（与设计文档 / 原 tiling 对齐）
+static constexpr int64_t kCacheBufBytes = 16 * 1024;
+static constexpr int64_t kFp32Bytes = 4;
+static constexpr int64_t kDbFactor = 2;
+static constexpr int64_t kNPreReuse = 1;
+static constexpr int64_t kNPreParallel = 0;
+static constexpr int64_t kNOut = 1;
+static constexpr int64_t kTmpBufCopies = 2;
+static constexpr int32_t kMinAxisNum = 2;
+static constexpr int32_t kMaxAxisNum = MAX_PATTERN_RANK;
+
+enum class EmptyKind { NORMAL = 0, EMPTY_A, EMPTY_R };
+
+struct Ctx {
+    int64_t coreNum = 0;
+    int64_t ubSize = 0;
+    int64_t blockSize = 32;
+    int64_t cacheLineSize = 256;
+
+    int dtypeCode = 0;
+    int64_t dtypeSize = 0;
+    std::vector<int64_t> xShape;
+    std::vector<int64_t> reduceAxes;
+
+    EmptyKind emptyKind = EmptyKind::NORMAL;
+    int64_t aTotalEmpty = 0;
+
+    std::vector<int64_t> axisShape;
+    std::vector<bool> isReduceAxis;
+    int32_t axisNum = 0;
+    bool isTailR = false;
+
+    int32_t aSplitAxisIdx = 0;
+    int32_t rSplitAxisIdx = 0;
+    int64_t aUbFactor = 0;
+    int64_t aUbFactorAlign = 0;
+    int64_t rUbFactor = 0;
+    int64_t rUbFactorAlign = 0;
+    int64_t innerAProd = 0;
+    int64_t innerAProdAlign = 0;
+    int64_t innerRProd = 0;
+    int64_t innerRProdAlign = 0;
+
+    int64_t aLoopCntTotal = 0;
+    int64_t aSplitChunkCnt = 0;
+    int64_t aBigCoreLoopCnt = 0;
+    int64_t aSmallCoreLoopCnt = 0;
+    int32_t aBigCoreCnt = 0;
+    int32_t usedCoreNum = 0;
+
+    int64_t rLoopCntTotal = 0;
+
+    int64_t preReduceUbSize = 0;
+    int64_t postReduceUbSize = 0;
+    int64_t tmpBufUbSize = 0;
+
+    bool isGroup = false;
+    int64_t rGroupCnt = 0;
+};
+
+struct Result {
+    EuclideanNormTilingData td;
+    int templateType = 0;  // 0=normal/empty, 1=group, 2=fast
+    int isEmptyTensor = 0; // 0/1
+    int isTailR = 0;       // 0/1
+    int blockDim = 1;
+    int64_t workspaceBytes = 0; // group: rGroupCnt×aTotal×4；fast: groupCnt×coresPerGroup×outLanes×4
+    bool isGroup = false;
+    bool isFast = false;
+    bool isFastRARA = false;
+    int64_t outCount = 0; // 输出元素个数
+};
+
+// ─── axes 归一化（对齐 ParseAxesTensor）───
+inline bool NormalizeAxes(Ctx& ctx, const std::vector<int64_t>& axesRaw)
+{
+    const int64_t xRank = static_cast<int64_t>(ctx.xShape.size());
+    ctx.reduceAxes.clear();
+    if (axesRaw.empty()) {
+        ctx.reduceAxes.reserve(xRank);
+        for (int64_t i = 0; i < xRank; ++i) {
+            ctx.reduceAxes.push_back(i);
+        }
+        return true;
+    }
+    std::set<int64_t> seen;
+    for (size_t i = 0; i < axesRaw.size(); ++i) {
+        int64_t v = axesRaw[i];
+        if (v < -xRank || v >= xRank) {
+            fprintf(stderr, "[tiling] axes[%zu]=%ld out of range [-%ld, %ld)\n", i, v, xRank, xRank);
+            return false;
+        }
+        const int64_t norm = (v < 0) ? (v + xRank) : v;
+        if (!seen.insert(norm).second) {
+            fprintf(stderr, "[tiling] duplicate axis %ld\n", norm);
+            return false;
+        }
+        ctx.reduceAxes.push_back(norm);
+    }
+    std::sort(ctx.reduceAxes.begin(), ctx.reduceAxes.end());
+    return true;
+}
+
+inline void BuildInitialAxisList(Ctx& ctx)
+{
+    const size_t rank = ctx.xShape.size();
+    ctx.axisShape = ctx.xShape;
+    ctx.isReduceAxis.assign(rank, false);
+    for (int64_t a : ctx.reduceAxes) {
+        ctx.isReduceAxis[static_cast<size_t>(a)] = true;
+    }
+}
+
+// ─── Pattern 预处理 4 步 ───
+inline void DropSizeOneAxes(Ctx& ctx)
+{
+    std::vector<int64_t> newShape;
+    std::vector<bool> newIsR;
+    for (size_t i = 0; i < ctx.axisShape.size(); ++i) {
+        if (ctx.axisShape[i] != 1) {
+            newShape.push_back(ctx.axisShape[i]);
+            newIsR.push_back(ctx.isReduceAxis[i]);
+        }
+    }
+    if (newShape.empty()) {
+        newShape.push_back(1);
+        newIsR.push_back(false);
+    }
+    ctx.axisShape = std::move(newShape);
+    ctx.isReduceAxis = std::move(newIsR);
+}
+
+inline void FuseAxis(Ctx& ctx)
+{
+    std::vector<int64_t> fusedShape;
+    std::vector<bool> fusedIsR;
+    for (size_t i = 0; i < ctx.axisShape.size(); ++i) {
+        if (!fusedShape.empty() && fusedIsR.back() == ctx.isReduceAxis[i]) {
+            fusedShape.back() *= ctx.axisShape[i];
+        } else {
+            fusedShape.push_back(ctx.axisShape[i]);
+            fusedIsR.push_back(ctx.isReduceAxis[i]);
+        }
+    }
+    ctx.axisShape = std::move(fusedShape);
+    ctx.isReduceAxis = std::move(fusedIsR);
+}
+
+inline void PadLeadingOneA(Ctx& ctx)
+{
+    if (!ctx.axisShape.empty() && ctx.isReduceAxis.front()) {
+        ctx.axisShape.insert(ctx.axisShape.begin(), 1);
+        ctx.isReduceAxis.insert(ctx.isReduceAxis.begin(), false);
+    }
+}
+
+inline void PadRIfPureA(Ctx& ctx)
+{
+    bool hasR = false;
+    for (bool b : ctx.isReduceAxis) {
+        if (b) {
+            hasR = true;
+            break;
+        }
+    }
+    if (!hasR) {
+        if (ctx.axisShape.size() == 1 && ctx.axisShape[0] == 1) {
+            ctx.axisShape.push_back(1);
+            ctx.isReduceAxis.push_back(true);
+        } else {
+            ctx.axisShape.insert(ctx.axisShape.begin(), {1, 1});
+            ctx.isReduceAxis.insert(ctx.isReduceAxis.begin(), {false, true});
+        }
+    }
+}
+
+inline void ClassifyEmptyTensor(Ctx& ctx)
+{
+    bool hasZeroA = false;
+    bool hasZeroR = false;
+    int64_t aTotal = 1;
+    for (size_t i = 0; i < ctx.xShape.size(); ++i) {
+        const bool isR = ctx.isReduceAxis[i];
+        const int64_t sz = ctx.xShape[i];
+        if (!isR) {
+            if (sz == 0) {
+                hasZeroA = true;
+            } else {
+                aTotal *= sz;
+            }
+        } else {
+            if (sz == 0) {
+                hasZeroR = true;
+            }
+        }
+    }
+    if (hasZeroA) {
+        ctx.emptyKind = EmptyKind::EMPTY_A;
+        ctx.aTotalEmpty = 0;
+    } else if (hasZeroR) {
+        ctx.emptyKind = EmptyKind::EMPTY_R;
+        ctx.aTotalEmpty = aTotal;
+    } else {
+        ctx.emptyKind = EmptyKind::NORMAL;
+        ctx.aTotalEmpty = 0;
+    }
+}
+
+inline bool PreprocessPattern(Ctx& ctx)
+{
+    DropSizeOneAxes(ctx);
+    FuseAxis(ctx);
+    PadLeadingOneA(ctx);
+    PadRIfPureA(ctx);
+
+    ctx.axisNum = static_cast<int32_t>(ctx.axisShape.size());
+    if (ctx.axisNum < kMinAxisNum || ctx.axisNum > kMaxAxisNum) {
+        fprintf(stderr, "[tiling] axisNum=%d out of [%d, %d]\n", ctx.axisNum, kMinAxisNum, kMaxAxisNum);
+        return false;
+    }
+    for (int32_t i = 0; i < ctx.axisNum; ++i) {
+        const bool wantR = (i % 2 == 1);
+        if (ctx.isReduceAxis[static_cast<size_t>(i)] != wantR) {
+            fprintf(stderr, "[tiling] axis[%d] type mismatch\n", i);
+            return false;
+        }
+    }
+    ctx.isTailR = (ctx.axisNum % 2 == 0);
+    return true;
+}
+
+inline void ComputeAxisStrides(const Ctx& ctx, int64_t outStride[])
+{
+    int64_t acc = 1;
+    for (int32_t i = ctx.axisNum - 1; i >= 0; --i) {
+        outStride[i] = acc;
+        acc *= ctx.axisShape[static_cast<size_t>(i)];
+    }
+}
+
+inline int32_t LastAAxisIdx(const Ctx& ctx)
+{
+    for (int32_t i = ctx.axisNum - 1; i >= 0; --i) {
+        if (!ctx.isReduceAxis[static_cast<size_t>(i)]) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+inline int32_t LastRAxisIdx(const Ctx& ctx)
+{
+    for (int32_t i = ctx.axisNum - 1; i >= 0; --i) {
+        if (ctx.isReduceAxis[static_cast<size_t>(i)]) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+inline int32_t PrevSameTypeAxis(const Ctx& ctx, int32_t from, bool wantR)
+{
+    for (int32_t i = from - 1; i >= 0; --i) {
+        if (ctx.isReduceAxis[static_cast<size_t>(i)] == wantR) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+inline void ComputeAUbFactor(Ctx& ctx)
+{
+    const int32_t lastA = LastAAxisIdx(ctx);
+    const int64_t maxInnerAInitElem = ctx.cacheLineSize / ctx.dtypeSize;
+
+    int64_t atmp = 0;
+    if (ctx.isTailR) {
+        int64_t totalA = 1;
+        for (int32_t i = 0; i < ctx.axisNum; ++i) {
+            if (!ctx.isReduceAxis[static_cast<size_t>(i)]) {
+                totalA *= ctx.axisShape[static_cast<size_t>(i)];
+            }
+        }
+        atmp = std::min(maxInnerAInitElem, CeilDiv(totalA, ctx.coreNum));
+        atmp = std::max<int64_t>(atmp, 1);
+    } else {
+        atmp = maxInnerAInitElem;
+    }
+
+    ctx.innerAProd = 1;
+    ctx.innerAProdAlign = 1;
+    ctx.aSplitAxisIdx = lastA;
+    const int64_t bsAElem = ctx.blockSize / ctx.dtypeSize;
+
+    while (true) {
+        const int64_t aSize = ctx.axisShape[static_cast<size_t>(ctx.aSplitAxisIdx)];
+        if (aSize * ctx.innerAProdAlign >= atmp) {
+            break;
+        }
+        const int32_t prev = PrevSameTypeAxis(ctx, ctx.aSplitAxisIdx, /*wantR=*/false);
+        if (prev < 0) {
+            break;
+        }
+        if (ctx.aSplitAxisIdx == lastA && !ctx.isTailR) {
+            ctx.innerAProdAlign *= CeilAlign(aSize, bsAElem);
+        } else {
+            ctx.innerAProdAlign *= aSize;
+        }
+        ctx.innerAProd *= aSize;
+        ctx.aSplitAxisIdx = prev;
+    }
+
+    const int64_t aSize = ctx.axisShape[static_cast<size_t>(ctx.aSplitAxisIdx)];
+    ctx.aUbFactor = std::min(CeilDiv(atmp, ctx.innerAProdAlign), aSize);
+    ctx.aUbFactor = std::max<int64_t>(ctx.aUbFactor, 1);
+
+    if (ctx.aSplitAxisIdx == lastA && !ctx.isTailR) {
+        ctx.aUbFactorAlign = CeilAlign(ctx.aUbFactor, bsAElem);
+    } else {
+        ctx.aUbFactorAlign = ctx.aUbFactor;
+    }
+}
+
+inline int64_t ComputeRiMax(const Ctx& ctx)
+{
+    const int64_t ubAvailable = ctx.ubSize - kCacheBufBytes;
+    const int64_t aUnit = ctx.aUbFactorAlign * ctx.innerAProdAlign;
+    const int64_t bytesPerRElem = (kDbFactor * kNPreReuse + kNPreParallel) * ctx.dtypeSize + kTmpBufCopies * kFp32Bytes;
+    const int64_t outBytes = kNOut * ctx.dtypeSize * aUnit;
+    if (aUnit <= 0 || bytesPerRElem <= 0) {
+        return -1;
+    }
+    const int64_t numer = ubAvailable - outBytes;
+    if (numer <= 0) {
+        return -1;
+    }
+    return numer / (aUnit * bytesPerRElem);
+}
+
+inline bool ComputeRUbFactor(Ctx& ctx)
+{
+    const int32_t lastR = LastRAxisIdx(ctx);
+    if (lastR < 0) {
+        fprintf(stderr, "[tiling] no R axis after preprocessing\n");
+        return false;
+    }
+
+    const int64_t rIMax = ComputeRiMax(ctx);
+    if (rIMax < 1) {
+        fprintf(stderr, "[tiling] r_i_max < 1 (UB cannot hold one R element)\n");
+        return false;
+    }
+
+    ctx.innerRProd = 1;
+    ctx.innerRProdAlign = 1;
+    ctx.rSplitAxisIdx = lastR;
+    const int64_t bsAElem = ctx.blockSize / ctx.dtypeSize;
+
+    while (true) {
+        const int64_t rSize = ctx.axisShape[static_cast<size_t>(ctx.rSplitAxisIdx)];
+        if (rSize * ctx.innerRProdAlign > rIMax) {
+            break;
+        }
+        const int32_t prev = PrevSameTypeAxis(ctx, ctx.rSplitAxisIdx, /*wantR=*/true);
+        if (prev < 0) {
+            break;
+        }
+        if (ctx.rSplitAxisIdx == lastR && ctx.isTailR) {
+            ctx.innerRProdAlign *= CeilAlign(rSize, bsAElem);
+        } else {
+            ctx.innerRProdAlign *= rSize;
+        }
+        ctx.innerRProd *= rSize;
+        ctx.rSplitAxisIdx = prev;
+    }
+
+    const int64_t rAxisSize = ctx.axisShape[static_cast<size_t>(ctx.rSplitAxisIdx)];
+    ctx.rUbFactor = std::min(rIMax / ctx.innerRProdAlign, rAxisSize);
+    ctx.rUbFactor = std::max<int64_t>(ctx.rUbFactor, 1);
+
+    if (ctx.isTailR && ctx.rSplitAxisIdx == lastR && ctx.rUbFactor < rAxisSize) {
+        ctx.rUbFactor = FloorAlign(ctx.rUbFactor, bsAElem);
+        if (ctx.rUbFactor == 0) {
+            fprintf(stderr, "[tiling] rUbFactor floor-aligned to 0\n");
+            return false;
+        }
+    }
+
+    if (ctx.isTailR && ctx.rSplitAxisIdx == lastR) {
+        ctx.rUbFactorAlign = CeilAlign(ctx.rUbFactor, bsAElem);
+    } else {
+        ctx.rUbFactorAlign = ctx.rUbFactor;
+    }
+    return true;
+}
+
+inline bool RIsFullyLoaded(const Ctx& ctx)
+{
+    const int32_t rSplit = ctx.rSplitAxisIdx;
+    if (ctx.rUbFactor != ctx.axisShape[static_cast<size_t>(rSplit)]) {
+        return false;
+    }
+    for (int32_t i = rSplit - 1; i >= 0; --i) {
+        if (ctx.isReduceAxis[static_cast<size_t>(i)]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+inline int64_t SolveAFromUbBudget(const Ctx& ctx)
+{
+    const int64_t ubAvailable = ctx.ubSize - kCacheBufBytes;
+    const int64_t bytesPerRElem = (kDbFactor * kNPreReuse + kNPreParallel) * ctx.dtypeSize + kTmpBufCopies * kFp32Bytes;
+    const int64_t rPaddedElems = ctx.rUbFactorAlign * ctx.innerRProdAlign;
+    const int64_t coeff = rPaddedElems * bytesPerRElem + kNOut * ctx.dtypeSize;
+    if (coeff <= 0) {
+        return -1;
+    }
+    return ubAvailable / coeff;
+}
+
+inline bool ExpandAIfRFullyLoaded(Ctx& ctx)
+{
+    if (!RIsFullyLoaded(ctx)) {
+        return true;
+    }
+
+    int64_t totalA = 1;
+    for (int32_t i = 0; i < ctx.axisNum; ++i) {
+        if (!ctx.isReduceAxis[static_cast<size_t>(i)]) {
+            totalA *= ctx.axisShape[static_cast<size_t>(i)];
+        }
+    }
+    const int64_t cacheLaneLimit = kCacheBufBytes / kFp32Bytes;
+    int64_t atmpNew = std::min(SolveAFromUbBudget(ctx), totalA);
+    atmpNew = std::min(atmpNew, cacheLaneLimit);
+    const int64_t curATotal = ctx.aUbFactorAlign * ctx.innerAProdAlign;
+    if (atmpNew <= curATotal) {
+        return true;
+    }
+
+    const int32_t lastA = LastAAxisIdx(ctx);
+    const int64_t bsAElem = ctx.blockSize / ctx.dtypeSize;
+    ctx.innerAProd = 1;
+    ctx.innerAProdAlign = 1;
+    ctx.aSplitAxisIdx = lastA;
+    while (true) {
+        const int64_t aSize = ctx.axisShape[static_cast<size_t>(ctx.aSplitAxisIdx)];
+        if (aSize * ctx.innerAProdAlign >= atmpNew) {
+            break;
+        }
+        const int32_t prev = PrevSameTypeAxis(ctx, ctx.aSplitAxisIdx, /*wantR=*/false);
+        if (prev < 0) {
+            break;
+        }
+        if (ctx.aSplitAxisIdx == lastA && !ctx.isTailR) {
+            ctx.innerAProdAlign *= CeilAlign(aSize, bsAElem);
+        } else {
+            ctx.innerAProdAlign *= aSize;
+        }
+        ctx.innerAProd *= aSize;
+        ctx.aSplitAxisIdx = prev;
+    }
+
+    const int64_t aSize = ctx.axisShape[static_cast<size_t>(ctx.aSplitAxisIdx)];
+    const int64_t aTotalUb = std::min(atmpNew / ctx.innerAProdAlign, aSize);
+    const int32_t lastAIdx = LastAAxisIdx(ctx);
+    if (!ctx.isTailR && ctx.aSplitAxisIdx == lastAIdx) {
+        const int64_t aFloor = FloorAlign(aTotalUb, bsAElem);
+        if (aFloor == 0) {
+            fprintf(stderr, "[tiling] ExpandA FloorAlign to 0\n");
+            return false;
+        }
+        ctx.aUbFactor = aFloor;
+        ctx.aUbFactorAlign = CeilAlign(aFloor, bsAElem);
+    } else {
+        ctx.aUbFactor = aTotalUb;
+        ctx.aUbFactorAlign = aTotalUb;
+    }
+    return true;
+}
+
+inline void ComputeFusedALoopSplit(Ctx& ctx)
+{
+    int64_t outerAProd = 1;
+    for (int32_t i = 0; i < ctx.aSplitAxisIdx; i += 2) {
+        outerAProd *= ctx.axisShape[static_cast<size_t>(i)];
+    }
+    const int64_t aSplitAxisSize = ctx.axisShape[static_cast<size_t>(ctx.aSplitAxisIdx)];
+    ctx.aSplitChunkCnt = CeilDiv(aSplitAxisSize, ctx.aUbFactor);
+    ctx.aLoopCntTotal = outerAProd * ctx.aSplitChunkCnt;
+
+    ctx.aSmallCoreLoopCnt = ctx.aLoopCntTotal / ctx.coreNum;
+    ctx.aBigCoreCnt = static_cast<int32_t>(ctx.aLoopCntTotal % ctx.coreNum);
+    ctx.aBigCoreLoopCnt = ctx.aSmallCoreLoopCnt + (ctx.aBigCoreCnt > 0 ? 1 : 0);
+    ctx.usedCoreNum = (ctx.aSmallCoreLoopCnt > 0) ? static_cast<int32_t>(ctx.coreNum) : ctx.aBigCoreCnt;
+    ctx.usedCoreNum = std::max(ctx.usedCoreNum, 1);
+}
+
+inline void ComputeRLoopCnt(Ctx& ctx)
+{
+    int64_t outerR = 1;
+    for (int32_t i = 0; i < ctx.rSplitAxisIdx; ++i) {
+        if (ctx.isReduceAxis[static_cast<size_t>(i)]) {
+            outerR *= ctx.axisShape[static_cast<size_t>(i)];
+        }
+    }
+    const int64_t rChunks = CeilDiv(ctx.axisShape[static_cast<size_t>(ctx.rSplitAxisIdx)], ctx.rUbFactor);
+    ctx.rLoopCntTotal = outerR * rChunks;
+}
+
+inline void ComputeUbSizes(Ctx& ctx)
+{
+    const int64_t unit = ctx.aUbFactorAlign * ctx.innerAProdAlign * ctx.rUbFactorAlign * ctx.innerRProdAlign;
+    const int64_t aTotal = ctx.aUbFactorAlign * ctx.innerAProdAlign;
+    ctx.preReduceUbSize = CeilAlign(unit * ctx.dtypeSize, ctx.blockSize);
+    ctx.tmpBufUbSize = CeilAlign(unit * kFp32Bytes, ctx.blockSize);
+    int64_t outRaw = aTotal * ctx.dtypeSize;
+    outRaw = std::max(outRaw, kNOut * ctx.blockSize);
+    ctx.postReduceUbSize = CeilAlign(outRaw, ctx.blockSize);
+}
+
+inline bool ShouldUseGroup(const Ctx& ctx)
+{
+    if (ctx.aLoopCntTotal > ctx.coreNum / 2) {
+        return false;
+    }
+    if (ctx.rLoopCntTotal <= 1) {
+        return false;
+    }
+    return true;
+}
+
+inline void ComputeGroupSplit(Ctx& ctx)
+{
+    int64_t totalOuter = ctx.aLoopCntTotal * ctx.rLoopCntTotal;
+    int64_t perCoreNum = CeilDiv(totalOuter, ctx.coreNum);
+    int64_t numBlocks = CeilDiv(totalOuter, perCoreNum);
+
+    if (CeilAlign(numBlocks, ctx.aLoopCntTotal) <= ctx.coreNum) {
+        numBlocks = CeilAlign(numBlocks, ctx.aLoopCntTotal);
+    } else {
+        numBlocks = FloorAlign(numBlocks, ctx.aLoopCntTotal);
+    }
+
+    ctx.usedCoreNum = static_cast<int32_t>(numBlocks);
+    ctx.rGroupCnt = numBlocks / ctx.aLoopCntTotal;
+    ctx.isGroup = true;
+}
+
+inline int64_t ComputeATotalNormal(const Ctx& ctx)
+{
+    int64_t aTotal = 1;
+    for (int32_t i = 0; i < ctx.axisNum; ++i) {
+        if (!ctx.isReduceAxis[static_cast<size_t>(i)]) {
+            aTotal *= ctx.axisShape[static_cast<size_t>(i)];
+        }
+    }
+    return aTotal;
+}
+
+inline void FillTilingData(const Ctx& ctx, Result& out)
+{
+    EuclideanNormTilingData* td = &out.td;
+    memset(td, 0, sizeof(EuclideanNormTilingData));
+
+    int64_t axisStride[MAX_PATTERN_RANK] = {0};
+    ComputeAxisStrides(ctx, axisStride);
+
+    td->axisNum = ctx.axisNum;
+    for (int32_t i = 0; i < MAX_PATTERN_RANK; ++i) {
+        td->axisShape[i] = (i < ctx.axisNum) ? ctx.axisShape[static_cast<size_t>(i)] : 1;
+        td->axisStride[i] = (i < ctx.axisNum) ? axisStride[i] : 0;
+    }
+    td->aLoopCntTotal = ctx.aLoopCntTotal;
+    td->aSplitChunkCnt = ctx.aSplitChunkCnt;
+    td->aBigCoreLoopCnt = ctx.aBigCoreLoopCnt;
+    td->aSmallCoreLoopCnt = ctx.aSmallCoreLoopCnt;
+    td->aBigCoreCnt = ctx.aBigCoreCnt;
+    td->usedCoreNum = ctx.usedCoreNum;
+    td->aSplitAxisIdx = ctx.aSplitAxisIdx;
+    td->rSplitAxisIdx = ctx.rSplitAxisIdx;
+    td->aUbFactor = ctx.aUbFactor;
+    td->aUbFactorAlign = ctx.aUbFactorAlign;
+    td->rUbFactor = ctx.rUbFactor;
+    td->rUbFactorAlign = ctx.rUbFactorAlign;
+    td->innerAProd = ctx.innerAProd;
+    td->innerAProdAlign = ctx.innerAProdAlign;
+    td->innerRProd = ctx.innerRProd;
+    td->innerRProdAlign = ctx.innerRProdAlign;
+    td->rLoopCntTotal = ctx.rLoopCntTotal;
+    td->preReduceUbSize = ctx.preReduceUbSize;
+    td->postReduceUbSize = ctx.postReduceUbSize;
+    td->tmpBufUbSize = ctx.tmpBufUbSize;
+    td->cacheBufUbSize = kCacheBufBytes;
+    td->rGroupCnt = ctx.rGroupCnt;
+}
+
+inline void ComputeEmptyRTiling(Ctx& ctx)
+{
+    constexpr int64_t kMaxSingleUbBytes = 64 * 1024;
+    const int64_t maxUbFactor = kMaxSingleUbBytes / ctx.dtypeSize;
+    const int64_t ubNatural = ctx.ubSize / ctx.dtypeSize;
+    const int64_t maxUbFactorClamped = std::min(maxUbFactor, ubNatural);
+
+    constexpr int64_t kMinBytesPerCore = 4096;
+    const int64_t minAPerCore = CeilDiv(kMinBytesPerCore, ctx.dtypeSize);
+    const int64_t aTotal = ctx.aTotalEmpty;
+
+    int64_t aUbFactor = std::max(minAPerCore, CeilDiv(aTotal, ctx.coreNum));
+    aUbFactor = std::min(aUbFactor, maxUbFactorClamped);
+    aUbFactor = std::min(aUbFactor, aTotal);
+    aUbFactor = std::max<int64_t>(aUbFactor, 1);
+
+    const int64_t aLoopCntTotal = CeilDiv(aTotal, aUbFactor);
+    const int64_t aSmallCoreLoopCnt = aLoopCntTotal / ctx.coreNum;
+    const int32_t aBigCoreCnt = static_cast<int32_t>(aLoopCntTotal % ctx.coreNum);
+    const int64_t aBigCoreLoopCnt = aSmallCoreLoopCnt + (aBigCoreCnt > 0 ? 1 : 0);
+    const int32_t usedCoreNum = (aSmallCoreLoopCnt > 0) ? static_cast<int32_t>(ctx.coreNum) : std::max(aBigCoreCnt, 1);
+
+    ctx.aUbFactor = aUbFactor;
+    ctx.aLoopCntTotal = aLoopCntTotal;
+    ctx.aSplitChunkCnt = aLoopCntTotal;
+    ctx.aSmallCoreLoopCnt = aSmallCoreLoopCnt;
+    ctx.aBigCoreLoopCnt = aBigCoreLoopCnt;
+    ctx.aBigCoreCnt = aBigCoreCnt;
+    ctx.usedCoreNum = usedCoreNum;
+
+    int64_t outRaw = aUbFactor * ctx.dtypeSize;
+    outRaw = std::max(outRaw, kNOut * ctx.blockSize);
+    ctx.postReduceUbSize = CeilAlign(outRaw, ctx.blockSize);
+    ctx.preReduceUbSize = 0;
+    ctx.tmpBufUbSize = 0;
+}
+
+inline void FillEmptyTilingData(const Ctx& ctx, Result& out)
+{
+    EuclideanNormTilingData* td = &out.td;
+    memset(td, 0, sizeof(EuclideanNormTilingData));
+    if (ctx.emptyKind == EmptyKind::EMPTY_A) {
+        return; // usedCoreNum=0，其余字段 0
+    }
+    td->axisShape[0] = ctx.aTotalEmpty;
+    td->usedCoreNum = ctx.usedCoreNum;
+    td->aLoopCntTotal = ctx.aLoopCntTotal;
+    td->aSplitChunkCnt = ctx.aSplitChunkCnt;
+    td->aBigCoreLoopCnt = ctx.aBigCoreLoopCnt;
+    td->aSmallCoreLoopCnt = ctx.aSmallCoreLoopCnt;
+    td->aBigCoreCnt = ctx.aBigCoreCnt;
+    td->aUbFactor = ctx.aUbFactor;
+    td->postReduceUbSize = ctx.postReduceUbSize;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// fast 模板门控 + tiling（路径 A：交错 tail-R，偶数轴 ARARAR...AR，内块 [A,R,A,R]）
+//
+// 命中条件（窄门控，只针对交错 A-R 布局导致 MTE2 碎读的场景）：
+//   1. dtype ∈ {fp32, fp16, bf16}（计算全程升 fp32；int32 平方需精确整数，不走 fast）
+//   2. PreprocessPattern 后 axisNum 为偶数且 ≥6，严格 ARAR...AR（A 起头交替，isTailR）
+//   3. 内块 = 末 4 轴 [A,R,A,R]（S=axisNum-4），物理连续（stride 校验）
+//   4. rows 轴 = 轴[S-1]（R），stride == innerElems（内块连续于其后）
+//   5. 内块整块字节 32B 对齐（kernel 用连续 DataCopy 载入，须 32B 对齐）
+//   6. ★ burst 病态：最内 R 轴 × dtypeSize ≤ 16B（连续大 burst 的收益区）
+//   7. ★ rows 轴够大（≥ kFastMinRows）：小 rows 时两步规约+屏障开销反超 MTE2 增益
+//   8. 内块可整块放进 UB（chunkA0 == szA0，无需分块 —— 分块实测负收益）
+//   9. 外层 A 轴乘积（groupCnt）≤ coreNum，且 rows 轴够多核切分
+// 不命中返回 false，回退到 normal/group。
+// ════════════════════════════════════════════════════════════════════════════
+static constexpr int64_t kFastMaxBurstBytes = 16; // 最内 R 轴 burst 上限（病态区判据）
+static constexpr int64_t kFastMinRows = 8;        // rows 轴最小切分/累加规模
+
+inline bool TryComputeFastTiling(Ctx& ctx, Result& out)
+{
+    if (ctx.dtypeCode != 0 && ctx.dtypeCode != 1 && ctx.dtypeCode != 2) return false; // fp32/fp16/bf16
+    const int32_t N = ctx.axisNum;
+    if (N < 6 || (N % 2) != 0) return false; // 偶数轴 ≥6（tail-R）
+    if (!ctx.isTailR) return false;
+    // 严格 ARAR...AR 已由 PreprocessPattern 保证（偶 A 奇 R）
+
+    int64_t axisStride[MAX_PATTERN_RANK] = {0};
+    ComputeAxisStrides(ctx, axisStride);
+
+    const int32_t S = N - 4;             // 内块起始（末 4 轴 [A,R,A,R]）
+    const int32_t rowsAxisIdx = N - 5;   // 内块前的 R 轴，被切分 + 连续载入
+    const int64_t A0 = ctx.axisShape[S], R0 = ctx.axisShape[S + 1];
+    const int64_t A1 = ctx.axisShape[S + 2], R1 = ctx.axisShape[S + 3];
+    const int64_t innerElems = A0 * R0 * A1 * R1;
+    const int64_t outLanes = A0 * A1;
+
+    // 连续性校验：内块最内轴 stride 必须为 1，rows 轴 stride == innerElems
+    if (axisStride[N - 1] != 1) return false;
+    if (axisStride[rowsAxisIdx] != innerElems) return false;
+
+    // ★ 内块整块字节数须 32B 对齐：kernel 用连续 DataCopy 逐 row（=innerElems 元素）载入，
+    //   DataCopy 要求传输字节 32B 对齐；否则非对齐搬运产生错误数据（如 innerElems=40, fp16=80B）。
+    if ((innerElems * ctx.dtypeSize) % 32 != 0) return false;
+
+    // ★ burst 病态判据：最内 R 轴（R1）× dtypeSize ≤ 16B → 正是连续化收益区
+    if (R1 * ctx.dtypeSize > kFastMaxBurstBytes) return false;
+
+    // ★ rows 轴够大：小 rows 时两步规约 + 屏障固定开销反超 MTE2 增益
+    const int64_t rowsSize = ctx.axisShape[rowsAxisIdx];
+    if (rowsSize < kFastMinRows) return false;
+
+    const int64_t sliceStride = R0 * A1 * R1;         // 一个 A0 面的元素数
+
+    // 固定 buffer（与 chunkA0 无关的部分）：tmp(16K) + partBuf + outQ（fp32 workspace）
+    const int64_t fixedIndep = 16 * 1024 + CeilAlign(outLanes, 8) * 4 * 2;
+    const int64_t avail = ctx.ubSize - fixedIndep;
+    if (avail <= 0) return false;
+
+    // 每单位 chunkA0 的字节：inQ(2×1×sliceStride×dtypeSize) + acc(sliceStride×4,fp32)
+    //   + red(R0*A1×4) + plane(R0×4) + dstA4(4)
+    const int64_t perA0 = 2 * sliceStride * ctx.dtypeSize + sliceStride * 4 + R0 * A1 * 4 + R0 * 4 + 4;
+    int64_t chunkA0 = avail / perA0;
+    if (chunkA0 < 1) return false;         // 一个 A0 面都放不下 → 不适用（交给 normal）
+    if (chunkA0 > A0) chunkA0 = A0;
+    // 【实测结论】内块需分块（chunkA0 < A0）时，fast 的分块屏障 + 逐平面规约开销
+    //   会吃掉 MTE2 增益（#17 实测 -9%）。只在内块能整块放下（无需分块）时才用 fast。
+    if (chunkA0 < A0) return false;
+
+    const int64_t chunkElems = chunkA0 * sliceStride;
+    // 余量内提 rowsPerLoad（增大 burst）：剩余 UB / (2×chunkElems×dtypeSize)
+    const int64_t usedAtRpl1 = fixedIndep + 2 * chunkElems * ctx.dtypeSize + chunkElems * 4
+                             + chunkA0 * R0 * A1 * 4 + chunkA0 * R0 * 4 + CeilAlign(chunkA0, 8) * 4;
+    int64_t rowsPerLoad = 1;
+    const int64_t spare = ctx.ubSize - usedAtRpl1;
+    if (spare > 0) {
+        rowsPerLoad += spare / (2 * chunkElems * ctx.dtypeSize);
+    }
+    if (rowsPerLoad > 8) rowsPerLoad = 8;
+    if (rowsPerLoad > rowsSize) rowsPerLoad = rowsSize;
+    if (rowsPerLoad < 1) rowsPerLoad = 1;
+
+    // 分组 & 多核：group = ∏ 外层 A 轴（偶数轴 < S），coresPerGroup 切 rows 轴
+    int64_t groupCnt = 1;
+    for (int32_t i = 0; i < S; ++i) {
+        if (i % 2 == 0) groupCnt *= ctx.axisShape[i];
+    }
+    if (groupCnt <= 0 || groupCnt > ctx.coreNum) return false;
+    int64_t coresPerGroup = ctx.coreNum / groupCnt;
+    if (coresPerGroup < 1) coresPerGroup = 1;
+    if (coresPerGroup > rowsSize) coresPerGroup = rowsSize; // 不超过可切分行数
+    const int64_t usedCoreNum = groupCnt * coresPerGroup;
+
+    // 填 tiling
+    EuclideanNormTilingData* td = &out.td;
+    memset(td, 0, sizeof(EuclideanNormTilingData));
+    td->axisNum = ctx.axisNum;
+    for (int32_t i = 0; i < MAX_PATTERN_RANK; ++i) {
+        td->axisShape[i] = (i < ctx.axisNum) ? ctx.axisShape[static_cast<size_t>(i)] : 1;
+        td->axisStride[i] = (i < ctx.axisNum) ? axisStride[i] : 0;
+    }
+    td->usedCoreNum = static_cast<int32_t>(usedCoreNum);
+    td->fastInnerStart = S;
+    td->fastGroupCnt = groupCnt;
+    td->fastCoresPerGroup = coresPerGroup;
+    td->fastRowsAxisIdx = rowsAxisIdx;
+    td->fastRowsPerLoad = rowsPerLoad;
+    td->fastInnerChunkA0 = chunkA0;
+
+    out.templateType = 2;
+    out.isEmptyTensor = 0;
+    out.isTailR = 1;
+    out.isGroup = false;
+    out.isFast = true;
+    out.blockDim = static_cast<int>(usedCoreNum);
+    out.workspaceBytes = groupCnt * coresPerGroup * outLanes * static_cast<int64_t>(sizeof(float));
+    return true;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// fast-RARA 模板门控（路径 B：奇数轴 tail-A，内块 [R,A,R,A]，无 workspace）
+//
+// 命中条件：
+//   1. dtype ∈ {fp32, fp16, bf16}
+//   2. PreprocessPattern 后 axisNum 为奇数且 ≥7，严格 ARAR...A（tail-A，isTailR==false）
+//   3. 内块 = 末 4 轴 [R,A,R,A]（S=axisNum-4），物理连续（最内轴 stride==1，R0 轴 stride==innerRowElems）
+//   4. 内块整块字节 32B 对齐（kernel 连续 DataCopy 载入 chunkR0×innerRowElems 元素）
+//   5. slab 数 = ∏(内块外 A 轴) ≥ coreNum/2（并行度）
+//   6. innerRowElems ≥ 512（内块每行 ≥ 1KB(fp16)/2KB(fp32)，连续大 burst 才有价值）
+//   7. 内块最内行 [A0,R1,A1] 至少能放下一块（chunkR0 ≥ 1）
+// 不命中返回 false。
+// ════════════════════════════════════════════════════════════════════════════
+inline bool TryComputeFastRARATiling(Ctx& ctx, Result& out)
+{
+    if (ctx.dtypeCode != 0 && ctx.dtypeCode != 1 && ctx.dtypeCode != 2) return false; // fp32/fp16/bf16
+    const int32_t N = ctx.axisNum;
+    if (N < 7 || (N % 2) != 1) return false; // 奇数轴 ≥7（tail-A）
+    if (ctx.isTailR) return false;        // 需 tail-A
+
+    int64_t axisStride[MAX_PATTERN_RANK] = {0};
+    ComputeAxisStrides(ctx, axisStride);
+
+    const int32_t S = N - 4;              // 内块起始（末 4 轴 [R,A,R,A]）
+    const int64_t R0 = ctx.axisShape[S], A0 = ctx.axisShape[S + 1];
+    const int64_t R1 = ctx.axisShape[S + 2], A1 = ctx.axisShape[S + 3];
+    const int64_t innerRowElems = A0 * R1 * A1;      // 固定 R0 的一行
+    const int64_t outLanes = A0 * A1;
+
+    // 连续性校验
+    if (axisStride[N - 1] != 1) return false;
+    if (axisStride[S] != innerRowElems) return false;
+
+    // ★ 内块一行字节数须 32B 对齐（kernel 连续 DataCopy 载入 chunkR0×innerRowElems 元素）。
+    if ((innerRowElems * ctx.dtypeSize) % 32 != 0) return false;
+
+    // slab = ∏(内块外 A 轴，偶数轴 < S)
+    int64_t slabCnt = 1;
+    for (int32_t i = 0; i < S; ++i) {
+        if (i % 2 == 0) slabCnt *= ctx.axisShape[i];
+    }
+    if (slabCnt < 1) return false;
+    // slab 太少则并行度不足（每核独占 slab，无跨核切 R）→ 大量核闲置，fast 无优势。
+    //   要求 slab 至少能占到半数核，否则回退（如 #9 slabCnt=8 仅用 8/72 核，判负）。
+    if (slabCnt * 2 < ctx.coreNum) return false;
+    // 【实测结论】内块每行太小时，连续载入无 MTE2 收益，反被每 slab 的 ReduceStep2
+    //   屏障 + 小规约开销拖垮（#13 innerRowElems=80 → 慢28%；#15 innerRowElems=8 → 慢10×）。
+    //   要求每行 ≥ 512 元素(2KB)，才有连续大 burst 的价值（#11=4320/#12=3840 命中）。
+    if (innerRowElems < 512) return false;
+
+    // UB 预算：inQ(DB=2 × chunkR0 × innerRowElems × dtypeSize) + acc(innerRowElems×4,fp32)
+    //          + tmp(16K) + plane(R1*A1×4) + part+outQ
+    const int64_t fixedBytes = innerRowElems * 4        // acc（fp32）
+                             + 16 * 1024                // tmp
+                             + R1 * A1 * 4              // plane
+                             + CeilAlign(outLanes, 8) * 4 * 2; // part + outQ
+    const int64_t avail = ctx.ubSize - fixedBytes;
+    if (avail <= 0) return false;
+    int64_t chunkR0 = avail / (2 * innerRowElems * ctx.dtypeSize);  // DB=2
+    if (chunkR0 < 1) return false;
+    if (chunkR0 > R0) chunkR0 = R0;
+    if (chunkR0 > 8) chunkR0 = 8;  // 收敛，8×innerRowElems 已足够大 burst
+
+    int64_t usedCoreNum = (slabCnt < ctx.coreNum) ? slabCnt : ctx.coreNum;
+
+    EuclideanNormTilingData* td = &out.td;
+    memset(td, 0, sizeof(EuclideanNormTilingData));
+    td->axisNum = ctx.axisNum;
+    for (int32_t i = 0; i < MAX_PATTERN_RANK; ++i) {
+        td->axisShape[i] = (i < ctx.axisNum) ? ctx.axisShape[static_cast<size_t>(i)] : 1;
+        td->axisStride[i] = (i < ctx.axisNum) ? axisStride[i] : 0;
+    }
+    td->usedCoreNum = static_cast<int32_t>(usedCoreNum);
+    td->fastInnerStart = S;
+    td->raraSlabCnt = slabCnt;
+    td->raraChunkR0 = chunkR0;
+
+    out.templateType = 3;
+    out.isEmptyTensor = 0;
+    out.isTailR = 0;
+    out.isGroup = false;
+    out.isFast = false;
+    out.isFastRARA = true;
+    out.blockDim = static_cast<int>(usedCoreNum);
+    out.workspaceBytes = 0;
+    return true;
+}
+
+// ─── 主入口 ───
+// 返回 false 表示 tiling 失败。
+inline bool ComputeEuclideanNormTiling(const std::vector<int64_t>& xShapeIn, const std::vector<int64_t>& axesRaw,
+                                       int dtypeCode, int64_t coreNum, int64_t ubSize, Result& out)
+{
+    Ctx ctx;
+    ctx.coreNum = coreNum;
+    ctx.ubSize = ubSize;
+    ctx.blockSize = 32;
+    ctx.cacheLineSize = 256;
+    ctx.dtypeCode = dtypeCode;
+    ctx.dtypeSize = DtypeSize(dtypeCode);
+
+    if (coreNum <= 0 || ubSize <= 0) {
+        fprintf(stderr, "[tiling] invalid platform info coreNum=%ld ubSize=%ld\n", coreNum, ubSize);
+        return false;
+    }
+
+    // x shape：0-D 标量归一化为 1 元素 1-D
+    ctx.xShape = xShapeIn;
+    if (ctx.xShape.empty()) {
+        ctx.xShape.push_back(1);
+    }
+
+    if (!NormalizeAxes(ctx, axesRaw)) {
+        return false;
+    }
+    BuildInitialAxisList(ctx);
+    ClassifyEmptyTensor(ctx);
+
+    // 输出元素个数 = ∏(非 reduce 轴 size)
+    {
+        int64_t outCount = 1;
+        std::vector<bool> isR(ctx.xShape.size(), false);
+        for (int64_t a : ctx.reduceAxes) {
+            isR[static_cast<size_t>(a)] = true;
+        }
+        for (size_t i = 0; i < ctx.xShape.size(); ++i) {
+            if (!isR[i]) {
+                outCount *= ctx.xShape[i];
+            }
+        }
+        out.outCount = outCount;
+    }
+
+    if (ctx.emptyKind != EmptyKind::NORMAL) {
+        if (ctx.emptyKind == EmptyKind::EMPTY_R) {
+            ComputeEmptyRTiling(ctx);
+        } else {
+            ctx.usedCoreNum = 0;
+        }
+        FillEmptyTilingData(ctx, out);
+        out.templateType = 0;
+        out.isEmptyTensor = 1;
+        out.isTailR = 0;
+        out.isGroup = false;
+        out.workspaceBytes = 0;
+        out.blockDim = std::max(ctx.usedCoreNum, 1);
+        return true;
+    }
+
+    if (!PreprocessPattern(ctx)) {
+        return false;
+    }
+
+    // fast 模板门控（窄条件命中即用，否则回退 normal/group）
+    if (TryComputeFastTiling(ctx, out)) {
+        return true;
+    }
+    // fast-RARA 模板门控（路径 B：7 轴 tail-A）
+    if (TryComputeFastRARATiling(ctx, out)) {
+        return true;
+    }
+
+    ComputeAUbFactor(ctx);
+    if (!ComputeRUbFactor(ctx)) {
+        return false;
+    }
+    if (!ExpandAIfRFullyLoaded(ctx)) {
+        return false;
+    }
+    ComputeFusedALoopSplit(ctx);
+    ComputeRLoopCnt(ctx);
+
+    if (ShouldUseGroup(ctx)) {
+        ComputeGroupSplit(ctx);
+    }
+    ComputeUbSizes(ctx);
+
+    FillTilingData(ctx, out);
+    out.templateType = ctx.isGroup ? 1 : 0;
+    out.isEmptyTensor = 0;
+    out.isTailR = ctx.isTailR ? 1 : 0;
+    out.isGroup = ctx.isGroup;
+    out.blockDim = std::max(ctx.usedCoreNum, 1);
+
+    out.workspaceBytes = 0;
+    if (ctx.isGroup) {
+        const int64_t aTotal = ComputeATotalNormal(ctx);
+        out.workspaceBytes = ctx.rGroupCnt * aTotal * static_cast<int64_t>(sizeof(float));
+    }
+    return true;
+}
+
+} // namespace euclidean_norm_host
+
+#endif // EUCLIDEAN_NORM_TILING_HOST_H

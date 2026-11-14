@@ -1,0 +1,806 @@
+/*
+ * Depthwise Conv2D kernel with runtime tiling.
+ *
+ * Ported from ops-nn conv/conv2d_v2/op_kernel/arch35/conv2d_v2_depthwise_simplify.h.
+ * The algorithm is unchanged; the differences are all about being standalone:
+ *   - tiling arrives as a DwTiling struct passed by value in the direct-launch
+ *     argument buffer, so every shape/tile expression is evaluated at runtime;
+ *   - the CONV_CFG template is reduced to the one knob the kernel actually reads
+ *     (L1 ping-pong), which stays a template parameter because it changes the L1
+ *     buffer layout and the AIV/AIC control flow;
+ *   - AlignB/GM0/GN0 come from here rather than the ops-nn conv API headers.
+ */
+
+
+/*!
+ * \file dwconv2d_kernel.h
+ * \brief Depthwise Conv2D 混合核 DepthwiseConv2dKernel<DTYPE, L1_PINGPONG>。
+ *        对应说明文档 templates/dwconv2d_mix.md。
+ *
+ * ── 集成说明（使用前必读）─────────────────────────────────────────────────────
+ *   1. 去掉 .template 后缀落地为 dav310/dwconv2d_kernel.h（或 op_kernel/）。
+ *   2. 依赖 dwconv2d_tiling.h（本模板树已改为 #include "dwconv2d_tiling.h"）。
+ *   3. 编译期实例：dtype × L1_PINGPONG∈{0,3}；形状全由运行期 DwTiling 描述。
+ *   4. 架构目标 dav-3510；入口 __mix__(1,2) 见 dwconv2d_kernel_entry.template。
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+
+#ifndef DWCONV2D_KERNEL_H
+#define DWCONV2D_KERNEL_H
+
+#include "kernel_operator.h"
+#include "dwconv2d_tiling.h"
+
+using namespace AscendC;
+
+namespace dwconv2d {
+
+constexpr uint32_t GM0 = 16;
+constexpr uint32_t GN0 = 16;
+
+// cin / groups and cout / groups. ValidateTiling requires cin == cout == groups,
+// so both are identically 1; spelling that as a constant keeps the depthwise
+// assumption in one named place instead of four runtime divides that can only
+// ever yield 1. Relaxing that ValidateTiling clause means revisiting this.
+constexpr uint32_t G_C_PER_GROUP = 1;
+
+constexpr uint32_t BLOCK_BYTES = 32;
+constexpr uint8_t G_CV_ENHANCE_MODE = 4;
+constexpr uint8_t G_CV_SYNC_STRIDE = 16;
+constexpr uint8_t G_CV_SYNC_ID_MTE3_MTE1 = 0;
+constexpr uint8_t G_CV_SYNC_ID_MTE1_MTE3 = 1;
+constexpr uint8_t G_NDDMA_LOOP0_INDEX = 0;
+constexpr uint8_t G_NDDMA_LOOP1_INDEX = 1;
+constexpr uint8_t G_NDDMA_LOOP2_INDEX = 2;
+constexpr uint8_t G_NDDMA_DIMS = 3;
+constexpr uint16_t G_REG_SIZE = 256;
+constexpr uint16_t G_CO0_LOOP_TIMES = 2;
+constexpr uint8_t G_NUM_AIV = 2;
+constexpr uint8_t G_LOAD3D_PAD_DIMS = 4;
+constexpr uint8_t G_LOAD3D_NO_BOTTOM_PAD = 255;
+constexpr uint32_t FP32_ONE_BITS = 1065353216UL;
+
+constexpr uint8_t G_MSTEP_OFFSET = 16;
+constexpr uint8_t G_POSM_OFFSET = 48;
+constexpr uint8_t G_POSK_OFFSET = 32;
+constexpr uint8_t G_STRIDEH_OFFSET = 6;
+constexpr uint8_t G_KERNELW_OFFSET = 12;
+constexpr uint8_t G_KERNELH_OFFSET = 20;
+constexpr uint8_t G_KERNELW_HIGHEST_BIT_OFFSET = 36;
+constexpr uint8_t G_KERNELH_HIGHEST_BIT_OFFSET = 37;
+constexpr uint8_t G_DILATIONW_OFFSET = 28;
+constexpr uint8_t G_DILATIONH_OFFSET = 36;
+constexpr uint8_t G_CIN_OFFSET = 48;
+constexpr uint64_t G_MASK_16 = 0xffff;
+constexpr uint64_t G_MASK_8 = 0xff;
+constexpr uint64_t G_MASK_6 = 0x3f;
+constexpr uint64_t G_NINTH_BIT_MASK = 0x100;
+
+// L0 buffer half sizes (bytes) for ping-pong double buffering.
+constexpr uint32_t G_L0A_HALF_BYTES = 32768;
+constexpr uint32_t G_L0B_HALF_BYTES = 32768;
+constexpr uint32_t G_L0C_HALF_BYTES = 131072;
+// M_MTE1 event id base for L0A/L0B ping-pong (uses base and base+1).
+constexpr uint16_t G_MTE1_EVENT_BASE = 6;
+
+__aicore__ inline uint32_t GCeilDiv(uint32_t a, uint32_t b) { return (b == 0) ? 0 : (a + b - 1) / b; }
+__aicore__ inline uint32_t GAlignUp(uint32_t a, uint32_t b) { return GCeilDiv(a, b) * b; }
+
+template <typename DTYPE>
+struct DwQuant;
+template <>
+struct DwQuant<half> {
+    static constexpr QuantMode_t value = QuantMode_t::F322F16;
+};
+template <>
+struct DwQuant<bfloat16_t> {
+    static constexpr QuantMode_t value = QuantMode_t::F322BF16;
+};
+template <>
+struct DwQuant<float> {
+    static constexpr QuantMode_t value = QuantMode_t::NoQuant;
+};
+
+template <typename DTYPE, uint8_t L1_PINGPONG>
+class DepthwiseConv2dKernel {
+    static constexpr uint32_t K0_VAL = 32 / sizeof(DTYPE);
+    static constexpr bool AL1_PINGPONG = (L1_PINGPONG & 1U) != 0;
+    static constexpr bool BL1_PINGPONG = (L1_PINGPONG & 2U) != 0;
+
+    using L0cT = float;
+    using IndexT = typename std::conditional<sizeof(DTYPE) == sizeof(half), uint16_t, uint32_t>::type;
+
+public:
+    __aicore__ inline DepthwiseConv2dKernel() {}
+    __aicore__ inline ~DepthwiseConv2dKernel() {}
+    __aicore__ inline void Init(GM_ADDR x, GM_ADDR filter, GM_ADDR bias, GM_ADDR y, const DwTiling& tiling);
+    __aicore__ inline void Process();
+
+private:
+    __aicore__ inline void SetupGroup(uint32_t g);
+    __aicore__ inline void SetIndex();
+    __aicore__ inline void TransNCHW2NZ();
+    __aicore__ inline void LoadAL1(uint16_t l1BufId, uint32_t mGlobal, uint32_t curMAL1);
+    __aicore__ inline void ComputeL0(LocalTensor<DTYPE>& al1, LocalTensor<DTYPE>& bl1, uint32_t mGlobal,
+                                     uint32_t curMAL1, uint32_t nIter, uint32_t curN, uint32_t kTotal);
+    __aicore__ inline void DoLoadAL0(LocalTensor<DTYPE>& al1, LocalTensor<DTYPE>& al0, uint32_t posM, uint32_t kOff,
+                                     uint32_t mVal, uint32_t mAlign, uint32_t curK);
+    __aicore__ inline void DoLoadBL0(LocalTensor<DTYPE>& bl0, LocalTensor<DTYPE>& bl1, uint32_t nOff, uint32_t kOff,
+                                     uint32_t curN, uint32_t curK);
+    __aicore__ inline void DoMmad(LocalTensor<L0cT>& cl0, LocalTensor<DTYPE>& al0, LocalTensor<DTYPE>& bl0,
+                                  uint32_t curM, uint32_t curN, uint32_t curK, bool isFirst, bool useBias);
+    __aicore__ inline void DoCopyOut(LocalTensor<L0cT>& cl0, uint32_t mGlobal, uint32_t nStart, uint32_t curM,
+                                     uint32_t curN, uint32_t mAligned);
+
+    DwTiling t_{};
+
+    bool coreActive_ = false;
+    bool isVec0_ = false;
+    uint32_t batchIdx_, groupIdx_, mIdxStart_, actualM_, enlargeActual_;
+    uint32_t cinAligned_, orgWin_, orgWo_;
+    uint64_t fmBatchStride_, outBatchStride_, fmGroupOff_, filterGroupOff_, outGroupOff_, biasGroupOff_;
+    uint32_t hiLoadStart_, curHiLoadL1_, padTopL1_, padBottomL1_;
+    uint32_t nzBufElems_, kTotal_, kUbSize_;
+    uint32_t vecId_;
+    uint16_t l0cPP = 0;
+
+    uint32_t al1HalfSize_;
+    uint32_t bl1BaseBytes_;
+    uint32_t bl1HalfBytes_;
+
+    uint32_t ubNdOffBytes_;
+    uint32_t ubNzOffBytes_;
+    uint32_t ubIndexOffBytes_;
+
+    uint32_t biasL1OffBytes_;
+    bool enableBias_;
+
+    uint64_t load3dXt_;
+    uint64_t load3dXmTmp_;
+
+    GlobalTensor<DTYPE> fmapGm_;
+    GlobalTensor<DTYPE> filterGm_;
+    GlobalTensor<DTYPE> biasGm_;
+    GlobalTensor<DTYPE> outputGm_;
+
+    GM_ADDR rawX_;
+    GM_ADDR rawFilter_;
+    GM_ADDR rawBias_;
+    GM_ADDR rawY_;
+};
+
+template <typename DTYPE, uint8_t L1_PINGPONG>
+__aicore__ inline void DepthwiseConv2dKernel<DTYPE, L1_PINGPONG>::Init(GM_ADDR x, GM_ADDR filter, GM_ADDR bias,
+                                                                      GM_ADDR y, const DwTiling& tiling)
+{
+    t_ = tiling;
+    const DwTiling& t = t_;
+    uint32_t blockIdx;
+    if ASCEND_IS_AIV {
+        int64_t taskRation = GetTaskRation();
+        int64_t rawIdx = GetBlockIdx();
+        blockIdx = static_cast<uint32_t>(rawIdx / taskRation);
+        isVec0_ = (rawIdx % taskRation == 0);
+        vecId_ = static_cast<uint32_t>(rawIdx % taskRation);
+    } else {
+        blockIdx = GetBlockIdx();
+        vecId_ = 0;
+    }
+    if (blockIdx >= t.blockDim) {
+        coreActive_ = false;
+        return;
+    }
+
+    const uint32_t groupTimesHo = t.groupDim * t.hoDim;
+    batchIdx_ = blockIdx / groupTimesHo;
+    uint32_t rem = blockIdx % groupTimesHo;
+    uint32_t groupBlockIdx = rem / t.hoDim;
+    groupIdx_ = groupBlockIdx * t.singleCoreGroupOpt;
+    uint32_t mDimIdx = rem % t.hoDim;
+
+    if (batchIdx_ >= t.batchDim || groupIdx_ >= t.groupOpt) {
+        coreActive_ = false;
+        return;
+    }
+
+    const uint32_t totalM = static_cast<uint32_t>(t.hout * t.wout);
+    const uint32_t maxMPerCore = t.maxMPerCore;
+    mIdxStart_ = mDimIdx * maxMPerCore;
+    if (mIdxStart_ >= totalM) {
+        coreActive_ = false;
+        return;
+    }
+    actualM_ = maxMPerCore;
+    if (mIdxStart_ + actualM_ > totalM)
+        actualM_ = totalM - mIdxStart_;
+
+    coreActive_ = true;
+    cinAligned_ = GAlignUp(t.cinOpt, K0_VAL);
+    orgWin_ = static_cast<uint32_t>(t.win);
+    orgWo_ = static_cast<uint32_t>(t.wout);
+    rawX_ = x;
+    rawFilter_ = filter;
+    rawBias_ = bias;
+    rawY_ = y;
+
+    const uint64_t hwIn = static_cast<uint64_t>(t.hin) * t.win;
+    const uint64_t hwOut = static_cast<uint64_t>(t.hout) * t.wout;
+    fmBatchStride_ = t.cin * hwIn;
+    outBatchStride_ = t.cout * hwOut;
+
+    const uint32_t khkw = t.kh * t.kw;
+    kUbSize_ = cinAligned_ * khkw;
+    kTotal_ = kUbSize_;
+    uint32_t K1 = GCeilDiv(kTotal_, K0_VAL);
+    uint32_t N1 = GCeilDiv(t.coutOpt, GN0);
+    nzBufElems_ = K1 * N1 * GN0 * K0_VAL;
+
+    // L1 buffers: AIC and AIV allocate in the same order and size so the two
+    // sides agree on addresses without exchanging them.
+    uint32_t al1Size = t.al1HalfSize;
+    al1HalfSize_ = al1Size;
+    const uint32_t al1BufCount = AL1_PINGPONG ? 2 : 1;
+    bl1BaseBytes_ = al1BufCount * al1Size * sizeof(DTYPE);
+    bl1HalfBytes_ = nzBufElems_ * sizeof(DTYPE);
+
+    const uint32_t bl1BufCount = BL1_PINGPONG ? 2 : 1;
+    uint32_t afterBl1 = bl1BaseBytes_ + bl1BufCount * bl1HalfBytes_;
+    biasL1OffBytes_ = GAlignUp(afterBl1, BLOCK_BYTES);
+    enableBias_ = (t.hasBias != 0);
+
+    if (t.hf32Enable) {
+        SetHF32Mode(t.hf32Enable);
+        SetHF32TransMode(t.hf32TransMode);
+    } else {
+        SetHF32Mode(0);
+        SetHF32TransMode(0);
+    }
+
+    // CTRL[48]=1: IEEE inf/nan mode (0 = saturated). Matches AscendCUtils::SetOverflow(1).
+    set_ctrl(sbitset1(get_ctrl(), CTRL_48_BIT));
+
+    if ASCEND_IS_AIV {
+        ubNdOffBytes_ = 0;
+        ubNzOffBytes_ = nzBufElems_ * sizeof(DTYPE);
+        ubIndexOffBytes_ = ubNzOffBytes_ + nzBufElems_ * sizeof(DTYPE);
+    }
+}
+
+template <typename DTYPE, uint8_t L1_PINGPONG>
+__aicore__ inline void DepthwiseConv2dKernel<DTYPE, L1_PINGPONG>::SetupGroup(uint32_t g)
+{
+    const DwTiling& t = t_;
+    enlargeActual_ = (g == t.groupOpt - 1 && t.enlargeTail != 0) ? t.enlargeTail : t.enlarge;
+
+    const uint64_t hwIn = static_cast<uint64_t>(t.hin) * t.win;
+    const uint64_t hwOut = static_cast<uint64_t>(t.hout) * t.wout;
+    const uint32_t khkw = t.kh * t.kw;
+
+    fmGroupOff_ = static_cast<uint64_t>(g) * t.cinOpt * hwIn;
+    filterGroupOff_ = static_cast<uint64_t>(g) * t.enlarge * G_C_PER_GROUP * G_C_PER_GROUP * khkw;
+    outGroupOff_ = static_cast<uint64_t>(g) * t.coutOpt * hwOut;
+    biasGroupOff_ = static_cast<uint64_t>(g) * t.coutOpt;
+
+    uint32_t compactChunkSize = enlargeActual_ * G_C_PER_GROUP * G_C_PER_GROUP * khkw;
+    filterGm_.SetGlobalBuffer(reinterpret_cast<__gm__ DTYPE*>(rawFilter_) + filterGroupOff_, compactChunkSize);
+    biasGm_.SetGlobalBuffer(reinterpret_cast<__gm__ DTYPE*>(rawBias_) + biasGroupOff_, t.coutOpt);
+
+    uint32_t actualCin = enlargeActual_ * G_C_PER_GROUP;
+    cinAligned_ = GAlignUp(actualCin, K0_VAL);
+    kTotal_ = cinAligned_ * khkw;
+    kUbSize_ = kTotal_;
+}
+
+template <typename DTYPE, uint8_t L1_PINGPONG>
+__aicore__ inline void DepthwiseConv2dKernel<DTYPE, L1_PINGPONG>::Process()
+{
+    const DwTiling& t = t_;
+    if (!coreActive_)
+        return;
+
+    const uint32_t singleGroupOpt = t.singleCoreGroupOpt;
+
+    if ASCEND_IS_AIV {
+        // BL1 single buffer: vec1 has nowhere to stage a group, so vec0 walks
+        // all groups serially.
+        if constexpr (!BL1_PINGPONG) {
+            if (vecId_ != 0)
+                return;
+        }
+
+        constexpr uint8_t syncBase = 0;
+        constexpr uint8_t syncMte3Mte1 = syncBase + G_CV_SYNC_ID_MTE3_MTE1;
+        constexpr uint8_t syncMte1Mte3 = syncBase + G_CV_SYNC_ID_MTE1_MTE3;
+
+        for (uint32_t g = 0; g < singleGroupOpt; g++) {
+            if constexpr (BL1_PINGPONG) {
+                if (vecId_ != (g % G_NUM_AIV))
+                    continue;
+            }
+
+            uint32_t curGroup = groupIdx_ + g;
+            if (curGroup >= t.groupOpt)
+                break;
+            SetupGroup(curGroup);
+
+            uint32_t bl1Off = BL1_PINGPONG ? vecId_ * bl1HalfBytes_ : 0;
+            LocalTensor<DTYPE> bl1(TPosition::B1, bl1BaseBytes_ + bl1Off, nzBufElems_);
+
+            LocalTensor<DTYPE> ubNd(TPosition::VECIN, ubNdOffBytes_, nzBufElems_);
+            LocalTensor<DTYPE> ubNz(TPosition::VECIN, ubNzOffBytes_, nzBufElems_);
+            const uint32_t khkw = t.kh * t.kw;
+
+            Duplicate<DTYPE>(ubNd, static_cast<DTYPE>(0), nzBufElems_);
+
+            SetFlag<HardEvent::V_MTE2>(EVENT_ID0);
+            WaitFlag<HardEvent::V_MTE2>(EVENT_ID0);
+
+            const uint64_t srcKSize = G_C_PER_GROUP * khkw;
+            NdDmaParams<DTYPE, G_NDDMA_DIMS> copyParams;
+            copyParams.loopInfo.loopSize[G_NDDMA_LOOP0_INDEX] = static_cast<uint32_t>(srcKSize);
+            copyParams.loopInfo.loopSrcStride[G_NDDMA_LOOP0_INDEX] = 1;
+            copyParams.loopInfo.loopDstStride[G_NDDMA_LOOP0_INDEX] = 1;
+            copyParams.loopInfo.loopSize[G_NDDMA_LOOP1_INDEX] = G_C_PER_GROUP;
+            copyParams.loopInfo.loopSrcStride[G_NDDMA_LOOP1_INDEX] = srcKSize;
+            copyParams.loopInfo.loopDstStride[G_NDDMA_LOOP1_INDEX] = kUbSize_;
+            copyParams.loopInfo.loopSize[G_NDDMA_LOOP2_INDEX] = enlargeActual_;
+            copyParams.loopInfo.loopSrcStride[G_NDDMA_LOOP2_INDEX] = G_C_PER_GROUP * srcKSize;
+            copyParams.loopInfo.loopDstStride[G_NDDMA_LOOP2_INDEX] =
+                G_C_PER_GROUP * kUbSize_ + static_cast<uint32_t>(srcKSize);
+            DataCopy<DTYPE, G_NDDMA_DIMS, kDefaultMultiCopyConfig>(ubNd, filterGm_[0], copyParams);
+
+            SetFlag<HardEvent::MTE2_V>(EVENT_ID0);
+            WaitFlag<HardEvent::MTE2_V>(EVENT_ID0);
+
+            SetFlag<HardEvent::MTE3_V>(EVENT_ID0);
+            WaitFlag<HardEvent::MTE3_V>(EVENT_ID0);
+
+            Duplicate<DTYPE>(ubNz, static_cast<DTYPE>(0), nzBufElems_);
+            SetIndex();
+            TransNCHW2NZ();
+
+            SetFlag<HardEvent::V_MTE3>(EVENT_ID0);
+            WaitFlag<HardEvent::V_MTE3>(EVENT_ID0);
+
+            bool isFirstForThisVec = (g == vecId_);
+            if (!isFirstForThisVec) {
+                CrossCoreWaitFlag<G_CV_ENHANCE_MODE, PIPE_MTE3>(syncMte1Mte3);
+            }
+
+            const uint32_t co1Opt = (t.coutOpt + GN0 - 1) / GN0;
+            DataCopyParams nzCp;
+            nzCp.blockCount = static_cast<uint16_t>(kTotal_ / K0_VAL);
+            nzCp.blockLen = static_cast<uint16_t>(co1Opt * GN0 * K0_VAL * sizeof(DTYPE) / BLOCK_BYTES);
+            nzCp.srcStride = 0;
+            nzCp.dstStride = 0;
+            DataCopy(bl1, ubNz, nzCp);
+            CrossCoreSetFlag<G_CV_ENHANCE_MODE, PIPE_MTE3>(syncMte3Mte1);
+        }
+    }
+
+    if ASCEND_IS_AIC {
+        const uint64_t hwIn = static_cast<uint64_t>(t.hin) * t.win;
+        const uint64_t hwOut = static_cast<uint64_t>(t.hout) * t.wout;
+        const uint32_t batchCount = t.batchCount;
+        const uint32_t mAL1 = t.hoL1;
+        const uint32_t coutOpt = t.coutOpt;
+        const uint32_t cinOpt = t.cinOpt;
+        const uint32_t groupOpt = t.groupOpt;
+
+        SetFlag<HardEvent::MTE1_MTE2>(EVENT_ID0);
+        SetFlag<HardEvent::MTE1_MTE2>(EVENT_ID1);
+        SetFlag<HardEvent::M_MTE1>(EVENT_ID6);
+        SetFlag<HardEvent::M_MTE1>(EVENT_ID7);
+        SetFlag<HardEvent::FIX_M>(EVENT_ID0);
+        SetFlag<HardEvent::FIX_M>(EVENT_ID1);
+        if (enableBias_) {
+            SetFlag<HardEvent::MTE1_MTE2>(EVENT_ID2);
+            SetFlag<HardEvent::M_MTE1>(EVENT_ID3);
+        }
+
+        uint16_t al1PP = 0;
+        for (uint32_t g = 0; g < singleGroupOpt; g++) {
+            uint32_t curGroup = groupIdx_ + g;
+            if (curGroup >= groupOpt)
+                break;
+            SetupGroup(curGroup);
+
+            uint8_t aicSyncBase = BL1_PINGPONG ? (g % G_NUM_AIV) * G_CV_SYNC_STRIDE : 0;
+
+            uint32_t bl1Off = BL1_PINGPONG ? (g % G_NUM_AIV) * bl1HalfBytes_ : 0;
+            LocalTensor<DTYPE> bl1(TPosition::B1, bl1BaseBytes_ + bl1Off, nzBufElems_);
+
+            CrossCoreWaitFlag<G_CV_ENHANCE_MODE, PIPE_MTE1>(aicSyncBase);
+
+            for (uint32_t bIter = 0; bIter < batchCount; bIter++) {
+                uint32_t realBatch = batchIdx_ * batchCount + bIter;
+                if (realBatch >= t.batch)
+                    break;
+                uint64_t fmBase = static_cast<uint64_t>(realBatch) * fmBatchStride_ + fmGroupOff_;
+                uint64_t outBase = static_cast<uint64_t>(realBatch) * outBatchStride_ + outGroupOff_;
+                fmapGm_.SetGlobalBuffer(reinterpret_cast<__gm__ DTYPE*>(rawX_) + fmBase, cinOpt * hwIn);
+                outputGm_.SetGlobalBuffer(reinterpret_cast<__gm__ DTYPE*>(rawY_) + outBase, coutOpt * hwOut);
+
+                for (uint32_t mAL1Iter = 0; mAL1Iter < actualM_; mAL1Iter += mAL1) {
+                    uint32_t curMAL1 = mAL1;
+                    if (mAL1Iter + curMAL1 > actualM_)
+                        curMAL1 = actualM_ - mAL1Iter;
+                    uint32_t mGlobal = mIdxStart_ + mAL1Iter;
+                    uint16_t l1BufId = al1PP & 1;
+
+                    WaitFlag<HardEvent::MTE1_MTE2>(static_cast<event_t>(l1BufId));
+                    LoadAL1(l1BufId, mGlobal, curMAL1);
+                    WaitFlag<HardEvent::MTE2_MTE1>(static_cast<event_t>(l1BufId));
+
+                    LocalTensor<DTYPE> al1(TPosition::A1, l1BufId * al1HalfSize_ * sizeof(DTYPE), al1HalfSize_);
+                    uint32_t curNVal = (enlargeActual_ == t.enlarge) ? coutOpt : enlargeActual_;
+                    ComputeL0(al1, bl1, mGlobal, curMAL1, 0, curNVal, kTotal_);
+                    SetFlag<HardEvent::MTE1_MTE2>(static_cast<event_t>(l1BufId));
+                    if constexpr (AL1_PINGPONG) {
+                        al1PP++;
+                    }
+                }
+            }
+
+            const uint32_t isLastGroupOff = BL1_PINGPONG ? 2 : 1;
+            bool isLastGroup = (g >= singleGroupOpt - isLastGroupOff) || (groupIdx_ + g + 1 >= groupOpt);
+            if (!isLastGroup) {
+                CrossCoreSetFlag<G_CV_ENHANCE_MODE, PIPE_MTE1>(aicSyncBase + 1);
+            }
+        }
+
+        WaitFlag<HardEvent::MTE1_MTE2>(EVENT_ID0);
+        WaitFlag<HardEvent::MTE1_MTE2>(EVENT_ID1);
+        WaitFlag<HardEvent::M_MTE1>(EVENT_ID6);
+        WaitFlag<HardEvent::M_MTE1>(EVENT_ID7);
+        WaitFlag<HardEvent::FIX_M>(EVENT_ID0);
+        WaitFlag<HardEvent::FIX_M>(EVENT_ID1);
+        if (enableBias_) {
+            WaitFlag<HardEvent::M_MTE1>(EVENT_ID3);
+        }
+    }
+}
+
+template <typename DTYPE, uint8_t L1_PINGPONG>
+__aicore__ inline void DepthwiseConv2dKernel<DTYPE, L1_PINGPONG>::SetIndex()
+{
+    const DwTiling& t = t_;
+    LocalTensor<IndexT> indexTensor(TPosition::VECIN, ubIndexOffBytes_, G_REG_SIZE / sizeof(IndexT));
+    const uint32_t khkw = t.kh * t.kw;
+    IndexT curValue = 0;
+    for (uint8_t idx = 0; idx < K0_VAL; ++idx) {
+        indexTensor.SetValue(idx, curValue);
+        curValue += static_cast<IndexT>(khkw);
+    }
+
+    SetFlag<HardEvent::S_V>(EVENT_ID0);
+    WaitFlag<HardEvent::S_V>(EVENT_ID0);
+
+    __ubuf__ IndexT* indexAddr = (__ubuf__ IndexT*)indexTensor.GetPhyAddr();
+    constexpr uint16_t repeatTimes = static_cast<uint16_t>(G_REG_SIZE / sizeof(IndexT) / K0_VAL - 1);
+    uint8_t dstOffset = K0_VAL;
+    constexpr uint8_t elesPerRepeat = K0_VAL;
+    uint32_t maskL = K0_VAL; // UpdateMask takes a mutable reference
+    uint16_t nStride = static_cast<uint16_t>(kUbSize_);
+
+    __VEC_SCOPE__
+    {
+        Reg::RegTensor<IndexT> indexReg;
+        Reg::MaskReg maskReg = Reg::UpdateMask<IndexT>(maskL);
+        Reg::LoadAlign<IndexT>(indexReg, indexAddr);
+
+        for (uint16_t repeat = 0; repeat < repeatTimes; ++repeat) {
+            Reg::Adds<IndexT, IndexT>(indexReg, indexReg, nStride, maskReg);
+            Reg::StoreAlign<IndexT>(indexAddr + dstOffset, indexReg, maskReg);
+            dstOffset += elesPerRepeat;
+        }
+    }
+}
+
+template <typename DTYPE, uint8_t L1_PINGPONG>
+__aicore__ inline void DepthwiseConv2dKernel<DTYPE, L1_PINGPONG>::TransNCHW2NZ()
+{
+    const DwTiling& t = t_;
+    LocalTensor<DTYPE> ndTensor(TPosition::VECIN, ubNdOffBytes_, nzBufElems_);
+    LocalTensor<IndexT> indexTensor(TPosition::VECIN, ubIndexOffBytes_, G_REG_SIZE / sizeof(IndexT));
+
+    const uint32_t khkw = t.kh * t.kw;
+    const uint32_t co1Opt = (t.coutOpt + GN0 - 1) / GN0;
+    const uint32_t coOptAlign = co1Opt * GN0;
+    constexpr uint16_t coPerReg = GN0 / G_CO0_LOOP_TIMES;
+    uint16_t ciLoopTimes = GCeilDiv(cinAligned_, K0_VAL);
+    const uint16_t coLoopTimes = static_cast<uint16_t>(co1Opt * G_CO0_LOOP_TIMES);
+    const uint16_t khkwLoopTimes = static_cast<uint16_t>(khkw);
+    const uint32_t srcCiStride = khkw * K0_VAL;
+    uint32_t srcCoStride = coPerReg * kUbSize_;
+    const uint32_t dstCiStride = khkw * K0_VAL * coOptAlign;
+    const uint32_t dstKhKwStride = K0_VAL * coOptAlign;
+    const uint32_t dstCoStride = coPerReg * K0_VAL;
+
+    __VEC_SCOPE__
+    {
+        Reg::RegTensor<DTYPE> gatherReg;
+        Reg::RegTensor<IndexT> indexReg;
+        Reg::MaskReg gatherMaskReg = Reg::CreateMask<DTYPE, Reg::MaskPattern::ALL>();
+        Reg::MaskReg vstsMaskReg = Reg::CreateMask<DTYPE, Reg::MaskPattern::ALL>();
+
+        __ubuf__ DTYPE* srcAddr = (__ubuf__ DTYPE*)ndTensor.GetPhyAddr();
+        LocalTensor<DTYPE> nzTmp(TPosition::VECIN, ubNzOffBytes_, nzBufElems_);
+        __ubuf__ DTYPE* dstAddr = (__ubuf__ DTYPE*)nzTmp.GetPhyAddr();
+        __ubuf__ IndexT* indexAddr = (__ubuf__ IndexT*)indexTensor.GetPhyAddr();
+
+        Reg::LoadAlign<IndexT>(indexReg, indexAddr);
+
+        for (uint16_t ci1OptIndex = 0; ci1OptIndex < ciLoopTimes; ++ci1OptIndex) {
+            for (uint16_t khkwIndex = 0; khkwIndex < khkwLoopTimes; ++khkwIndex) {
+                for (uint16_t coOptIndex = 0; coOptIndex < coLoopTimes; ++coOptIndex) {
+                    uint32_t srcOffset = ci1OptIndex * srcCiStride + khkwIndex + coOptIndex * srcCoStride;
+                    uint32_t dstOffset =
+                        ci1OptIndex * dstCiStride + khkwIndex * dstKhKwStride + coOptIndex * dstCoStride;
+
+                    Reg::Gather<DTYPE, DTYPE, IndexT>(gatherReg, srcAddr + srcOffset, indexReg,
+                                                                   gatherMaskReg);
+
+                    Reg::StoreAlign<DTYPE>(dstAddr + dstOffset, (Reg::RegTensor<DTYPE>&)gatherReg, vstsMaskReg);
+                }
+            }
+        }
+    }
+}
+
+template <typename DTYPE, uint8_t L1_PINGPONG>
+__aicore__ inline void DepthwiseConv2dKernel<DTYPE, L1_PINGPONG>::LoadAL1(uint16_t l1BufId, uint32_t mGlobal,
+                                                                          uint32_t curMAL1)
+{
+    const DwTiling& t = t_;
+    uint32_t hoStart = mGlobal / orgWo_;
+    uint32_t hoEnd = (mGlobal + curMAL1 - 1) / orgWo_;
+    uint32_t hiStart = hoStart * t.strideH;
+    uint32_t hiEnd = hoEnd * t.strideH + t.dilationH * (t.kh - 1);
+    uint32_t hiTotal = hiEnd - hiStart + 1;
+    padTopL1_ = 0;
+    padBottomL1_ = 0;
+    curHiLoadL1_ = hiTotal;
+    if (hiStart < t.padTop) {
+        padTopL1_ = t.padTop - hiStart;
+        curHiLoadL1_ -= padTopL1_;
+        hiLoadStart_ = 0;
+    } else {
+        hiLoadStart_ = hiStart - t.padTop;
+    }
+    const uint32_t hinVal = static_cast<uint32_t>(t.hin);
+    if (hiEnd >= hinVal + t.padTop) {
+        padBottomL1_ = hiEnd - (hinVal + t.padTop) + 1;
+        curHiLoadL1_ -= padBottomL1_;
+    }
+
+    LocalTensor<DTYPE> al1Dst(TPosition::A1, l1BufId * al1HalfSize_ * sizeof(DTYPE), al1HalfSize_);
+    Dn2NzParams p;
+    p.dnNum = 1;
+    p.nValue = curHiLoadL1_ * orgWin_;
+    p.dValue = enlargeActual_ * G_C_PER_GROUP;
+    p.srcDnMatrixStride = 0;
+    p.srcDValue = static_cast<uint32_t>(t.hin * t.win);
+    p.dstNzC0Stride = curHiLoadL1_ * orgWin_;
+    p.dstNzNStride = 1;
+    p.dstNzMatrixStride = 0;
+    uint64_t gmOff = static_cast<uint64_t>(hiLoadStart_) * t.win;
+    DataCopy(al1Dst, fmapGm_[gmOff], p);
+    SetFlag<HardEvent::MTE2_MTE1>(static_cast<event_t>(l1BufId));
+
+    uint8_t padList[G_LOAD3D_PAD_DIMS] = {(uint8_t)t.padLeft, (uint8_t)t.padRight, (uint8_t)padTopL1_,
+                                          G_LOAD3D_NO_BOTTOM_PAD};
+    Load3DSetFMatrixCal(curHiLoadL1_, orgWin_, padList);
+    Load3DSetPaddingCal(0);
+
+    load3dXt_ = ((static_cast<uint64_t>(t.strideW) & G_MASK_6) << 0) |
+                ((static_cast<uint64_t>(t.kw) & G_MASK_8) << G_KERNELW_OFFSET) |
+                ((static_cast<uint64_t>(t.kh) & G_MASK_8) << G_KERNELH_OFFSET) |
+                ((static_cast<uint64_t>(t.strideH) & G_MASK_6) << G_STRIDEH_OFFSET) |
+                ((static_cast<uint64_t>(t.kw) & G_NINTH_BIT_MASK) << G_KERNELW_HIGHEST_BIT_OFFSET) |
+                ((static_cast<uint64_t>(t.kh) & G_NINTH_BIT_MASK) << G_KERNELH_HIGHEST_BIT_OFFSET) |
+                ((static_cast<uint64_t>(t.dilationW) & G_MASK_8) << G_DILATIONW_OFFSET) |
+                ((static_cast<uint64_t>(t.dilationH) & G_MASK_8) << G_DILATIONH_OFFSET) |
+                ((static_cast<uint64_t>(cinAligned_) & G_MASK_16) << G_CIN_OFFSET);
+}
+
+template <typename DTYPE, uint8_t L1_PINGPONG>
+__aicore__ inline void DepthwiseConv2dKernel<DTYPE, L1_PINGPONG>::ComputeL0(LocalTensor<DTYPE>& al1,
+                                                                            LocalTensor<DTYPE>& bl1, uint32_t mGlobal,
+                                                                            uint32_t curMAL1, uint32_t nIter,
+                                                                            uint32_t curN, uint32_t kTotal)
+{
+    const DwTiling& t = t_;
+    const uint32_t mL0 = t.hoL0;
+    const uint32_t kL0 = t.kL0;
+    const uint32_t nL0 = t.nL0;
+    const uint32_t dilH = t.dilationH;
+    const uint32_t strH = t.strideH;
+
+    const uint32_t dilatedKH = (t.kh - 1) * dilH + 1;
+    const uint32_t virtualH = padTopL1_ + curHiLoadL1_ + padBottomL1_;
+    const uint32_t hoLocal = (virtualH >= dilatedKH) ? (virtualH - dilatedKH) / strH + 1 : 0;
+    const uint32_t woLocal = t.woLocal;
+    const uint32_t maxLocalM = hoLocal * woLocal;
+
+    uint16_t pingPongFlag = 0;
+    constexpr uint32_t L0C_HALF = G_L0C_HALF_BYTES;
+
+    // Bias: GM->L1 (MTE2) then L1->C2 (MTE1). The bias table feeds Mmad's
+    // C-matrix init, so it must land before the first K step.
+    if (enableBias_) {
+        constexpr uint32_t BT_SIZE = 64;
+        uint32_t btElemNum = GAlignUp(curN * sizeof(float), BT_SIZE) / sizeof(float);
+
+        uint64_t biasByteNum = curN * sizeof(DTYPE);
+        LocalTensor<DTYPE> biasL1(TPosition::A1, biasL1OffBytes_, t.coutOpt);
+        InitConstValueParams<DTYPE> initParams(
+            1, static_cast<uint16_t>(GAlignUp(curN, GN0) * sizeof(DTYPE) / BLOCK_BYTES), 0, 0);
+        WaitFlag<HardEvent::MTE1_MTE2>(EVENT_ID2);
+        InitConstValue<DTYPE>(biasL1, initParams);
+        PipeBarrier<PIPE_MTE2>();
+        DataCopyParams biasCp(1, biasByteNum, 0, 0);
+        uint8_t rightPadding =
+            (uint8_t)(GAlignUp(static_cast<uint32_t>(biasByteNum), BLOCK_BYTES) / sizeof(DTYPE) - curN);
+        DataCopyPadParams padParams(true, 0, rightPadding, 0);
+        DataCopyPad<DTYPE>(biasL1, biasGm_[0], biasCp, padParams);
+        SetFlag<HardEvent::MTE2_MTE1>(EVENT_ID2);
+        WaitFlag<HardEvent::MTE2_MTE1>(EVENT_ID2);
+
+        WaitFlag<HardEvent::M_MTE1>(EVENT_ID3);
+        LocalTensor<L0cT> biasBT(TPosition::C2, 0, btElemNum);
+        uint32_t blkCnt = GAlignUp(curN, GN0) * sizeof(DTYPE) / BLOCK_BYTES;
+        DataCopyParams cp(1, blkCnt, 0, 0);
+        DataCopy(biasBT, biasL1[nIter], cp);
+        SetFlag<HardEvent::MTE1_MTE2>(EVENT_ID2);
+        SetFlag<HardEvent::MTE1_M>(EVENT_ID3);
+        WaitFlag<HardEvent::MTE1_M>(EVENT_ID3);
+    }
+
+    for (uint32_t mL0It = 0; mL0It < curMAL1; mL0It += mL0) {
+        uint32_t curML0 = mL0;
+        if (mL0It + curML0 > curMAL1)
+            curML0 = curMAL1 - mL0It;
+        uint32_t curML0Align = GAlignUp(curML0, GM0);
+        uint32_t mL0Pos = mL0It + (mGlobal % orgWo_);
+        uint32_t safeMAlign = curML0Align;
+        if (mL0Pos + safeMAlign > maxLocalM && maxLocalM > mL0Pos) {
+            safeMAlign = GAlignUp(maxLocalM - mL0Pos, GM0);
+            if (safeMAlign < GM0)
+                safeMAlign = GM0;
+        }
+        uint32_t loadMValue = safeMAlign;
+        if (mL0Pos + safeMAlign > maxLocalM && maxLocalM > mL0Pos) {
+            loadMValue = maxLocalM - mL0Pos;
+        }
+
+        LoadDataRepeatParamWithStride repeatParams = {0, 1, 0, static_cast<uint16_t>(safeMAlign / GM0)};
+        SetLoadDataRepeatWithStride(repeatParams);
+        load3dXmTmp_ = ((static_cast<uint64_t>(loadMValue) & G_MASK_16) << G_MSTEP_OFFSET) |
+                       ((static_cast<uint64_t>(mL0Pos) & G_MASK_16) << G_POSM_OFFSET);
+
+        for (uint32_t nL0It = 0; nL0It < curN; nL0It += nL0) {
+            uint32_t curNL0 = nL0;
+            if (nL0It + curNL0 > curN)
+                curNL0 = curN - nL0It;
+
+            uint16_t cl0BufId = l0cPP & 1;
+            WaitFlag<HardEvent::FIX_M>(static_cast<event_t>(cl0BufId));
+            LocalTensor<L0cT> cl0(TPosition::CO1, cl0BufId * L0C_HALF, L0C_HALF / sizeof(float));
+
+            for (uint32_t kIt = 0; kIt < kTotal; kIt += kL0) {
+                uint32_t curK = kL0;
+                if (kIt + curK > kTotal)
+                    curK = kTotal - kIt;
+
+                constexpr uint32_t L0A_HALF = G_L0A_HALF_BYTES;
+                constexpr uint32_t L0B_HALF = G_L0B_HALF_BYTES;
+                LocalTensor<DTYPE> al0(TPosition::A2, pingPongFlag * L0A_HALF, L0A_HALF / sizeof(DTYPE));
+                LocalTensor<DTYPE> bl0(TPosition::B2, pingPongFlag * L0B_HALF, L0B_HALF / sizeof(DTYPE));
+
+                uint16_t mte1Flag = pingPongFlag + G_MTE1_EVENT_BASE;
+                WaitFlag<HardEvent::M_MTE1>(static_cast<event_t>(mte1Flag));
+
+                DoLoadAL0(al1, al0, mL0Pos, kIt, loadMValue, safeMAlign, curK);
+                DoLoadBL0(bl0, bl1, nL0It, kIt, curNL0, curK);
+
+                SetFlag<HardEvent::MTE1_M>(static_cast<event_t>(mte1Flag));
+                WaitFlag<HardEvent::MTE1_M>(static_cast<event_t>(mte1Flag));
+
+                bool isFirstK = (kIt == 0);
+                bool useBias = isFirstK && enableBias_;
+                DoMmad(cl0, al0, bl0, safeMAlign, curNL0, curK, isFirstK, useBias);
+
+                SetFlag<HardEvent::M_MTE1>(static_cast<event_t>(mte1Flag));
+                pingPongFlag ^= 1;
+            }
+
+            SetFlag<HardEvent::M_FIX>(static_cast<event_t>(cl0BufId));
+            WaitFlag<HardEvent::M_FIX>(static_cast<event_t>(cl0BufId));
+            DoCopyOut(cl0, mGlobal + mL0It, nIter + nL0It, curML0, curNL0, safeMAlign);
+            SetFlag<HardEvent::FIX_M>(static_cast<event_t>(cl0BufId));
+            l0cPP++;
+        }
+    }
+    if (enableBias_) {
+        SetFlag<HardEvent::M_MTE1>(EVENT_ID3);
+    }
+}
+
+template <typename DTYPE, uint8_t L1_PINGPONG>
+__aicore__ inline void DepthwiseConv2dKernel<DTYPE, L1_PINGPONG>::DoLoadAL0(LocalTensor<DTYPE>& al1,
+                                                                            LocalTensor<DTYPE>& al0, uint32_t posM,
+                                                                            uint32_t kOff, uint32_t mVal,
+                                                                            uint32_t mAlign, uint32_t curK)
+{
+    uint64_t posK = kOff;
+    uint64_t xm = static_cast<uint64_t>(curK) | (posK << G_POSK_OFFSET) | load3dXmTmp_;
+    Load3DBitModeParam param;
+    param.SetConfig0(xm);
+    param.SetConfig1(load3dXt_);
+    LoadData<TPosition::A2, TPosition::A1, DTYPE>(al0, al1, param);
+}
+
+template <typename DTYPE, uint8_t L1_PINGPONG>
+__aicore__ inline void DepthwiseConv2dKernel<DTYPE, L1_PINGPONG>::DoLoadBL0(LocalTensor<DTYPE>& bl0,
+                                                                            LocalTensor<DTYPE>& bl1, uint32_t nOff,
+                                                                            uint32_t kOff, uint32_t curN,
+                                                                            uint32_t curK)
+{
+    const DwTiling& t = t_;
+    uint32_t kStep = GCeilDiv(curK, K0_VAL);
+    uint32_t mStep = GCeilDiv(curN, GN0);
+    Load2DBitModeParam param;
+    param.SetMStartPosition(nOff / GN0);
+    param.SetKStartPosition(kOff / K0_VAL);
+    param.SetMStep(static_cast<uint16_t>(mStep));
+    param.SetKStep(static_cast<uint16_t>(kStep));
+    param.SetSrcStride(static_cast<int32_t>((t.coutOpt + GN0 - 1) / GN0));
+    param.SetDstStride(static_cast<uint16_t>(mStep));
+    param.SetIfTranspose(false);
+    LoadData<TPosition::B2, TPosition::B1, DTYPE>(bl0, bl1, param);
+}
+
+template <typename DTYPE, uint8_t L1_PINGPONG>
+__aicore__ inline void DepthwiseConv2dKernel<DTYPE, L1_PINGPONG>::DoMmad(LocalTensor<L0cT>& cl0,
+                                                                         LocalTensor<DTYPE>& al0,
+                                                                         LocalTensor<DTYPE>& bl0, uint32_t curM,
+                                                                         uint32_t curN, uint32_t curK, bool isFirst,
+                                                                         bool useBias)
+{
+    MmadParams mp;
+    mp.m = curM;
+    mp.n = curN;
+    mp.k = curK;
+    mp.cmatrixInitVal = isFirst && !useBias;
+    mp.cmatrixSource = isFirst && useBias;
+    mp.unitFlag = false;
+    Mmad(cl0, al0, bl0, mp);
+}
+
+template <typename DTYPE, uint8_t L1_PINGPONG>
+__aicore__ inline void DepthwiseConv2dKernel<DTYPE, L1_PINGPONG>::DoCopyOut(LocalTensor<L0cT>& cl0, uint32_t mGlobal,
+                                                                            uint32_t nStart, uint32_t curM,
+                                                                            uint32_t curN, uint32_t mAligned)
+{
+    const DwTiling& t = t_;
+    const uint64_t hwOut = static_cast<uint64_t>(t.hout) * t.wout;
+    uint64_t outOff = static_cast<uint64_t>(nStart) * hwOut + mGlobal;
+    FixpipeParamsC310<CO2Layout::COLUMN_MAJOR> fp;
+    fp.nSize = curN;
+    fp.mSize = curM;
+    fp.srcStride = mAligned;
+    fp.dstStride = static_cast<uint32_t>(hwOut);
+    fp.quantPre = DwQuant<DTYPE>::value;
+    fp.deqScalar = FP32_ONE_BITS;
+    fp.reluEn = false;
+    fp.params.dnNum = 1;
+    fp.params.srcNzMatrixStride = (curN + GN0 - 1) / GN0 * (GAlignUp(curM, GN0) / GN0);
+    fp.params.dstDnMatrixStride = hwOut;
+    fp.params.srcNzC0Stride = 1;
+    Fixpipe<DTYPE, L0cT, CFG_COLUMN_MAJOR>(outputGm_[outOff], cl0, fp);
+}
+
+} // namespace dwconv2d
+
+#endif

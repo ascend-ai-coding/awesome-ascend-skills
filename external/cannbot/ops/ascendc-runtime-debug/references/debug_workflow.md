@@ -177,10 +177,16 @@ ACLNN_ERR_INNER_OPP_KERNEL_PKG_NOT_FOUND
 507035 向量核异常
     │
     ├─ 高置信度
-    │   └─ DataCopyPad 参数非 32B 对齐
-    │       ├─ blockLen 非 32B 对齐 → 向上对齐到 32 字节倍数
-    │       ├─ xRow 偏移量非 32B 对齐 → 确保起始地址 32B 对齐
-    │       └─ 动态 chunk 大小非 32B 对齐 → Host 侧对齐计算
+    │   ├─ UB 端起始地址非 32B 对齐
+    │   │   ├─ DataCopy/DataCopyPad 的 UB 侧地址（含子张量偏移）→ 确保起始地址 32B 对齐
+    │   │   ├─ VEC 计算指令 (Add/Muls/Duplicate 等) 操作数起始地址非 32B 对齐 → 检查子张量偏移
+    │   │   └─ 动态 chunk 大小非 32B 对齐 → Host 侧对齐计算
+    │   └─ DataCopyPad 填充参数违规（padParams 仅 GM→UB 方向存在）
+    │       └─ leftPadding/rightPadding 所占字节数超过 32 → 检查 padParams
+    │
+    │   注意: blockLen 无 32B 对齐要求（DataCopyPad 支持非对齐搬运，
+    │   blockLen 只需为 sizeof(T) 的整数倍、单位为字节；DataCopy 的
+    │   count 形式非对齐时是静默向下取整，不触发 507035）
     │
     ├─ 中置信度
     │   └─ UB 溢出 / Buffer 冲突
@@ -213,17 +219,30 @@ ACLNN_ERR_INNER_OPP_KERNEL_PKG_NOT_FOUND
 **Step 2: 检查 DataCopyPad 参数**
 
 ```cpp
-// DataCopyPad 的 blockLen 必须 32B 对齐
-// FP16/BF16: blockLen 必须是 16 的倍数 (16*2=32B)
-// FP32: blockLen 必须是 8 的倍数 (8*4=32B)
+// 约束（依据官方 API 文档）：
+// - blockLen ∈ [0, 2097151]，单位为字节，只需是 sizeof(T) 的整数倍，
+//   直接传有效数据长度，禁止向上对齐（多搬数据会导致越界/数据错误）
+// - 真正的 32B 对齐约束在地址上：
+//   GM→UB: dst(UB) 起始地址必须 32B 对齐，src(GM) 1B 对齐即可
+//   UB→GM: src(UB) 起始地址必须 32B 对齐，dst(GM) 无对齐约束
+// - padParams（DataCopyPadExtParams）仅 GM→UB 方向有效，
+//   leftPadding/rightPadding 所占字节数均不能超过 32B
+// - stride 单位取决于所在侧：GM 侧为字节，UB 侧为 dataBlock(32B)
+//   GM→UB 时 srcStride=字节、dstStride=dataBlock，UB→GM 时相反
+// - 与 DataCopy（连续搬运）区分：DataCopy 的 count*sizeof(T) 须 32B 对齐
+//   （非对齐静默向下取整），且 GM 侧地址须按 sizeof(T) 对齐
 
-// ❌ 错误：blockLen=9 for FP32 → 9*4=36B，非 32B 对齐
-DataCopyPad(dst, src, {1, 1, static_cast<uint32_t>(innerDim), 0});
+// GM→UB（4 参数，含 padParams）：
+// ❌ 错误：blockLen 传了元素个数（单位应为字节）
+DataCopyPad(xLocal, xGm, {1, 1, static_cast<uint32_t>(innerDim), 0, 0}, padParams);
 
-// ✅ 正确：blockLen 向上对齐到 32B 倍数
-uint32_t alignElements = (32 / sizeof(dtype));
-uint32_t alignedBlockLen = ((innerDim + alignElements - 1) / alignElements) * alignElements;
-DataCopyPad(dst, src, {1, 1, alignedBlockLen, 0});
+// ✅ 正确：blockLen 传有效字节数（可非 32B 对齐），UB 行偏移另行对齐
+uint32_t validBytes = innerDim * sizeof(T);  // 有效长度，不向上取整
+DataCopyPad(xLocal, xGm, {1, 1, validBytes, 0, 0}, padParams);
+// 若 xLocal 为 UB 子张量，其偏移须 32B 对齐（见 Step 3）
+
+// UB→GM（3 参数，无 padParams；读 UB 时硬件补 dummy，写 GM 时自动丢弃）：
+DataCopyPad(yGm, yLocal, {1, 1, validBytes, 0, 0});
 ```
 
 **Step 3: 检查 UB 子张量偏移**
@@ -252,11 +271,12 @@ uint32_t testTileRows = 1;  // 最小测试
 #### 内置检查清单
 
 遇到 507035 时按顺序检查：
-1. [ ] DataCopyPad 的 blockLen 是 32B 的倍数吗？
-2. [ ] UB 子张量 `Get(offset)` 的 offset * sizeof(T) 是 32B 的倍数吗？
-3. [ ] 动态 chunk 大小 (chunkA0, tileRows 等) 的对齐计算在 Host 侧做了吗？
-4. [ ] tmpBuf 大小是否使用了官方 API (`GetReduceMaxMaxMinTmpSize`) 而非手动估算？
-5. [ ] 总 UB 使用量 < UB 容量限制吗？
+1. [ ] DataCopy/DataCopyPad 的 UB 端起始地址（含 `Get(offset)` 子张量偏移，offset * sizeof(T)）是 32B 的倍数吗？
+2. [ ] VEC 计算指令 (Add/Muls/Duplicate/Cast 等) 的操作数起始地址是 32B 对齐的吗？
+3. [ ] DataCopyPad 的 blockLen 是 sizeof(T) 的整数倍、单位为字节、传有效长度吗？（GM→UB）leftPadding/rightPadding ≤ 32B 吗？
+4. [ ] 动态 chunk 大小 (chunkA0, tileRows 等) 的对齐计算在 Host 侧做了吗？
+5. [ ] tmpBuf 大小是否使用了官方 API (`GetReduceMaxMaxMinTmpSize`) 而非手动估算？
+6. [ ] 总 UB 使用量 < UB 容量限制吗？
 
 ### 流程4：环境检查
 

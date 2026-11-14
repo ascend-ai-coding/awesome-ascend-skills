@@ -1,0 +1,46 @@
+# -----------------------------------------------------------------------------------------------------------
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+# -----------------------------------------------------------------------------------------------------------
+
+# ========== 说明 ==========
+
+# 本文件用于架构子目录（如 arch32）的测试编译配置
+# 如果测试在架构子目录下，需要创建此 CMakeLists.txt
+
+# ========== 使用方法 ==========
+
+# 1. 将此文件复制到 {算子目录}/tests/ut/op_host/arch32/CMakeLists.txt
+# 2. 如果有多个架构（arch32, arch33），每个架构目录都需要独立的 CMakeLists.txt
+# 3. UT_NAME 使用 OP_TILING_MODULE_NAME（Tiling 测试）或相应的模块名
+# 4. MODE 通常为 PRIVATE
+
+# ========== 模板内容 ==========
+
+if(UT_TEST_ALL OR OP_HOST_UT)
+    add_modules_ut_sources(UT_NAME ${OP_TILING_MODULE_NAME} MODE PRIVATE DIR ${CMAKE_CURRENT_SOURCE_DIR})
+endif()
+
+# ========== 示例（如果需要特定配置）==========
+
+# 示例1：仅编译特定架构的测试
+# if(UT_TEST_ALL OR OP_HOST_UT_ARCH32)
+#     add_modules_ut_sources(UT_NAME ${OP_TILING_MODULE_NAME} MODE PRIVATE DIR ${CMAKE_CURRENT_SOURCE_DIR})
+# endif()
+
+# 示例2：包含多个模块的测试
+# if(UT_TEST_ALL OR OP_HOST_UT)
+#     add_modules_ut_sources(UT_NAME ${OP_TILING_MODULE_NAME} MODE PRIVATE DIR ${CMAKE_CURRENT_SOURCE_DIR})
+#     add_modules_ut_sources(UT_NAME ${OP_INFERSHAPE_MODULE_NAME} MODE PRIVATE DIR ${CMAKE_CURRENT_SOURCE_DIR})
+# endif()
+
+# ========== 注意事项 ==========
+
+# 1. 确保父目录的 CMakeLists.txt 正确配置了测试目录
+# 2. CSV 文件会被自动复制到编译目录（通过 CMake 的文件复制机制）
+# 3. 如果 CSV 文件不在当前目录，需要在父目录的 CMakeLists.txt 中配置文件复制

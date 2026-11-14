@@ -1,0 +1,24 @@
+strategy_id: P136
+description: SSM 中间量 bf16 量化适用性检查 — 三阶段 chunk-scan 已落地，但中间量以 fp32 存/状态每 chunk 搬 GM（UB 压力大）。
+
+checks:
+  - id: has_ssm_intermediates
+    type: grep_count
+    pattern: "v_beta|q_prime|attn_1|k_cumdecay|kg|v_new|attn_inter|state|chunk"
+    files: [kernel, header, model]
+    expected: ">= 1"
+    fail_msg: "未检测到 SSM 中间量/状态证据 → 可能不是三阶段 chunk-scan 算子，需确认。"
+
+  - id: has_fp32_intermediates
+    type: grep_count
+    pattern: "float |float32|fp32|float\\b"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未检测到 fp32 中间量 → 可能已 bf16 量化，跳过 P136 或检查其余中间量。"
+
+  - id: state_not_resident
+    type: grep_count
+    pattern: "CopyIn.*state|CopyOut.*state|state.*Gm|Gm.*state|state.*Copy"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未检测到状态每 chunk 搬移 → 可能已 UB 常驻，跳过该子项。"

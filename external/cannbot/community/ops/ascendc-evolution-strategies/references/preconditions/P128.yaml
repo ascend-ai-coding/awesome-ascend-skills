@@ -1,0 +1,41 @@
+strategy_id: P128
+description: FP32-via-BF16 Hi/Lo 3-GEMM 适用性检查 — 算子为 fp32 输入的 GEMM 类计算（conv/matmul），且当前 fp32 被困在 Vector/标量路径。
+
+strategy_meta:
+  id: "P128"
+  slug: "P128_fp32_via_bf16_hilo_3gemm"
+  title: "P128: FP32-via-BF16 Hi/Lo 拆分 3-GEMM（Cube 不吃 fp32 时的保精度路径）"
+  bottlenecks: [compute_bound]
+  op_families: [matmul, special]
+  conflicts_with: []
+  synergizes_with: [P129, P130, D1]
+  requires: []
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p128_fp32_via_bf16_hilo_3gemm.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p128_fp32_via_bf16_hilo_3gemm.md"
+  playbook_slug: "P128_fp32_via_bf16_hilo_3gemm"
+checks:
+  - id: has_fp32_compute
+    type: grep_count
+    pattern: "float|fp32|DTYPE_FLOAT"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "无 fp32 数据通路 → P128 不适用。"
+
+  - id: is_gemm_like
+    type: grep_count
+    pattern: "Mmad|Matmul|im2col|conv|ReduceSum"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "非 GEMM 类计算 → P128 不适用。"
+
+  - id: no_cube_fp16_path
+    type: grep_count
+    pattern: "Mmad|MatmulImpl|LoadData.*L0"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "已使用 Cube 路径 → P128 主要价值已发挥。"
