@@ -11,7 +11,7 @@ description: 使用 ATK 验证 PyTorch 和 TorchNPU 算子，复跑失败用例�
 
 1. 填写算子、环境和验收依据。单个 API 提供调用参数即可，批量任务可使用现有算子清单。[任务示例](assets/task-example.json)
 2. 按所用标准确认版本、算子类别、等级和覆盖要求。用 profile 形状构造的输入记为 `model_shape`，采集到的实际张量记为 `model_dump`。[精度与用例](references/precision.md)
-3. 在获准且空闲的设备上运行 ATK 小样，核对节点角色和报告，再执行测试。运行失败时保留单例配置、输入和原始日志，复跑后核对失败现象。[ATK 执行与复现](references/atk.md)
+3. 在获准且空闲的设备上测试。先用 ATK 小样核对节点角色和报告。运行失败时保留单例配置、输入和原始日志，复跑后核对失败现象。[ATK 执行与复现](references/atk.md)
 4. 功能和精度可共用一次执行的证据。内存、性能和确定性各自采集。[专项测量](references/specialized-tests.md)
 5. 用原始结果核对用例 ID、阶段、设备和完成状态，再生成 HTML 和 CSV。以下命令使用合成样例。[报告格式](references/report.md)
 
@@ -19,4 +19,4 @@ description: 使用 ATK 验证 PyTorch 和 TorchNPU 算子，复跑失败用例�
    python3 scripts/render_report.py assets/report-example.json --out ./example-report
    ```
 
-同一用例的各执行端使用相同的冻结输入、参数和上游梯度，并核对哈希。原位、视图、异步或分布式调用还应保留存储关系、调用顺序和同步点。
+记录输入来源。运行前核对各执行端读取的输入快照和上游梯度哈希，使用相同的调用参数。原位和有状态用例每次重跑前恢复初始状态，视图用例保留存储别名。异步和分布式用例记录调用顺序，等待操作完成后再采集结果。
