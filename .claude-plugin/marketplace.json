@@ -9,6 +9,18 @@
   },
   "plugins": [
     {
+      "name": "deepseek-fused-op-integration",
+      "description": "Analyze, validate, or integrate fused training operators in DeepSeek, MindSpeed-LLM, FSDPTurbo, and other model or training repositories. Use when wiring a kernel such as TileKernels RMSNorm into a real caller, checking tensor and autograd contracts, or validating backend dispatch and correctness.",
+      "source": "./skills/ops/deepseek-fused-op-integration",
+      "category": "ops",
+      "categories": [
+        "ops",
+        "leaf-skill",
+        "operator-development",
+        "pytorch-npu"
+      ]
+    },
+    {
       "name": "npu-smi",
       "description": "Huawei Ascend NPU npu-smi command reference. Use for device queries (health, temperature, power, memory, processes, ECC), configuration (thresholds, modes, fan), firmware upgrades (MCU, bootloader, VRD), virtualization (vNPU), and certificate management.",
       "source": "./skills/base/npu-smi",
