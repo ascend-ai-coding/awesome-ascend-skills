@@ -4,6 +4,7 @@
 import argparse
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -194,9 +195,21 @@ def replay(package, output, atk, expected_digest=None):
         return 2
     receipt.update(execution_status="RUNNING")
     receipt_path.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
+    environment = os.environ.copy()
+    if manifest.get("plugin_file") is not None:
+        plugin_directory = (work / manifest["plugin_file"]).parent
+        module_paths = [str(work)]
+        if plugin_directory != work:
+            module_paths.insert(0, str(plugin_directory))
+        if environment.get("PYTHONPATH"):
+            module_paths.append(environment["PYTHONPATH"])
+        environment["PYTHONPATH"] = os.pathsep.join(module_paths)
     with (output / "console.log").open("x", encoding="utf-8") as log:
         try:
-            result = subprocess.run(argv, cwd=work, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, check=False)
+            result = subprocess.run(
+                argv, cwd=work, env=environment, stdin=subprocess.DEVNULL,
+                stdout=log, stderr=subprocess.STDOUT, check=False,
+            )
         except OSError as error:
             receipt.update(execution_status="LAUNCH_ERROR", error=str(error))
             log.write(f"ATK launch error: {error}\n")

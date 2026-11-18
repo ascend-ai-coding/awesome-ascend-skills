@@ -187,7 +187,7 @@ def summarize(run, rows, root):
         if row.get("reproduction"):
             paths.append(row["reproduction"])
         for path in paths:
-            if not _artifact_path(path, root, "artifact").exists():
+            if not _artifact_path(path, root, "artifact").is_file():
                 missing.add(path)
     return {
         "schema_version": SCHEMA_VERSION,
@@ -207,7 +207,7 @@ def _text(value):
 
 def _artifact_link(path, root, output):
     target = _artifact_path(path, root, "artifact")
-    if not target.exists():
+    if not target.is_file():
         return f'<span class="missing">{_text(path)}（缺失）</span>'
     relative = Path(os.path.relpath(target, output)).as_posix()
     href = _text(quote(relative, safe="/"))

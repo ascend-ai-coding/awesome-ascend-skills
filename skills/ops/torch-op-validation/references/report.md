@@ -1,6 +1,6 @@
 # 报告与可交换结果
 
-先把执行记录整理成 `bundle.json`。随报告保存计划、环境与标准版本、输入和输出哈希、执行命令、原始 ATK 报告和复现包。
+先把执行记录整理成 `bundle.json`。随报告保存计划、环境与标准版本、输入和输出哈希、执行命令、原始 ATK 报告和复现包。按所用标准判定后填写结果。渲染脚本按输入记录生成表格和统计。
 
 ## 规范化结果
 
@@ -25,6 +25,8 @@ python3 scripts/render_report.py run/bundle.json --out run/report
 | `metadata` | JSON 对象。记录 dtype、shape、layout、属性、用例来源、适用条件、失败签名、阈值比较符，以及 ATK 执行与精度的原始状态 |
 
 行键是 `(case_id, phase, suite, backend, reference)`。ATK 数字 ID 仅在对应批次内解释。若以多种判据分别输出，应在 case ID 或 reference 中明确区分其身份，并保存规则标识。显示无穷比值时在详情中标明原因，不将非有限数写入 JSON 数值字段。
+
+记录 2.1 浮点双标杆结果时，在 `reference` 写同精度对照，在 `metadata` 写 Golden、等级、节点角色和比较符号。用 `metrics` 保存两端相对 Golden 的 MARE、MERE、RMSE 及各项比值，以 `evidence` 关联覆盖核对和原始报告。在离线重放中，ATK worker 的设备名可能与标杆实际执行设备不同，按小样验证的角色映射读取结果。
 
 两个 CSV 都使用 UTF-8。`results.csv` 每个结果一行，`metrics.csv` 每个指标一行，两表用行键关联。可能被表格软件解释为公式的文本和原本以单引号开头的文本会多一个前导单引号。程序读取 CSV 时可去掉这一前缀，或直接读取保留原值的 JSON。导入 XLSX 时将 ID 列设为文本。
 

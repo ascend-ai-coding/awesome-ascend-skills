@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -73,12 +74,13 @@ def mock_atk(tmp_path, returncode=0, with_plugin=True, data_argv=(), help_output
     return path
 
 
-def run(package, output, atk, *extra):
+def run(package, output, atk, *extra, env=None):
     return subprocess.run(
         [sys.executable, str(REPLAY), str(package), "--output", str(output), "--atk", str(atk), *extra],
         capture_output=True,
         text=True,
         check=False,
+        env=env,
     )
 
 
@@ -105,6 +107,49 @@ class ReplayTests(unittest.TestCase):
                 self.assertEqual(receipt["returncode"], returncode)
                 self.assertEqual(receipt["reproduction_verdict"], "NOT_EVALUATED")
                 self.assertEqual(receipt["manifest_sha256"], digest(package / "repro.json"))
+
+    def test_loads_packaged_plugin_dependencies_from_staged_paths(self):
+        package = make_package(self.tmp, with_plugin=False)
+        manifest_path = package / "repro.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["plugin_file"] = "plugins/plugin.py"
+        files = {
+            "plugins/plugin.py": (
+                "from replay_sibling_helper import VALUE as SIBLING\n"
+                "from replay_root_helper import VALUE as ROOT\n"
+                "from replay_external_helper import VALUE as EXTERNAL\n"
+                "assert (SIBLING, ROOT, EXTERNAL) == (1, 2, 3)\n"
+            ),
+            "plugins/replay_sibling_helper.py": "VALUE = 1\n",
+            "replay_root_helper.py": "VALUE = 2\n",
+        }
+        for name, body in files.items():
+            path = package / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(body, encoding="utf-8")
+            manifest["files"][name] = digest(path)
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+        externals = self.tmp / "external dependencies"
+        externals.mkdir()
+        (externals / "replay_external_helper.py").write_text("VALUE = 3\n", encoding="utf-8")
+        env = {**os.environ, "PYTHONPATH": str(externals)}
+        atk = self.tmp / "mock atk"
+        atk.write_text(
+            f"#!{sys.executable}\n"
+            "import importlib.util, sys\n"
+            "plugin = sys.argv[sys.argv.index('-p') + 1]\n"
+            "spec = importlib.util.spec_from_file_location('replay_plugin', plugin)\n"
+            "spec.loader.exec_module(importlib.util.module_from_spec(spec))\n"
+            "print('PLUGIN_DEPENDENCIES_LOADED')\n",
+            encoding="utf-8",
+        )
+        atk.chmod(0o700)
+
+        output = self.tmp / "run"
+        result = run(package, output, atk, env=env)
+        self.assertEqual(result.returncode, 0, (output / "console.log").read_text())
+        self.assertEqual((output / "console.log").read_text(), "PLUGIN_DEPENDENCIES_LOADED\n")
 
     def test_rejects_wrong_native_case_selection(self):
         for i, (cases, message) in enumerate([

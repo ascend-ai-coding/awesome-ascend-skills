@@ -97,6 +97,20 @@ class ReportTest(unittest.TestCase):
         self.assertIn("raw/missing.txt（缺失）", rendered)
         self.assertNotIn('href="raw/missing.txt"', rendered)
 
+    def test_directories_are_reported_as_missing_files(self):
+        (self.root / "raw").mkdir()
+        (self.root / "replay").mkdir()
+        self.case["evidence"] = ["raw"]
+        self.case["reproduction"] = "replay"
+        completed = self.invoke()
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        summary = json.loads((self.output / "summary.json").read_text(encoding="utf-8"))
+        self.assertEqual(summary["missing_artifacts"], ["raw", "replay"])
+        html = (self.output / "report.html").read_text(encoding="utf-8")
+        self.assertIn("raw（缺失）", html)
+        self.assertIn("replay（缺失）", html)
+        self.assertNotIn('href="../../replay"', html)
+
     def test_csv_escape_keeps_distinct_case_ids_reversible(self):
         self.case["case_id"] = "=1+1"
         self.bundle["results"].append({**self.case, "case_id": "'=1+1"})
