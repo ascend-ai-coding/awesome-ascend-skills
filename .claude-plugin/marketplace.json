@@ -10,7 +10,7 @@
   "plugins": [
     {
       "name": "deepseek-fused-op-integration",
-      "description": "Analyze and integrate fused operators into DeepSeek models in MindSpeed-LLM. Use when locating operator insertion points, analyzing tensor contracts, choosing monkeypatch or direct replacement, implementing Ascend NPU fused operator integration, or validating operator correctness.",
+      "description": "Analyze, validate, or integrate fused training operators in DeepSeek, MindSpeed-LLM, FSDPTurbo, and other model or training repositories. Use when wiring a kernel such as TileKernels RMSNorm into a real caller, checking tensor and autograd contracts, or validating backend dispatch and correctness.",
       "source": "./skills/ops/deepseek-fused-op-integration",
       "category": "ops",
       "categories": [

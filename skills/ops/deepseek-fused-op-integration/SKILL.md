@@ -1,219 +1,128 @@
 ---
 name: deepseek-fused-op-integration
-description: Analyze and integrate fused operators into DeepSeek models in MindSpeed-LLM. Use when locating operator insertion points, analyzing tensor contracts, choosing monkeypatch or direct replacement, implementing Ascend NPU fused operator integration, or validating operator correctness.
+description: Analyze, validate, or integrate fused training operators in DeepSeek, MindSpeed-LLM, FSDPTurbo, and other model or training repositories. Use when wiring a kernel such as TileKernels RMSNorm into a real caller, checking tensor and autograd contracts, or validating backend dispatch and correctness.
 ---
 
 # DeepSeek Fused Operator Integration
 
-## Objective
+Start from the requested target repository, caller and kernel. Use the target's
+own dispatch, configuration and test conventions. Read its repository instructions
+and inspect its revision and existing changes before editing. Use the target's
+execution environment. A server or repository specified for one project does not
+select the environment for another.
 
-Provide a reusable workflow for integrating fused operators
-into DeepSeek model implementations in MindSpeed-LLM.
+## Choose the work needed
 
-The workflow must not be limited to one specific operator.
+- **Analysis:** inspect the actual caller, adapter, binding and relevant backward;
+  report evidence and unresolved contracts. Do not imply execution occurred.
+- **Validation:** use the risk-driven loop below. Do not spend a validation-only
+  task comparing replacement strategies or writing a full integration proposal.
+- **Implementation:** when asked to connect or replace an operator, use
+  [the integration workflow](references/integration-checklist.md) to wire the
+  backend through the real caller and run the smallest checks that establish reachability
+  and numerical compatibility. For TileKernels RMSNorm in FSDPTurbo, start with
+  [the FSDPTurbo example](references/fsdpturbo-tilekernels-rmsnorm.md).
 
-Reference repository:
-https://gitcode.com/Ascend/MindSpeed-LLM/tree/master/mindspeed_llm/core
+Inspect existing changes and preserve source/checkpoints. Follow the user's
+environment and download/install permissions. No system/CANN edits or distributed
+training by default. Unit tests do not authorize operator source fixes.
 
-Always inspect the checked-out local source code before
-making implementation decisions.
+## Risk-driven validation loop
 
-## Workflow
+### 1. Establish the path and contract
 
-### Phase 1: Locate the Algorithm
+Locate files rather than assuming paths. Trace model caller -> imported symbol
+or feature registration -> wrapper -> native forward/backward. Separate distinct
+model/legacy implementations and configuration overrides.
 
-1. Identify the model architecture and target operator.
-2. Search for the original algorithm implementation.
-3. Trace the call chain from model entry to operator call.
-4. Identify the relevant layer, module, and function.
-5. Determine the position of the fused operator.
+For the chosen path record only the shapes, dtype/device, layout, defaults,
+gradient requirements and parallel assumptions needed to judge compatibility.
+Read branch conditions in the wrapper **and backward**, not just the signature.
+Distinguish documented constraints from incidental implementation behavior.
+Inspect the installed API/binding; do not invent signatures. If the real path
+cannot run, report it blocked rather than replacing it and claiming kernel success.
 
-Record:
+Before generating a baseline, read the installed operator's **input constraints**
+or version-matched tests, not only its signature. Write executable preconditions
+for the selected fixture (including relationships between arguments). An unfused
+implementation may accept inputs the native path does not. Unsupported probes
+are separate from valid-input correctness tests.
 
-- Model name
-- Source file
-- Module/class/function
-- Original computation
-- Proposed insertion point
-- Forward and backward dependencies
+Check which symbol the caller actually holds after imports/patches when a small
+safe probe can establish it. If startup needs a model/distributed job outside
+scope, keep reachability explicitly unverified; a standalone import is not proof
+that the model uses it.
 
-Do not assume a source path exists without checking.
+### 2. Turn source observations into falsifiable hypotheses
 
-### Phase 2: Analyze the Tensor Contract
+Before expanding a dtype/shape sweep, read
+[references/risk-test-design.md](references/risk-test-design.md).
+Keep a short risk ledger:
 
-Identify the inputs and outputs of the original computation.
+`source/branch -> expected invariant and evidence -> discriminating input -> oracle -> caller relevance`
 
-For every tensor, record:
+Prioritize plausible, high-impact caller cases and branch interactions. Also test
+a suspicious public/native interface combination when the source exposes a
+concrete risk, but label unsupported or model-unreachable cases separately.
+Do not copy every row of a generic checklist into a test matrix.
 
-- Name
-- Shape
-- Dtype
-- Device
-- Layout
-- Contiguity constraints
-- Semantic meaning
-- Gradient requirements
+### 3. Execute an informative minimum early
 
-Analyze shape transformations before and after fusion.
+After environment, input-precondition and reference checks, run one small valid
+baseline through the real fused path. Only after it passes, derive the first
+risk case from the same valid fixture, changing the targeted condition. For a
+different native mode, establish its valid baseline first. Avoid finishing a
+broad source survey or building a large custom oracle before this evidence.
+Verify native dispatch with a trace, spy that still calls the original, loaded
+extension evidence or equivalent; a flag alone is insufficient.
 
-Pay attention to:
+Use fresh, independent leaf tensors for each unit-test case and for the reference.
+Use [scripts/tensor_fixture.py](scripts/tensor_fixture.py) or an equivalent
+detach/convert/clone factory; `.to()` alone is not isolation. Check actual leaf,
+requires_grad and initial grad state before backward. Keep model graph tests
+separate: detaching actual model activations would change the behavior under test.
 
-- Batch dimension
-- Sequence dimension
-- Hidden dimension
-- Attention head dimension
-- Tensor parallel partitioning
-- Reshape and transpose operations
-- Optional arguments and dynamic shapes
+Use independent mathematical reference calculations where practical and the
+existing unfused wrapper for compatibility. Agreement of the two wrappers can
+miss a shared preprocessing error. Check original shape/dtype/device separately
+from numerical closeness and compare relevant input/parameter gradients.
+An existing CPU reference plus a small hand-checkable example is a suitable
+starting point; write a new oracle when it resolves a specific shared-error risk.
 
-Identify whether the fused operator interface exactly
-matches the original computation.
+### 4. Adapt to evidence, not case count
 
-If not, define the required adapter.
+After a pass, exercise a different implementation decision or interaction before
+repeating the same logic across more dtypes. Use caller-relevant precision samples
+to bound numerical error; do not substitute a dtype sweep for risk coverage.
+After a mismatch, minimize it, verify the oracle/support assumptions, and trace
+the condition back to a caller. First check fixture isolation and input validity;
+do not investigate downstream mismatches caused by an invalid upstream result.
+Preserve the original output. Do not loosen
+tolerances or change expected behavior merely to pass.
 
-### Phase 3: Analyze the Fused Operator
+Respect the agreed budget. Reserve time for running and interpreting tests;
+freeze exploration when the budget is nearly spent. If setup/JIT blocks execution,
+report the blocker and highest remaining risk instead of filling out a proposal.
+If a fixture fails, pause the sweep and repair only the baseline within budget.
+Keep invalid evidence separate from corrected results; a passing different mode
+does not validate the original mode. Record repair time and incomplete coverage.
 
-Locate the implementation or API of the fused operator.
+## Evidence and decisions
 
-Inspect:
+Use [references/test-checklist.md](references/test-checklist.md) for reference,
+failure-status and execution requirements. Use the existing
+[scripts/run_validation.py](scripts/run_validation.py) across shells to record
+the child status; it cannot detect a harness that swallows assertion failures.
 
-1. Python interface
-2. C++ extension or operator binding
-3. Ascend CANN/aclnn interface
-4. Supported input shapes and dtypes
-5. Output definitions
-6. Backward implementation
-7. Device and version requirements
-8. Known operator limitations
+Classify results as: numerical failure, interface/state discrepancy, supported
+behavior, unsupported combination, unresolved contract, blocked, or not tested.
+An unexpected assertion/exception fails its check; an unresolved oracle must not
+be relabelled PASS or presented as a proven kernel/model defect.
 
-Do not invent API signatures.
-
-If an implementation cannot be located, report the
-missing information before proceeding.
-
-### Phase 4: Select the Integration Strategy
-
-Evaluate two primary approaches.
-
-#### Strategy A: Monkeypatch
-
-Use when:
-
-- The original call can be safely replaced at runtime.
-- The target implementation should remain unchanged.
-- The integration is optional.
-- The function or module can be patched reliably.
-
-Check:
-
-- When the original symbol is imported
-- Whether other modules retain references to it
-- When the patch is applied
-- Whether the patch affects unintended callers
-- How to restore the original behavior
-
-#### Strategy B: Direct Replacement
-
-Use when:
-
-- The framework implementation is under control.
-- The fused operator requires structural modifications.
-- Runtime patching is unreliable.
-- Explicit model integration is preferred.
-
-Check:
-
-- Compatibility with existing configurations
-- Original implementation fallback
-- Impact on model initialization
-- State dict and checkpoint compatibility
-- Training and inference behavior
-
-#### Decision Output
-
-Generate a comparison including:
-
-- Chosen strategy
-- Rationale
-- Files to change
-- Compatibility risks
-- Rollback mechanism
-
-Never choose monkeypatch or direct replacement
-without inspecting the actual call chain.
-
-### Phase 5: Implement the Integration
-
-Follow the existing project conventions.
-
-1. Create an adapter if necessary.
-2. Preserve the original public interface where practical.
-3. Introduce an explicit feature flag.
-4. Add shape and dtype checks.
-5. Preserve autograd behavior.
-6. Retain a safe fallback when supported.
-7. Integrate the fused operator at the chosen location.
-
-Do not modify repository files until the user explicitly
-requests implementation.
-
-Do not silently change model semantics.
-
-### Phase 6: Validate the Operator
-
-Validation must include:
-
-1. Import and availability checks
-2. Forward output shape checks
-3. Forward dtype checks
-4. Numerical correctness against a reference
-5. Backward gradient correctness where applicable
-6. Representative boundary shapes
-7. Training and inference compatibility
-8. Distributed parallel compatibility when relevant
-9. Performance measurement when a baseline is available
-
-Use appropriate dtype-specific numerical tolerances.
-
-Do not report a test as passed unless it was executed
-and its output was inspected.
-
-### Phase 7: Report Results
-
-Produce an integration report containing:
-
-1. Algorithm and operator overview
-2. Source code location
-3. Original computation and fused computation
-4. Tensor input/output table
-5. Operator call chain
-6. Integration strategy comparison
-7. Implementation proposal or changes
-8. Test results
-9. Risks, limitations and rollback plan
-
-Separate verified facts from assumptions.
-
-## Safety Rules
-
-- Start with read-only source analysis.
-- Never modify system or CANN installation files by default.
-- Never overwrite model checkpoints.
-- Never initiate distributed training automatically.
-- Request explicit approval before editing code.
-- Avoid destructive shell commands.
-- Prefer independent unit tests before model-level tests.
-
-## Additional References
-
-Read references/integration-checklist.md when planning integration.
-
-Read references/test-checklist.md when preparing validation.
-
-## Example Requests
-
-- Analyze where a fused attention operator should be inserted.
-- Determine the input/output contract of an mHC operator.
-- Compare monkeypatch and direct replacement for a DeepSeek module.
-- Generate an integration plan for an Ascend NPU fused operator.
-- Validate an integrated operator against the original computation.
+Deliver findings with the trigger, expected/actual behavior, evidence for the
+expectation, actual path tested and caller relevance. Attach commands, environment,
+references/tolerances, raw output and child exit status. State uncovered high-risk
+branches. Do not require a nine-section report for a small validation task.
+Whole-model, distributed, performance and checkpoint claims require their own
+authorized execution. No executed issue is also a legitimate outcome; do not
+invent a defect to justify this skill.

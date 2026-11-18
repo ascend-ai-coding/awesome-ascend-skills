@@ -8,7 +8,7 @@
 - [`ascend-opplugin/`](ascend-opplugin/)：op-plugin 接入与自定义算子
 - [`triton-ascend-migration/`](triton-ascend-migration/)：Triton / PyTorch 算子迁移
 - [`npu-op-benchmark/`](npu-op-benchmark/)：算子基准测试与调优辅助
-- [`deepseek-fused-op-integration/`](deepseek-fused-op-integration/)：DeepSeek 融合算子接入 MindSpeed-LLM，涵盖接入位置、输入输出约束、替换方式与正确性验证
+- [`deepseek-fused-op-integration/`](deepseek-fused-op-integration/)：面向 DeepSeek、MindSpeed-LLM 和 FSDPTurbo 的融合算子接入，涵盖调用链定位、前后向契约、后端分发和正确性验证
 
 推荐场景：
 
