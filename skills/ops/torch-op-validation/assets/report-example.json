@@ -1,0 +1,68 @@
+{
+  "schema_version": "1.0",
+  "run": {
+    "id": "format-example",
+    "standard_id": "synthetic-example",
+    "evidence_class": "synthetic",
+    "metadata": {
+      "purpose": "Illustrates report fields; no device execution or standard acceptance.",
+      "coverage": {"planned_rows": 5, "illustrative_rows": 5}
+    }
+  },
+  "results": [
+    {
+      "case_id": "sum-smoke-01",
+      "operator": "torch.sum",
+      "phase": "forward",
+      "suite": "function",
+      "backend": "candidate",
+      "reference": "",
+      "status": "PASS",
+      "detail": "Illustrative contract check.",
+      "metadata": {"source_kind": "generic", "input_dtype": "float32", "shape": [3, 7], "attrs": {"dim": -1}}
+    },
+    {
+      "case_id": "sum-smoke-01",
+      "operator": "torch.sum",
+      "phase": "forward",
+      "suite": "accuracy",
+      "backend": "candidate",
+      "reference": "peer",
+      "status": "FAIL",
+      "detail": "Synthetic failure example; values are not hardware results.",
+      "metrics": [{"name": "max_abs_error", "value": 0.001, "unit": "output_value", "limit": 0.0001}],
+      "metadata": {"comparison": "<", "criterion_id": "example-project-regression", "reproduction_status": "NOT_RUN"}
+    },
+    {
+      "case_id": "sum-smoke-01",
+      "operator": "torch.sum",
+      "phase": "forward",
+      "suite": "memory",
+      "backend": "candidate",
+      "reference": "peer",
+      "status": "NOT_RUN",
+      "detail": "No device memory was measured."
+    },
+    {
+      "case_id": "sum-smoke-01",
+      "operator": "torch.sum",
+      "phase": "forward",
+      "suite": "performance",
+      "backend": "candidate",
+      "reference": "peer",
+      "status": "MEASURED",
+      "detail": "Synthetic latency field example only.",
+      "metrics": [{"name": "latency_median", "value": 11.6, "unit": "us"}]
+    },
+    {
+      "case_id": "sum-smoke-01",
+      "operator": "torch.sum",
+      "phase": "forward",
+      "suite": "determinism",
+      "backend": "candidate",
+      "reference": "",
+      "status": "NOT_RUN",
+      "detail": "No repeated runs are included."
+    }
+  ]
+}

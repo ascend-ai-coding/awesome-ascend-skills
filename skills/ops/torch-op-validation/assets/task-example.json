@@ -1,0 +1,43 @@
+{
+  "mode": "smoke",
+  "precision_policy": {
+    "requested_standard": "Ascend operator precision standard 2.1",
+    "approved_revision": null,
+    "source_sha256": null,
+    "accuracy_level": null,
+    "formal_acceptance": false
+  },
+  "suites": ["function", "accuracy", "memory", "performance", "determinism"],
+  "implementations": {
+    "candidate": {"backend": "npu", "device": null},
+    "peer": {"backend": "cuda", "device": null},
+    "golden": {"backend": "cpu", "compute_dtype": "float32"}
+  },
+  "cases": [
+    {
+      "operator": "torch.nn.functional.rms_norm",
+      "workload": "training",
+      "phase": "forward_backward",
+      "source_kind": "generic",
+      "inputs": [
+        {"name": "input", "dtype": "bfloat16", "shape": [64, 1024], "requires_grad": true},
+        {"name": "weight", "dtype": "bfloat16", "shape": [1024], "requires_grad": true}
+      ],
+      "attrs": {"normalized_shape": [1024], "eps": 0.000001},
+      "generator": {"distribution": "normal", "seed": 1234, "grad_seed": 1235}
+    },
+    {
+      "operator": "torch.nn.functional.scaled_dot_product_attention",
+      "workload": "decode",
+      "phase": "forward",
+      "source_kind": "generic",
+      "inputs": [
+        {"name": "query", "dtype": "bfloat16", "shape": [1, 8, 1, 64]},
+        {"name": "key", "dtype": "bfloat16", "shape": [1, 8, 257, 64]},
+        {"name": "value", "dtype": "bfloat16", "shape": [1, 8, 257, 64]}
+      ],
+      "attrs": {"dropout_p": 0, "is_causal": false},
+      "generator": {"distribution": "normal", "seed": 1236}
+    }
+  ]
+}
