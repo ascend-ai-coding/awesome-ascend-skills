@@ -2,9 +2,9 @@
 
 ## 验证安装
 
-使用 [ATK 官方项目](https://gitcode.com/AscendTest/ATK)发布或交付方明确提供的版本匹配 wheel。核对 Python ABI、OS、架构、各节点后端及 wheel 哈希。不能确定来源时不要安装同名包；不要把 wheel 和内部插件提交到公开仓库。
+从官方项目或交付方获取 ATK wheel，核对 Python ABI、操作系统、架构、后端和 SHA256。[ATK 官方项目](https://gitcode.com/AscendTest/ATK)
 
-在正确的计算栈上创建独立环境。NPU 节点按其平台文档加载 CANN 环境脚本；CUDA 节点不用加载 CANN。已有兼容 ATK 可复用。
+已有兼容 ATK 时可直接使用。需要安装时，从现有计算环境创建虚拟环境。NPU 节点按平台文档加载 CANN。
 
 ```bash
 # 填写已核验的 wheel 和本次独立环境路径。
@@ -15,28 +15,28 @@ python3 -m venv --system-site-packages "$ATK_VENV"
 "$ATK_VENV/bin/atk" task --help
 ```
 
-`--no-deps` 不会补齐依赖。根据 wheel 元数据从受信来源补齐工具依赖；安装前后校验 Torch、TorchNPU、CUDA/CANN 和相关组件的版本及加载位置，不能用新包覆盖原栈。分别保存 ATK 版本证据、设备/驱动、框架、所用 Python、配置样例出处、实际 CLI 帮助和环境检查结果。只在测试节点空闲时初始化设备并执行小样。
+根据 wheel 元数据补齐工具依赖。安装前后检查 Torch、TorchNPU、CUDA/CANN 的版本和加载路径，确认沿用原计算环境。保存 ATK、设备、驱动、框架和 Python 版本，以及配置样例和 CLI 帮助。
 
 ## 生成和执行
 
-1. 为每个 ATK 批次生成原生 case JSON、node YAML 和必要插件；选择对应发行包提供的模板，不从结果表反推 ATK schema。保留批次 ID 和 ATK case ID 到报告 ID 的映射。
-2. 节点记录候选、同精度对照和高精度 Golden 三个角色。离线对照是本轮另一节点真实执行后保存的输出；保存执行环境、输入哈希、调用参数、输出哈希和阶段。不要通过本地 CPU 模拟第三方输出。
-3. 插件从明确的 case ID 读取冻结输入和梯度，按固定的参数绑定调用目标。先执行一个包含可信预期的真实小样，另用已知边界值核对比较器及异常处理；小样报告必须确认各节点执行了相应角色。
-4. 用所装版本的 CLI 执行。常用形式如下，需核对帮助；不需要插件时省略 `-p` 和文件名。
+1. 从当前 ATK 版本的模板生成 case JSON、node YAML 和所需插件。记录批次 ID、ATK case ID 和报告 ID 的映射。
+2. 标明各节点承担的角色。双标杆需记录候选、同精度对照和高精度 Golden。离线对照使用相应节点本轮保存的输出，并附环境、输入和输出哈希、参数及阶段。
+3. 插件按 case ID 读取输入和梯度，按 API 签名传参。先用预期已知的小样检查节点角色和报告，再用边界值检查比较器及异常处理。
+4. 核对 CLI 帮助后执行。只有使用插件时才传 `-p` 和文件名。
 
    ```bash
    "$ATK_VENV/bin/atk" task -c "$CASE_JSON" -n "$NODES_YAML" -p "$PLUGIN" -to 1800
    ```
-5. 按实际 ATK 日志找到报告目录。保存实际 argv、退出码、日志、原始报告及输出数据清单。核对预期和实际 ID 集合、执行状态、精度结果及重复次数。只看退出 0、结果行数或汇总百分数不能判断全部通过。解析器以固定版本的真实报告为样本，未知字段或状态保持未判定。
+5. 从日志定位报告目录，保留命令参数、退出码、原始报告及输出清单。逐个核对用例 ID、执行状态、精度结果和次数。报告解析以当前 ATK 版本的实际输出为准，未知状态标为未判定。
 
-## 缩小失败与再执行
+## 单用例复现
 
-- 原始失败不可覆盖。首先隔离一个真正失败的 case 和同样的阶段、角色与计算模式。环境错误、算子执行失败、数值不一致和同后端重复不一致分别记录；执行失败时不能归为精度比较失败。
-- 保留可用的原生单例 JSON（数组中有且只有原失败 ID）、node YAML、插件和本地依赖、张量/梯度或确定性生成器、设备要求、检查规则与 ATK 版本。输入精简或修改形状后，必须重新验证还存在原失败；否则仅标为候选复现。
-- 功能、内存和性能问题只有在 ATK 能执行同等行为时才标为 ATK 可复现。若 ATK 只复现算子调用，额外交付相应测量入口；仅回放已存输出的比较器不算算子重执行。
-- 将可分享的文件及哈希写入 `repro.json`。实际使用前检查插件、生成器、节点定义和数据均来自可信来源；哈希只验证内容一致性，不保证代码安全。复现脚本不提供进程隔离，运行时应在已授权的独立环境。
+- 保留原日志，再提取失败用例。重跑保留原阶段、节点角色和计算模式。分别记录环境错误、算子报错、精度超差和重复执行不一致。
+- 保存只含原失败 ID 的 case JSON、node YAML、插件和依赖、输入与梯度或生成器，并写明设备、ATK 版本和判据。精简输入或更改形状后，重新确认是否出现原错误。
+- 复现需要重新执行算子。ATK 覆盖不了的功能、内存或计时操作附上原测量命令。仅用已存输出检查比较器时，在报告中注明。
+- 将可分享的文件和 SHA256 写入 `repro.json`。复现助手会加载插件和输入，在独立测试环境中使用已审查的复现包。
 
-`repro.json` 结构如下（哈希及文件名须用实际值替换）：
+以下是 `repro.json` 示例，填写实际文件名和 SHA256。
 
 ```json
 {
@@ -55,15 +55,15 @@ python3 -m venv --system-site-packages "$ATK_VENV"
 }
 ```
 
-如插件读取张量文件，包含全部依赖并从包根目录相对读取。应启用框架可用的安全加载方式，不读取不可信的序列化对象。没有插件时省略 `plugin_file`。ATK 自带的最终输入和离线标杆文件可分别指定 `input_directory` 与 `benchmark_outputs_directory`，目录内每个所需文件均须列出哈希。重跑前会检查当前版本是否支持 `--input_data` 与 `--bm_output_path`；留存初测批次实际导出的格式，不能从文件后缀推断兼容。
+把输入及插件依赖放入包内，使用相对路径和框架支持的安全加载方式。无插件时省略 `plugin_file`。ATK 导出的最终输入和离线标杆分别填入 `input_directory` 与 `benchmark_outputs_directory`，逐文件登记哈希。助手会检查 CLI 是否支持 `--input_data` 和 `--bm_output_path`。
 
 ```bash
 python3 scripts/replay_atk.py path/to/repro-42 --output path/to/repro-run-42 \
   --atk "$ATK_VENV/bin/atk"
 ```
 
-可加 `--manifest-sha256` 核对从可信渠道获得的清单摘要。输出目录须不存在、父目录须存在，且不得位于原包内。脚本复制并校验所列文件，在 `work/` 下运行一个 ATK 任务，输出 `console.log` 与 `execution.json`。ATK 返回值会保留，复现结论初始为 `NOT_EVALUATED`。在新报告确认同一阶段和角色出现同类错误或超差后，才将其标为已复现。
+在原包外指定一个新目录，父目录须已存在。可传 `--manifest-sha256` 核对可信渠道提供的清单摘要。助手校验文件后在 `work/` 下运行 ATK，将日志和退出码写入 `console.log` 与 `execution.json`。复现状态初始为 `NOT_EVALUATED`。用新报告核对同一阶段和节点角色是否出现原报错或超差。
 
-部分版本支持保存最终输入、输出及 JSON 报告（例如 `--save_data input_final:bin --save_data output:bin --save_report_json`）；首次执行时先核对实装版本。复现若需要本脚本未支持的开关，交付经过验证的完整手工 argv，说明哪些参数由使用方填写；不要删掉能触发失败的设置。
+如本版支持，可用 `--save_data input_final:bin --save_data output:bin --save_report_json` 保存最终输入、输出和 JSON 报告。复现依赖助手未支持的开关时，提供验证过的完整命令。
 
-若原失败依赖 ATK 的辅助标杆执行端或重复次数，可在清单填写 `benchmark_device`（`npu` / `gpu` / `cpu`）、`repeat_count`、`determinism_repeat_count`。脚本校验参数并确认当前 CLI 支持 `--bm_device`、`--loop_nums`、`--dc_loop_nums`；实际值须与初测一致。 `timeout_seconds` 传给 ATK 自身的 `-to`，若执行系统还要求进程级超时，由测试平台以单独的作业时限管理。
+按原测试填写 `benchmark_device`（`npu`、`gpu` 或 `cpu`）、`repeat_count` 和 `determinism_repeat_count`。助手检查并传入 `--bm_device`、`--loop_nums` 和 `--dc_loop_nums`。 `timeout_seconds` 对应 ATK 的 `-to`。进程级超时由作业系统设置。
