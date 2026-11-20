@@ -2,11 +2,29 @@
   "schema_version": "1.0",
   "run": {
     "id": "format-example",
-    "standard_id": "synthetic-example",
+    "standard_id": "ascend-operator-precision-2.1",
     "evidence_class": "synthetic",
     "metadata": {
-      "purpose": "Illustrates report fields; no device execution or standard acceptance.",
-      "coverage": {"planned_rows": 5, "illustrative_rows": 5}
+      "purpose": "Synthetic reporting example only; no device calls, ATK execution or formal acceptance.",
+      "standard": {
+        "version": "2.1",
+        "source_sha256": null,
+        "scope": "Framework API validation applying the relevant operator requirements"
+      },
+      "standard_acceptance": {
+        "status": "NOT_EVALUATED",
+        "reason": "Synthetic data; required execution, coverage and hardware evidence are absent."
+      },
+      "coverage": {
+        "planned_rows": 5,
+        "illustrative_rows": 5,
+        "independent_ordinary_cases_executed": 0,
+        "special_cases_executed": 0,
+        "output_elements_executed": 0
+      },
+      "project_checks": {
+        "enabled": false
+      }
     }
   },
   "results": [
@@ -19,7 +37,17 @@
       "reference": "",
       "status": "PASS",
       "detail": "Illustrative contract check.",
-      "metadata": {"source_kind": "generic", "input_dtype": "float32", "shape": [3, 7], "attrs": {"dim": -1}}
+      "metadata": {
+        "source_kind": "generic",
+        "input_dtype": "float32",
+        "shape": [
+          3,
+          7
+        ],
+        "attrs": {
+          "dim": -1
+        }
+      }
     },
     {
       "case_id": "sum-smoke-01",
@@ -29,9 +57,122 @@
       "backend": "candidate",
       "reference": "peer",
       "status": "FAIL",
-      "detail": "Synthetic failure example; values are not hardware results.",
-      "metrics": [{"name": "max_abs_error", "value": 0.001, "unit": "output_value", "limit": 0.0001}],
-      "metadata": {"comparison": "<", "criterion_id": "example-project-regression", "reproduction_status": "NOT_RUN"}
+      "detail": "Synthetic 2.1 L1 normal-domain example: MARE ratio 6 exceeds 5; MERE ratio 1 and RMSE ratio 1.5 satisfy their limits. This is not a device result or an operator acceptance decision.",
+      "metrics": [
+        {
+          "name": "mare_candidate",
+          "value": 0.0003662109375,
+          "unit": "relative_error"
+        },
+        {
+          "name": "mare_peer",
+          "value": 3.0517578125e-05,
+          "unit": "relative_error"
+        },
+        {
+          "name": "mare_ratio",
+          "value": 6,
+          "unit": "ratio",
+          "limit": 5
+        },
+        {
+          "name": "mere_candidate",
+          "value": 6.103515625e-05,
+          "unit": "relative_error"
+        },
+        {
+          "name": "mere_peer",
+          "value": 6.103515625e-05,
+          "unit": "relative_error"
+        },
+        {
+          "name": "mere_ratio",
+          "value": 1,
+          "unit": "ratio",
+          "limit": 1.5
+        },
+        {
+          "name": "rmse_candidate",
+          "value": 9.1552734375e-05,
+          "unit": "output_value"
+        },
+        {
+          "name": "rmse_peer",
+          "value": 3.0517578125e-05,
+          "unit": "output_value"
+        },
+        {
+          "name": "rmse_ratio",
+          "value": 1.5,
+          "unit": "ratio",
+          "limit": 1.5
+        },
+        {
+          "name": "small_value_error_count_candidate",
+          "value": 0,
+          "unit": "elements"
+        },
+        {
+          "name": "small_value_error_count_peer",
+          "value": 0,
+          "unit": "elements"
+        },
+        {
+          "name": "small_value_error_count_ratio",
+          "value": 0,
+          "unit": "ratio",
+          "limit": 2
+        }
+      ],
+      "metadata": {
+        "criterion_id": "ascend-precision-2.1/normal-domain/L1",
+        "operator_category": "floating",
+        "accuracy_level": "L1",
+        "source_kind": "generic",
+        "roles": {
+          "candidate": {
+            "backend": "npu",
+            "output_dtype": "float32"
+          },
+          "peer": {
+            "backend": "cuda",
+            "output_dtype": "float32"
+          },
+          "golden": {
+            "backend": "cpu",
+            "compute_dtype": "float64"
+          }
+        },
+        "relative_error_epsilon": 1e-07,
+        "ratio_denominator_err": 6.103515625e-05,
+        "ratio_err_source": "section 4.5.1 and the FLOAT32 Small Value Threshold in section 4.5.3",
+        "ratio_err_interpretation": "Section 4.5.1 uses the dtype Small Value Threshold as the normal-ratio floor; section 4.5.3 error is a separate small-value absolute-error limit.",
+        "normal_domain_comparison": "<=",
+        "small_value_threshold": 6.103515625e-05,
+        "small_value_error": 9.313225746154785e-10,
+        "small_value_mask_comparison": "<",
+        "small_value_error_comparison": ">",
+        "small_value_ratio_comparison": "<=",
+        "small_value_domain_elements": 0,
+        "special_values": {
+          "status": "NOT_APPLICABLE",
+          "reason": "Synthetic finite-value example"
+        },
+        "initial_numerical_status": "FAIL",
+        "atk_raw_status": "NOT_RUN",
+        "reproduction_status": "NOT_RUN",
+        "recheck": {
+          "status": "NOT_RUN",
+          "recommended_seed_samples": 1000,
+          "minimum_seed_samples": 200,
+          "bootstrap_resamples": 2000,
+          "confidence_level": 0.95,
+          "quantile_method": null
+        },
+        "standard_acceptance": "NOT_EVALUATED",
+        "coverage_status": "NOT_RUN",
+        "assessment_scope": "numerical_case"
+      }
     },
     {
       "case_id": "sum-smoke-01",
@@ -52,7 +193,13 @@
       "reference": "peer",
       "status": "MEASURED",
       "detail": "Synthetic latency field example only.",
-      "metrics": [{"name": "latency_median", "value": 11.6, "unit": "us"}]
+      "metrics": [
+        {
+          "name": "latency_median",
+          "value": 11.6,
+          "unit": "us"
+        }
+      ]
     },
     {
       "case_id": "sum-smoke-01",

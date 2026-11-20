@@ -450,7 +450,7 @@
     },
     {
       "name": "torch-op-validation",
-      "description": "PyTorch 和 TorchNPU 算子验收：ATK 精度、模型用例、失败复现，以及功能、内存、性能和确定性报告。",
+      "description": "按昇腾算子精度标准 2.1 验证 PyTorch 和 TorchNPU 算子，使用 ATK 执行与复现，输出功能、精度、内存、性能和确定性报告。",
       "source": "./skills/ops/torch-op-validation",
       "category": "ops",
       "categories": [

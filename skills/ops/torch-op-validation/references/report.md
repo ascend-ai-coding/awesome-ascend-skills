@@ -28,7 +28,31 @@ python3 scripts/render_report.py run/bundle.json --out run/report
 
 记录 2.1 浮点双标杆结果时，在 `reference` 写同精度对照，在 `metadata` 写 Golden、等级、节点角色和比较符号。用 `metrics` 保存两端相对 Golden 的 MARE、MERE、RMSE 及各项比值，以 `evidence` 关联覆盖核对和原始报告。在离线重放中，ATK worker 的设备名可能与标杆实际执行设备不同，按小样验证的角色映射读取结果。
 
-两个 CSV 都使用 UTF-8。`results.csv` 每个结果一行，`metrics.csv` 每个指标一行，两表用行键关联。可能被表格软件解释为公式的文本和原本以单引号开头的文本会多一个前导单引号。程序读取 CSV 时可去掉这一前缀，或直接读取保留原值的 JSON。导入 XLSX 时将 ID 列设为文本。
+## 2.1 判定记录
+
+默认 `run.standard_id` 为 `ascend-operator-precision-2.1`。记录所采用原文的版本和 SHA256；用户已指定并提供 2.1 原文时，以该文档为依据，不要求另找一个未指定的修订号。公开参考用于交叉核查，不覆盖任务指定原文。公式、表格继承或特殊 dtype 映射无法从原文确认时，在相应条目下记录待确认项。
+
+按算子和阶段分别保存数值初判、原输入复现、换种子复检、覆盖、执行要求及正式结论。建议字段如下；它们放在通用 `metadata` 中，不改变 CSV 行键。
+
+| 记录位置 | 字段与内容 |
+| --- | --- |
+| `run.metadata.standard` | `version`、`source_sha256`、适用范围、原文未明确项和采用的解释 |
+| `run.metadata.standard_acceptance` | 各算子/阶段的 `numerical_status`、`coverage_status`、`execution_status`、正式状态和未满足项；只有全部适用要求满足才为正式 PASS |
+| 结果 `metadata` | `criterion_id`、`assessment_scope`（单例数值、算子正式验收或项目附加检查）、`operator_category`、`accuracy_level`、三方实现及真实计算/输出 dtype |
+| 正常值域 | `relative_error_epsilon=1e-7`；`ratio_denominator_err`、`ratio_err_source`、`ratio_err_interpretation`；候选/对照相对同一 Golden 的 MARE/MERE/RMSE、三项比值与 `<=` 上限 |
+| 小值域 | `small_value_threshold`、`small_value_error`、实际掩码元素数、两端 ErrorCount、计数比；分别保留 `<`、`>`、`<=` 的比较关系 |
+| 非有限值 | 芯片与实际 `INF_NAN_MODE_ENABLE`、三方 NaN/正负 Inf 的数量及位置、排除条件、分支结论与待查项 |
+| 覆盖与执行 | 按 dtype/格式/维度/Attr/分布/来源统计计划与实测；普通用例去重数、特殊用例数、输出元素数、L2泛化与模型比例、平台、逐例压测次数、NaN预填证据和确定性结果 |
+| 复检 | 初判失败指标、原输入复现状态、换种子样本数、三项 Ratio 样本、2000 次 Bootstrap、随机种子、分位数方法、95% CI及复检结论；不足200样本的复检记 FAIL |
+| ATK | 版本、节点角色校准、原始执行/精度状态、计划ID与完成ID、报告路径和失败复现包；基础设施错误与数值失败分开 |
+
+普通用例数量不能按种子、重复次数、设备数、输出叶子数或结果行数累加。初判失败不从报告删除，复检结果另列并关联原用例。单例数值满足阈值时可记录其数值结果，但覆盖不足仍不能把算子正式状态改为 PASS。缺必需标杆的正式结果记 `BLOCKED`；只取得数值尚未评定时记 `MEASURED`。`NOT_EVALUATED` 可用于元数据中的正式状态，不是结果行的 `status` 枚举。
+
+项目逐位或绝对误差检查使用独立 `criterion_id`、行身份和结论。它们不能覆盖 2.1 结果；P0/P1也不用于推断L0/L1/L2。CPU在双标杆中承担高精度Golden时，其误差参与2.1计算；项目另设CPU辅助比较时按另一条规则记录。
+
+报告示例包含正常值域三项比值和边界、小值域计数、三方身份及未执行的复检字段，全部为合成数据。渲染器只校验报告结构，不重新执行算子、计算精度或证明标准覆盖达标。
+
+两个 CSV 都使用 UTF-8。`results.csv` 每个结果一行，`metrics.csv` 每个指标一行，两表用行键关联。上述结构化字段保留在 `metadata_json`，指标以长表保存，适用于不同项目和设备。可能被表格软件解释为公式的文本和原本以单引号开头的文本会多一个前导单引号。程序读取 CSV 时可去掉这一前缀，或直接读取保留原值的 JSON。导入 XLSX 时将 ID 列设为文本。
 
 ## 核对报告
 
