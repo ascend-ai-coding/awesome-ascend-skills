@@ -22,8 +22,9 @@
         "special_cases_executed": 0,
         "output_elements_executed": 0
       },
-      "project_checks": {
-        "enabled": false
+      "diagnostic_recording": {
+        "enabled": true,
+        "acceptance_thresholds": false
       }
     }
   },
@@ -210,6 +211,88 @@
       "reference": "",
       "status": "NOT_RUN",
       "detail": "No repeated runs are included."
+    }
+  ],
+  "precision_comparisons": [
+    {
+      "case_id": "sum-smoke-01",
+      "operator": "torch.sum",
+      "torch_api": "torch.sum",
+      "backend_operator": null,
+      "phase": "forward",
+      "api_type": "floating",
+      "api_family": "reduction",
+      "api_layer": "torch",
+      "output_name": "output",
+      "shape": [
+        3
+      ],
+      "dtype": "float32",
+      "candidate_name": "NPU",
+      "peer_name": "GPU",
+      "golden_name": "CPU-FP64",
+      "standard21": {
+        "level": "L1",
+        "numerical_status": "FAIL",
+        "formal_status": "BLOCKED",
+        "detail": "Synthetic field example: normal-domain MARE ratio exceeds the L1 limit; recheck and hardware coverage are not supplied.",
+        "mare_ratio": 6,
+        "mere_ratio": 1,
+        "rmse_ratio": 1.5,
+        "ratio_denominator_err": 6.103515625e-05,
+        "small_value_threshold": 6.103515625e-05,
+        "small_value_error": 9.313225746154785e-10,
+        "candidate_error_count": 0,
+        "peer_error_count": 0,
+        "small_value_ratio": 0,
+        "nonfinite_status": "NOT_APPLICABLE",
+        "recheck_status": "NOT_RUN",
+        "issue_fields": {
+          "mare_ratio": "Synthetic MARE ratio 6 exceeds L1 limit 5.",
+          "numerical_status": "Initial MARE result fails; recheck has not run.",
+          "formal_status": "Synthetic example: actual execution and formal coverage are absent."
+        }
+      },
+      "diagnostics": {
+        "candidate_golden": {
+          "bitwise_equal": null,
+          "max_rel": 0.0003662109375,
+          "mean_rel": 6.103515625e-05,
+          "rmse": 9.1552734375e-05,
+          "excluded_count": 0
+        },
+        "peer_golden": {
+          "bitwise_equal": null,
+          "max_rel": 3.0517578125e-05,
+          "mean_rel": 6.103515625e-05,
+          "rmse": 3.0517578125e-05,
+          "excluded_count": 0
+        },
+        "candidate_peer": {
+          "bitwise_equal": false,
+          "bitwise_mismatch_count": 1,
+          "max_ulp": 1000000,
+          "max_abs": null,
+          "mean_abs": null,
+          "max_rel": null,
+          "mean_rel": null,
+          "rmse": null,
+          "excluded_count": 0,
+          "row_max_mean_rel": null
+        }
+      },
+      "diagnostic_definition": {
+        "scope": "Synthetic scalar fields, not measurements from tensors.",
+        "bitwise_mismatch_count": "Number of mismatching output elements at original output dtype.",
+        "ulp": "Illustrative field only; a real run must specify encoding, computation dtype, rounding and nonfinite handling.",
+        "relative_error": "For the two Golden pairs, abs(actual-golden)/(abs(golden)+1e-7); finite mask.",
+        "row_max_mean_rel": "Not collected; no axis, argmax reference or tie rule supplied.",
+        "excluded_count": "Counts excluded from each reported diagnostic population; not the small-value ErrorCount."
+      },
+      "context": {
+        "source_kind": "synthetic",
+        "new_device_calls": 0
+      }
     }
   ]
 }

@@ -38,7 +38,7 @@ python3 scripts/render_report.py run/bundle.json --out run/report
 | --- | --- |
 | `run.metadata.standard` | `version`、`source_sha256`、适用范围、原文未明确项和采用的解释 |
 | `run.metadata.standard_acceptance` | 各算子/阶段的 `numerical_status`、`coverage_status`、`execution_status`、正式状态和未满足项；只有全部适用要求满足才为正式 PASS |
-| 结果 `metadata` | `criterion_id`、`assessment_scope`（单例数值、算子正式验收或项目附加检查）、`operator_category`、`accuracy_level`、三方实现及真实计算/输出 dtype |
+| 结果 `metadata` | `criterion_id`、`assessment_scope`（单例数值或算子正式验收）、`operator_category`、`accuracy_level`、三方实现及真实计算/输出 dtype |
 | 正常值域 | `relative_error_epsilon=1e-7`；`ratio_denominator_err`、`ratio_err_source`、`ratio_err_interpretation`；候选/对照相对同一 Golden 的 MARE/MERE/RMSE、三项比值与 `<=` 上限 |
 | 小值域 | `small_value_threshold`、`small_value_error`、实际掩码元素数、两端 ErrorCount、计数比；分别保留 `<`、`>`、`<=` 的比较关系 |
 | 非有限值 | 芯片与实际 `INF_NAN_MODE_ENABLE`、三方 NaN/正负 Inf 的数量及位置、排除条件、分支结论与待查项 |
@@ -48,16 +48,37 @@ python3 scripts/render_report.py run/bundle.json --out run/report
 
 普通用例数量不能按种子、重复次数、设备数、输出叶子数或结果行数累加。初判失败不从报告删除，复检结果另列并关联原用例。单例数值满足阈值时可记录其数值结果，但覆盖不足仍不能把算子正式状态改为 PASS。缺必需标杆的正式结果记 `BLOCKED`；只取得数值尚未评定时记 `MEASURED`。`NOT_EVALUATED` 可用于元数据中的正式状态，不是结果行的 `status` 枚举。
 
-项目逐位或绝对误差检查使用独立 `criterion_id`、行身份和结论。它们不能覆盖 2.1 结果；P0/P1也不用于推断L0/L1/L2。CPU在双标杆中承担高精度Golden时，其误差参与2.1计算；项目另设CPU辅助比较时按另一条规则记录。
+精度验收仅采用 2.1。三方逐位、ULP 和直接绝对/相对误差作为诊断记录，不设置额外通过门槛。CPU 在双标杆中承担高精度 Golden 时，其误差参与 2.1 计算；原始 Golden 不因诊断所需的舍入或转换而被覆盖。
 
 报告示例包含正常值域三项比值和边界、小值域计数、三方身份及未执行的复检字段，全部为合成数据。渲染器只校验报告结构，不重新执行算子、计算精度或证明标准覆盖达标。
 
 两个 CSV 都使用 UTF-8。`results.csv` 每个结果一行，`metrics.csv` 每个指标一行，两表用行键关联。上述结构化字段保留在 `metadata_json`，指标以长表保存，适用于不同项目和设备。可能被表格软件解释为公式的文本和原本以单引号开头的文本会多一个前导单引号。程序读取 CSV 时可去掉这一前缀，或直接读取保留原值的 JSON。导入 XLSX 时将 ID 列设为文本。
 
+## 逐输出三方精度宽表
+
+需要横向比较时，在 `bundle.json` 顶层增加 `precision_comparisons` 数组，每项对应某 API 调用的一个前向输出或反向梯度。非空数组会新增 `precision_comparison.csv`，并在 HTML 中显示同一张宽表；未提供或为空时保留原有四个输出文件。CSV 使用稳定英文列，HTML 使用中文表头；角色名称来自数据，不固定为某个硬件品牌。
+
+| 字段组 | 必备内容 |
+| --- | --- |
+| 调用与输出 | `case_id`、`operator`、`phase`、`api_type`、`api_family`、`api_layer`、`output_name`、`shape`、`dtype`、`candidate_name`、`peer_name`、`golden_name` |
+| 可选调用绑定 | `torch_api`、`backend_operator`。只有后端名称而没有公开 Torch 调用证据时，前者留空，不根据 ACLNN 或 kernel 名猜绑定 |
+| `standard21` | `level`、`numerical_status`、`formal_status`、`detail`；三项误差比及分母下限、小值域阈值/error、两端 ErrorCount 及比值、非有限值和复检状态 |
+| `diagnostics` | `candidate_golden`、`peer_golden`、`candidate_peer` 三组，每组记录 `bitwise_equal`、`bitwise_mismatch_count`、`max_ulp`、`max_abs`、`mean_abs`、`max_rel`、`mean_rel`、`rmse`、`excluded_count`；最后一组可附 `row_max_mean_rel` |
+| 计算定义 | `diagnostic_definition` 保存原 dtype 位比较、ULP 计算 dtype/舍入/符号零及非有限值规则、相对误差分母与掩码、剔除原因、行最大位置的轴/参考端/并列处理 |
+| 可选上下文 | `context` 保存模型、模块、片段、源表 T、输出位置、来源行等。它们不作为各项目都必须填写的固定列 |
+
+`api_type` 使用 `non_computational`、`integer`、`quantized`、`floating` 或 `random`，对应 2.1 类别；`api_family` 表示矩阵乘、归一化、激活、通信等功能。`phase` 明确前向/反向或更细阶段。RMSNorm 的 y、rstd 以及 input/weight 梯度分别成行，各自保留真实 shape 和 dtype。多个输出共用原调用的 case ID，输出行数不计为独立用例数。
+
+三方诊断不产生单独的通过/失败结论。`bitwise_mismatch_count` 统计原 dtype 位模式不同的**元素数**，不是不同 bit 总数。跨 dtype 的原始位比较不适用；如另做转换后的 ULP，必须在方法中记录目标 dtype 与舍入。未知指标使用 `null` 或省略，不能用 0 或 false 代替。零剔除数也不能代替小值域 ErrorCount。
+
+`standard21.issue_fields` 将标准字段名映射到具体问题说明。表中这些单元格以及 `FAIL`、`ERROR`、`TIMEOUT`、`BLOCKED` 的标准状态标红，分别表明已超标、执行错误或必需证据缺失。诊断列不按大小自动标红；不一致的位模式或较大的 ULP/直接相对差不会触发浮点 2.1 失败。缺级别、RMSE、小值域或计算依据时注明缺项并保留待判定状态，不能仅凭最大/平均相对误差宣布通过。
+
+渲染器只验证结构并展示输入结论，不重新计算 2.1，也不把未知指标改为失败数值。`issue_fields` 只能引用 `standard21` 中的字段，不能把诊断字段列为独立验收问题。已有原始输入/输出、标准版本、执行与覆盖证据仍需随报告交付。
+
 ## 核对报告
 
 - 按行键核对计划和实测，检查多余项和重复项。每个适用阶段关联输入、输出、标杆和执行次数。多输出用例按返回结构和顺序逐项核对。只有完成执行和所需比较并满足判据的结果才记为 `PASS`。必需标杆缺失记为 `BLOCKED`，未运行记为 `NOT_RUN`。
 - 在交付目录离线打开 HTML，检查用例明细、原始报告和复现链接。受限输入注明获取方式。
-- `summary.json` 汇总行数和状态。精度记录保留所用规则及其结论，包括 ATK 原始结果、项目回归或正式标准验收。
+- `summary.json` 汇总结果行数和状态。精度记录保留 ATK 原始状态、2.1 数值及正式结论；三方诊断宽表的输出叶子数与独立用例数分开统计。
 
 数据量大时按算子或阶段拆分 HTML。汇总表按行键显示结果，重复执行的明细放在原始数据文件。

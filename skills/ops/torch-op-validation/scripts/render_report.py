@@ -4,11 +4,19 @@
 import argparse
 import csv
 import html
+import importlib.util
 import json
 import math
 import os
 from pathlib import Path
 from urllib.parse import quote
+
+# Keep file-based importers working without changing their cwd or sys.path.
+_precision_spec = importlib.util.spec_from_file_location(
+    "torch_op_validation_precision_comparison", Path(__file__).with_name("precision_comparison.py")
+)
+precision_comparison = importlib.util.module_from_spec(_precision_spec)
+_precision_spec.loader.exec_module(precision_comparison)
 
 SCHEMA_VERSION = "1.0"
 SUITES = ("function", "accuracy", "memory", "performance", "determinism")
@@ -135,6 +143,8 @@ def validate(bundle, root):
         if row.get("reproduction") is not None:
             _artifact_path(row["reproduction"], root, f"{label}.reproduction")
 
+    if "precision_comparisons" in bundle:
+        precision_comparison.validate_rows(bundle["precision_comparisons"])
     return run, rows
 
 
@@ -338,7 +348,7 @@ for (const control of [query, suite, backend, status, issues]) {
 """
 
 
-def _write_html(path, run, rows, summary, root):
+def _write_html(path, run, rows, summary, root, comparisons=()):
     run_id = _text(run["id"])
     standard = _text(run["standard_id"])
     evidence = EVIDENCE_CLASSES[run["evidence_class"]]
@@ -351,18 +361,26 @@ def _write_html(path, run, rows, summary, root):
         _select("被测后端", "backend", sorted({row["backend"] for row in rows})),
     ))
     metadata = ""
+    precision_nav = ""
+    precision_style = ""
+    precision_total = ""
+    if comparisons:
+        precision_nav = ('<a href="#precision-comparison-title">逐输出三方精度宽表</a>'
+                         '<a href="precision_comparison.csv">三方精度 CSV</a>')
+        precision_style = precision_comparison.STYLE
+        precision_total = f'<span><strong>{len(comparisons)}</strong>输出叶子</span>'
     if run.get("metadata"):
         metadata = f'<details><summary>运行信息</summary><pre>{_text(_json(run["metadata"], indent=2))}</pre></details>'
     with path.open("w", encoding="utf-8") as file:
         file.write(f"""<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>算子测试报告 · {run_id}</title><style>{STYLE}</style></head>
+<title>算子测试报告 · {run_id}</title><style>{STYLE}{precision_style}</style></head>
 <body><main><header><h1>算子测试报告</h1>
 <div class="run-info"><span>运行 {run_id}</span><span>标准 {standard}</span><span>{evidence}</span></div>
 <nav aria-label="下载"><a href="results.csv">结果 CSV</a><a href="metrics.csv">指标 CSV</a>
-<a href="summary.json">汇总 JSON</a></nav>{metadata}</header>
+<a href="summary.json">汇总 JSON</a>{precision_nav}</nav>{metadata}</header>
 <div class="totals"><span><strong>{summary["case_count"]}</strong>用例</span>
-<span><strong>{summary["result_count"]}</strong>结果</span>
+<span><strong>{summary["result_count"]}</strong>结果</span>{precision_total}
 <span><strong>{summary["metric_count"]}</strong>指标</span>
 <span><strong>{missing_count}</strong>缺失附件</span></div>
 <h2>专项统计</h2>{_summary_table(summary)}
@@ -375,7 +393,8 @@ def _write_html(path, run, rows, summary, root):
 """)
         for row in rows:
             file.write(_html_row(row, root, path.parent))
-        file.write(f"</tbody></table></div></main><script>{FILTER}</script></body></html>\n")
+        precision_section = precision_comparison.render_section(comparisons)
+        file.write(f"</tbody></table></div>{precision_section}</main><script>{FILTER}</script></body></html>\n")
 
 
 def render(bundle_path, output):
@@ -384,14 +403,20 @@ def render(bundle_path, output):
     with bundle_path.open(encoding="utf-8-sig") as source:
         bundle = json.load(source, object_pairs_hook=_unique_json_keys)
     run, rows = validate(bundle, root)
+    comparisons = bundle.get("precision_comparisons", [])
     summary = summarize(run, rows, root)
+    if comparisons:
+        summary["precision_comparison_count"] = len(comparisons)
     # A fresh output directory keeps an earlier report intact if another run fails.
     output.mkdir(parents=True, exist_ok=False)
     output = output.resolve()
     _write_csv(output / "results.csv", RESULT_FIELDS, _result_rows(run, rows))
     _write_csv(output / "metrics.csv", METRIC_FIELDS, _metric_rows(run, rows))
+    if comparisons:
+        _write_csv(output / "precision_comparison.csv", precision_comparison.CSV_FIELDS,
+                   precision_comparison.csv_rows(run, comparisons))
     (output / "summary.json").write_text(_json(summary, indent=2) + "\n", encoding="utf-8")
-    _write_html(output / "report.html", run, rows, summary, root)
+    _write_html(output / "report.html", run, rows, summary, root, comparisons)
 
 
 def main():

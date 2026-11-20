@@ -21,9 +21,16 @@
       "confidence_level": 0.95,
       "quantile_method": null
     },
-    "project_checks": {
-      "enabled": false,
-      "rules": []
+    "diagnostic_recording": {
+      "enabled": true,
+      "pairs": [
+        "candidate_golden",
+        "peer_golden",
+        "candidate_peer"
+      ],
+      "acceptance_thresholds": false,
+      "per_output_leaf": true,
+      "missing_values": "null; never substitute zero"
     }
   },
   "suites": [
