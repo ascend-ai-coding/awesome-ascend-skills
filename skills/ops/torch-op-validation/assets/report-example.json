@@ -25,6 +25,15 @@
       "diagnostic_recording": {
         "enabled": true,
         "acceptance_thresholds": false
+      },
+      "golden_precision_plan": {
+        "mapping_file": "golden-dtype-map.json",
+        "mapping_id": "torch-op-validation/golden-dtype-map-v1",
+        "source_dtype": "float32",
+        "golden_input_dtype": "float32",
+        "execution_status": "NOT_RUN",
+        "verified_before_call": false,
+        "scope": "Synthetic policy illustration. Scalar example metrics are not execution records; no Golden or operator was run."
       }
     }
   },
@@ -141,7 +150,8 @@
           },
           "golden": {
             "backend": "cpu",
-            "compute_dtype": "float64"
+            "compute_dtype": "float32",
+            "dtype_policy": "float32 remains float32 under the adopted Golden map; synthetic plan only"
           }
         },
         "relative_error_epsilon": 1e-07,
@@ -230,7 +240,7 @@
       "dtype": "float32",
       "candidate_name": "NPU",
       "peer_name": "GPU",
-      "golden_name": "CPU-FP64",
+      "golden_name": "CPU-FP32",
       "standard21": {
         "level": "L1",
         "numerical_status": "FAIL",
@@ -269,9 +279,9 @@
           "excluded_count": 0
         },
         "candidate_peer": {
-          "bitwise_equal": false,
-          "bitwise_mismatch_count": 1,
-          "max_ulp": 1000000,
+          "bitwise_equal": null,
+          "bitwise_mismatch_count": null,
+          "max_ulp": null,
           "max_abs": null,
           "mean_abs": null,
           "max_rel": null,
@@ -283,15 +293,22 @@
       },
       "diagnostic_definition": {
         "scope": "Synthetic scalar fields, not measurements from tensors.",
-        "bitwise_mismatch_count": "Number of mismatching output elements at original output dtype.",
-        "ulp": "Illustrative field only; a real run must specify encoding, computation dtype, rounding and nonfinite handling.",
+        "bitwise_mismatch_count": "Not measured: this synthetic field example contains no original-dtype tensor snapshots.",
+        "ulp": "Not measured: this synthetic field example does not validate a tensor encoding, dtype conversion, rounding or nonfinite handling.",
         "relative_error": "For the two Golden pairs, abs(actual-golden)/(abs(golden)+1e-7); finite mask.",
         "row_max_mean_rel": "Not collected; no axis, argmax reference or tie rule supplied.",
-        "excluded_count": "Counts excluded from each reported diagnostic population; not the small-value ErrorCount."
+        "excluded_count": "Counts excluded from each reported diagnostic population; not the small-value ErrorCount.",
+        "declared_dtype_plan": {
+          "candidate": "float32",
+          "peer": "float32",
+          "golden": "float32",
+          "status": "NOT_RUN; policy illustration only"
+        }
       },
       "context": {
         "source_kind": "synthetic",
-        "new_device_calls": 0
+        "new_device_calls": 0,
+        "golden_execution_status": "NOT_RUN"
       }
     }
   ]

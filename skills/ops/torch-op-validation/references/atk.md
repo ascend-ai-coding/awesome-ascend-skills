@@ -22,7 +22,7 @@ python3 -m venv --system-site-packages "$ATK_VENV"
 ## 生成和执行
 
 1. 从当前 ATK 版本的模板生成 case JSON、node YAML 和所需插件。记录批次 ID、ATK case ID 和报告 ID 的映射。
-2. 标明各节点承担的角色。双标杆需记录候选、同精度对照和高精度 Golden。离线对照使用相应节点本轮保存的输出，并附环境、输入和输出哈希、参数及阶段。
+2. 标明各节点承担的角色。双标杆需记录候选、同精度对照和按 [Golden dtype 映射](precision.md#golden-计算精度核验)构造的 Golden。FP32、complex64 参考计算保持原 dtype，不能由“Golden”名称自动推断升精。离线对照使用相应节点本轮保存的输出，并附环境、输入和输出哈希、参数及阶段。
 3. 插件按 case ID 读取输入和梯度，按 API 签名传参。若使用 ATK 生成输入，所有节点使用同一份生成结果。当前版本支持时可用 `--syc_dataset` 分发，也可导出最终输入后逐节点校验。训练反向在每端重新执行前向并使用该端缓存，不能给 NPU 反向传入 Golden 的前向缓存。按[精度与用例](precision.md)落实设备地址 NaN 预填并保留执行证据。
 4. 核对 CLI 帮助后执行。只有使用插件时才传 `-p` 和文件名。
 
@@ -35,13 +35,13 @@ python3 -m venv --system-site-packages "$ATK_VENV"
 
 批量测试前，用结果已知的小样核对以下行为，并保存比较器版本及原始报告：
 
-- 浮点计算的三方身份、Golden 精度、正常值域 MARE/MERE/RMSE，以及 `metric_npu / max(metric_peer, ratio_denominator_err)`。将 `ratio_denominator_err` 的数值、来源和解释写入记录；它不是相对误差公式中的 `1e-7`。
+- 浮点计算的三方身份、Golden 规定 dtype 与实际调用前 dtype、正常值域 MARE/MERE/RMSE，以及 `metric_npu / max(metric_peer, ratio_denominator_err)`。用 FP32 不升精与 BF16 升至 FP32 等小样核对参考端，不能只检查最终输出类型。将 `ratio_denominator_err` 的数值、来源和解释写入记录；它不是相对误差公式中的 `1e-7`。
 - 对照误差为零或小于分母下限、比值恰等于等级上限的边界；小值域的 `< threshold`、`> error` 和计数比 `<= 2`；Inf/NaN 按芯片模式及三方结果判断。
 - 非计算类的原 dtype 位一致、整数类的位一致或 AE=0、量化整型输出的适用分支；随机类使用独立的分布检验。
 
 浮点 ATK 配置可使用 `cv_fused_double_benchmark`，等级上限对应 `max_re_ratio`、`avg_re_ratio`、`root_mean_squared_ratio`。字段名称相同不足以证明实现符合 2.1；必须核对分母、小值域和非有限值处理。工具无法实现某条要求时保留原始输出，补做相应的 2.1 检查并标明范围，不能把默认 `Passed` 写成 2.1 正式通过。
 
-三方两两的原 dtype 位差、ULP、绝对/相对误差与 RMSE 按[诊断定义](precision.md#三方附加诊断)保存，不配置额外通过门槛。核对 ATK 导出字段的实际含义：位差必须区分位差总数与位差元素数；不同 dtype 不能直接逐位等同比较；ULP 须确认计算 dtype、转换/舍入、符号零和非有限值处理。舍入 Golden 得到的 ULP 不能替代原高精度 Golden 的 2.1 指标。剔除数记录统计范围，不等于小值域 `ErrorCount`；行最大位置指标须能确认轴、argmax 来源、并列值处理及分母，未确认的字段记为缺测。
+三方两两的原 dtype 位差、ULP、绝对/相对误差与 RMSE 按[诊断定义](precision.md#三方附加诊断)保存，不配置额外通过门槛。核对 ATK 导出字段的实际含义：位差必须区分位差总数与位差元素数；不同 dtype 不能直接逐位等同比较；ULP 须确认计算 dtype、转换/舍入、符号零和非有限值处理。舍入 Golden 得到的 ULP 不能替代原始 Golden 的 2.1 指标。剔除数记录统计范围，不等于小值域 `ErrorCount`；行最大位置指标须能确认轴、argmax 来源、并列值处理及分母，未确认的字段记为缺测。
 
 报告中的 2.1 超标、执行错误及关键证据缺失标红，附加诊断数值本身不触发标红。诊断字段缺测保留原因；是否属于阻碍正式验收的关键证据，应依据适用 2.1 条款判断。
 

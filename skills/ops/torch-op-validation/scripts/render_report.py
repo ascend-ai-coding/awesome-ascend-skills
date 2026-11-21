@@ -364,11 +364,16 @@ def _write_html(path, run, rows, summary, root, comparisons=()):
     precision_nav = ""
     precision_style = ""
     precision_total = ""
+    precision_intro = ""
     if comparisons:
-        precision_nav = ('<a href="#precision-comparison-title">逐输出三方精度宽表</a>'
+        precision_nav = ('<a href="#precision-method-title">三方角色与计算方法</a>'
+                         '<a href="#precision-direct-title">三组直接比较</a>'
+                         '<a href="#precision-comparison-title">逐输出三方精度宽表</a>'
                          '<a href="precision_comparison.csv">三方精度 CSV</a>')
         precision_style = precision_comparison.STYLE
         precision_total = f'<span><strong>{len(comparisons)}</strong>输出叶子</span>'
+        precision_intro = (precision_comparison.render_method_section(comparisons)
+                           + precision_comparison.render_diagnostics_summary(comparisons))
     if run.get("metadata"):
         metadata = f'<details><summary>运行信息</summary><pre>{_text(_json(run["metadata"], indent=2))}</pre></details>'
     with path.open("w", encoding="utf-8") as file:
@@ -383,6 +388,7 @@ def _write_html(path, run, rows, summary, root, comparisons=()):
 <span><strong>{summary["result_count"]}</strong>结果</span>{precision_total}
 <span><strong>{summary["metric_count"]}</strong>指标</span>
 <span><strong>{missing_count}</strong>缺失附件</span></div>
+{precision_intro}
 <h2>专项统计</h2>{_summary_table(summary)}
 <p class="muted">统计来自输入记录。报告生成器只汇总各条记录的状态。</p>
 <h2>用例明细</h2><div class="filters">
@@ -393,7 +399,7 @@ def _write_html(path, run, rows, summary, root, comparisons=()):
 """)
         for row in rows:
             file.write(_html_row(row, root, path.parent))
-        precision_section = precision_comparison.render_section(comparisons)
+        precision_section = precision_comparison.render_section(comparisons, include_method=False, include_summary=False)
         file.write(f"</tbody></table></div>{precision_section}</main><script>{FILTER}</script></body></html>\n")
 
 

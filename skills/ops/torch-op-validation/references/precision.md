@@ -10,11 +10,77 @@
 
 ## 标杆和算子分类
 
-单标杆是候选与一个参考实现直接比较；计算类的单标杆须为更高精度实现。双标杆使用同一份高精度 Golden，分别计算 NPU 候选和同精度对照相对 Golden 的误差，再比较两端误差。通常以高精度 CPU 为 Golden、GPU 为对照；标准允许同精度 CPU 或昇腾小算子拼接实现承担对照角色，必须记录适用条件和实现。
+单标杆是候选与一个参考实现直接比较；计算类的参考精度按适用标准及下述 Golden dtype 映射核验。双标杆使用同一份 Golden，分别计算 NPU 候选和同精度对照相对 Golden 的误差，再比较两端误差。通常以 CPU 为 Golden、GPU 为同精度对照；标准允许同精度 CPU 或昇腾小算子拼接实现承担对照角色，必须记录适用条件和实现。Golden 是参考角色，不能由该名称推断所有 dtype 都需要升精。
 
 标杆遵循竞品对标优先、逐级选择备选的原则：对应框架已有的业界 CPU 或第三方芯片实现；无对应竞品的融合算子、特殊融合结构或明确特殊需求采用等效小算子组合；非标准数据类型采用自行构造的 CPU 实现。涉及串联量化/反量化的量化算子也可采用组合实现。保留源码、版本和等效性依据。
 
-各端使用冻结的相同输入、属性和上游梯度，记录输入哈希、权重、累加精度、输出 dtype 和计算模式。Golden 的计算精度应高于被评估实现；FP16/BF16 输入通常用 FP32 计算，但不得仅凭输出 dtype 声称实现具有更高计算精度。
+各端使用冻结的相同输入、属性和上游梯度，记录输入哈希、权重、累加精度、输出 dtype 和计算模式。Golden 按指定 dtype 映射升精或保持原 dtype；不得仅凭输出 dtype 声称参考实现已经符合计算方案。
+
+### Golden 计算精度核验
+
+采用以下 Golden dtype 映射；左列是待测 Torch/TorchNPU dtype，右列是 CPU 参考计算采用的 dtype。保存所采用映射的来源、版本或摘要，并在任务记录中注明任何另行指定的方案。
+
+| 待测 dtype | Golden dtype | 处理 |
+| --- | --- | --- |
+| `float16` | `float32` | 在参考计算前升精 |
+| `bfloat16` | `float32` | 在参考计算前升精 |
+| `float32` | `float32` | 不升精 |
+| `complex32` | `complex64` | 在参考计算前升精 |
+| `complex64` | `complex64` | 不升精 |
+
+`complex32` 的实部、虚部各为 FP16；`complex64` 的实部、虚部各为 FP32。这是精度方案说明，不代表某个算子或设备支持相应 dtype，也不代表已完成其测试。映射未覆盖的 dtype 不自行推断，须取得适用规则或将该条目标为 `BLOCKED`。
+
+FP32 和 complex64 保持原 dtype 是本映射的有效方案，不因与待测端 dtype 相同而判为缺少 Golden。将 FP32 用例的 Golden 自动改成 FP64，或将 complex64 自动改成 complex128，不符合本映射；这类结果可另存辅助诊断，不能替代规定方案下的结果。修正规则后须重新执行受影响的参考计算及其比较，不得只改报告标签。
+
+核验并保存以下信息：
+
+- 候选与同精度对照读取同一份已量化冻结输入。Golden 从这份输入转换，不能另行生成高精度随机数据；整数索引、布尔值和调用属性保持原语义。
+- 需要升精的浮点或复数输入、权重和上游梯度在调用参考实现前转换，并检查实际 dtype；标为不升精的 dtype 保持原类型。显式 dtype 属性、混合输入及累加方式按该算子的参考方案处理，不能把所有 dtype 参数一律改大。
+- 记录参考实现、实际运算和累加精度、autocast／混合精度设置及各返回叶子 dtype；核对自定义实现内部是否回落低精度。把低精度结果转为 FP32/FP64，只改变存储类型，不构成高精度 Golden。
+- 反向在参考端重新执行其前向，使用该端缓存和由同一冻结上游梯度转换的 grad_outputs；逐项核对输入梯度、权重梯度及预期 None。
+- 误差计算使用原精度 Golden，不为匹配候选输出而先降精。用于 ULP 的显式舍入另作诊断，保留原 Golden。
+
+可在 `run.metadata.golden_precision_plan` 中记录逐 dtype 规则、来源和执行检查证据，在逐叶上下文中登记实际输入、计算、累加与输出 dtype。CPU 不支持规定 dtype 或不能证明参考实现符合方案时，选择有依据的替代参考或将受影响条目标为 `BLOCKED`；不得静默更换 dtype 并继续宣称 Golden 已验证。非计算类、整数类及量化类按各自分支处理，不强套浮点升精方案。
+
+### Golden 元数据门禁
+
+[`validate_golden.py`](../scripts/validate_golden.py)核对执行器导出的调用前 dtype 记录，默认读取[映射文件](../assets/golden-dtype-map.json)，仅依赖 Python 标准库。它不运行 Torch、ATK 或设备计算，也不验证记录的真实性；执行器仍须保存真实输入检查、源码与运行证据。传入的 `evidence` 是证据引用，检查器只要求引用非空，不打开文件或把文件存在等同于实际执行。
+
+输入示例是尚未执行的 FP32 计划：
+
+```json
+{
+  "schema_version": 1,
+  "cases": [{
+    "case_id": "operator-001",
+    "phase": "forward",
+    "api_type": "floating",
+    "execution_status": "NOT_RUN",
+    "inputs": [{
+      "name": "input",
+      "source_dtype": "float32",
+      "golden_dtype": "float32",
+      "verified_before_call": false
+    }],
+    "upstream": [],
+    "evidence": []
+  }]
+}
+```
+
+`execution_status` 使用 `EXECUTED`、`NOT_RUN`、`BLOCKED` 或 `ERROR`。执行后由执行器逐操作数填入实际记录，`verified_before_call=true` 必须来自参考调用前的检查。反向记录同一冻结上游梯度的 `source_dtype` 和实际 `golden_dtype`；阶段含 `backward` 或设置 `requires_upstream=true` 时要求非空 `upstream`。整数／布尔操作数和非计算类调用显式使用 `policy: "preserve"`，不能用该策略绕过浮点计算的升精映射。
+
+```bash
+# 验前：只检查计划，plan_status=PASS 不代表执行完成。
+python3 scripts/validate_golden.py run/golden-records.json --out run/golden-plan.json --strict-plan
+
+# 验后：只有实际记录的映射、调用前检查和执行证据引用均合格才返回 0。
+python3 scripts/validate_golden.py run/golden-records.json --out run/golden-check.json --strict
+```
+
+输出目录的父目录须已存在，报告文件须为新文件。每个 case 同时保存 `plan_status` 和实际记录的 `status`；上述未执行示例为 `plan_status=PASS`、`status=BLOCKED`。`--strict-plan` 按前者决定退出码，`--strict` 按后者决定，所选门禁非 PASS 返回 1；输入结构错误返回 2。
+
+已知映射与实际记录不符时为 `FAIL`，问题类型是 `golden_policy_mismatch`，不代表算子数值失败。未知 dtype、缺输入／上游、缺调用前验证或缺执行记录为 `BLOCKED`。输出 dtype、FP64 比较器统计类型均不能代替操作数的调用前记录。复杂 dtype 的映射配置通过，也不证明其数值、ULP 或设备支持已验证。
 
 | 类别 | 范围 | 比对与通过条件 |
 | --- | --- | --- |
@@ -74,7 +140,7 @@ L2 要求在泛化用例基础上增加真实业务模型训练和推理输入�
 
 非有限输出不能直接计算相对或绝对误差；按位置比对 Golden、NPU 和对照，并结合算子公式判断。记录种类、符号、位置、芯片型号与 `INF_NAN_MODE_ENABLE` 的实际值，不能过滤后以有限值比较结果代替此检查。
 
-Ascend910A 及之前平台，或 Ascend910B 及之后平台且 `INF_NAN_MODE_ENABLE=0` 时，标准规定 inf 计算值不参与精度比较，需单列排除数量及依据。该条款不能扩大为所有 NaN 或所有异常输出都豁免。Ascend910B 及之后且 `INF_NAN_MODE_ENABLE=1` 时，要求 inf 输出一致，或 NPU 相对高精度 Golden 更接近正确值。
+Ascend910A 及之前平台，或 Ascend910B 及之后平台且 `INF_NAN_MODE_ENABLE=0` 时，标准规定 inf 计算值不参与精度比较，需单列排除数量及依据。该条款不能扩大为所有 NaN 或所有异常输出都豁免。Ascend910B 及之后平台且 `INF_NAN_MODE_ENABLE=1` 时，要求 inf 输出一致，或 NPU 相对 Golden 更接近正确值。
 
 - NPU 与对照的非有限输出一致时，可按标准正确条件通过该位置，与 Golden 的值无关。
 - Golden 为 inf/-inf/nan，且 NPU 与 Golden 完全一致时，该位置正确，即使对照与 Golden 不同。
@@ -83,7 +149,7 @@ Ascend910A 及之前平台，或 Ascend910B 及之后平台且 `INF_NAN_MODE_ENA
 
 ## 三方附加诊断
 
-对每个 output/gradient 叶子分别保留候选–Golden、对照–Golden、候选–对照三组诊断，写明两端角色及作为分母的参考端。以下统计用于定位差异，不设置位一致、ULP、绝对误差或相对误差的额外验收门槛。候选与对照相对同一高精度 Golden 的 2.1 指标仍按上文规定的范围、公式、比值和复检流程作主判定。
+对每个 output/gradient 叶子分别保留候选–Golden、对照–Golden、候选–对照三组诊断，写明两端角色及作为分母的参考端。以下统计用于定位差异，不设置位一致、ULP、绝对误差或相对误差的额外验收门槛。候选与对照相对同一规定精度 Golden 的 2.1 指标仍按上文规定的范围、公式、比值和复检流程作主判定。
 
 ### 原 dtype 二进制与位差
 

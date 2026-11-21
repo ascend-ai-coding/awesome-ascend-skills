@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "mapping_id": "torch-op-validation/golden-dtype-map-v1",
+  "description": "Golden reference dtype policy. Record the adopted task authority separately. This policy does not certify operator or device support.",
+  "mapping": {
+    "float16": "float32",
+    "bfloat16": "float32",
+    "float32": "float32",
+    "complex32": "complex64",
+    "complex64": "complex64"
+  }
+}

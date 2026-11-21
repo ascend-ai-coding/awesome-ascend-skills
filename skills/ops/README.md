@@ -8,7 +8,7 @@
 - [`ascend-opplugin/`](ascend-opplugin/)：op-plugin 接入与自定义算子
 - [`triton-ascend-migration/`](triton-ascend-migration/)：Triton / PyTorch 算子迁移
 - [`npu-op-benchmark/`](npu-op-benchmark/)：算子基准测试与调优辅助
-- [`torch-op-validation/`](torch-op-validation/)：按昇腾算子精度标准 2.1 验证 PyTorch / TorchNPU 算子及 ATK 失败复现。只测单算子延迟时使用 `npu-op-benchmark`。
+- [`torch-op-validation/`](torch-op-validation/)：算子五类测试、2.1 精度验收及 ATK 失败复现；[使用示例与报告图解](torch-op-validation/references/walkthrough.md)。只测单算子延迟时使用 `npu-op-benchmark`。
 
 推荐场景：
 

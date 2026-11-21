@@ -31,6 +31,14 @@
       "acceptance_thresholds": false,
       "per_output_leaf": true,
       "missing_values": "null; never substitute zero"
+    },
+    "golden_mapping_file": "golden-dtype-map.json",
+    "golden_mapping_id": "torch-op-validation/golden-dtype-map-v1",
+    "golden_metadata_gate": {
+      "script": "../scripts/validate_golden.py",
+      "preflight_gate": "--strict-plan",
+      "executed_records_gate": "--strict",
+      "input_records": "Export per-operand source_dtype/golden_dtype/verified_before_call plus upstream records and actual execution evidence; task targets do not establish execution."
     }
   },
   "suites": [
@@ -101,6 +109,15 @@
         "ratio_err_interpretation": "Normal-ratio floor; distinct from the small-value absolute-error limit",
         "small_value_threshold": 0.00390625,
         "small_value_error": 1.52587890625e-05
+      },
+      "golden_plan": {
+        "execution_status": "NOT_RUN",
+        "input_dtypes": {
+          "input": "float32",
+          "weight": "float32"
+        },
+        "verified_before_call": false,
+        "upstream_dtype": "float32"
       }
     },
     {
@@ -159,6 +176,16 @@
         "ratio_err_interpretation": "Normal-ratio floor; distinct from the small-value absolute-error limit",
         "small_value_threshold": 0.00390625,
         "small_value_error": 1.52587890625e-05
+      },
+      "golden_plan": {
+        "execution_status": "NOT_RUN",
+        "input_dtypes": {
+          "query": "float32",
+          "key": "float32",
+          "value": "float32"
+        },
+        "verified_before_call": false,
+        "upstream_dtype": null
       }
     }
   ]

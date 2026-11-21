@@ -39,6 +39,40 @@ class PrecisionCells(HTMLParser):
             self.active = None
 
 
+class ReportTable(HTMLParser):
+    def __init__(self, source, table_id):
+        super().__init__()
+        self.table_id = table_id
+        self.inside = False
+        self.rows = []
+        self.row = None
+        self.cell = None
+        self.feed(source)
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if tag == "table" and attrs.get("id") == self.table_id:
+            self.inside = True
+        elif self.inside and tag == "tr":
+            self.row = []
+        elif self.inside and tag == "td":
+            self.cell = ""
+
+    def handle_data(self, data):
+        if self.cell is not None:
+            self.cell += data
+
+    def handle_endtag(self, tag):
+        if tag == "table":
+            self.inside = False
+        elif self.inside and tag == "td" and self.cell is not None:
+            self.row.append(self.cell)
+            self.cell = None
+        elif self.inside and tag == "tr" and self.row:
+            self.rows.append(self.row)
+            self.row = None
+
+
 class ReportTest(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
@@ -283,6 +317,119 @@ report.render(bundle_path, Path(sys.argv[3]))
         self.assertIn("位模式不一致元素数", rendered)
         self.assertIn('<strong>5</strong>输出叶子', rendered)
         self.assertIn("浮点计算类", rendered)
+
+    def test_three_direct_comparisons_use_actual_names_and_keep_supplied_metrics(self):
+        row = self.comparison(candidate_name="NPU-X", peer_name="GPU-Y", golden_name="CPU-Z")
+        row["context"] = {"actual_output_dtypes": {
+            "candidate": "bfloat16", "peer": "bfloat16", "golden": "float32"}}
+        row["diagnostics"]["candidate_peer"].update(max_abs=0.125, max_rel=0.25,
+            mean_rel=0.0625, max_ulp=7, bitwise_mismatch_count=2)
+        self.bundle["precision_comparisons"] = [row]
+        completed = self.invoke()
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        rendered = (self.output / "report.html").read_text(encoding="utf-8")
+        direct = ReportTable(rendered, "precision-direct").rows
+        self.assertEqual(len(direct), 3)
+        self.assertEqual([item[2] for item in direct],
+                         ["NPU-X vs CPU-Z", "GPU-Y vs CPU-Z", "NPU-X vs GPU-Y"])
+        self.assertEqual(direct[2][3:8], ["1.250000e-1", "2.500000e-1", "6.250000e-2", "7", "2"])
+        self.assertIn("Ratio = E_A / max(E_P, err)", rendered)
+        self.assertIn("ErrorCount_A/max(ErrorCount_P,1)&lt;=2", rendered)
+        self.assertIn("直接诊断的全有限元素汇总，不自动等于正常值域的指标", rendered)
+        self.assertIn("非计算类、整数类", rendered)
+        self.assertIn("不能单凭此认定被测实现比对照实现更精确", rendered)
+        self.assertLess(rendered.index('id="precision-method-title"'),
+                        rendered.index('id="precision-comparison-title"'))
+        _, actual = self.read_precision_csv()
+        self.assertEqual(actual[0]["candidate_peer_max_abs"], "0.125")
+        self.assertEqual(actual[0]["candidate_peer_max_ulp"], "7")
+        self.assertEqual(actual[0]["standard21_numerical_status"], "PASS")
+        self.assertEqual(json.loads(actual[0]["context_json"]), row["context"])
+
+    def test_golden_dtype_requires_record_and_does_not_infer_from_name(self):
+        row = self.comparison(golden_name="CPU-FLOAT64")
+        self.bundle["precision_comparisons"] = [row]
+        completed = self.invoke()
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        rendered = (self.output / "report.html").read_text(encoding="utf-8")
+        self.assertIn("本轮执行精度（来自记录）", rendered)
+        self.assertIn("仅将低精度结果转换成高精度，不能作为升精计算", rendered)
+        self.assertIn("输出 dtype 也不能单独证明内部累加精度", rendered)
+        # CPU-FLOAT64 is a role label, not proof of a real FP64 execution.
+        self.assertIn("CPU-FLOAT64", rendered)
+        self.assertNotIn("<td>float64</td>", rendered)
+        self.assertNotIn("FP32→FP64", rendered)
+
+    def test_confirmed_golden_mapping_keeps_fp32_and_complex64(self):
+        rows = []
+        for dtype in ("float32", "complex64"):
+            rows.append(self.comparison(
+                case_id=dtype + "-same-reference", dtype=dtype,
+                golden_name="CPU-" + dtype,
+                context={"actual_output_dtypes": {
+                    "candidate": dtype, "peer": dtype, "golden": dtype}},
+            ))
+        self.bundle["precision_comparisons"] = rows
+        completed = self.invoke()
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        rendered = (self.output / "report.html").read_text(encoding="utf-8")
+        mapping = rendered.split('<table id="golden-dtype-mapping">', 1)[1].split('</table>', 1)[0]
+        for source, target, action in (
+            ("float16", "float32", "计算前升精"),
+            ("bfloat16", "float32", "计算前升精"),
+            ("float32", "float32", "不升精"),
+            ("complex32", "complex64", "计算前升精"),
+            ("complex64", "complex64", "不升精"),
+        ):
+            self.assertIn(f'<tr><td>{source}</td><td>{target}</td><td>{action}</td></tr>', mapping)
+        self.assertNotIn('<td>float64</td>', mapping)
+        self.assertNotIn('<td>complex128</td>', mapping)
+        self.assertIn("不升精分支保持原 dtype", rendered)
+        self.assertIn("旧方案不符映射时保留原结果溯源", rendered)
+        _, actual = self.read_precision_csv()
+        self.assertEqual([row["standard21_numerical_status"] for row in actual], ["PASS", "PASS"])
+        self.assertEqual([row["golden_name"] for row in actual], ["CPU-float32", "CPU-complex64"])
+        self.assertEqual([json.loads(row["context_json"])["actual_output_dtypes"]["golden"] for row in actual],
+                         ["float32", "complex64"])
+        self.assertNotIn("FP32→FP64", rendered)
+
+    def test_cross_dtype_binary_not_applicable_is_explicit_and_csv_stays_blank(self):
+        row = self.comparison()
+        row["diagnostics"]["candidate_golden"] = {"bitwise_equal": None,
+            "bitwise_mismatch_count": None, "max_abs": 0, "excluded_count": 0}
+        row["diagnostic_definition"] = {"candidate_golden": {
+            "original_dtypes": ["float32", "float64"],
+            "original_binary_status": "NOT_APPLICABLE: original dtypes differ",
+            "full_finite_pair_mask": {"count": 6}}}
+        self.bundle["precision_comparisons"] = [row]
+        completed = self.invoke()
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        rendered = (self.output / "report.html").read_text(encoding="utf-8")
+        direct = ReportTable(rendered, "precision-direct").rows
+        self.assertEqual(direct[0][7], "NOT_APPLICABLE: original dtypes differ")
+        self.assertEqual(direct[0][8], "有效元素 6；剔除数 0")
+        self.assertIn("<td>float64</td>", rendered)
+        _, actual = self.read_precision_csv()
+        self.assertEqual(actual[0]["candidate_golden_bitwise_equal"], "")
+        self.assertEqual(actual[0]["candidate_golden_bitwise_mismatch_count"], "")
+        self.assertEqual(actual[0]["candidate_golden_max_abs"], "0")
+
+    def test_actual_device_names_and_precision_metadata_are_html_escaped(self):
+        attack = '<script>alert("device")</script>'
+        dtype_attack = '<img src=x onerror="alert(1)">'
+        row = self.comparison(candidate_name=attack, peer_name="Example GPU", golden_name="Reference CPU")
+        row["context"] = {"actual_output_dtypes": {"candidate": dtype_attack,
+                          "peer": "float32", "golden": "float64"}}
+        self.bundle["precision_comparisons"] = [row]
+        completed = self.invoke()
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        rendered = (self.output / "report.html").read_text(encoding="utf-8")
+        self.assertNotIn(attack, rendered)
+        self.assertNotIn(dtype_attack, rendered)
+        self.assertIn("&lt;script&gt;alert(&quot;device&quot;)&lt;/script&gt;", rendered)
+        self.assertIn("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;", rendered)
+        direct = ReportTable(rendered, "precision-direct").rows
+        self.assertEqual(direct[-1][2], attack + " vs Example GPU")
 
     def test_duplicate_precision_leaf_is_rejected_before_writing(self):
         row = self.comparison()

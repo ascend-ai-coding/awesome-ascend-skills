@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "case_id": "rms-bf16-plan",
+      "phase": "forward_backward",
+      "api_type": "floating",
+      "execution_status": "NOT_RUN",
+      "inputs": [
+        {
+          "name": "input",
+          "source_dtype": "bfloat16",
+          "golden_dtype": "float32",
+          "verified_before_call": false
+        },
+        {
+          "name": "weight",
+          "source_dtype": "bfloat16",
+          "golden_dtype": "float32",
+          "verified_before_call": false
+        }
+      ],
+      "upstream": [
+        {
+          "name": "grad_output",
+          "source_dtype": "bfloat16",
+          "golden_dtype": "float32",
+          "verified_before_call": false
+        }
+      ],
+      "evidence": []
+    }
+  ]
+}

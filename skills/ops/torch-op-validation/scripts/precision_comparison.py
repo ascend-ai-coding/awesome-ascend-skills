@@ -53,7 +53,7 @@ LABELS = {
     "backend_operator": "后端算子", "phase": "阶段", "api_type": "API 精度类别",
     "api_family": "API 功能族", "api_layer": "API 层级", "output_name": "输出／梯度槽",
     "shape": "Shape", "dtype": "Dtype", "candidate_name": "候选端",
-    "peer_name": "同精度对照端", "golden_name": "高精度 Golden",
+    "peer_name": "同精度对照端", "golden_name": "参考 Golden",
     "level": "等级", "numerical_status": "数值状态", "formal_status": "正式验收状态",
     "detail": "判定说明", "mare_ratio": "MARE 比值", "mere_ratio": "MERE 比值",
     "rmse_ratio": "RMSE 比值", "ratio_denominator_err": "正常误差比分母下限 err",
@@ -67,9 +67,22 @@ LABELS = {
     "excluded_count": "剔除数", "row_max_mean_rel": "行最大位置平均相对差",
 }
 PAIR_LABELS = {
-    "candidate_golden": "候选 ↔ Golden（诊断）", "peer_golden": "对照 ↔ Golden（诊断）",
-    "candidate_peer": "候选 ↔ 对照（诊断）",
+    "candidate_golden": "被测端 A vs Golden G（直接比较）",
+    "peer_golden": "同精度对照 P vs Golden G（直接比较）",
+    "candidate_peer": "被测端 A vs 同精度对照 P（直接比较）",
 }
+PAIR_ROLES = {
+    "candidate_golden": ("candidate_name", "golden_name"),
+    "peer_golden": ("peer_name", "golden_name"),
+    "candidate_peer": ("candidate_name", "peer_name"),
+}
+GOLDEN_DTYPE_RULES = (
+    ("float16", "float32", "计算前升精"),
+    ("bfloat16", "float32", "计算前升精"),
+    ("float32", "float32", "不升精"),
+    ("complex32", "complex64", "计算前升精"),
+    ("complex64", "complex64", "不升精"),
+)
 
 
 def _json(value, indent=None):
@@ -226,12 +239,173 @@ def _cell(value, field, issue=None, count=False):
     return f"<td{attrs}>{_display(value, count=count)}</td>"
 
 
+def _pair_definition(row, pair):
+    definitions = row.get("diagnostic_definition")
+    if not isinstance(definitions, dict):
+        return {}
+    value = definitions.get(pair)
+    return value if isinstance(value, dict) else {}
+
+
+def _binary_not_applicable(row, pair):
+    status = _pair_definition(row, pair).get("original_binary_status")
+    return status if isinstance(status, str) and status.startswith("NOT_APPLICABLE") else None
+
+
+def _actual_dtypes(row):
+    """Read recorded types; do not infer Golden precision from its device name."""
+    context = row.get("context")
+    supplied = context.get("actual_output_dtypes", {}) if isinstance(context, dict) else {}
+    supplied = supplied if isinstance(supplied, dict) else {}
+    result = {key: value for key, value in supplied.items()
+              if key in ("candidate", "peer", "golden") and isinstance(value, str) and value}
+    for pair, roles in (("candidate_golden", ("candidate", "golden")),
+                        ("peer_golden", ("peer", "golden"))):
+        recorded = _pair_definition(row, pair).get("original_dtypes")
+        if isinstance(recorded, list) and len(recorded) == 2:
+            for role, dtype in zip(roles, recorded):
+                if isinstance(dtype, str) and dtype:
+                    result.setdefault(role, dtype)
+    result.setdefault("candidate", row["dtype"])
+    return result
+
+
+def _phase(value):
+    return {"forward": "前向", "backward": "反向"}.get(value, value)
+
+
+def render_method_section(rows):
+    """Explain recorded roles and the floating double-reference method."""
+    if not rows:
+        return ""
+    names = {field: " / ".join(sorted({row[field] for row in rows}))
+             for field in ("candidate_name", "peer_name", "golden_name")}
+    roles = (
+        ("被测实现 A（候选）", names["candidate_name"], "取得待评估的实际输出与梯度。"),
+        ("同精度对照 P", names["peer_name"], "提供同精度实现，用于比较两端各自相对 Golden 的误差。"),
+        ("参考实现 G（Golden）", names["golden_name"], "参考计算按 Golden dtype 映射升精或保持原类型；A 与 P 共用这一份 Golden。"),
+    )
+    role_rows = "".join("<tr>" + "".join(f"<td>{_text(value)}</td>" for value in row) + "</tr>"
+                        for row in roles)
+    mapping_rows = "".join("<tr>" + "".join(f"<td>{_text(value)}</td>" for value in row) + "</tr>"
+                           for row in GOLDEN_DTYPE_RULES)
+    dtype_rows = []
+    for row in rows:
+        dtypes = _actual_dtypes(row)
+        values = (row["case_id"], row["operator"], _phase(row["phase"]), row["output_name"],
+                  dtypes.get("candidate"), dtypes.get("peer"), dtypes.get("golden"))
+        dtype_rows.append("<tr>" + "".join(f"<td>{_display(value)}</td>" for value in values) + "</tr>")
+    pair_rows = []
+    for pair, purpose in (
+        ("candidate_golden", "A 相对 G 的误差；浮点 2.1 的被测端误差来源。"),
+        ("peer_golden", "P 相对同一个 G 的误差；浮点 2.1 的对照端误差来源。"),
+        ("candidate_peer", "A 与 P 的直接差异；浮点分支中用于定位两端差别。"),
+    ):
+        left, right = PAIR_ROLES[pair]
+        actual = " / ".join(sorted({row[left] + " vs " + row[right] for row in rows}))
+        reference = names[right]
+        pair_rows.append("<tr>" + "".join(f"<td>{_text(value)}</td>" for value in
+            (actual, reference, purpose)) + "</tr>")
+    return (
+        '<section class="precision-method" aria-labelledby="precision-method-title">'
+        '<h2 id="precision-method-title">三方角色、执行精度与计算方法</h2>'
+        '<p>下表先说明执行端的角色，再说明三组比较。设备名称来自本报告记录；'
+        '“候选／对照／Golden”是角色名称，不是三组误差的名称。</p>'
+        '<div class="scroll"><table><caption>本报告的执行端</caption><thead><tr>'
+        '<th scope="col">角色</th><th scope="col">记录中的执行端</th><th scope="col">作用</th>'
+        f'</tr></thead><tbody>{role_rows}</tbody></table></div>'
+        '<h3>三组直接比较</h3><div class="scroll"><table><thead><tr>'
+        '<th scope="col">实际比较双方</th><th scope="col">相对误差的参考端</th><th scope="col">用途</th>'
+        f'</tr></thead><tbody>{"".join(pair_rows)}</tbody></table></div>'
+        '<p>直接比较中，实际端为 a，参考端为 b：<code>AE=abs(a-b)</code>，'
+        '<code>RE=AE/(abs(b)+1e-7)</code>。A–G 与 P–G 均以 G 为参考；A–P 以 P 为参考。</p>'
+        '<h3>浮点双标杆的 2.1 判定</h3>'
+        '<p>对同一前向输出或反向梯度，先在标准指定的统计范围内分别计算 '
+        '<code>MARE=max(RE)</code>、<code>MERE=mean(RE)</code>、'
+        '<code>RMSE=sqrt(mean((actual-G)^2))</code>，再比较两端的误差：</p>'
+        '<pre>E_A = metric(A, G)\nE_P = metric(P, G)\nRatio = E_A / max(E_P, err)</pre>'
+        '<p><code>metric</code> 分别取 MARE、MERE、RMSE；<code>err</code> 为相应 dtype 的 '
+        'Small Value Threshold，不是 RE 的 <code>1e-7</code>，也不是小值域计错界 '
+        '<code>error</code>。三项 Ratio 使用记录中适用的 L0／L1／L2 上限，保留实际分母。'
+        '含分母下限的 Ratio 小于 1，不能单凭此认定被测实现比对照实现更精确。</p>'
+        '<p>正常值域与小值域分别检查。小值域在 <code>abs(G)&lt;threshold</code> 的位置统计 '
+        '<code>abs(A-G)&gt;error</code> 和 <code>abs(P-G)&gt;error</code> 的错误数，要求 '
+        '<code>ErrorCount_A/max(ErrorCount_P,1)&lt;=2</code>。非有限值按适用标准分支单列。'
+        '直接诊断的全有限元素汇总，不自动等于正常值域的指标。</p>'
+        '<p>以上误差比用于浮点双标杆及量化浮点输出的适用分支。非计算类、整数类、'
+        '量化整型输出和随机数类按各自 2.1 条款验收；其中适用的直接位比较或绝对误差检查仍参与判定。'
+        '前向按每个输出、反向按每个梯度分别记录；反向使用各端自身的前向缓存和同一冻结上游梯度。</p>'
+        '<h3>Golden dtype 映射</h3>'
+        '<p>左列为待测 Torch/TorchNPU dtype，右列为参考计算采用的 dtype。'
+        'FP32 和 complex64 保持原 dtype 是有效指定方案，不能自动改成 FP64 或 complex128。'
+        '未覆盖的 dtype 须取得适用规则，不能由精度名称自行推断。</p>'
+        '<div class="scroll"><table id="golden-dtype-mapping"><thead><tr>'
+        '<th scope="col">待测 dtype</th><th scope="col">Golden dtype</th><th scope="col">处理</th>'
+        f'</tr></thead><tbody>{mapping_rows}</tbody></table></div>'
+        '<p>complex32 的实部、虚部各为 FP16；complex64 的实部、虚部各为 FP32。'
+        '映射不代表当前算子／平台支持或已经测试这些 dtype；实际执行范围见本轮记录。</p>'
+        '<h3>本轮执行精度（来自记录）</h3>'
+        '<p>下面列出各输出／梯度叶子已记录的实际 dtype。Golden 方案须逐算子核验：'
+        '需要升精时，应按映射提升参与计算的冻结输入、权重和上游梯度，再重新执行前向与反向；'
+        '不升精分支保持原 dtype，不能只因参考端与待测端 dtype 相同而判缺少 Golden。'
+        '仅将低精度结果转换成高精度，不能作为升精计算。输出 dtype 也不能单独证明内部累加精度；'
+        '具体输入、实现、计算模式与执行证据应在原始记录中保留。缺少 Golden 方案或执行证据时不得推定已满足要求。'
+        '旧方案不符映射时保留原结果溯源，受影响条目须补算参考计算及比较，不能只改标签。</p>'
+        '<div class="scroll"><table><thead><tr><th scope="col">用例</th><th scope="col">算子</th>'
+        '<th scope="col">阶段</th><th scope="col">输出／梯度</th><th scope="col">A 实际输出 dtype</th>'
+        '<th scope="col">P 实际输出 dtype</th><th scope="col">G 实际输出 dtype</th>'
+        f'</tr></thead><tbody>{"".join(dtype_rows)}</tbody></table></div></section>'
+    )
+
+
+def render_diagnostics_summary(rows):
+    """Keep all three supplied pair measurements visible without the wide table."""
+    if not rows:
+        return ""
+    body = []
+    for row in rows:
+        for pair in PAIRS:
+            metrics = row["diagnostics"].get(pair, {})
+            left, right = PAIR_ROLES[pair]
+            values = (row["operator"], _phase(row["phase"]) + " / " + row["output_name"],
+                      row[left] + " vs " + row[right])
+            cells = [f"<td>{_text(value)}</td>" for value in values]
+            for field in ("max_abs", "max_rel", "mean_rel", "max_ulp"):
+                cells.append(f'<td>{_display(metrics.get(field), count=field == "max_ulp")}</td>')
+            binary_na = _binary_not_applicable(row, pair)
+            binary = _text(binary_na) if binary_na else _display(metrics.get("bitwise_mismatch_count"), count=True)
+            cells.append(f"<td>{binary}</td>")
+            mask = _pair_definition(row, pair).get("full_finite_pair_mask")
+            if isinstance(mask, dict) and type(mask.get("count")) is int:
+                excluded = metrics.get("excluded_count")
+                scope = "有效元素 " + str(mask["count"]) + "；剔除数 " + ("未提供" if excluded is None else str(excluded))
+            else:
+                scope = "统计掩码未提供；见计算源与缺项"
+            cells.append(f"<td>{_text(scope)}</td>")
+            body.append(f'<tr data-pair="{pair}">{"".join(cells)}</tr>')
+    return (
+        '<section aria-labelledby="precision-direct-title"><h2 id="precision-direct-title">三组直接差异</h2>'
+        '<p>每个输出／梯度均展示 A–G、P–G、A–P 三组已记录结果。下表为直接诊断；'
+        '浮点 2.1 的正常值域误差比和小值域判定另列于宽表。'
+        '不同原 dtype 的逐位比较按记录标为不适用。ULP 的转换／舍入、相对误差分母、掩码与聚合方式见计算源，'
+        '未经降精度的原 Golden 继续用于 2.1 检查。</p>'
+        '<div class="scroll"><table id="precision-direct"><thead><tr><th scope="col">算子</th>'
+        '<th scope="col">阶段／输出</th><th scope="col">实际比较双方</th><th scope="col">最大绝对误差</th>'
+        '<th scope="col">最大相对误差</th><th scope="col">平均相对误差</th><th scope="col">最大 ULP</th>'
+        '<th scope="col">原 dtype 位模式不一致元素数／适用性</th><th scope="col">统计范围</th>'
+        f'</tr></thead><tbody>{"".join(body)}</tbody></table></div></section>'
+    )
+
+
 def _details(row):
     missing = ["standard21." + field for field in STANDARD_FIELDS if row["standard21"].get(field) is None]
     for pair in PAIRS:
         metrics = row["diagnostics"].get(pair, {})
         fields = (*PAIR_FIELDS, "row_max_mean_rel") if pair == "candidate_peer" else PAIR_FIELDS
-        missing.extend(f"diagnostics.{pair}.{field}" for field in fields if metrics.get(field) is None)
+        missing.extend(f"diagnostics.{pair}.{field}" for field in fields
+                       if metrics.get(field) is None
+                       and not (field in ("bitwise_equal", "bitwise_mismatch_count")
+                                and _binary_not_applicable(row, pair)))
     sections = ['<p>计算源：输入 bundle.precision_comparisons；生成器展示已有记录，不重新判定 2.1。</p>']
     for field, label in (("context", "来源与上下文"), ("diagnostic_definition", "诊断计算方法")):
         value = row.get(field)
@@ -239,6 +413,10 @@ def _details(row):
         sections.append(f"<p>{label}</p><pre>{_text(content)}</pre>")
     if row.get("diagnostic_definition") is None:
         sections.append('<p>未提供 ULP 计算 dtype、相对误差分母／掩码、行最大位置选择或剔除定义；不能据此推测。</p>')
+    for pair in PAIRS:
+        status = _binary_not_applicable(row, pair)
+        if status:
+            sections.append(f'<p>{_text(PAIR_LABELS[pair])}：原 dtype 二进制比较 {_text(status)}</p>')
     issues = row["standard21"].get("issue_fields", {})
     if issues:
         sections.append(f'<p>2.1 问题说明</p><pre>{_text(_json(issues, indent=2))}</pre>')
@@ -247,12 +425,16 @@ def _details(row):
     return f'<details><summary>计算源与缺项</summary>{"".join(sections)}</details>'
 
 
-def render_section(rows):
+def render_section(rows, *, include_method=True, include_summary=True):
     """Build an accessible, horizontally scrollable table with per-field issues."""
     if not rows:
         return ""
     groups = [("用例、API 与输出槽", len(IDENTITY_FIELDS)), ("昇腾算子精度标准 2.1（输入结论）", len(STANDARD_FIELDS))]
-    groups.extend((PAIR_LABELS[pair], len(PAIR_FIELDS) + (pair == "candidate_peer")) for pair in PAIRS)
+    for pair in PAIRS:
+        left, right = PAIR_ROLES[pair]
+        titles = {row[left] + " vs " + row[right] for row in rows}
+        label = next(iter(titles)) + "（直接比较）" if len(titles) == 1 else PAIR_LABELS[pair]
+        groups.append((label, len(PAIR_FIELDS) + (pair == "candidate_peer")))
     group_header = "".join(f'<th scope="colgroup" colspan="{count}">{_text(label)}</th>' for label, count in groups)
     labels = [LABELS[field] for field in IDENTITY_FIELDS + STANDARD_FIELDS]
     for pair in PAIRS:
@@ -285,6 +467,8 @@ def render_section(rows):
         cells.append(f'<td>{_details(row)}</td>')
         body.append(f'<tr>{"".join(cells)}</tr>')
     return (
+        (render_method_section(rows) if include_method else "") +
+        (render_diagnostics_summary(rows) if include_summary else "") +
         '<section aria-labelledby="precision-comparison-title"><h2 id="precision-comparison-title">逐输出三方精度宽表</h2>'
         '<p class="muted">每行对应一个前向输出或反向梯度叶子。2.1 是精度验收依据；右侧三组为诊断数据，'
         '大 ULP、两端直接相对差和逐位不一致不会触发浮点 2.1 失败。'
@@ -297,6 +481,11 @@ def render_section(rows):
 
 
 STYLE = """\
+.precision-method h3 { margin-top:20px; }
+.precision-method caption { text-align:left; padding:10px; }
+.precision-method code { overflow-wrap:anywhere; }
+#precision-direct { font-variant-numeric:tabular-nums; }
+#precision-direct th { white-space:normal; }
 .precision-scroll { margin-top:12px; max-height:78vh; }
 #precision-comparison { width:max-content; min-width:100%; font-variant-numeric:tabular-nums; }
 #precision-comparison caption { text-align:left; padding:10px; color:var(--muted); }
