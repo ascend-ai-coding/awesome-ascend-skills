@@ -1,0 +1,378 @@
+/**
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
+
+/*!
+ * \file cum_tile_resident_scan.h
+ * \brief N > 1（dim 非最后一维）的 tile 常驻扫描 + ping-pong 双缓冲，含 argmin/argmax 索引跟踪。
+ *
+ * 融合成 (M, R, N) 后 N > 1 时，扫描轴 R 在 GM 上的步长是 N，**沿 R 相邻的元素并不相邻**。
+ * 这时不要沿 R 逐点搬运（实测慢 8~50 倍），而是：
+ *   把一个 (mCnt 行 x nCnt 列) 的 tile 整段 R 一次搬进 UB，按 [R][lane] 布局，
+ *   lane 维取 N（N 够宽）或借 M 轴折叠（N 窄），running-(val, idx) 全程常驻寄存器，
+ *   循环体内零 DMA——**N 方向天然并行，前缀依赖只沿 R，正好落在寄存器里**。
+ *
+ * 与 N == 1 的路线互补：那边扫描轴连续、瓶颈在 log2(R) 的指令条数（见
+ * cum_lane_parallel_scan / cum_row_kogge_stone）；这边扫描轴跨步、瓶颈在搬运与流水重叠。
+ *
+ * 关键点是 **ping-pong 双缓冲**：R 被切成多个 rChunk，块间靠 UB 上的 carry 续传。
+ * 不做双缓冲时四条流水占比之和只有 101%（完全串行），加上之后升到 132%~173%，
+ * 实测 6 个用例快 4%~31%（详见下方「该不该做双缓冲」）。
+ *
+ * 前置条件：
+ *   1. 融合后 N > 1
+ *   2. rChunk * computeLen * (2*eb + 2*eb + 4 + 2*8) <= UB 预算（双缓冲后的公式，见下）
+ *
+ * 详见同名 .md 文档。
+ */
+
+#ifndef CUM_TILE_RESIDENT_SCAN_H
+#define CUM_TILE_RESIDENT_SCAN_H
+
+#include "scan_base.h"
+
+namespace ScanOps {
+
+// ---------------------------------------------------------------------------
+// 该不该做双缓冲：看 PipeUtilization 里四条流水占比之和
+//
+//   vec% + scalar% + mte2% + mte3% ≈ 100%  -> 完全串行，必须上 ping-pong
+//                                 > 130%  -> 已有真重叠
+//
+// 这个判据比逐条算理论耗时快得多，也不会被 L2 命中率的差异误导。
+// 加上之后再看**最长的那条单项**：双缓冲只能把串行变重叠，不能突破最长流水。
+// cann-bench Cummin 的六个 N>1 用例实测：
+//
+//   case          加前            加后           变化
+//   [1009,1021]   18.57us / 101%  13.94us / 132%  -25%
+//   [255,8193]    13.68us / 103%   9.49us / 155%  -31%
+//   [2,511,2049]  15.95us / 102%  11.00us / 168%  -31%
+//   [11..67,67]   73.21us / 113%  64.79us / 173%  -12%
+//   [363,367,373] 500.7us / 102%  492.9us / 170%   -2%   <- 加后 mte3 单项 74%
+//   [16384^2]     2697us  / 101%  2690us  / 170%   -0.3% <- 加后 mte3 单项 80%
+//
+// 后两个几乎没动：它们加完后就是**纯写带宽受限**（int64 索引占总写量的 4/5），
+// 双缓冲已经无能为力。所以先用「占比之和」决定要不要做，再用「最长单项」决定能做到哪。
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// UB 预算（host 与 kernel 必须一致，否则溢出）
+//
+//   bytesPerR = computeLen * (2*eb  /* x 双份 */
+//                           + 2*eb  /* val 双份 */
+//                           + 4     /* int32 索引扫描区，单份 */
+//                           + 2*8)  /* int64 索引输出区双份 */
+//   rChunk    = UB_BUDGET / bytesPerR
+//
+// 相对不做双缓冲的版本正好翻倍，于是 rChunk 减半、块数加倍——**这正是流水需要的，
+// 不必回调**。块数至少要 2 才有重叠，R 太小时（一块装得下）双缓冲自然退化为无效。
+//
+// ⚠️ 不要为省 UB 让两个缓冲区叠用。常见的省法是把 int32 扫描区叠在 int64 输出区的
+// 高半段上，靠 Cast「读指针 4B/元素、写指针 8B/元素」的错位就地展宽（单缓冲时完全成立）。
+// 加了 ping-pong 之后，这会在 MTE3 搬出该输出区的同时被下一块的扫描写坏，
+// **必须拆成独立分配**。这个坑不会报错，只会出错误结果。
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// carry 初值 = 幺元。lane 维每个位置一份，跨 rChunk 常驻 UB。
+// ---------------------------------------------------------------------------
+template <typename P>
+__aicore__ inline void InitTileCarry(
+    const LocalTensor<P>& carryMinUb, const LocalTensor<int32_t>& carryIdxUb, uint32_t computeLen)
+{
+    constexpr uint32_t VL = 256 / sizeof(P);
+    uint16_t loops = (uint16_t)CeilDiv(computeLen, VL);
+    __ubuf__ P* minp = (__ubuf__ P*)carryMinUb.GetPhyAddr();
+    __ubuf__ int32_t* idxp = (__ubuf__ int32_t*)carryIdxUb.GetPhyAddr();
+    __VEC_SCOPE__
+    {
+        AscendC::Reg::RegTensor<P> identReg;
+        AscendC::Reg::RegTensor<int32_t> zeroReg;
+        AscendC::Reg::MaskReg pMask;
+        uint32_t cnt = computeLen;
+        AscendC::Reg::Duplicate(identReg, Identity<P>());
+        AscendC::Reg::Duplicate(zeroReg, (int32_t)0);
+        for (uint16_t j = 0; j < loops; j++) {
+            pMask = AscendC::Reg::UpdateMask<uint32_t>(cnt);
+            AscendC::Reg::StoreAlign(minp + j * VL, identReg, pMask);
+            AscendC::Reg::StoreAlign(idxp + j * VL, zeroReg, pMask);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 对一个 lane 分块（w 条 lane）沿 rLen 顺序扫描，running 状态全程留在寄存器。
+//
+// 这里没有 log2(R) 的放大——N 方向已经提供了 w 条 lane 的并行度，前缀依赖只沿 R 串行，
+// 每步就是一次 load、一组 combine、两次 store。**沿 R 的这条依赖链是延迟敞口**：
+// lane 数用不满时（w 远小于 VL）会直接暴露成瓶颈，见 .md 的「什么时候该改切 R 轴」。
+//
+// 16 位存储类型在这里可以边搬边 Cast（DIST_UNPACK_B16 / DIST_PACK_B32），
+// 不像 lane 并行那条路必须整体升 fp32——因为这里访存是连续的，不走 gather。
+// ---------------------------------------------------------------------------
+template <typename T, typename P>
+__aicore__ inline void ScanLaneChunk(
+    const LocalTensor<T>& xUb, const LocalTensor<T>& valUb, const LocalTensor<int32_t>& idxUb,
+    const LocalTensor<P>& carryMinUb, const LocalTensor<int32_t>& carryIdxUb, int64_t computeLen, int64_t rLen,
+    int64_t rBase, int64_t cOff, uint32_t w)
+{
+    __ubuf__ T* xp = (__ubuf__ T*)xUb.GetPhyAddr() + cOff;
+    __ubuf__ T* valp = (__ubuf__ T*)valUb.GetPhyAddr() + cOff;
+    __ubuf__ int32_t* idxp = (__ubuf__ int32_t*)idxUb.GetPhyAddr() + cOff;
+    __ubuf__ P* cminp = (__ubuf__ P*)carryMinUb.GetPhyAddr() + cOff;
+    __ubuf__ int32_t* cidxp = (__ubuf__ int32_t*)carryIdxUb.GetPhyAddr() + cOff;
+    uint16_t steps = (uint16_t)rLen;
+    int32_t rB = (int32_t)rBase;
+
+    __VEC_SCOPE__
+    {
+        AscendC::Reg::RegTensor<P> curMin, xReg;
+        AscendC::Reg::RegTensor<int32_t> curIdx, rReg;
+        AscendC::Reg::MaskReg pMask, leMask, nanMask, takeB;
+        uint32_t cnt = w;
+        pMask = AscendC::Reg::UpdateMask<uint32_t>(cnt);
+
+        // 上一个 rChunk 留下的 carry
+        AscendC::Reg::LoadAlign(curMin, cminp);
+        AscendC::Reg::LoadAlign(curIdx, cidxp);
+
+        for (uint16_t r = 0; r < steps; r++) {
+            AscendC::Reg::Duplicate(rReg, rB + (int32_t)r);
+
+            if constexpr (IsSameType<T, P>::value) {
+                AscendC::Reg::LoadAlign(xReg, (__ubuf__ P*)(xp + r * computeLen));
+            } else {
+                AscendC::Reg::RegTensor<T> b16;
+                AscendC::Reg::LoadAlign<T, AscendC::Reg::LoadDist::DIST_UNPACK_B16>(b16, xp + r * computeLen);
+                Cast<P, T, castTraitToFp32>(xReg, b16, pMask);
+            }
+
+            // takeB = (x <= curMin) || isNaN(x)：<= 实现「并列取更晚下标」；
+            // curMin 一旦为 NaN，后续实数 x 的 (x<=NaN)=false 且自身非 NaN -> 不更新，NaN 粘滞传播。
+            // 用 Or 合掉嵌套 Select，值和索引各省一条 Select。
+            AscendC::Reg::Compare<P, CMPMODE::LE>(leMask, xReg, curMin, pMask);
+            AscendC::Reg::Compare<P, CMPMODE::NE>(nanMask, xReg, xReg, pMask);
+            AscendC::Reg::Or(takeB, leMask, nanMask, pMask);
+            AscendC::Reg::Select<P>(curMin, xReg, curMin, takeB);
+            AscendC::Reg::Select<int32_t>(curIdx, rReg, curIdx, takeB);
+
+            AscendC::Reg::StoreAlign(idxp + r * computeLen, curIdx, pMask);
+            if constexpr (IsSameType<T, P>::value) {
+                AscendC::Reg::StoreAlign((__ubuf__ P*)(valp + r * computeLen), curMin, pMask);
+            } else {
+                AscendC::Reg::RegTensor<T> b16o;
+                Cast<T, P, castTraitFromFp32>(b16o, curMin, pMask);
+                AscendC::Reg::StoreAlign<T, AscendC::Reg::StoreDist::DIST_PACK_B32>(valp + r * computeLen, b16o, pMask);
+            }
+        }
+
+        // 交给下一个 rChunk
+        AscendC::Reg::StoreAlign(cminp, curMin, pMask);
+        AscendC::Reg::StoreAlign(cidxp, curIdx, pMask);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 整段 R 一次搬入：每行一次 DataCopyPad，blockCount = rLen。
+// 沿 R 的跨步交给 srcStride，UB 侧的行内间隙交给 dstStride，**一行只付一个描述符集合**。
+// ---------------------------------------------------------------------------
+template <typename T>
+__aicore__ inline void CopyInTile(
+    const GlobalTensor<T>& xGm, const LocalTensor<T>& xUb, int64_t M, int64_t R, int64_t N, int64_t m0,
+    int64_t mCnt, int64_t n0, int64_t nCnt, int64_t rBase, int64_t rLen, int64_t slotT, uint32_t dstStrideVal)
+{
+    DataCopyExtParams params;
+    params.blockCount = (uint16_t)rLen;
+    params.blockLen = (uint32_t)(nCnt * sizeof(T));
+    params.srcStride = (uint32_t)((N - nCnt) * sizeof(T));
+    params.dstStride = dstStrideVal;
+    DataCopyPadExtParams<T> padParams{false, 0, 0, 0};
+    int64_t rn = R * N;
+    for (int64_t i = 0; i < mCnt; i++) {
+        DataCopyPad(xUb[i * slotT], xGm[(m0 + i) * rn + rBase * N + n0], params, padParams);
+    }
+}
+
+template <typename T>
+__aicore__ inline void CopyOutTile(
+    const GlobalTensor<T>& valGm, const GlobalTensor<int64_t>& idxGm, const LocalTensor<T>& valUb,
+    const LocalTensor<int64_t>& idxOut, int64_t R, int64_t N, int64_t m0, int64_t mCnt, int64_t n0, int64_t nCnt,
+    int64_t rBase, int64_t rLen, int64_t slotT, uint32_t srcStrideVal, uint32_t srcStrideIdx)
+{
+    DataCopyExtParams vp;
+    vp.blockCount = (uint16_t)rLen;
+    vp.blockLen = (uint32_t)(nCnt * sizeof(T));
+    vp.srcStride = srcStrideVal;
+    vp.dstStride = (uint32_t)((N - nCnt) * sizeof(T));
+
+    DataCopyExtParams ip;
+    ip.blockCount = (uint16_t)rLen;
+    ip.blockLen = (uint32_t)(nCnt * sizeof(int64_t));
+    ip.srcStride = srcStrideIdx;
+    ip.dstStride = (uint32_t)((N - nCnt) * sizeof(int64_t));
+
+    int64_t rn = R * N;
+    for (int64_t i = 0; i < mCnt; i++) {
+        int64_t dst = (m0 + i) * rn + rBase * N + n0;
+        DataCopyPad(valGm[dst], valUb[i * slotT], vp);
+        DataCopyPad(idxGm[dst], idxOut[i * slotT], ip);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 一个 work-item（mCnt 行 x nCnt 列）沿 R 全程扫描，ping-pong 双缓冲版本。
+//
+// **重叠的是「搬入下一块 / 算当前块 / 搬出上一块」，不是计算与计算**：
+// 块间靠 carry 串行，计算天生无法重叠。carry 留在 UB 上跨块续传，读写都在 V 流水内，
+// 程序序即依赖序，不需要额外 flag。
+//
+// 四组事件各两份，含义：
+//   MTE2_V[p]     buf[p] 搬入完成 -> 可以开始算
+//   V_MTE3[p]     buf[p] 算完     -> 可以开始搬出
+//   MTE3_V[p]     buf[p] 搬出完成 -> 下一轮用到 buf[p] 的计算才能覆写 val/out
+//   MTE3_MTE2[p]  buf[p] 搬出完成 -> 下一轮往 buf[p] 的搬入才能覆写 x
+//
+// 末尾两块的 MTE3_V / MTE3_MTE2 没有后继来消费，必须排空，否则会和下一个 work-item
+// 的等待错配（同时也保证末次搬出读完 UB 之后，下一个 work-item 的 InitTileCarry 才动手）。
+// ---------------------------------------------------------------------------
+template <typename T, typename P>
+class TileResidentScan {
+public:
+    // -----------------------------------------------------------------------
+    // Init：分配 UB buffer + 用 AllocEventID 分配 ping-pong 事件 ID
+    //
+    // ⚠️ 必须用 AllocEventID 而非 FetchEventID（见 scan_base.h 的警告）。
+    // FetchEventID 每次返回同一个 ID，ping-pong 两个 buffer 的事件会互相 alias，
+    // 导致同步失效、数据在搬运中被覆写（不报错，只出错误结果）。
+    //
+    // buffer 布局（mode 0，N > 1）：
+    //   xBuf_    : 2 * tileElems * sizeof(T)         // x 双份 ping-pong
+    //   valBuf_  : 2 * tileElems * sizeof(T)         // val 双份 ping-pong
+    //   idxBuf_  : CeilAlign(tileElems, VL) * 4      // int32 扫描区，单份
+    //   outBuf_  : 2 * tileElems * sizeof(int64_t)   // int64 输出区，双份 ping-pong
+    //   carryMin : computeLen * sizeof(P)             // carry 值，单份
+    //   carryIdx : computeLen * sizeof(int32_t)       // carry 下标，单份
+    //
+    // ⚠️ int32 扫描区（idxBuf_）必须独立分配，不能与 int64 输出区叠用：
+    //   单缓冲时可以靠 Cast「读指针 4B/元素落后于写指针 8B/元素」的错位就地展宽；
+    //   但 ping-pong 下会在 MTE3 搬出某份输出区的同时被下一块的扫描写坏。
+    //   这个坑不会报错，只会出错误结果（见下文 UB 预算注释）。
+    // -----------------------------------------------------------------------
+    __aicore__ inline void Init(TPipe* pipe, int64_t rChunk, int64_t computeLen)
+    {
+        tileElems_ = rChunk * computeLen;
+        computeLen_ = computeLen;
+
+        pipe->InitBuffer(xBuf_, 2 * tileElems_ * sizeof(T));
+        pipe->InitBuffer(valBuf_, 2 * tileElems_ * sizeof(T));
+        pipe->InitBuffer(idxBuf_, CeilAlignK(tileElems_, VL) * sizeof(int32_t));
+        pipe->InitBuffer(outBuf_, 2 * tileElems_ * sizeof(int64_t));
+        pipe->InitBuffer(carryMinBuf_, computeLen * sizeof(P));
+        pipe->InitBuffer(carryIdxBuf_, computeLen * sizeof(int32_t));
+
+        // ✅ AllocEventID：每个 buffer 分配独立事件 ID
+        for (int64_t p = 0; p < 2; p++) {
+            evMte2V_[p] = pipe->AllocEventID<HardEvent::MTE2_V>();
+            evVMte3_[p] = pipe->AllocEventID<HardEvent::V_MTE3>();
+            evMte3V_[p] = pipe->AllocEventID<HardEvent::MTE3_V>();
+            evMte3Mte2_[p] = pipe->AllocEventID<HardEvent::MTE3_MTE2>();
+        }
+    }
+
+    // 调用方需先备好：xAll/valAll 各 2*tileElems 个 T，idxUb 一份 tileElems 个 int32，
+    // outAll 2*tileElems 个 int64，carryMinUb/carryIdxUb 各 computeLen 个。
+    __aicore__ inline void Run(
+        int64_t m0, int64_t mCnt, int64_t n0, int64_t nCnt, int64_t M, int64_t R, int64_t N, int64_t rChunk,
+        int64_t mFold, int64_t tileElems)
+    {
+        const int64_t elemT = sizeof(T);
+        const int64_t valBlkPad = CeilAlign(nCnt * elemT, 32);   // val 每行块占用字节（32B 对齐）
+        const int64_t idxBlkPad = CeilAlign(nCnt * 8, 32);       // idx 每行块（int64 输出）
+        const int64_t slotT = valBlkPad / elemT;                 // 每行槽位的元素数
+        const int64_t computeLen = mFold * slotT;                // 每个 r 步的 lane 数
+        const uint32_t dstStrideVal = (uint32_t)((computeLen * elemT - valBlkPad) / 32);
+        const uint32_t dstStrideIdx = (uint32_t)((computeLen * 8 - idxBlkPad) / 32);
+        constexpr uint32_t VL = 256 / sizeof(P);
+
+        InitTileCarry(carryMinUb_, carryIdxUb_, (uint32_t)computeLen);
+
+        const int64_t nChunk = CeilDiv(R, rChunk);
+
+        // 预取第 0 块
+        CopyInTile(xGm_, xAll_, M, R, N, m0, mCnt, n0, nCnt, 0, ChunkLen(0, R, rChunk), slotT, dstStrideVal);
+        SetFlag<HardEvent::MTE2_V>(evMte2V_[0]);
+
+        for (int64_t b = 0; b < nChunk; b++) {
+            const int64_t p = b & 1;
+            const int64_t rBase = b * rChunk;
+            const int64_t rLen = ChunkLen(b, R, rChunk);
+
+            if (b + 1 < nChunk) {
+                const int64_t q = 1 - p;
+                if (b >= 1) WaitFlag<HardEvent::MTE3_MTE2>(evMte3Mte2_[q]);
+                CopyInTile(xGm_, xAll_[q * tileElems], M, R, N, m0, mCnt, n0, nCnt, rBase + rLen,
+                           ChunkLen(b + 1, R, rChunk), slotT, dstStrideVal);
+                SetFlag<HardEvent::MTE2_V>(evMte2V_[q]);
+            }
+
+            WaitFlag<HardEvent::MTE2_V>(evMte2V_[p]);
+            if (b >= 2) WaitFlag<HardEvent::MTE3_V>(evMte3V_[p]);
+
+            for (int64_t c = 0; c < computeLen; c += VL) {
+                uint32_t w = (uint32_t)((computeLen - c) < (int64_t)VL ? (computeLen - c) : (int64_t)VL);
+                ScanLaneChunk<T, P>(xAll_[p * tileElems], valAll_[p * tileElems], idxUb_, carryMinUb_,
+                                    carryIdxUb_, computeLen, rLen, rBase, c, w);
+            }
+            Cast(outAll_[p * tileElems], idxUb_, RoundMode::CAST_NONE, (uint32_t)(rLen * computeLen));
+
+            SetFlag<HardEvent::V_MTE3>(evVMte3_[p]);
+            WaitFlag<HardEvent::V_MTE3>(evVMte3_[p]);
+
+            CopyOutTile(valGm_, idxGm_, valAll_[p * tileElems], outAll_[p * tileElems], R, N, m0, mCnt, n0,
+                        nCnt, rBase, rLen, slotT, dstStrideVal, dstStrideIdx);
+
+            SetFlag<HardEvent::MTE3_V>(evMte3V_[p]);
+            SetFlag<HardEvent::MTE3_MTE2>(evMte3Mte2_[p]);
+        }
+
+        for (int64_t b = (nChunk >= 2 ? nChunk - 2 : 0); b < nChunk; b++) {
+            WaitFlag<HardEvent::MTE3_V>(evMte3V_[b & 1]);
+            WaitFlag<HardEvent::MTE3_MTE2>(evMte3Mte2_[b & 1]);
+        }
+    }
+
+private:
+    // 设备侧不支持捕获 lambda（会报 no matching function for call to object of type '(lambda ...)'），
+    // 所以写成成员函数
+    __aicore__ inline int64_t ChunkLen(int64_t b, int64_t R, int64_t rChunk) const
+    {
+        int64_t rBase = b * rChunk;
+        return rBase + rChunk > R ? R - rBase : rChunk;
+    }
+
+    GlobalTensor<T> xGm_, valGm_;
+    GlobalTensor<int64_t> idxGm_;
+    LocalTensor<T> xAll_, valAll_;
+    LocalTensor<int32_t> idxUb_;
+    LocalTensor<int64_t> outAll_;
+    LocalTensor<P> carryMinUb_;
+    LocalTensor<int32_t> carryIdxUb_;
+    // buffer handles（Init 时分配，Run 时 Get 出来）
+    TBuf<> xBuf_, valBuf_, idxBuf_, outBuf_, carryMinBuf_, carryIdxBuf_;
+    TEventID evMte2V_[2] = {0, 0};
+    TEventID evVMte3_[2] = {0, 0};
+    TEventID evMte3V_[2] = {0, 0};
+    TEventID evMte3Mte2_[2] = {0, 0};
+    int64_t tileElems_ = 0;
+    int64_t computeLen_ = 0;
+};
+
+}  // namespace ScanOps
+
+#endif  // CUM_TILE_RESIDENT_SCAN_H

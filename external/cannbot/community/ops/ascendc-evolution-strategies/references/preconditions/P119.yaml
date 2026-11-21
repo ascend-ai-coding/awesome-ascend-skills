@@ -1,0 +1,47 @@
+strategy_id: P119
+description: Two-pass → online softmax 改写适用性检查 — 算子为 attention/softmax 类，存在两遍（或逐 token）softmax 结构，K/V 被重复从 GM 读取，且尚未改写为 online 单遍。
+strategy_meta:
+  id: "P119"
+  slug: "P119_two_pass_to_online_softmax"
+  title: "P119: Two-Pass Softmax → Online Softmax 单遍 KV 流式改写"
+  bottlenecks: [mte2_stall, no_overlap]
+  op_families: [attention, flash_attention, softmax]
+  conflicts_with: []
+  synergizes_with: [P38, P115, A5]
+  requires: []
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p119_two_pass_to_online_softmax.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p119_two_pass_to_online_softmax.md"
+  playbook_slug: "P119_two_pass_to_online_softmax"
+checks:
+  - id: is_attention_or_softmax
+    type: grep_count
+    pattern: 'softmax|attention|score|Exp\\s*\\('
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子无 softmax/attention 语义 → P119 不适用。"
+
+  - id: has_repeated_kv_load
+    type: grep_count
+    pattern: "ReduceSum|WholeReduceSum|BlockReduceMax"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到逐 token 点积/归约证据 → 确认 softmax 结构后再决定（可能已是 tile 级 cube 实现）。"
+
+  - id: no_online_softmax_yet
+    type: grep_count
+    pattern: "SoftmaxFlash|online_softmax|rescale|running.*max|rowMax.*alpha"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "已实现 online softmax（SoftmaxFlash/running rescale）→ P119 主要价值已发挥，转向 P38 状态常驻或 P14 流水。"
+
+  - id: has_kv_loop
+    type: grep_count
+    pattern: "for.*S_kv|for.*skv|for.*s2|S2"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 KV 维循环 → 非典型 attention 结构，P119 不适用。"

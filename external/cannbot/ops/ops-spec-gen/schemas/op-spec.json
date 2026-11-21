@@ -1,0 +1,999 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cannbot/ops/ops-spec-gen/op-spec.json",
+  "title": "CANNBot Operator Spec (L0 mathematical contract)",
+  "description": "JSON Schema for ops/<op>/spec.yaml (L0 mathematical contract). Stage 1 (schema_static) input. Enums for category/paradigm/etc. must stay in sync with registries/*.yaml.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "op",
+    "inputs",
+    "attributes",
+    "outputs",
+    "shape_constraints",
+    "dtype_policy",
+    "broadcast",
+    "math_semantics",
+    "numerical_stability",
+    "numerical_tolerance",
+    "boundary_conditions",
+    "extreme_inputs",
+    "determinism"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {"required": ["support_universe"]},
+      "then": {
+        "properties": {
+          "inputs": {
+            "items": {
+              "$ref": "#/$defs/complete_support",
+              "properties": {"layout": {"$ref": "#/$defs/official_format"}}
+            }
+          },
+          "outputs": {
+            "items": {
+              "$ref": "#/$defs/complete_support",
+              "properties": {"layout": {"$ref": "#/$defs/official_format"}}
+            }
+          },
+          "dtype_policy": {
+            "properties": {
+              "supported_combinations": {
+                "items": {
+                  "properties": {
+                    "inputs": {"additionalProperties": {"$ref": "#/$defs/official_dtype"}},
+                    "outputs": {"additionalProperties": {"$ref": "#/$defs/official_dtype"}}
+                  }
+                }
+              }
+            }
+          },
+          "math_semantics": {
+            "properties": {
+              "format_variants": {
+                "items": {"properties": {"format": {"$ref": "#/$defs/official_format"}}}
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {"not": {"required": ["support_universe"]}},
+      "then": {
+        "properties": {
+          "inputs": {"items": {"properties": {
+            "dtype_set": {"items": {"$ref": "#/$defs/legacy_dtype"}},
+            "layout": {"$ref": "#/$defs/legacy_layout"},
+            "supported_layouts": {"items": {"$ref": "#/$defs/legacy_layout"}}
+          }}},
+          "outputs": {"items": {"properties": {
+            "dtype_set": {"items": {"$ref": "#/$defs/legacy_dtype"}},
+            "layout": {"$ref": "#/$defs/legacy_layout"},
+            "supported_layouts": {"items": {"$ref": "#/$defs/legacy_layout"}}
+          }}},
+          "dtype_policy": {"properties": {"supported_combinations": {"items": {"properties": {
+            "inputs": {"additionalProperties": {"$ref": "#/$defs/legacy_dtype"}},
+            "outputs": {"additionalProperties": {"$ref": "#/$defs/legacy_dtype"}}
+          }}}}},
+          "math_semantics": {"properties": {"format_variants": {"items": {"properties": {
+            "format": {"$ref": "#/$defs/legacy_layout"}
+          }}}}}
+        }
+      }
+    }
+  ],
+  "properties": {
+    "support_universe": {"const": "huawei-cann-types-2026-10-15"},
+    "schema_version": {
+      "const": 1
+    },
+    "op": {
+      "type": "object",
+      "required": ["name", "version", "description", "category", "paradigms"],
+      "additionalProperties": true,
+      "properties": {
+        "name": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+        "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+(\\.[0-9]+)?$"},
+        "description": {"type": "string", "minLength": 1},
+        "lifecycle": {
+          "enum": ["experimental", "beta", "stable", "deprecated"],
+          "description": "算子生命周期阶段；缺失时下游应视为 stable"
+        },
+        "error_codes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "shape_mismatch",
+              "dtype_not_supported",
+              "attribute_value_out_of_range",
+              "null_input",
+              "out_of_memory",
+              "internal_error"
+            ]
+          },
+          "description": "本算子可能抛出的错误语义类别全集（runtime-agnostic）；boundary_conditions[].machine_check.error_type 必须是其子集（stage 2 强校验）。具体 ACLNN 错误码由 runtime adapter 在 ST/UT 阶段映射，spec 层不直接引用。"
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "Elementwise", "Reduction", "ReductionComposite", "Contraction",
+            "LayoutTransform", "IndexGather", "ScatterUpdate",
+            "MaskPredicate", "SortSelect", "FusedComposite", "RandomSampling",
+            "SlidingWindow", "Collective", "ControlFlow", "Recurrence",
+            "Interpolation", "Quantization", "Stateful", "ArgReduce",
+            "Sparse", "Padding", "VariableOutput", "Spectral", "Histogram",
+            "AtomicUpdate", "Broadcast"
+          ]
+        },
+        "output_count_determined_by": {
+          "type": "string",
+          "enum": ["data", "attribute"],
+          "description": "输出个数决定方式：data=输入数据决定（nonzero/where，默认）；attribute=由属性决定（split/chunk/unbind 类，豁免 data_dependent_shape 与 nonzero 专属 boundary case）"
+        },
+        "paradigms": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "Elementwise", "Broadcast", "Reduction", "Contraction", "ArgReduce",
+              "LayoutTransform", "Padding", "IndexGather", "ScatterUpdate",
+              "AtomicUpdate", "Interpolation", "MaskPredicate", "SortSelect",
+              "Histogram", "SlidingWindow", "ControlFlow", "Recurrence",
+              "NumericalStable", "Spectral", "DynamicShape", "VariableOutput",
+              "RandomSampling", "Stateful", "Sparse", "Quantization",
+              "CollectiveCommunication", "FusedComposite", "ConvBackward"
+            ]
+          }
+        },
+        "paradigm_groups": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["kind", "paradigms"],
+            "properties": {
+              "kind": {
+                "enum": ["fusion", "combination"],
+                "description": "fusion=纵向融合（多范式串联执行），combination=横向组合（多范式择一，由属性值决定）"
+              },
+              "paradigms": {
+                "type": "array",
+                "minItems": 1,
+                "items": {"type": "string"}
+              },
+              "switch": {
+                "type": "string",
+                "description": "combination 必填；由哪个属性决定激活哪组范式"
+              },
+              "when": {
+                "description": "combination 必填；该属性取此值时激活本组范式"
+              }
+            }
+          },
+          "description": "范式分组：声明 paradigms 之间的纵向融合或横向组合关系。所有组的 paradigms 并集必须等于 op.paradigms"
+        },
+        "platform_constraints": {
+          "type": "object",
+          "properties": {
+            "requires_hccl": {"type": "boolean"},
+            "supported_chips": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "Ascend310", "Ascend310P", "Ascend910",
+                  "Ascend310B",
+                  "Ascend910B",
+                  "Ascend950PR", "Ascend950DT",
+                  "KirinX90"
+                ]
+              },
+              "description": "本算子适用的 Atlas 芯片型号白名单（与 registries/chip_registry.yaml 对齐）"
+            }
+          }
+        }
+      }
+    },
+    "inputs": {
+      "type": "array",
+      "minItems": 0,
+      "items": {
+        "type": "object",
+        "required": ["name", "role", "dtype_set", "rank_range", "shape"],
+        "additionalProperties": true,
+        "properties": {
+          "name": {"type": "string", "pattern": "^[a-z][a-zA-Z0-9_]*$"},
+          "description": {"type": "string", "description": "自然语言说明（4.1 文档生成消费）"},
+          "role": {"enum": ["tensor", "tensor_list", "scalar", "attribute_alias", "state"]},
+          "dtype_set": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"$ref": "#/$defs/dtype"}
+          },
+          "rank_range": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {"type": "integer", "minimum": 0, "maximum": 16}
+          },
+          "layout": {"$ref": "#/$defs/layout"},
+          "unsupported_dtypes": {"$ref": "#/$defs/unsupported_dtypes"},
+          "unsupported_layouts": {"$ref": "#/$defs/unsupported_layouts"},
+          "supported_layouts": {"$ref": "#/$defs/supported_layouts"},
+          "shape": {
+            "type": "object",
+            "required": ["symbolic"],
+            "properties": {
+              "symbolic": {
+                "type": "array",
+                "minItems": 0,
+                "items": {"type": ["string", "integer"]}
+              }
+            }
+          },
+          "contiguous": {"enum": ["required", "optional", "any"]},
+          "optional": {"type": "boolean"},
+          "list_length": {"$ref": "#/$defs/list_length"},
+          "aliasing": {
+            "type": "string",
+            "pattern": "^(none|may_alias_with\\([a-zA-Z_][a-zA-Z0-9_]*\\))$"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "required": ["role"],
+              "properties": {"role": {"const": "tensor_list"}}
+            },
+            "then": {"required": ["list_length"]},
+            "else": {"not": {"required": ["list_length"]}}
+          }
+        ]
+      }
+    },
+    "attributes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "type", "semantics"],
+        "additionalProperties": true,
+        "properties": {
+          "name": {"type": "string", "pattern": "^[a-z][a-zA-Z0-9_]*$"},
+          "type": {
+            "type": "string",
+            "pattern": "^(int64|float32|bool|string|enum|list\\[(int64|float32|bool|string)\\])$"
+          },
+          "default": {},
+          "semantics": {"type": "string"},
+          "machine_constraint": {
+            "type": "object",
+            "required": ["kind"],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "int_in_range",
+                  "int_in_range_relative_to_rank",
+                  "list_of_int_in_range",
+                  "list_of_int_in_range_relative_to_rank",
+                  "float_in_range",
+                  "enum_in",
+                  "bool",
+                  "string_in"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "outputs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "shape_rule_kind"],
+        "additionalProperties": true,
+        "properties": {
+          "name": {"type": "string", "pattern": "^[a-z][a-zA-Z0-9_]*$"},
+          "description": {"type": "string", "description": "自然语言说明（4.1 文档生成消费）"},
+          "role": {"enum": ["tensor", "tensor_list"], "default": "tensor"},
+          "optional": {"type": "boolean"},
+          "list_length": {"$ref": "#/$defs/list_length"},
+          "shape_rule_kind": {"enum": ["numpy_expr", "data_dependent", "textual_only"]},
+          "shape_rule": {"type": "string", "minLength": 1},
+          "shape_rule_description": {"type": "string", "description": "可选，自然语言形状描述；data_dependent 强烈建议，numpy_expr 可由校验器回灌"},
+          "shape_bounds": {
+            "type": "object",
+            "required": ["max_elements"],
+            "additionalProperties": true,
+            "properties": {
+              "max_elements": {"type": ["string", "integer"]},
+              "output_rank": {"type": "integer"},
+              "static_dims": {"type": "array"},
+              "dynamic_dims": {"type": "array"}
+            }
+          },
+          "dtype_rule_kind": {"enum": ["numpy_expr"]},
+          "dtype_rule": {"type": "string", "minLength": 1},
+          "dtype_rule_description": {"type": "string"},
+          "layout": {"$ref": "#/$defs/layout"},
+          "unsupported_dtypes": {"$ref": "#/$defs/unsupported_dtypes"},
+          "unsupported_layouts": {"$ref": "#/$defs/unsupported_layouts"},
+          "supported_layouts": {"$ref": "#/$defs/supported_layouts"},
+          "dtype_set": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/dtype"}},
+          "aliasing": {
+            "type": "string",
+            "pattern": "^(none|inplace_with\\([a-zA-Z_][a-zA-Z0-9_]*\\))$"
+          },
+          "data_dependent_shape": {"type": "boolean"}
+        },
+        "allOf": [
+          {
+            "if": {
+              "required": ["role"],
+              "properties": {"role": {"const": "tensor_list"}}
+            },
+            "then": {"required": ["list_length"]},
+            "else": {"not": {"required": ["list_length"]}}
+          }
+        ]
+      }
+    },
+    "shape_constraints": {
+      "type": "object",
+      "required": ["symbols"],
+      "additionalProperties": true,
+      "properties": {
+        "symbols": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["kind"],
+            "properties": {
+              "kind": {"enum": ["dim", "rank", "const"]},
+              "range": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {"type": "integer"}
+              }
+            }
+          }
+        },
+        "global_constraints": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "咨询性字段（与 notes 同语义，不被 evaluator 解析）；matmul K 维匹配等机器可断言关系请改写在 outputs.shape_rule 的 numpy_expr 中"
+        },
+        "notes": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    },
+    "dtype_policy": {
+      "type": "object",
+      "required": ["promotion", "supported_combinations"],
+      "additionalProperties": true,
+      "properties": {
+        "promotion": {
+          "enum": ["numpy_promote", "same_as_first_input", "fixed", "upcast_for_accum"]
+        },
+        "supported_combinations": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["inputs", "outputs"],
+            "properties": {
+              "inputs": {
+                "type": "object",
+                "additionalProperties": {"$ref": "#/$defs/dtype"}
+              },
+              "outputs": {
+                "type": "object",
+                "additionalProperties": {"$ref": "#/$defs/dtype"}
+              }
+            }
+          }
+        },
+        "accumulator_dtype": {"$ref": "#/$defs/dtype"}
+      }
+    },
+    "broadcast": {
+      "type": "object",
+      "description": "算子计算是否需要对数据进行 broadcast（数据复制/扩展），而非仅描述 shape 变换",
+      "required": ["kind"],
+      "additionalProperties": true,
+      "properties": {
+        "kind": {"enum": ["numpy", "none", "explicit"]},
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["scope", "policy"],
+            "properties": {
+              "scope": {"enum": ["trailing", "leading", "axis"]},
+              "count": {"type": "integer"},
+              "axis": {"type": "integer"},
+              "policy": {"enum": ["no_broadcast", "numpy", "equal_or_one", "must_equal"]}
+            }
+          }
+        }
+      }
+    },
+    "semantic_cases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "when", "inputs", "outputs"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z][a-zA-Z0-9_]*$"},
+          "when": {"type": "string", "minLength": 1},
+          "inputs": {"$ref": "#/$defs/semantic_case_inputs"},
+          "outputs": {"$ref": "#/$defs/semantic_case_outputs"}
+        }
+      }
+    },
+    "layout_contract": {
+      "type": "object",
+      "description": "可选的逻辑布局契约：声明布局变体下各已声明 Tensor 的逻辑轴顺序；不替代 inputs/outputs[].layout 的物理 format。",
+      "required": ["variants"],
+      "additionalProperties": false,
+      "properties": {
+        "variants": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["id", "tensors"],
+            "additionalProperties": false,
+            "properties": {
+              "id": {"type": "string", "pattern": "^[a-z][a-zA-Z0-9_]*$"},
+              "when": {
+                "type": "string",
+                "minLength": 1,
+                "description": "可选。复用 semantic_cases.when 的受限 guard 语法；省略表示无条件生效。"
+              },
+              "tensors": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "required": ["ref", "logical_axes"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "ref": {
+                      "type": "string",
+                      "pattern": "^(input|output)\\.[a-z][a-zA-Z0-9_]*$"
+                    },
+                    "logical_axes": {
+                      "type": "array",
+                      "minItems": 1,
+                      "uniqueItems": true,
+                      "items": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$"}
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "reduction": {
+      "type": "object",
+      "required": ["axis_source"],
+      "additionalProperties": false,
+      "properties": {
+        "axis_source": {
+          "enum": ["attribute", "input_tensor", "fixed", "implicit_all"]
+        },
+        "fixed_value": {
+          "type": "integer",
+          "description": "Fixed axis index (required when axis_source=fixed)"
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"axis_source": {"const": "fixed"}}},
+          "then": {"required": ["fixed_value"]}
+        }
+      ]
+    },
+    "math_semantics": {
+      "type": "object",
+      "required": ["formula_kind", "formula", "reference_oracle", "invariants"],
+      "additionalProperties": true,
+      "properties": {
+        "formula_kind": {"enum": ["numpy_expr", "python_block", "textual_only"]},
+        "formula": {"type": "string", "minLength": 1},
+        "reference_oracle": {
+          "type": "object",
+          "required": ["framework", "available_for_dtype", "absent"],
+          "properties": {
+            "framework": {"enum": ["torch", "numpy", "scipy", "tensorflow", "jax"]},
+            "api": {"type": "string", "minLength": 1},
+            "kwargs": {"type": "object"},
+            "composition": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["id", "api", "args"],
+                "additionalProperties": false,
+                "properties": {
+                  "id": {"type": "string", "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"},
+                  "api": {"type": "string", "minLength": 1},
+                  "args": {
+                    "type": "array",
+                    "items": {
+                      "oneOf": [
+                        {"type": "string"},
+                        {"type": "number"},
+                        {"type": "integer"},
+                        {"type": "boolean"},
+                        {"type": "null"}
+                      ]
+                    }
+                  },
+                  "kwargs": {"type": "object"}
+                }
+              }
+            },
+            "output": {"type": "string", "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"},
+            "available_for_dtype": {
+              "type": "array",
+              "items": {"$ref": "#/$defs/dtype"}
+            },
+            "absent": {"type": "boolean"}
+          },
+          "oneOf": [
+            {
+              "description": "absent=true：跳过 oracle 校验；其他字段不强制",
+              "properties": {"absent": {"const": true}},
+              "required": ["absent"]
+            },
+            {
+              "description": "单 callable 模式：必须有 api，禁有 composition",
+              "properties": {
+                "absent": {"const": false},
+                "composition": false
+              },
+              "required": ["absent", "api"]
+            },
+            {
+              "description": "DAG composition 模式：必须有 composition + output，禁有 api",
+              "properties": {
+                "absent": {"const": false},
+                "api": false
+              },
+              "required": ["absent", "composition", "output"]
+            }
+          ]
+        },
+        "invariants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "kind"],
+            "additionalProperties": true,
+            "properties": {
+              "name": {"type": "string"},
+              "kind": {
+                "enum": [
+                  "elementwise_ge", "elementwise_le", "elementwise_eq",
+                  "reduce_equals", "range_in", "produces_in_set",
+                  "idempotent", "equals_under_swap",
+                  "equals_input_when_other_is_zero",
+                  "equals_input_when_other_is_identity",
+                  "equals_when_input_is_zero",
+                  "associative_along_batch", "monotone_along",
+                  "permutation_of_input", "equals_after_op",
+                  "shape_equals_macro", "no_leak_intermediates"
+                ]
+              },
+              "tolerance_inherit": {"type": "boolean"},
+              "tolerance_override": {
+                "type": "object",
+                "properties": {
+                  "rtol": {"type": "number"},
+                  "atol": {"type": "number"},
+                  "metric": {"$ref": "#/$defs/tolerance_metric"}
+                }
+              }
+            }
+          }
+        },
+        "composition": {
+          "type": "object",
+          "required": ["primitives", "dataflow"],
+          "properties": {
+            "primitives": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["id", "op", "inputs", "outputs"],
+                "properties": {
+                  "id": {"type": "string"},
+                  "op": {
+                    "enum": [
+                      "broadcast", "reduce", "elementwise_unary", "elementwise_binary",
+                      "cast", "permute", "concat", "slice", "stack",
+                      "gemm", "conv"
+                    ]
+                  },
+                  "inputs": {"type": "array", "items": {"type": "string"}},
+                  "outputs": {"type": "array", "items": {"type": "string"}}
+                }
+              }
+            },
+            "dataflow": {
+              "type": "object",
+              "properties": {
+                "intermediates": {"type": "array", "items": {"type": "string"}},
+                "no_leak": {"type": "boolean"},
+                "fusable_groups": {
+                  "type": "array",
+                  "items": {"type": "array", "items": {"type": "string"}}
+                }
+              }
+            }
+          }
+        },
+        "format_variants": {
+          "type": "array",
+          "description": "每种数据排布格式的具体参数（归约轴、oracle kwargs 等）；canonical formula 以其中一种格式为规范",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["format", "rank", "reduction_axes"],
+            "additionalProperties": false,
+            "properties": {
+              "format": {"$ref": "#/$defs/layout"},
+              "rank": {
+                "type": "array",
+                "items": {"type": "integer", "minimum": 1},
+                "minItems": 1
+              },
+              "reduction_axes": {
+                "type": "array",
+                "items": {"type": "integer"},
+                "minItems": 1
+              },
+              "channel_axis": {
+                "type": "integer",
+                "description": "Channel 轴在该 format 中的位置（如 NCHW=1, NHWC=-1 或 3）"
+              },
+              "shape_rule": {
+                "type": "string",
+                "description": "该 format 下输出的 shape 推导规则（numpy 子集表达式）；覆盖 canonical shape_rule"
+              },
+              "oracle_kwargs": {"type": "object"}
+            }
+          }
+        }
+      }
+    },
+    "numerical_stability": {
+      "type": "object",
+      "required": ["required", "techniques"],
+      "properties": {
+        "required": {"type": "boolean"},
+        "techniques": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "applies_to", "rationale"],
+            "properties": {
+              "name": {"type": "string"},
+              "applies_to": {"type": "string"},
+              "rationale": {"type": "string"},
+              "anti_pattern_id": {"type": "string", "pattern": "^AP-[0-9]{3}$"}
+            }
+          }
+        },
+        "affects_invariants": {"type": "boolean"}
+      }
+    },
+    "numerical_tolerance": {
+      "type": "object",
+      "required": ["per_dtype"],
+      "properties": {
+        "source": {"type": "string"},
+        "per_dtype": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "object",
+            "required": ["metric"],
+            "properties": {
+              "rtol": {"type": "number", "minimum": 0},
+              "atol": {"type": "number", "minimum": 0},
+              "metric": {"$ref": "#/$defs/tolerance_metric"}
+            },
+            "if": {"properties": {"metric": {"const": "staged_relative"}}},
+            "then": {
+              "required": ["rtol", "max_relative_rtol"],
+              "additionalProperties": false,
+              "properties": {
+                "metric": {"const": "staged_relative"},
+                "rtol": {"type": "number", "exclusiveMinimum": 0},
+                "max_relative_rtol": {"type": "number", "exclusiveMinimum": 0},
+                "atol": {"const": 0},
+                "epsilon": {"type": "number", "exclusiveMinimum": 0},
+                "backend": {"const": "native"},
+                "fallback": {"$ref": "#/$defs/staged_fallback"}
+              }
+            },
+            "else": {
+              "if": {"properties": {"metric": {"const": "bitwise_equal"}}},
+              "then": {},
+              "else": {"required": ["rtol", "atol"]}
+            }
+          }
+        }
+      }
+    },
+    "boundary_conditions": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/case_with_check"}
+    },
+    "extreme_inputs": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/case_with_check"}
+    },
+    "determinism": {
+      "type": "object",
+      "required": ["required", "accumulation_order", "bitwise_reproducible"],
+      "properties": {
+        "required": {"type": "boolean"},
+        "accumulation_order": {
+          "enum": ["stable_in_axis", "tree", "sequential", "none"]
+        },
+        "bitwise_reproducible": {"type": "boolean"}
+      }
+    }
+  },
+  "x-support-catalog": {
+    "description": "Official snapshot sources, dtype aliases and contextual restrictions. Full universes are defined only by $defs.official_dtype.enum and $defs.official_format.enum; the snapshot id is properties.support_universe.const.",
+    "sources": [
+      "metadef/res/docs/api/DataType_res.md",
+      "metadef/res/docs/api/Format_res.md"
+    ],
+    "dtype_aliases": {
+      "DT_FLOAT": "float32",
+      "DT_FLOAT16": "float16",
+      "DT_INT8": "int8",
+      "DT_INT32": "int32",
+      "DT_UINT8": "uint8",
+      "DT_INT16": "int16",
+      "DT_UINT16": "uint16",
+      "DT_UINT32": "uint32",
+      "DT_INT64": "int64",
+      "DT_UINT64": "uint64",
+      "DT_DOUBLE": "float64",
+      "DT_BOOL": "bool",
+      "DT_STRING": "string",
+      "DT_DUAL_SUB_INT8": "dual_sub_int8",
+      "DT_DUAL_SUB_UINT8": "dual_sub_uint8",
+      "DT_COMPLEX64": "complex64",
+      "DT_COMPLEX128": "complex128",
+      "DT_QINT8": "qint8",
+      "DT_QINT16": "qint16",
+      "DT_QINT32": "qint32",
+      "DT_QUINT8": "quint8",
+      "DT_QUINT16": "quint16",
+      "DT_RESOURCE": "resource",
+      "DT_STRING_REF": "string_ref",
+      "DT_DUAL": "dual",
+      "DT_VARIANT": "variant",
+      "DT_BF16": "bfloat16",
+      "DT_UNDEFINED": "undefined",
+      "DT_INT4": "int4",
+      "DT_UINT1": "uint1",
+      "DT_INT2": "int2",
+      "DT_UINT2": "uint2",
+      "DT_COMPLEX32": "complex32",
+      "DT_HIFLOAT8": "hifloat8",
+      "DT_FLOAT8_E5M2": "float8_e5m2",
+      "DT_FLOAT8_E4M3FN": "float8_e4m3fn",
+      "DT_FLOAT8_E8M0": "float8_e8m0",
+      "DT_FLOAT6_E3M2": "float6_e3m2",
+      "DT_FLOAT6_E2M3": "float6_e2m3",
+      "DT_FLOAT4_E2M1": "float4_e2m1",
+      "DT_FLOAT4_E1M2": "float4_e1m2",
+      "DT_MAX": "max"
+    },
+    "non_tensor_dtypes": [
+      "undefined",
+      "max"
+    ],
+    "non_tensor_formats": [
+      "RESERVED",
+      "ALL",
+      "NULL",
+      "END",
+      "MAX"
+    ],
+    "restricted_chips": [
+      "Ascend950PR",
+      "Ascend950DT"
+    ],
+    "restricted_dtypes": [
+      "hifloat8",
+      "float8_e5m2",
+      "float8_e4m3fn",
+      "float8_e8m0",
+      "float6_e3m2",
+      "float6_e2m3",
+      "float4_e2m1",
+      "float4_e1m2"
+    ],
+    "restricted_formats": [
+      "FRACTAL_NZ_C0_16",
+      "FRACTAL_NZ_C0_32",
+      "FRACTAL_NZ_C0_2",
+      "FRACTAL_NZ_C0_4",
+      "FRACTAL_NZ_C0_8"
+    ],
+    "ir_graph_input_unsupported_formats": [
+      "NC1HWC0",
+      "FRACTAL_Z",
+      "NC1C0HWPAD",
+      "NHWC1C0",
+      "FRACTAL_DECONV",
+      "C1HWNC0",
+      "FRACTAL_DECONV_TRANSPOSE",
+      "FRACTAL_DECONV_SP_STRIDE_TRANS",
+      "NC1HWC0_C04",
+      "FRACTAL_Z_C04",
+      "FRACTAL_DECONV_SP_STRIDE8_TRANS",
+      "NC1KHKWHWC0",
+      "C1HWNCoC0",
+      "FRACTAL_ZZ",
+      "FRACTAL_NZ",
+      "NDC1HWC0",
+      "FRACTAL_Z_3D",
+      "FRACTAL_Z_3D_TRANSPOSE",
+      "FRACTAL_ZN_LSTM",
+      "FRACTAL_Z_G",
+      "ND_RNN_BIAS",
+      "FRACTAL_ZN_RNN",
+      "NYUV",
+      "NYUV_A"
+    ]
+  },
+  "$defs": {
+    "official_dtype": {
+      "enum": ["float32","float16","int8","int32","uint8","int16","uint16","uint32","int64","uint64","float64","bool","string","dual_sub_int8","dual_sub_uint8","complex64","complex128","qint8","qint16","qint32","quint8","quint16","resource","string_ref","dual","variant","bfloat16","undefined","int4","uint1","int2","uint2","complex32","hifloat8","float8_e5m2","float8_e4m3fn","float8_e8m0","float6_e3m2","float6_e2m3","float4_e2m1","float4_e1m2","max"]
+    },
+    "official_format": {
+      "enum": ["NCHW","NHWC","ND","NC1HWC0","FRACTAL_Z","NC1C0HWPAD","NHWC1C0","FSR_NCHW","FRACTAL_DECONV","C1HWNC0","FRACTAL_DECONV_TRANSPOSE","FRACTAL_DECONV_SP_STRIDE_TRANS","NC1HWC0_C04","FRACTAL_Z_C04","CHWN","FRACTAL_DECONV_SP_STRIDE8_TRANS","HWCN","NC1KHKWHWC0","BN_WEIGHT","FILTER_HWCK","HASHTABLE_LOOKUP_LOOKUPS","HASHTABLE_LOOKUP_KEYS","HASHTABLE_LOOKUP_VALUE","HASHTABLE_LOOKUP_OUTPUT","HASHTABLE_LOOKUP_HITS","C1HWNCoC0","MD","NDHWC","FRACTAL_ZZ","FRACTAL_NZ","NCDHW","DHWCN","NDC1HWC0","FRACTAL_Z_3D","CN","NC","DHWNC","FRACTAL_Z_3D_TRANSPOSE","FRACTAL_ZN_LSTM","FRACTAL_Z_G","RESERVED","ALL","NULL","ND_RNN_BIAS","FRACTAL_ZN_RNN","NYUV","NYUV_A","NCL","FRACTAL_Z_WINO","C1HWC0","FRACTAL_NZ_C0_16","FRACTAL_NZ_C0_32","FRACTAL_NZ_C0_2","FRACTAL_NZ_C0_4","FRACTAL_NZ_C0_8","END","MAX"]
+    },
+    "legacy_dtype": {"enum": ["float64", "float32", "float16", "bfloat16", "float8_e4m3fn", "float8_e5m2", "float8_e8m0", "hifloat8", "float4_e2m1", "float4_e1m2", "int4", "int8", "int16", "int32", "int64", "uint1", "uint4", "uint8", "uint16", "uint32", "uint64", "bool", "complex32", "complex64", "complex128"]},
+    "legacy_layout": {"enum": ["ND", "NCHW", "NHWC", "NCDHW", "NDHWC", "NZ", "FRACTAL_NZ", "FRACTAL_Z", "CSR", "COO", "BSR"]},
+    "supported_layouts": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/layout"}},
+    "complete_support": {
+      "type": "object",
+      "required": ["dtype_set", "unsupported_dtypes", "supported_layouts", "unsupported_layouts"],
+      "properties": {
+        "dtype_set": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/official_dtype"}},
+        "unsupported_dtypes": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/official_dtype"}},
+        "supported_layouts": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/official_format"}},
+        "unsupported_layouts": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/official_format"}}
+      }
+    },
+    "unsupported_dtypes": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/official_dtype"},
+      "description": "新契约为官方 dtype 全集减 dtype_set；无 support_universe 的旧 spec 仅记录已确认排除项。"
+    },
+    "unsupported_layouts": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/official_format"},
+      "description": "新契约为官方 format 全集减 supported_layouts；无 support_universe 的旧 spec 沿用部分排除语义。"
+    },
+    "list_length": {
+      "type": "object",
+      "required": ["kind"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"enum": ["unconstrained", "fixed", "range", "same_as", "expression"]},
+        "value": {"oneOf": [{"type": "integer", "minimum": 0}, {"type": "string", "minLength": 1}]},
+        "min": {"type": "integer", "minimum": 0},
+        "max": {"type": "integer", "minimum": 0},
+        "ref": {"type": "string", "pattern": "^(input|output)\\.[a-z][a-zA-Z0-9_]*$"}
+      },
+      "allOf": [
+        {"if": {"properties": {"kind": {"const": "unconstrained"}}}, "then": {"not": {"anyOf": [{"required": ["value"]}, {"required": ["min"]}, {"required": ["max"]}, {"required": ["ref"]}]}}},
+        {"if": {"properties": {"kind": {"const": "fixed"}}}, "then": {"required": ["value"], "properties": {"value": {"type": "integer", "minimum": 0}}}},
+        {"if": {"properties": {"kind": {"const": "range"}}}, "then": {"required": ["min", "max"]}},
+        {"if": {"properties": {"kind": {"const": "same_as"}}}, "then": {"required": ["ref"]}},
+        {"if": {"properties": {"kind": {"const": "expression"}}}, "then": {"required": ["value"], "properties": {"value": {"type": "string", "minLength": 1}}}}
+      ]
+    },
+    "semantic_case_inputs": {
+      "type": "object",
+      "required": ["required", "forbidden"],
+      "additionalProperties": false,
+      "properties": {
+        "required": {"$ref": "#/$defs/name_list"},
+        "forbidden": {"$ref": "#/$defs/name_list"}
+      }
+    },
+    "semantic_case_outputs": {
+      "type": "object",
+      "required": ["present", "absent"],
+      "additionalProperties": false,
+      "properties": {
+        "present": {"$ref": "#/$defs/name_list"},
+        "absent": {"$ref": "#/$defs/name_list"}
+      }
+    },
+    "name_list": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[a-z][a-zA-Z0-9_]*$"}
+    },
+    "dtype": {
+      "enum": ["float32","float16","int8","int32","uint8","int16","uint16","uint32","int64","uint64","float64","bool","string","dual_sub_int8","dual_sub_uint8","complex64","complex128","qint8","qint16","qint32","quint8","quint16","resource","string_ref","dual","variant","bfloat16","undefined","int4","uint1","int2","uint2","complex32","hifloat8","float8_e5m2","float8_e4m3fn","float8_e8m0","float6_e3m2","float6_e2m3","float4_e2m1","float4_e1m2","max","uint4"]
+    },
+    "layout": {
+      "enum": ["NCHW","NHWC","ND","NC1HWC0","FRACTAL_Z","NC1C0HWPAD","NHWC1C0","FSR_NCHW","FRACTAL_DECONV","C1HWNC0","FRACTAL_DECONV_TRANSPOSE","FRACTAL_DECONV_SP_STRIDE_TRANS","NC1HWC0_C04","FRACTAL_Z_C04","CHWN","FRACTAL_DECONV_SP_STRIDE8_TRANS","HWCN","NC1KHKWHWC0","BN_WEIGHT","FILTER_HWCK","HASHTABLE_LOOKUP_LOOKUPS","HASHTABLE_LOOKUP_KEYS","HASHTABLE_LOOKUP_VALUE","HASHTABLE_LOOKUP_OUTPUT","HASHTABLE_LOOKUP_HITS","C1HWNCoC0","MD","NDHWC","FRACTAL_ZZ","FRACTAL_NZ","NCDHW","DHWCN","NDC1HWC0","FRACTAL_Z_3D","CN","NC","DHWNC","FRACTAL_Z_3D_TRANSPOSE","FRACTAL_ZN_LSTM","FRACTAL_Z_G","RESERVED","ALL","NULL","ND_RNN_BIAS","FRACTAL_ZN_RNN","NYUV","NYUV_A","NCL","FRACTAL_Z_WINO","C1HWC0","FRACTAL_NZ_C0_16","FRACTAL_NZ_C0_32","FRACTAL_NZ_C0_2","FRACTAL_NZ_C0_4","FRACTAL_NZ_C0_8","END","MAX","NZ","CSR","COO","BSR"]
+    },
+    "tolerance_metric": {
+      "enum": ["max_relative", "max_absolute", "mean_relative", "staged_relative", "cosine_similarity", "bitwise_equal"]
+    },
+    "staged_fallback": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "small_value_threshold": {"type": "number", "exclusiveMinimum": 0},
+        "small_value_error": {"type": "number", "exclusiveMinimum": 0},
+        "cancel_boundary": {"type": "number", "exclusiveMinimum": 0},
+        "cancel_zero_threshold": {"type": "number", "exclusiveMinimum": 0},
+        "error_ratio_limit": {"type": "number", "exclusiveMinimum": 0},
+        "reference_mode": {"enum": ["native", "truncated", "native_or_truncated"]}
+      }
+    },
+    "case_with_check": {
+      "type": "object",
+      "required": ["case", "synthesize", "machine_check"],
+      "properties": {
+        "case": {"type": "string"},
+        "tags": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "声明该 case 满足 boundary_min_cases.yaml 中的哪些 requirement.id；stage 5 用 tag 优先匹配，子串匹配作为兜底"
+        },
+        "synthesize": {"type": "object"},
+        "machine_check": {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "enum": [
+                "equals", "equals_tensor", "returns_empty",
+                "produces_nan", "nan_propagates", "inf_clamps_to",
+                "matches_oracle", "matches_invariant", "raises_error",
+                "equals_input"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

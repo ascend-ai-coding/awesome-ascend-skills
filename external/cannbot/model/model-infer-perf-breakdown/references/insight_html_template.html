@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>性能洞察 - {{model_name}} - {{label}}</title>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --line: #dce3ee;
+      --text: #172033;
+      --muted: #66748a;
+      --blue: #2563eb;
+      --green: #059669;
+      --amber: #d97706;
+      --red: #dc2626;
+      --shadow: 0 12px 30px rgba(15, 23, 42, .08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      background: var(--bg);
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 16px;
+      align-items: center;
+      padding: 18px 28px;
+      background: rgba(255, 255, 255, .92);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(10px);
+    }
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: 24px; }
+    h2 { font-size: 18px; margin-bottom: 12px; }
+    h3 { font-size: 14px; margin: 18px 0 10px; color: #334155; }
+    .muted { color: var(--muted); font-size: 12px; }
+    .workbench {
+      display: grid;
+      grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+      gap: 20px;
+      padding: 20px 28px 36px;
+    }
+    .persistent-summary {
+      position: sticky;
+      top: 84px;
+      align-self: start;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      box-shadow: var(--shadow);
+      padding: 16px;
+      max-height: calc(100vh - 104px);
+      overflow: auto;
+    }
+    .persistent-summary .summary-grid { grid-template-columns: 1fr; }
+    .persistent-summary .source-list {
+      display: grid;
+      gap: 6px;
+      margin-top: 12px;
+      font-size: 12px;
+    }
+    .tabs {
+      display: grid;
+      gap: 14px;
+      min-width: 0;
+    }
+    .tab-bar {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 4px;
+      background: #e8eef8;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+    }
+    .tab-button {
+      border: 0;
+      border-radius: 9px;
+      padding: 9px 12px;
+      color: #334155;
+      background: transparent;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 650;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+    .tab-button.active {
+      color: var(--blue);
+      background: #fff;
+      box-shadow: 0 2px 8px rgba(15, 23, 42, .08);
+    }
+    .tab-panel {
+      display: none;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      box-shadow: var(--shadow);
+      padding: 18px;
+      min-width: 0;
+    }
+    .tab-panel.active { display: block; }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .finding-card {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px;
+      background: #fbfdff;
+    }
+    .confidence {
+      display: inline-flex;
+      align-items: center;
+      height: 22px;
+      padding: 0 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .confidence.high { color: #991b1b; background: #fee2e2; }
+    .confidence.medium { color: #92400e; background: #fef3c7; }
+    .confidence.low { color: #075985; background: #e0f2fe; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { background: #f8fafc; color: #475569; font-size: 12px; white-space: nowrap; }
+    tr:last-child td { border-bottom: 0; }
+    code { font-family: "SFMono-Regular", Consolas, monospace; font-size: 12px; }
+    .metric { font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .empty { padding: 12px; color: var(--muted); background: #f8fafc; border-radius: 10px; }
+    @media (max-width: 900px) {
+      header { grid-template-columns: 1fr; }
+      .workbench { grid-template-columns: 1fr; padding: 14px; }
+      .persistent-summary { position: static; }
+      .summary-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>性能洞察</h1>
+      <p class="muted">{{model_name}} · {{label}} · {{generated_at}}</p>
+    </div>
+    <p class="muted">数据来源：{{metrics_path}} / {{raw_ops_path}} / {{structure_draft_path}}</p>
+  </header>
+
+  <div class="workbench">
+    <aside class="persistent-summary" aria-label="通用结论">
+      <section id="summary">
+        <h2>核心结论</h2>
+        <div class="summary-grid">
+          <div class="finding-card" data-confidence-group="high"><span class="confidence high">high</span><!-- high findings --></div>
+          <div class="finding-card" data-confidence-group="medium"><span class="confidence medium">medium</span><!-- medium findings --></div>
+          <div class="finding-card" data-confidence-group="low"><span class="confidence low">low</span><!-- low findings --></div>
+        </div>
+        <h3>数据限制</h3>
+        <div class="empty"><!-- render final_conclusions.md 数据限制 --></div>
+        <h3>证据索引</h3>
+        <div class="source-list"><!-- Step 3 HTML, split dirs, op_indices / op_range_envelope / org_index links --></div>
+      </section>
+    </aside>
+
+    <main class="tabs">
+      <div class="tab-bar" role="tablist" aria-label="Insight pages">
+        <button class="tab-button active" type="button" role="tab" aria-selected="true" data-tab="module-bubble">Module Bubble</button>
+        <button class="tab-button" type="button" role="tab" aria-selected="false" data-tab="operator-jitter">Operator Jitter</button>
+        <button class="tab-button" type="button" role="tab" aria-selected="false" data-tab="theoretical-deviation">Theoretical Deviation</button>
+        <button class="tab-button" type="button" role="tab" aria-selected="false" data-tab="vector-sequences">Vector Sequences</button>
+        <button class="tab-button" type="button" role="tab" aria-selected="false" data-tab="tensor-movement">Tensor Movement</button>
+      </div>
+
+      <section id="module-bubble" class="tab-panel active" role="tabpanel">
+        <h2>模块 Bubble</h2>
+        <p class="muted">先看长期偏大的模块类型，再看具体层 / 模块异常；每张表只展示 Top5，同置信度内按 bubble 占比或耗时降序。</p>
+        <h3>长期偏大的模块类型 Top5</h3>
+        <div class="table-wrap"><table data-source="module_bubble.json:persistent_module_bubbles" data-limit="5"></table></div>
+        <h3>具体层 / 模块异常 Top5</h3>
+        <div class="table-wrap"><table data-source="module_bubble.json:instance_bubble_outliers" data-limit="5"></table></div>
+      </section>
+
+      <section id="operator-jitter" class="tab-panel" role="tabpanel">
+        <h2>算子性能抖动</h2>
+        <p class="muted">统计候选，不直接等价于根因；每张表只展示 Top5，默认按 confidence high -> medium -> low 展示。</p>
+        <h3>Cluster wall 抖动 Top5</h3>
+        <div class="table-wrap"><table data-source="operator_jitter.json:cluster_jitter_candidates" data-limit="5"></table></div>
+        <h3>Operator duration 抖动 Top5</h3>
+        <div class="table-wrap"><table data-source="operator_jitter.json:operator_jitter_candidates" data-limit="5"></table></div>
+      </section>
+
+      <section id="theoretical-deviation" class="tab-panel" role="tabpanel">
+        <h2>理论性能偏离</h2>
+        <p class="muted">按逻辑 slot 聚合，单个 layer / instance 只作为证据；只展示 Top5，渲染层不解释根因。</p>
+        <h3>Sub-item / TOTAL 偏离 Top5</h3>
+        <div class="table-wrap"><table data-source="theoretical_deviation.json:sub_item_deviation_candidates" data-limit="5"></table></div>
+        <h3>Operator slot 偏离 Top5</h3>
+        <div class="table-wrap"><table data-source="theoretical_deviation.json:operator_slot_deviation_candidates" data-limit="5"></table></div>
+      </section>
+
+      <section id="vector-sequences" class="tab-panel" role="tabpanel">
+        <h2>连续 Vector 区间</h2>
+        <p class="muted">按 pattern 聚合，不逐层刷屏；只展示 Top5 pattern、代表样本、所属模块和 agent 语义解释。</p>
+        <h3>Pattern Top5</h3>
+        <div class="table-wrap"><table data-source="vector_sequence_candidates.json:patterns" data-limit="5"></table></div>
+      </section>
+
+      <section id="tensor-movement" class="tab-panel" role="tabpanel">
+        <h2>冗余 Tensor Movement 候选</h2>
+        <p class="muted">confidence 表示该 movement 作为可消除冗余的可能性；只展示 Top5，渲染层不能自行推断。</p>
+        <h3>Family / module Top5</h3>
+        <div class="table-wrap"><table data-source="data_movement_ops.json:families" data-limit="5"></table></div>
+      </section>
+
+      <script>
+        document.querySelectorAll(".tab-button").forEach((button) => {
+          button.addEventListener("click", () => {
+            const target = button.dataset.tab;
+            document.querySelectorAll(".tab-button").forEach((b) => {
+              b.classList.toggle("active", b === button);
+              b.setAttribute("aria-selected", b === button ? "true" : "false");
+            });
+            document.querySelectorAll(".tab-panel").forEach((panel) => {
+              panel.classList.toggle("active", panel.id === target);
+            });
+          });
+        });
+      </script>
+    </main>
+  </div>
+</body>
+</html>

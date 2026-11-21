@@ -1,0 +1,42 @@
+# ----------------------------------------------------------------------------
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+# ----------------------------------------------------------------------------
+strategy_id: P156
+description: CV 环 0x2 握手，每核 task 数很少 适用性检查。
+
+strategy_meta:
+  id: "P156"
+  slug: "P156_0x2_handshake_batching"
+  title: "P156: CV 环 0x2 配对握手批量化（按形状门控）"
+  bottlenecks: [sync_overhead, scalar_compute]
+  op_families: [cv_fusion, attention]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p156_0x2_handshake_batching.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p156_0x2_handshake_batching.md"
+  playbook_slug: "P156_0x2_handshake_batching"
+checks:
+  - id: has_0x2
+    type: grep_count
+    pattern: "0x2|ProducerAcquire|DEPTH"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未发现 0x2 信用/深度结构 → P156 不适用。"
+  - id: has_aiv
+    type: grep_count
+    pattern: "AIV|sub-block|AIC"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未发现 AIC/AIV 成对握手 → P156 不适用。"

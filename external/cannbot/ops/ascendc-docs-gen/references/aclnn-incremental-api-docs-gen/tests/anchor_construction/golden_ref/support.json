@@ -1,0 +1,227 @@
+{
+  "doc": {
+    "doc_name": "aclnnAbs.md",
+    "doc_path": "out/operator_storage/abs/base/docs/aclnnAbs.md",
+    "doc_part": "support",
+    "md_format": "## 产品支持情况\n\n| 产品                                              | 是否支持 |\n|:------------------------------------------------| :------: |\n| <term>Ascend 950PR/Ascend 950DT</term>          |    √     |\n| <term>Atlas A3 训练系列产品/Atlas A3 推理系列产品</term>    |    √     |\n| <term>Atlas A2 训练系列产品/Atlas A2 推理系列产品</term>    |    √     |\n| <term>Atlas 200I/500 A2 推理产品</term>             |    ×     |\n| <term>Atlas 推理系列产品</term>                       |    √     |\n| <term>Atlas 训练系列产品</term>                       |    √     |",
+    "sub_part": {
+      "support_matrix": [
+        {
+          "content": "| 产品                                              | 是否支持 |\n|:------------------------------------------------| :------: |\n| <term>Ascend 950PR/Ascend 950DT</term>          |    √     |\n| <term>Atlas A3 训练系列产品/Atlas A3 推理系列产品</term>    |    √     |\n| <term>Atlas A2 训练系列产品/Atlas A2 推理系列产品</term>    |    √     |\n| <term>Atlas 200I/500 A2 推理产品</term>             |    ×     |\n| <term>Atlas 推理系列产品</term>                       |    √     |\n| <term>Atlas 训练系列产品</term>                       |    √     |",
+          "evidence_ids": [
+            "ev_001",
+            "ev_001",
+            "ev_002",
+            "ev_003"
+          ]
+        }
+      ]
+    }
+  },
+  "summary": {
+    "type1_section_count": 1,
+    "type2_section_count": 0,
+    "type3_section_count": 0,
+    "file_count": 3,
+    "total_anchor_count": 4,
+    "total_evidence_count": 4,
+    "support_matrix_content_len": 499,
+    "chips": [
+      "ascend950"
+    ],
+    "socs": [],
+    "archs": []
+  },
+  "anchor_tuple": [
+    {
+      "anchor_id": "anchor_section_001",
+      "anchor_information": {
+        "type": "section",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_host/abs_def.cpp",
+          "start_line": "18",
+          "end_line": "46",
+          "token_hash": "namespace ops {\nclass Abs : public OpDef {\n    public:\n        explicit Abs(const char* name) : OpDef(name)\n        {\n            this->Input(\"x\")\n                .ParamType(REQUIRED)\n                .DataType({ge::DT_BF16, ge::DT_FLOAT16, ge::DT_FLOAT, ge::DT_INT8, ge::DT_INT16, ge::DT_INT32, ge::DT_INT64, ge::DT_COMPLEX32, ge::DT_COMPLEX64})\n                .Format({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND,\n                         ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND})\n                .UnknownShapeFormat({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND,\n                         ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND});\n            this->Output(\"y\")\n                .ParamType(REQUIRED)\n                .DataType({ge::DT_BF16, ge::DT_FLOAT16, ge::DT_FLOAT, ge::DT_INT8, ge::DT_INT16, ge::DT_INT32, ge::DT_INT64, ge::DT_FLOAT16, ge::DT_FLOAT})\n                .Format({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND,\n                         ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND})\n                .UnknownShapeFormat({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND,\n                         ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND});\n            OpAICoreConfig aicoreConfig;\n            aicoreConfig.DynamicCompileStaticFlag(true)\n                .DynamicFormatFlag(false)\n                .DynamicRankSupportFlag(true)\n                .DynamicShapeSupportFlag(true)\n                .NeedCheckSupportFlag(false)\n                .PrecisionReduceFlag(true)\n                .ExtendCfgInfo(\"opFile.value\", \"abs_apt\");\n            this->AICore().AddConfig(\"ascend950\", aicoreConfig);\n        }\n"
+        },
+        "level2": {
+          "token_hash": "namespace ops {\nclass Abs : public OpDef {\n    public:\n        explicit Abs(const char* name) : OpDef(name)\n        {\n            this->Input(\"x\")\n                .ParamType(REQUIRED)\n                .DataType({ge::DT_BF16, ge::DT_FLOAT16, ge::DT_FLOAT, ge::DT_INT8, ge::DT_INT16, ge::DT_INT32, ge::DT_INT64, ge::DT_COMPLEX32, ge::DT_COMPLEX64})\n                .Format({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND,\n                         ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND})\n                .UnknownShapeFormat({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND,\n                         ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND});\n            this->Output(\"y\")\n                .ParamType(REQUIRED)\n                .DataType({ge::DT_BF16, ge::DT_FLOAT16, ge::DT_FLOAT, ge::DT_INT8, ge::DT_INT16, ge::DT_INT32, ge::DT_INT64, ge::DT_FLOAT16, ge::DT_FLOAT})\n                .Format({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND,\n                         ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND})\n                .UnknownShapeFormat({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND,\n                         ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND});\n            OpAICoreConfig aicoreConfig;\n            aicoreConfig.DynamicCompileStaticFlag(true)\n                .DynamicFormatFlag(false)\n                .DynamicRankSupportFlag(true)\n                .DynamicShapeSupportFlag(true)\n                .NeedCheckSupportFlag(false)\n                .PrecisionReduceFlag(true)\n                .ExtendCfgInfo(\"opFile.value\", \"abs_apt\");\n            this->AICore().AddConfig(\"ascend950\", aicoreConfig);\n        }\n"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_host/abs_def.cpp",
+            "content": "namespace ops {\nclass Abs : public OpDef {\n    public:\n        explicit Abs(const char* name) : OpDef(name)\n        {\n            this->Input(\"x\")\n                .ParamType(REQUIRED)\n                .DataType({ge::DT_BF16, ge::DT_FLOAT16, ge::DT_FLOAT, ge::DT_INT8, ge::DT_INT16, ge::DT_INT32, ge::DT_INT64, ge::DT_COMPLEX32, ge::DT_COMPLEX64})\n                .Format({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND,\n                         ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND})\n                .UnknownShapeFormat({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND,\n                         ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND});\n            this->Output(\"y\")\n                .ParamType(REQUIRED)\n                .DataType({ge::DT_BF16, ge::DT_FLOAT16, ge::DT_FLOAT, ge::DT_INT8, ge::DT_INT16, ge::DT_INT32, ge::DT_INT64, ge::DT_FLOAT16, ge::DT_FLOAT})\n                .Format({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND,\n                         ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND})\n                .UnknownShapeFormat({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND,\n                         ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND});\n            OpAICoreConfig aicoreConfig;\n            aicoreConfig.DynamicCompileStaticFlag(true)\n                .DynamicFormatFlag(false)\n                .DynamicRankSupportFlag(true)\n                .DynamicShapeSupportFlag(true)\n                .NeedCheckSupportFlag(false)\n                .PrecisionReduceFlag(true)\n                .ExtendCfgInfo(\"opFile.value\", \"abs_apt\");\n            this->AICore().AddConfig(\"ascend950\", aicoreConfig);\n        }\n"
+          },
+          "gene_rule": {
+            "deter": "AICore().AddConfig 匹配芯片: ['ascend950']",
+            "target": [
+              [
+                "support_matrix"
+              ]
+            ]
+          },
+          "evidence_id": "ev_001",
+          "support_chips": {
+            "source": "AICore().AddConfig",
+            "chips": [
+              "ascend950"
+            ]
+          }
+        }
+      ],
+      "note": "[TYPE1] op_host/*_def.cpp → AICore().AddConfig，包含芯片: ['ascend950']"
+    },
+    {
+      "anchor_id": "anchor_file_001",
+      "anchor_information": {
+        "type": "file",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_host/abs_def.cpp",
+          "file_name": "abs_def.cpp"
+        },
+        "level2": {
+          "code_map": {
+            "nodes": [
+              "ops",
+              "Abs"
+            ],
+            "edges": []
+          },
+          "token_hash": "/**\n * Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.\n * This program is free software, you can redistribute it and/or modify it under the terms and conditions of\n * CANN Open Software License Agreement Version 2.0 (the \"License\").\n * Please refer to the License for details. You may not use this file except in compliance with the License.\n * THIS SOFTWARE IS PROVIDED ON AN \"AS IS\" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,\n * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.\n * See LICENSE in the root of the software repository for the full text of the License.\n */\n\n/*!\n * \\file abs_def.cpp\n * \\brief abs def\n */\n\n#include \"register/op_def_registry.h\"\n\nnamespace ops {\nclass Abs : public OpDef {\n    public:\n        explicit Abs(const char* name) : OpDef(name)\n        {\n            this->Input(\"x\")\n                .ParamType(REQUIRED)\n                .DataType({ge::DT_BF16, ge::DT_FLOAT16, ge::DT_FLOAT, ge::DT_INT8, ge::DT_INT16, ge::DT_INT32, ge::DT_INT64, ge::DT_COMPLEX32, ge::DT_COMPLEX64})\n                .Format({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND,\n                         ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND})\n                .UnknownShapeFormat({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND,\n                         ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND});\n            this->Output(\"y\")\n                .ParamType(REQUIRED)\n                .DataType({ge::DT_BF16, ge::DT_FLOAT16, ge::DT_FLOAT, ge::DT_INT8, ge::DT_INT16, ge::DT_INT32, ge::DT_INT64, ge::DT_FLOAT16, ge::DT_FLOAT})\n                .Format({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND,\n                         ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND})\n                .UnknownShapeFormat({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND,\n                         ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND});\n            OpAICoreConfig aicoreConfig;\n            aicoreConfig.DynamicCompileStaticFlag(true)\n                .DynamicFormatFlag(false)\n                .DynamicRankSupportFlag(true)\n                .DynamicShapeSupportFlag(true)\n                .NeedCheckSupportFlag(false)\n                .PrecisionReduceFlag(true)\n                .ExtendCfgInfo(\"opFile.value\", \"abs_apt\");\n            this->AICore().AddConfig(\"ascend950\", aicoreConfig);\n        }\n};\n\nOP_ADD(Abs);\n}  // namespace ops",
+          "file_功能": "定义Abs算子的元数据规范，注册输入输出张量的数据类型、格式约束及AI Core硬件执行配置，是算子在框架中识别与调度的基础声明文件。"
+        },
+        "level3": {
+          "tree_id": "abs/base（## Abs算子基础实现目录，封装API接口、主机逻辑、图元数据、分块策略、内核计算及测试用例等核心模块）\n├── abs/base/op_api（## Abs算子API层实现目录，提供ACLNN接口定义、参数校验、数据类型适配及主机端调度入口）\n│   ├── aclnn_abs.cpp 实现Ascend NPU上Abs算子的ACLNN API层逻辑，负责参数校验、数据类型适配、内存布局处理及计算任务编排。\n│   ├── aclnn_abs.h 定义aclnnAbs算子的Level2 API头文件，提供获取Workspace大小和执行绝对值计算的两段式接口声明，支持多种数据类型及非连续Tensor。\n│   ├── abs.h 该文件是Abs算子Level 0 API的头文件，定义了面向底层执行器的绝对值计算接口声明，作为算子框架中Host侧调用Kernel的入口抽象层。\n│   └── abs.cpp 实现Abs算子的主机端调度逻辑，包括输出张量分配、形状推导、数据类型校验及根据芯片架构动态选择AiCore或AiCPU执行路径。\n├── abs/base/op_graph（## Abs算子图引擎注册目录，定义GE原型信息、输入输出接口及框架兼容性元数据）\n│   └── abs_proto.h 定义Abs算子在GE图引擎中的原型注册信息，声明算子的输入输出接口、支持的数据类型及框架兼容性，是算子接入计算图的基础元数据描述文件。\n├── abs/base/op_host（## Abs算子主机端通用逻辑目录，包含元数据定义、形状推导及特定架构Tiling策略实现）\n│   ├── abs_def.cpp 定义Abs算子的元数据规范，注册输入输出张量的数据类型、格式约束及AI Core硬件执行配置，是算子在框架中识别与调度的基础声明文件。\n│   └── abs_infershape.cpp 实现Abs算子的形状与数据类型推导逻辑。\n│   └── abs/base/op_host/arch35（## Abs算子Arch35架构主机端Tiling策略目录，负责分块参数生成与硬件资源适配）\n│   │   ├── abs_tiling_arch35.h 该文件定义了Arch35架构下Abs算子的Tiling策略头文件，负责声明主机端分块计算所需的数据结构与接口，用于指导内核按硬件资源进行任务切分。\n│   │   └── abs_tiling_arch35.cpp 该文件负责Ascend Arch35架构下Abs算子的Tiling策略生成。\n├── abs/base/op_kernel（## Abs算子设备端Kernel实现目录，包含Tiling数据结构、Kernel入口函数及DAG计算逻辑）\n│   ├── abs_apt.cpp 实现Abs算子在AI Core上的底层计算逻辑，作为设备端Kernel入口函数。\n│   └── abs_struct.h 定义Abs算子内核层专用的Tiling数据结构，用于在Host与Device间传递分块计算参数。\n│   └── abs/base/op_kernel/arch35（## Abs算子Arch35架构设备端Kernel目录，实现DAG计算流水线及复数高精度运算逻辑）\n│   │   ├── abs_dag.h 定义Abs算子在Arch35架构下的设备端DAG（有向无环图）计算流水线，通过模板化数据流编排实现绝对值运算的自动化调度与内存管理。\n│   │   └── abs_complex_dag.h 实现复数绝对值算子的AI Core底层DAG计算逻辑。\n└── abs/base/tests（## Abs算子单元测试总目录，覆盖API校验、形状推导及Tiling策略等功能的验证代码）\n    └── abs/base/tests/ut（## Abs算子单元测试集合目录，集中管理API、形状推导及Tiling策略的GTest验证代码）\n        ├── abs/base/tests/ut/op_api（## Abs算子API层单元测试目录，验证ACLNN接口的参数校验与Workspace获取功能）\n        │   └── test_aclnn_abs.cpp 该文件是Abs算子API层的单元测试代码，基于GTest框架验证`aclnnAbs`接口的参数校验逻辑。\n        └── abs/base/tests/ut/op_host（## Abs算子主机端逻辑单元测试目录，验证形状推导及Tiling策略在不同场景下的正确性）\n        │   └── test_abs_infershape.cpp 该文件是Abs算子形状推导（Infershape）功能的单元测试代码。\n            └── abs/base/tests/ut/op_host/arch35（## Abs算子Arch35架构Tiling策略单元测试目录，验证分块参数生成的正确性与异常处理）\n            │   └── test_abs_tiling_arch35.cpp 该文件是Abs算子在Arch35架构下的Tiling策略单元测试，用于验证不同数据类型（FP16/32、INT8/16/32/64、BF16及复数类型）的切分参数生成正确性，并覆盖输入输出类型不匹配、空Tensor等异常场景。"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_host/abs_def.cpp",
+            "file_name": "abs_def.cpp",
+            "file_功能": "定义Abs算子的元数据规范，注册输入输出张量的数据类型、格式约束及AI Core硬件执行配置，是算子在框架中识别与调度的基础声明文件。",
+            "file_content": "/**\n * Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.\n * This program is free software, you can redistribute it and/or modify it under the terms and conditions of\n * CANN Open Software License Agreement Version 2.0 (the \"License\").\n * Please refer to the License for details. You may not use this file except in compliance with the License.\n * THIS SOFTWARE IS PROVIDED ON AN \"AS IS\" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,\n * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.\n * See LICENSE in the root of the software repository for the full text of the License.\n */\n\n/*!\n * \\file abs_def.cpp\n * \\brief abs def\n */\n\n#include \"register/op_def_registry.h\"\n\nnamespace ops {\nclass Abs : public OpDef {\n    public:\n        explicit Abs(const char* name) : OpDef(name)\n        {\n            this->Input(\"x\")\n                .ParamType(REQUIRED)\n                .DataType({ge::DT_BF16, ge::DT_FLOAT16, ge::DT_FLOAT, ge::DT_INT8, ge::DT_INT16, ge::DT_INT32, ge::DT_INT64, ge::DT_COMPLEX32, ge::DT_COMPLEX64})\n                .Format({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND,\n                         ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND})\n                .UnknownShapeFormat({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND,\n                         ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND});\n            this->Output(\"y\")\n                .ParamType(REQUIRED)\n                .DataType({ge::DT_BF16, ge::DT_FLOAT16, ge::DT_FLOAT, ge::DT_INT8, ge::DT_INT16, ge::DT_INT32, ge::DT_INT64, ge::DT_FLOAT16, ge::DT_FLOAT})\n                .Format({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND,\n                         ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND})\n                .UnknownShapeFormat({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND,\n                         ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND});\n            OpAICoreConfig aicoreConfig;\n            aicoreConfig.DynamicCompileStaticFlag(true)\n                .DynamicFormatFlag(false)\n                .DynamicRankSupportFlag(true)\n                .DynamicShapeSupportFlag(true)\n                .NeedCheckSupportFlag(false)\n                .PrecisionReduceFlag(true)\n                .ExtendCfgInfo(\"opFile.value\", \"abs_apt\");\n            this->AICore().AddConfig(\"ascend950\", aicoreConfig);\n        }\n};\n\nOP_ADD(Abs);\n}  // namespace ops"
+          },
+          "gene_rule": {
+            "deter": "op_host/*_def.cpp 文件",
+            "target": [
+              [
+                "support_matrix"
+              ]
+            ]
+          },
+          "evidence_id": "ev_001"
+        }
+      ],
+      "note": "[FILE_DEF] abs_def.cpp"
+    },
+    {
+      "anchor_id": "anchor_file_002",
+      "anchor_information": {
+        "type": "file",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_host/arch35/abs_tiling_arch35.cpp",
+          "file_name": "abs_tiling_arch35.cpp"
+        },
+        "level2": {
+          "code_map": {
+            "nodes": [
+              "optiling",
+              "TilingForAbs",
+              "RunTiling",
+              "TilingPrepareForAbs",
+              ">",
+              "GetCoreNumAiv"
+            ],
+            "edges": [
+              {
+                "source": "TilingForAbs",
+                "type": "calls",
+                "target": "RunTiling"
+              },
+              {
+                "source": "TilingPrepareForAbs",
+                "type": "calls",
+                "target": ">"
+              },
+              {
+                "source": "TilingPrepareForAbs",
+                "type": "calls",
+                "target": "GetCoreNumAiv"
+              }
+            ]
+          },
+          "token_hash": "/**\n * Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.\n * This program is free software, you can redistribute it and/or modify it under the terms and conditions of\n * CANN Open Software License Agreement Version 2.0 (the \"License\").\n * Please refer to the License for details. You may not use this file except in compliance with the License.\n * THIS SOFTWARE IS PROVIDED ON AN \"AS IS\" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,\n * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.\n * See LICENSE in the root of the software repository for the full text of the License.\n */\n\n/*!\n * \\file abs_tiling_arch35.cpp\n * \\brief\n */\n#include <iostream>\n\n#include \"abs_tiling_arch35.h\"\n#include <graph/utils/type_utils.h>\n#include \"tiling/tiling_api.h\"\n#include \"tiling/platform/platform_ascendc.h\"\n#include \"register/op_def_registry.h\"\n#include \"register/tilingdata_base.h\"\n#include \"../../op_kernel/arch35/abs_dag.h\"\n#include \"../../op_kernel/arch35/abs_complex_dag.h\"\n\nusing namespace ge;\nusing namespace AbsNs;\n\nnamespace optiling {\nconstexpr uint64_t ABS_TILING_KEY_ELEMENTWISE_BF16 = 101;\nconstexpr uint64_t ABS_TILING_KEY_ELEMENTWISE_OTHER = 102;\nconstexpr uint64_t ABS_TILING_KEY_ELEMENTWISE_COMPLEX = 103;\nconstexpr uint64_t ABS_WORKSPACE_RESERVE_BYTE = 16777216;\n\nge::graphStatus AbsTiling::SetTilingData()\n{\n    size_t* currentWorkspace = tilingContext->GetWorkspaceSizes(1);\n    OP_CHECK_NULL_WITH_CONTEXT(tilingContext, currentWorkspace);\n    currentWorkspace[0] = ABS_WORKSPACE_RESERVE_BYTE;\n    if (this->outputDtype == ge::DT_BF16) {\n        tilingContext->SetTilingKey(ABS_TILING_KEY_ELEMENTWISE_BF16);\n    } else if (this->inputDtype == ge::DT_COMPLEX64 || this->inputDtype == ge::DT_COMPLEX32) { // 新增complex分支\n        tilingContext->SetTilingKey(ABS_TILING_KEY_ELEMENTWISE_COMPLEX);\n    } else {\n        tilingContext->SetTilingKey(ABS_TILING_KEY_ELEMENTWISE_OTHER);\n    }\n    tilingContext->SetBlockDim(tiling->baseTiling.blockNum);\n    return ge::GRAPH_SUCCESS;\n}\n\nge::graphStatus AbsTiling::CalcOutputDtype()\n{\n    auto inputDesc = tilingContext->GetInputDesc(0);\n    OP_CHECK_NULL_WITH_CONTEXT(tilingContext, inputDesc);\n    this->inputDtype = inputDesc->GetDataType();\n\n    auto outputDesc = tilingContext->GetOutputDesc(0);\n    OP_CHECK_NULL_WITH_CONTEXT(tilingContext, outputDesc);\n    this->outputDtype = outputDesc->GetDataType();\n\n    if (this->inputDtype != ge::DT_COMPLEX64 && this->inputDtype != ge::DT_COMPLEX32) {\n        OP_CHECK_IF(this->inputDtype != this->outputDtype,\n                    OP_LOGE(tilingContext, \"Abs op input and output dtype not match, check fail\"),\n                    return ge::GRAPH_FAILED);\n    } else if (inputDtype == ge::DT_COMPLEX64) {\n        OP_CHECK_IF(this->outputDtype != ge::DT_FLOAT, \n                    OP_LOGE(tilingContext, \"Abs op complex64 input must output float, check fail\"),\n                    return ge::GRAPH_FAILED); \n    } else if (inputDtype == ge::DT_COMPLEX32) {\n        OP_CHECK_IF(this->outputDtype != ge::DT_FLOAT16, \n                    OP_LOGE(tilingContext, \"Abs op complex32 input must output float16, check fail\"),\n                    return ge::GRAPH_FAILED); \n    }\n    return ge::GRAPH_SUCCESS;\n}\n\nge::graphStatus AbsTiling::RunTiling()\n{\n    ElewiseBaseTiling elewiseBaseTiling(tilingContext);\n    OP_CHECK_IF(CalcOutputDtype() == ge::GRAPH_FAILED,\n        OP_LOGE(tilingContext, \"get output dtype failed\"),\n        return ge::GRAPH_FAILED);\n\n    ge::graphStatus res = ge::GRAPH_FAILED;\n    tiling = tilingContext->GetTilingData<AbsTilingData>();\n    if (this->inputDtype == ge::DT_FLOAT16) {\n        res = elewiseBaseTiling.DoTiling<AbsOp::AbsDag<half, half>::OpDag>(tiling->baseTiling);\n    } else if (this->inputDtype == ge::DT_COMPLEX64) {\n        res = elewiseBaseTiling.DoTiling<AbsOp::AbscomplexDag<int64_t, float>::OpDag>(tiling->baseTiling);\n    } else if (this->inputDtype == ge::DT_COMPLEX32) {\n        res = elewiseBaseTiling.DoTiling<AbsOp::AbscomplexDag<int32_t, half>::OpDag>(tiling->baseTiling); \n    } else if (this->inputDtype == ge::DT_FLOAT) {\n        res = elewiseBaseTiling.DoTiling<AbsOp::AbsDag<float, float>::OpDag>(tiling->baseTiling);\n    } else if (this->inputDtype == ge::DT_BF16) {\n        res = elewiseBaseTiling.DoTiling<AbsOp::AbsDag<bfloat16_t, float>::OpDag>(tiling->baseTiling);\n    } else if (this->inputDtype == ge::DT_INT8) {\n        res = elewiseBaseTiling.DoTiling<AbsOp::AbsDag<int8_t, int8_t>::OpDag>(tiling->baseTiling);\n    } else if (this->inputDtype == ge::DT_INT16) {\n        res = elewiseBaseTiling.DoTiling<AbsOp::AbsDag<int16_t, int16_t>::OpDag>(tiling->baseTiling);\n    } else if (this->inputDtype == ge::DT_INT32) {\n        res = elewiseBaseTiling.DoTiling<AbsOp::AbsDag<int32_t, int32_t>::OpDag>(tiling->baseTiling);\n    } else if (this->inputDtype == ge::DT_INT64) {\n        res = elewiseBaseTiling.DoTiling<AbsOp::AbsDag<int64_t, int64_t>::OpDag>(tiling->baseTiling);\n    } else {\n        OP_LOGE(tilingContext, \"data type check failed. getype：%d\", this->outputDtype);\n        return ge::GRAPH_FAILED;\n    }\n\n    OP_CHECK_IF(res == ge::GRAPH_FAILED,\n        OP_LOGE(tilingContext, \"DoTiling failed\"),\n        return ge::GRAPH_FAILED);\n\n    ge::graphStatus result = SetTilingData();\n    return result;\n}\n\nstatic ge::graphStatus TilingForAbs(gert::TilingContext *context)\n{\n    OP_LOGD(\"AbsTiling\", \"Enter TilingForAbs\");\n    OP_CHECK_IF(context == nullptr,\n        OP_LOGE(context, \"Tiling context is null\"),\n        return ge::GRAPH_FAILED);\n\n    // 走新的模板tiling\n    OP_LOGD(\"AbsTiling\", \"Enter new AbsTiling\");\n    AbsTiling absTiling(context);\n    return absTiling.RunTiling();\n}\n\nge::graphStatus TilingPrepareForAbs(gert::TilingParseContext* context)\n{\n    auto compileInfoPtr = context->GetCompiledInfo<AbsCompileInfo>();\n    OP_CHECK_NULL_WITH_CONTEXT(context, compileInfoPtr);\n    fe::PlatFormInfos* platformInfoPtr = context->GetPlatformInfo();\n    OP_CHECK_NULL_WITH_CONTEXT(context, platformInfoPtr);\n    auto ascendcPlatform = platform_ascendc::PlatformAscendC(platformInfoPtr);\n    compileInfoPtr->coreNum = ascendcPlatform.GetCoreNumAiv();\n    ascendcPlatform.GetCoreMemSize(platform_ascendc::CoreMemType::UB, compileInfoPtr->ubSize);\n    return ge::GRAPH_SUCCESS;\n}\n\nIMPL_OP_OPTILING(Abs).Tiling(TilingForAbs)\n    .TilingParse<AbsCompileInfo>(TilingPrepareForAbs);\n}  // namespace optiling",
+          "file_功能": "该文件负责Ascend Arch35架构下Abs算子的Tiling策略生成。核心职责是根据输入数据类型（含复数）选择对应的DAG模板进行分块计算，校验输入输出类型匹配关系，设置Tiling Key及Workspace大小，并获取硬件平台编译信息。"
+        },
+        "level3": {
+          "tree_id": "abs/base（## Abs算子基础实现目录，封装API接口、主机逻辑、图元数据、分块策略、内核计算及测试用例等核心模块）\n├── abs/base/op_api（## Abs算子API层实现目录，提供ACLNN接口定义、参数校验、数据类型适配及主机端调度入口）\n│   ├── aclnn_abs.cpp 实现Ascend NPU上Abs算子的ACLNN API层逻辑，负责参数校验、数据类型适配、内存布局处理及计算任务编排。\n│   ├── aclnn_abs.h 定义aclnnAbs算子的Level2 API头文件，提供获取Workspace大小和执行绝对值计算的两段式接口声明，支持多种数据类型及非连续Tensor。\n│   ├── abs.h 该文件是Abs算子Level 0 API的头文件，定义了面向底层执行器的绝对值计算接口声明，作为算子框架中Host侧调用Kernel的入口抽象层。\n│   └── abs.cpp 实现Abs算子的主机端调度逻辑，包括输出张量分配、形状推导、数据类型校验及根据芯片架构动态选择AiCore或AiCPU执行路径。\n├── abs/base/op_graph（## Abs算子图引擎注册目录，定义GE原型信息、输入输出接口及框架兼容性元数据）\n│   └── abs_proto.h 定义Abs算子在GE图引擎中的原型注册信息，声明算子的输入输出接口、支持的数据类型及框架兼容性，是算子接入计算图的基础元数据描述文件。\n├── abs/base/op_host（## Abs算子主机端通用逻辑目录，包含元数据定义、形状推导及特定架构Tiling策略实现）\n│   ├── abs_def.cpp 定义Abs算子的元数据规范，注册输入输出张量的数据类型、格式约束及AI Core硬件执行配置，是算子在框架中识别与调度的基础声明文件。\n│   └── abs_infershape.cpp 实现Abs算子的形状与数据类型推导逻辑。\n│   └── abs/base/op_host/arch35（## Abs算子Arch35架构主机端Tiling策略目录，负责分块参数生成与硬件资源适配）\n│   │   ├── abs_tiling_arch35.h 该文件定义了Arch35架构下Abs算子的Tiling策略头文件，负责声明主机端分块计算所需的数据结构与接口，用于指导内核按硬件资源进行任务切分。\n│   │   └── abs_tiling_arch35.cpp 该文件负责Ascend Arch35架构下Abs算子的Tiling策略生成。\n├── abs/base/op_kernel（## Abs算子设备端Kernel实现目录，包含Tiling数据结构、Kernel入口函数及DAG计算逻辑）\n│   ├── abs_apt.cpp 实现Abs算子在AI Core上的底层计算逻辑，作为设备端Kernel入口函数。\n│   └── abs_struct.h 定义Abs算子内核层专用的Tiling数据结构，用于在Host与Device间传递分块计算参数。\n│   └── abs/base/op_kernel/arch35（## Abs算子Arch35架构设备端Kernel目录，实现DAG计算流水线及复数高精度运算逻辑）\n│   │   ├── abs_dag.h 定义Abs算子在Arch35架构下的设备端DAG（有向无环图）计算流水线，通过模板化数据流编排实现绝对值运算的自动化调度与内存管理。\n│   │   └── abs_complex_dag.h 实现复数绝对值算子的AI Core底层DAG计算逻辑。\n└── abs/base/tests（## Abs算子单元测试总目录，覆盖API校验、形状推导及Tiling策略等功能的验证代码）\n    └── abs/base/tests/ut（## Abs算子单元测试集合目录，集中管理API、形状推导及Tiling策略的GTest验证代码）\n        ├── abs/base/tests/ut/op_api（## Abs算子API层单元测试目录，验证ACLNN接口的参数校验与Workspace获取功能）\n        │   └── test_aclnn_abs.cpp 该文件是Abs算子API层的单元测试代码，基于GTest框架验证`aclnnAbs`接口的参数校验逻辑。\n        └── abs/base/tests/ut/op_host（## Abs算子主机端逻辑单元测试目录，验证形状推导及Tiling策略在不同场景下的正确性）\n        │   └── test_abs_infershape.cpp 该文件是Abs算子形状推导（Infershape）功能的单元测试代码。\n            └── abs/base/tests/ut/op_host/arch35（## Abs算子Arch35架构Tiling策略单元测试目录，验证分块参数生成的正确性与异常处理）\n            │   └── test_abs_tiling_arch35.cpp 该文件是Abs算子在Arch35架构下的Tiling策略单元测试，用于验证不同数据类型（FP16/32、INT8/16/32/64、BF16及复数类型）的切分参数生成正确性，并覆盖输入输出类型不匹配、空Tensor等异常场景。"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_host/arch35/abs_tiling_arch35.cpp",
+            "file_name": "abs_tiling_arch35.cpp",
+            "file_功能": "该文件负责Ascend Arch35架构下Abs算子的Tiling策略生成。核心职责是根据输入数据类型（含复数）选择对应的DAG模板进行分块计算，校验输入输出类型匹配关系，设置Tiling Key及Workspace大小，并获取硬件平台编译信息。",
+            "file_content": "/**\n * Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.\n * This program is free software, you can redistribute it and/or modify it under the terms and conditions of\n * CANN Open Software License Agreement Version 2.0 (the \"License\").\n * Please refer to the License for details. You may not use this file except in compliance with the License.\n * THIS SOFTWARE IS PROVIDED ON AN \"AS IS\" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,\n * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.\n * See LICENSE in the root of the software repository for the full text of the License.\n */\n\n/*!\n * \\file abs_tiling_arch35.cpp\n * \\brief\n */\n#include <iostream>\n\n#include \"abs_tiling_arch35.h\"\n#include <graph/utils/type_utils.h>\n#include \"tiling/tiling_api.h\"\n#include \"tiling/platform/platform_ascendc.h\"\n#include \"register/op_def_registry.h\"\n#include \"register/tilingdata_base.h\"\n#include \"../../op_kernel/arch35/abs_dag.h\"\n#include \"../../op_kernel/arch35/abs_complex_dag.h\"\n\nusing namespace ge;\nusing namespace AbsNs;\n\nnamespace optiling {\nconstexpr uint64_t ABS_TILING_KEY_ELEMENTWISE_BF16 = 101;\nconstexpr uint64_t ABS_TILING_KEY_ELEMENTWISE_OTHER = 102;\nconstexpr uint64_t ABS_TILING_KEY_ELEMENTWISE_COMPLEX = 103;\nconstexpr uint64_t ABS_WORKSPACE_RESERVE_BYTE = 16777216;\n\nge::graphStatus AbsTiling::SetTilingData()\n{\n    size_t* currentWorkspace = tilingContext->GetWorkspaceSizes(1);\n    OP_CHECK_NULL_WITH_CONTEXT(tilingContext, currentWorkspace);\n    currentWorkspace[0] = ABS_WORKSPACE_RESERVE_BYTE;\n    if (this->outputDtype == ge::DT_BF16) {\n        tilingContext->SetTilingKey(ABS_TILING_KEY_ELEMENTWISE_BF16);\n    } else if (this->inputDtype == ge::DT_COMPLEX64 || this->inputDtype == ge::DT_COMPLEX32) { // 新增complex分支\n        tilingContext->SetTilingKey(ABS_TILING_KEY_ELEMENTWISE_COMPLEX);\n    } else {\n        tilingContext->SetTilingKey(ABS_TILING_KEY_ELEMENTWISE_OTHER);\n    }\n    tilingContext->SetBlockDim(tiling->baseTiling.blockNum);\n    return ge::GRAPH_SUCCESS;\n}\n\nge::graphStatus AbsTiling::CalcOutputDtype()\n{\n    auto inputDesc = tilingContext->GetInputDesc(0);\n    OP_CHECK_NULL_WITH_CONTEXT(tilingContext, inputDesc);\n    this->inputDtype = inputDesc->GetDataType();\n\n    auto outputDesc = tilingContext->GetOutputDesc(0);\n    OP_CHECK_NULL_WITH_CONTEXT(tilingContext, outputDesc);\n    this->outputDtype = outputDesc->GetDataType();\n\n    if (this->inputDtype != ge::DT_COMPLEX64 && this->inputDtype != ge::DT_COMPLEX32) {\n        OP_CHECK_IF(this->inputDtype != this->outputDtype,\n                    OP_LOGE(tilingContext, \"Abs op input and output dtype not match, check fail\"),\n                    return ge::GRAPH_FAILED);\n    } else if (inputDtype == ge::DT_COMPLEX64) {\n        OP_CHECK_IF(this->outputDtype != ge::DT_FLOAT, \n                    OP_LOGE(tilingContext, \"Abs op complex64 input must output float, check fail\"),\n                    return ge::GRAPH_FAILED); \n    } else if (inputDtype == ge::DT_COMPLEX32) {\n        OP_CHECK_IF(this->outputDtype != ge::DT_FLOAT16, \n                    OP_LOGE(tilingContext, \"Abs op complex32 input must output float16, check fail\"),\n                    return ge::GRAPH_FAILED); \n    }\n    return ge::GRAPH_SUCCESS;\n}\n\nge::graphStatus AbsTiling::RunTiling()\n{\n    ElewiseBaseTiling elewiseBaseTiling(tilingContext);\n    OP_CHECK_IF(CalcOutputDtype() == ge::GRAPH_FAILED,\n        OP_LOGE(tilingContext, \"get output dtype failed\"),\n        return ge::GRAPH_FAILED);\n\n    ge::graphStatus res = ge::GRAPH_FAILED;\n    tiling = tilingContext->GetTilingData<AbsTilingData>();\n    if (this->inputDtype == ge::DT_FLOAT16) {\n        res = elewiseBaseTiling.DoTiling<AbsOp::AbsDag<half, half>::OpDag>(tiling->baseTiling);\n    } else if (this->inputDtype == ge::DT_COMPLEX64) {\n        res = elewiseBaseTiling.DoTiling<AbsOp::AbscomplexDag<int64_t, float>::OpDag>(tiling->baseTiling);\n    } else if (this->inputDtype == ge::DT_COMPLEX32) {\n        res = elewiseBaseTiling.DoTiling<AbsOp::AbscomplexDag<int32_t, half>::OpDag>(tiling->baseTiling); \n    } else if (this->inputDtype == ge::DT_FLOAT) {\n        res = elewiseBaseTiling.DoTiling<AbsOp::AbsDag<float, float>::OpDag>(tiling->baseTiling);\n    } else if (this->inputDtype == ge::DT_BF16) {\n        res = elewiseBaseTiling.DoTiling<AbsOp::AbsDag<bfloat16_t, float>::OpDag>(tiling->baseTiling);\n    } else if (this->inputDtype == ge::DT_INT8) {\n        res = elewiseBaseTiling.DoTiling<AbsOp::AbsDag<int8_t, int8_t>::OpDag>(tiling->baseTiling);\n    } else if (this->inputDtype == ge::DT_INT16) {\n        res = elewiseBaseTiling.DoTiling<AbsOp::AbsDag<int16_t, int16_t>::OpDag>(tiling->baseTiling);\n    } else if (this->inputDtype == ge::DT_INT32) {\n        res = elewiseBaseTiling.DoTiling<AbsOp::AbsDag<int32_t, int32_t>::OpDag>(tiling->baseTiling);\n    } else if (this->inputDtype == ge::DT_INT64) {\n        res = elewiseBaseTiling.DoTiling<AbsOp::AbsDag<int64_t, int64_t>::OpDag>(tiling->baseTiling);\n    } else {\n        OP_LOGE(tilingContext, \"data type check failed. getype：%d\", this->outputDtype);\n        return ge::GRAPH_FAILED;\n    }\n\n    OP_CHECK_IF(res == ge::GRAPH_FAILED,\n        OP_LOGE(tilingContext, \"DoTiling failed\"),\n        return ge::GRAPH_FAILED);\n\n    ge::graphStatus result = SetTilingData();\n    return result;\n}\n\nstatic ge::graphStatus TilingForAbs(gert::TilingContext *context)\n{\n    OP_LOGD(\"AbsTiling\", \"Enter TilingForAbs\");\n    OP_CHECK_IF(context == nullptr,\n        OP_LOGE(context, \"Tiling context is null\"),\n        return ge::GRAPH_FAILED);\n\n    // 走新的模板tiling\n    OP_LOGD(\"AbsTiling\", \"Enter new AbsTiling\");\n    AbsTiling absTiling(context);\n    return absTiling.RunTiling();\n}\n\nge::graphStatus TilingPrepareForAbs(gert::TilingParseContext* context)\n{\n    auto compileInfoPtr = context->GetCompiledInfo<AbsCompileInfo>();\n    OP_CHECK_NULL_WITH_CONTEXT(context, compileInfoPtr);\n    fe::PlatFormInfos* platformInfoPtr = context->GetPlatformInfo();\n    OP_CHECK_NULL_WITH_CONTEXT(context, platformInfoPtr);\n    auto ascendcPlatform = platform_ascendc::PlatformAscendC(platformInfoPtr);\n    compileInfoPtr->coreNum = ascendcPlatform.GetCoreNumAiv();\n    ascendcPlatform.GetCoreMemSize(platform_ascendc::CoreMemType::UB, compileInfoPtr->ubSize);\n    return ge::GRAPH_SUCCESS;\n}\n\nIMPL_OP_OPTILING(Abs).Tiling(TilingForAbs)\n    .TilingParse<AbsCompileInfo>(TilingPrepareForAbs);\n}  // namespace optiling"
+          },
+          "gene_rule": {
+            "deter": "op_host/*tiling*.cpp 文件",
+            "target": [
+              [
+                "support_matrix"
+              ]
+            ]
+          },
+          "evidence_id": "ev_002"
+        }
+      ],
+      "note": "[FILE_TILING] abs_tiling_arch35.cpp"
+    },
+    {
+      "anchor_id": "anchor_file_003",
+      "anchor_information": {
+        "type": "file",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_kernel/abs_apt.cpp",
+          "file_name": "abs_apt.cpp"
+        },
+        "level2": {
+          "code_map": {
+            "nodes": [
+              "abs"
+            ],
+            "edges": []
+          },
+          "token_hash": "/**\n * Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.\n * This program is free software, you can redistribute it and/or modify it under the terms and conditions of\n * CANN Open Software License Agreement Version 2.0 (the \"License\").\n * Please refer to the License for details. You may not use this file except in compliance with the License.\n * THIS SOFTWARE IS PROVIDED ON AN \"AS IS\" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,\n * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.\n * See LICENSE in the root of the software repository for the full text of the License.\n */\n\n/* !\n * \\file abs.cpp\n * \\brief y =|x|\n */\n#include \"kernel_operator.h\"\n#include \"kernel_tiling/kernel_tiling.h\"\n#include \"arch35/abs_dag.h\"\n#include \"arch35/abs_complex_dag.h\"\n#include \"atvoss/elewise/elewise_sch.h\"\n#include \"abs_struct.h\"\n\nusing namespace AscendC;\nusing namespace AbsNs;\nusing namespace AbsOp;\n\nextern \"C\" __global__ __aicore__ void abs(GM_ADDR x, GM_ADDR y, GM_ADDR workspace, GM_ADDR tiling)\n{\n    KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AIV_ONLY);\n    REGISTER_TILING_DEFAULT(AbsTilingData);\n    GET_TILING_DATA_WITH_STRUCT(AbsTilingData, tilingData, tiling);\n\n    TPipe pipe;\n    if (TILING_KEY_IS(101UL)) {\n        ElementwiseSch<0UL, AbsDag<bfloat16_t, float>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n        sch.Init(x, y);\n        sch.Process();\n    } else if (TILING_KEY_IS(102UL)) {\n        if constexpr (std::is_same<DTYPE_X, half>::value) {\n            ElementwiseSch<0UL, AbsDag<half, half>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n            sch.Init(x, y);\n            sch.Process();\n        } else if constexpr (std::is_same<DTYPE_X, float>::value) {\n            ElementwiseSch<0UL, AbsDag<float, float>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n            sch.Init(x, y);\n            sch.Process();\n        } else if constexpr (std::is_same<DTYPE_X, int8_t>::value) {\n            ElementwiseSch<0UL, AbsDag<int8_t, int8_t>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n            sch.Init(x, y);\n            sch.Process();\n        } else if constexpr (std::is_same<DTYPE_X, int16_t>::value) {\n            ElementwiseSch<0UL, AbsDag<int16_t, int16_t>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n            sch.Init(x, y);\n            sch.Process();\n        } else if constexpr (std::is_same<DTYPE_X, int32_t>::value) {\n            ElementwiseSch<0UL, AbsDag<int32_t, int32_t>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n            sch.Init(x, y);\n            sch.Process();\n        } else if constexpr (std::is_same<DTYPE_X, int64_t>::value) {\n            ElementwiseSch<0UL, AbsDag<int64_t, int64_t>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n            sch.Init(x, y);\n            sch.Process();\n        }\n    } else if (TILING_KEY_IS(103UL)) {\n        if constexpr (std::is_same<DTYPE_X, complex64>::value) {\n            ElementwiseSch<0UL, AbscomplexDag<complex64, float>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n            sch.Init(x, y);\n            sch.Process();\n        } else if constexpr (std::is_same<DTYPE_X, complex32>::value) {\n            ElementwiseSch<0UL, AbscomplexDag<complex32, half>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n            sch.Init(x, y);\n            sch.Process();\n        }\n    }\n    return;\n}",
+          "file_功能": "实现Abs算子在AI Core上的底层计算逻辑，作为设备端Kernel入口函数。通过解析Tiling数据和类型键值，调度不同数据类型的Elementwise计算流程，支持实数及复数的绝对值运算。"
+        },
+        "level3": {
+          "tree_id": "abs/base（## Abs算子基础实现目录，封装API接口、主机逻辑、图元数据、分块策略、内核计算及测试用例等核心模块）\n├── abs/base/op_api（## Abs算子API层实现目录，提供ACLNN接口定义、参数校验、数据类型适配及主机端调度入口）\n│   ├── aclnn_abs.cpp 实现Ascend NPU上Abs算子的ACLNN API层逻辑，负责参数校验、数据类型适配、内存布局处理及计算任务编排。\n│   ├── aclnn_abs.h 定义aclnnAbs算子的Level2 API头文件，提供获取Workspace大小和执行绝对值计算的两段式接口声明，支持多种数据类型及非连续Tensor。\n│   ├── abs.h 该文件是Abs算子Level 0 API的头文件，定义了面向底层执行器的绝对值计算接口声明，作为算子框架中Host侧调用Kernel的入口抽象层。\n│   └── abs.cpp 实现Abs算子的主机端调度逻辑，包括输出张量分配、形状推导、数据类型校验及根据芯片架构动态选择AiCore或AiCPU执行路径。\n├── abs/base/op_graph（## Abs算子图引擎注册目录，定义GE原型信息、输入输出接口及框架兼容性元数据）\n│   └── abs_proto.h 定义Abs算子在GE图引擎中的原型注册信息，声明算子的输入输出接口、支持的数据类型及框架兼容性，是算子接入计算图的基础元数据描述文件。\n├── abs/base/op_host（## Abs算子主机端通用逻辑目录，包含元数据定义、形状推导及特定架构Tiling策略实现）\n│   ├── abs_def.cpp 定义Abs算子的元数据规范，注册输入输出张量的数据类型、格式约束及AI Core硬件执行配置，是算子在框架中识别与调度的基础声明文件。\n│   └── abs_infershape.cpp 实现Abs算子的形状与数据类型推导逻辑。\n│   └── abs/base/op_host/arch35（## Abs算子Arch35架构主机端Tiling策略目录，负责分块参数生成与硬件资源适配）\n│   │   ├── abs_tiling_arch35.h 该文件定义了Arch35架构下Abs算子的Tiling策略头文件，负责声明主机端分块计算所需的数据结构与接口，用于指导内核按硬件资源进行任务切分。\n│   │   └── abs_tiling_arch35.cpp 该文件负责Ascend Arch35架构下Abs算子的Tiling策略生成。\n├── abs/base/op_kernel（## Abs算子设备端Kernel实现目录，包含Tiling数据结构、Kernel入口函数及DAG计算逻辑）\n│   ├── abs_apt.cpp 实现Abs算子在AI Core上的底层计算逻辑，作为设备端Kernel入口函数。\n│   └── abs_struct.h 定义Abs算子内核层专用的Tiling数据结构，用于在Host与Device间传递分块计算参数。\n│   └── abs/base/op_kernel/arch35（## Abs算子Arch35架构设备端Kernel目录，实现DAG计算流水线及复数高精度运算逻辑）\n│   │   ├── abs_dag.h 定义Abs算子在Arch35架构下的设备端DAG（有向无环图）计算流水线，通过模板化数据流编排实现绝对值运算的自动化调度与内存管理。\n│   │   └── abs_complex_dag.h 实现复数绝对值算子的AI Core底层DAG计算逻辑。\n└── abs/base/tests（## Abs算子单元测试总目录，覆盖API校验、形状推导及Tiling策略等功能的验证代码）\n    └── abs/base/tests/ut（## Abs算子单元测试集合目录，集中管理API、形状推导及Tiling策略的GTest验证代码）\n        ├── abs/base/tests/ut/op_api（## Abs算子API层单元测试目录，验证ACLNN接口的参数校验与Workspace获取功能）\n        │   └── test_aclnn_abs.cpp 该文件是Abs算子API层的单元测试代码，基于GTest框架验证`aclnnAbs`接口的参数校验逻辑。\n        └── abs/base/tests/ut/op_host（## Abs算子主机端逻辑单元测试目录，验证形状推导及Tiling策略在不同场景下的正确性）\n        │   └── test_abs_infershape.cpp 该文件是Abs算子形状推导（Infershape）功能的单元测试代码。\n            └── abs/base/tests/ut/op_host/arch35（## Abs算子Arch35架构Tiling策略单元测试目录，验证分块参数生成的正确性与异常处理）\n            │   └── test_abs_tiling_arch35.cpp 该文件是Abs算子在Arch35架构下的Tiling策略单元测试，用于验证不同数据类型（FP16/32、INT8/16/32/64、BF16及复数类型）的切分参数生成正确性，并覆盖输入输出类型不匹配、空Tensor等异常场景。"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_kernel/abs_apt.cpp",
+            "file_name": "abs_apt.cpp",
+            "file_功能": "实现Abs算子在AI Core上的底层计算逻辑，作为设备端Kernel入口函数。通过解析Tiling数据和类型键值，调度不同数据类型的Elementwise计算流程，支持实数及复数的绝对值运算。",
+            "file_content": "/**\n * Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.\n * This program is free software, you can redistribute it and/or modify it under the terms and conditions of\n * CANN Open Software License Agreement Version 2.0 (the \"License\").\n * Please refer to the License for details. You may not use this file except in compliance with the License.\n * THIS SOFTWARE IS PROVIDED ON AN \"AS IS\" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,\n * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.\n * See LICENSE in the root of the software repository for the full text of the License.\n */\n\n/* !\n * \\file abs.cpp\n * \\brief y =|x|\n */\n#include \"kernel_operator.h\"\n#include \"kernel_tiling/kernel_tiling.h\"\n#include \"arch35/abs_dag.h\"\n#include \"arch35/abs_complex_dag.h\"\n#include \"atvoss/elewise/elewise_sch.h\"\n#include \"abs_struct.h\"\n\nusing namespace AscendC;\nusing namespace AbsNs;\nusing namespace AbsOp;\n\nextern \"C\" __global__ __aicore__ void abs(GM_ADDR x, GM_ADDR y, GM_ADDR workspace, GM_ADDR tiling)\n{\n    KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AIV_ONLY);\n    REGISTER_TILING_DEFAULT(AbsTilingData);\n    GET_TILING_DATA_WITH_STRUCT(AbsTilingData, tilingData, tiling);\n\n    TPipe pipe;\n    if (TILING_KEY_IS(101UL)) {\n        ElementwiseSch<0UL, AbsDag<bfloat16_t, float>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n        sch.Init(x, y);\n        sch.Process();\n    } else if (TILING_KEY_IS(102UL)) {\n        if constexpr (std::is_same<DTYPE_X, half>::value) {\n            ElementwiseSch<0UL, AbsDag<half, half>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n            sch.Init(x, y);\n            sch.Process();\n        } else if constexpr (std::is_same<DTYPE_X, float>::value) {\n            ElementwiseSch<0UL, AbsDag<float, float>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n            sch.Init(x, y);\n            sch.Process();\n        } else if constexpr (std::is_same<DTYPE_X, int8_t>::value) {\n            ElementwiseSch<0UL, AbsDag<int8_t, int8_t>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n            sch.Init(x, y);\n            sch.Process();\n        } else if constexpr (std::is_same<DTYPE_X, int16_t>::value) {\n            ElementwiseSch<0UL, AbsDag<int16_t, int16_t>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n            sch.Init(x, y);\n            sch.Process();\n        } else if constexpr (std::is_same<DTYPE_X, int32_t>::value) {\n            ElementwiseSch<0UL, AbsDag<int32_t, int32_t>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n            sch.Init(x, y);\n            sch.Process();\n        } else if constexpr (std::is_same<DTYPE_X, int64_t>::value) {\n            ElementwiseSch<0UL, AbsDag<int64_t, int64_t>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n            sch.Init(x, y);\n            sch.Process();\n        }\n    } else if (TILING_KEY_IS(103UL)) {\n        if constexpr (std::is_same<DTYPE_X, complex64>::value) {\n            ElementwiseSch<0UL, AbscomplexDag<complex64, float>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n            sch.Init(x, y);\n            sch.Process();\n        } else if constexpr (std::is_same<DTYPE_X, complex32>::value) {\n            ElementwiseSch<0UL, AbscomplexDag<complex32, half>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n            sch.Init(x, y);\n            sch.Process();\n        }\n    }\n    return;\n}"
+          },
+          "gene_rule": {
+            "deter": "op_kernel/*.cpp 文件",
+            "target": [
+              [
+                "support_matrix"
+              ]
+            ]
+          },
+          "evidence_id": "ev_003"
+        }
+      ],
+      "note": "[FILE_KERNEL] abs_apt.cpp"
+    }
+  ]
+}

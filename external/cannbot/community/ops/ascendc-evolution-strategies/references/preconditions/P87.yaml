@@ -1,0 +1,40 @@
+strategy_id: P87
+
+strategy_meta:
+  id: "P87"
+  slug: "P87_manual_mmad_pipeline_timing_control"
+  title: "P87: Manual Mmad Pipeline Timing Control (手动 Mmad 流水线时序控制)"
+  bottlenecks: [mte2_stall, partial_overlap]
+  op_families: [matmul]
+  conflicts_with: []
+  synergizes_with: [P29]
+  requires: []
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p87_manual_mmad_pipeline_timing_control.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p87_manual_mmad_pipeline_timing_control.md"
+  playbook_slug: "P87_manual_mmad_pipeline_timing_control"
+checks:
+  - id: has_matmul
+    type: grep_count
+    pattern: "Matmul|matmul|Cube|Mmad|mmad"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 Matmul/Mmad 相关逻辑 → 无手动流水线优化空间，不适用 P87。"
+
+  - id: has_l0a
+    type: grep_count
+    pattern: "L0A|L0B|L0C|l0a|l0b|l0c"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 L0 buffer 使用 → 无手动时序控制空间，不适用 P87。"
+
+  - id: has_hardevent
+    type: grep_count
+    pattern: "HardEvent|unitFlag|PipeBarrier.*PIPE_M"
+    files: [kernel]
+    expected: ">= 0"
+    fail_msg: "已存在手动 Mmad 流水线控制 → 可能冗余，优先验证现有策略效果。"

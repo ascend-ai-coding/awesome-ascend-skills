@@ -1,0 +1,40 @@
+strategy_id: P90
+
+strategy_meta:
+  id: "P90"
+  slug: "P90_conditional_pipebarrier"
+  title: "P90: 条件性 PipeBarrier 基于矩阵规模 (Conditional PipeBarrier by Matrix Size)"
+  bottlenecks: [scalar_loading, partial_overlap]
+  op_families: [matmul, flash_attention]
+  conflicts_with: []
+  synergizes_with: [P87]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p90_conditional_pipebarrier.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p90_conditional_pipebarrier.md"
+  playbook_slug: "P90_conditional_pipebarrier"
+checks:
+  - id: has_mmad
+    type: grep_count
+    pattern: "Mmad|mmad|Matmul|matmul"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 Mmad/Matmul 调用 → 不适用 P90。检查 P5 或 P28 同步策略。"
+
+  - id: has_isl0caccum
+    type: grep_count
+    pattern: "isL0CAccum|L0C.*accum|L0CAccum"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 L0C 累加模式 → P90 仅适用于累加模式的手动 Matmul 流水线。"
+
+  - id: has_pipebarrier
+    type: grep_count
+    pattern: "PipeBarrier.*PIPE_M|SetFlag|WaitFlag"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 PipeBarrier 或 Event 同步 → 非手动 Matmul 流水线，不适用 P90。"

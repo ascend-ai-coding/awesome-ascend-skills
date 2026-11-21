@@ -1,0 +1,75 @@
+/*!
+ * \file top_k_transpose_launch.h
+ * \brief TopK-private transpose launch declarations and tiling data.
+ *
+ * Tiling model (DESIGN.md section 1.2): any perm is reduced on host to a
+ * (G, R, C, S) batched 2D-transpose model:
+ *   input offset  = gIn + r * S + c * sigmaC + s
+ *   output offset = gOut + r * sigmaR + c * S + s
+ * PATH_NDDMA: transposed GM->UB copy-in via NDDMA, strided UB->GM write-back
+ *             via DataCopyPad (pure MTE pipeline, no vector compute).
+ * PATH_COPY : identity perm, 1D contiguous DataCopyPad copy.
+ */
+
+#ifndef TOP_K_TRANSPOSE_LAUNCH_H
+#define TOP_K_TRANSPOSE_LAUNCH_H
+
+#include <cstdint>
+
+#ifndef GM_ADDR
+#define GM_ADDR void*
+#endif
+
+namespace topk_transpose {
+
+// Maximum number of batch (G) dimensions: ndim <= 8, m = ndim - k >= 2,
+// G dims = m - 2 <= 6.
+constexpr int64_t TRANSPOSE_MAX_G_DIMS = 6;
+
+// Path identifiers stored in TransposeTiling::path
+constexpr int64_t TRANSPOSE_PATH_NDDMA = 0;
+constexpr int64_t TRANSPOSE_PATH_COPY  = 1;
+
+struct TransposeTiling {
+    int64_t path;          // TRANSPOSE_PATH_NDDMA / TRANSPOSE_PATH_COPY
+    int64_t totalLength;   // total element count
+    // (G, R, C, S) model (PATH_NDDMA)
+    int64_t S;             // inner contiguous block (identity-suffix product)
+    int64_t R;             // input-contiguous dim size
+    int64_t C;             // output-contiguous dim size
+    int64_t sigmaC;        // input stride of the C dim (elements)
+    int64_t sigmaR;        // output stride of the R dim (elements)
+    int64_t gNum;          // number of G dims (0..TRANSPOSE_MAX_G_DIMS)
+    int64_t gSizes[TRANSPOSE_MAX_G_DIMS];      // size per G dim
+    int64_t gInStrides[TRANSPOSE_MAX_G_DIMS];  // input stride per G dim (elements)
+    int64_t gOutStrides[TRANSPOSE_MAX_G_DIMS]; // output stride per G dim (elements)
+    // tile geometry (PATH_NDDMA)
+    int64_t tileR;         // rows per tile (<= 4095, DataCopyPad blockCount limit)
+    int64_t tileC;         // cols per tile
+    int64_t pitchElems;    // UB row pitch = AlignUp(tileC * S, 32B / sizeof(T))
+    int64_t rTiles;        // CeilDiv(R, tileR)
+    int64_t cTiles;        // CeilDiv(C, tileC)
+    int64_t totalTiles;    // prod(gSizes) * rTiles * cTiles
+    int64_t tilesPerCore;  // CeilDiv(totalTiles, numBlocks)
+    int64_t numBlocks;     // min(AIV core num, totalTiles)
+    int64_t tileBytes;     // UB bytes per tile buffer (double buffered x2)
+    // 1D copy geometry (PATH_COPY)
+    int64_t copyBlockLength; // elements per core
+    int64_t copyTileElems;   // elements per UB tile
+};
+
+TransposeTiling calc_transpose_tiling_params(int64_t ndim, const int64_t* shape, const int64_t* perm, int64_t sizeofT);
+TransposeTiling calc_transpose_tiling_params_with_core_num(int64_t ndim, const int64_t* shape, const int64_t* perm,
+                                                           int64_t sizeofT, int64_t coreNum, int64_t ubBytes);
+
+void launch_transpose_kernel_float   (GM_ADDR x, GM_ADDR y, TransposeTiling t, void* stream);
+void launch_transpose_kernel_half    (GM_ADDR x, GM_ADDR y, TransposeTiling t, void* stream);
+void launch_transpose_kernel_bfloat16(GM_ADDR x, GM_ADDR y, TransposeTiling t, void* stream);
+void launch_transpose_kernel_int8    (GM_ADDR x, GM_ADDR y, TransposeTiling t, void* stream);
+void launch_transpose_kernel_int16   (GM_ADDR x, GM_ADDR y, TransposeTiling t, void* stream);
+void launch_transpose_kernel_int32   (GM_ADDR x, GM_ADDR y, TransposeTiling t, void* stream);
+void launch_transpose_kernel_int64   (GM_ADDR x, GM_ADDR y, TransposeTiling t, void* stream);
+
+} // namespace topk_transpose
+
+#endif // TOP_K_TRANSPOSE_LAUNCH_H

@@ -1,0 +1,55 @@
+strategy_id: P105
+description: Matmul L2 Cache Tile Sizing 适用性检查 — 必须存在 Tiling 结构且未启用 L2 切分
+
+strategy_meta:
+  id: "P105"
+  slug: "P105_matmul_l2_cache_tile_sizing"
+  title: "P105: Matmul L2 Cache Tile 尺寸规划（L2 Cache Tile Sizing）"
+  bottlenecks: [memory_bound, mte2_bound]
+  op_families: [matmul]
+  conflicts_with: []
+  synergizes_with: [P52, P107, P104]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p105_matmul_l2_cache_tile_sizing.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p105_matmul_l2_cache_tile_sizing.md"
+  playbook_slug: "P105_matmul_l2_cache_tile_sizing"
+checks:
+  - id: has_tiling_struct
+    type: grep_count
+    pattern: 'TilingHeader|TCubeTiling|MatmulApiTiling'
+    files: [host]
+    expected: '>= 1'
+    fail_msg: '未检测到 Host 侧 Tiling 结构 → P105 不适用。'
+
+  - id: has_l2_tile_struct_or_fields
+    type: grep_count
+    pattern: 'L2cacheTilePara|mTileBlock|nTileBlock|mTileCntL2|nTileCntL2'
+    files: [host]
+    expected: '>= 1'
+    fail_msg: '未检测到 L2cacheTilePara 或相关字段 → 无 L2 切分承载结构。'
+
+  - id: kernel_has_matmul_iterate
+    type: grep_count
+    pattern: 'IterateAll|IterateBatch|SetSingleShape|ProcessL2Tile'
+    files: [kernel, header]
+    expected: '>= 1'
+    fail_msg: 'Kernel 端无 Matmul Iterate 流程 → L2 tile 尺寸无优化对象。'
+
+  - id: no_existing_l2_tiling
+    type: grep_count
+    pattern: 'mTileCntL2\s*=|nTileCntL2\s*=|calOrder\s*='
+    files: [host]
+    expected: '== 0'
+    fail_msg: '已存在 mTileCntL2 / nTileCntL2 / calOrder 赋值 → L2 tiling 可能已启用。'
+
+  - id: host_has_shape_info
+    type: grep_count
+    pattern: '\bM\b|\bN\b|GetShapeSize|dtypeSize|sizeof\s*\('
+    files: [host]
+    expected: '>= 1'
+    fail_msg: '未检测到 M/N 形状信息 → 无法计算 L2 tile footprint。'

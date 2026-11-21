@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "fixtures": {
+    "PipeUtilization": {
+      "file": "PipeUtilization.csv",
+      "field_count": 34,
+      "selected_fields": {
+        "aic_time(us)": "all_na",
+        "aiv_time(us)": "all_valid",
+        "aiv_mte3_active_bw(GB/s)": "all_na"
+      }
+    },
+    "Memory": {
+      "file": "Memory.csv",
+      "field_count": 36,
+      "selected_fields": {
+        "aic_time(us)": "all_na",
+        "aiv_time(us)": "all_valid",
+        "UB_to_GM_bw_usage_rate(%)": "all_na"
+      }
+    },
+    "MemoryL0": {
+      "file": "MemoryL0.csv",
+      "field_count": 12,
+      "selected_fields": {
+        "aic_l0a_read_bw(GB/s)": "all_na",
+        "aiv_time(us)": "all_valid"
+      }
+    },
+    "MemoryUB": {
+      "file": "MemoryUB.csv",
+      "field_count": 10,
+      "selected_fields": {
+        "aic_time(us)": "all_na",
+        "aiv_ub_read_bw_gm(GB/s)": "all_na",
+        "aiv_ub_write_bw_gm(GB/s)": "all_valid"
+      }
+    },
+    "L2Cache": {
+      "file": "L2Cache.csv",
+      "field_count": 34,
+      "selected_fields": {
+        "aic_read_hit_rate(%)": "all_na",
+        "aiv_read_hit_rate(%)": "all_valid"
+      }
+    },
+    "ArithmeticUtilization": {
+      "file": "ArithmeticUtilization.csv",
+      "field_count": 16,
+      "selected_fields": {
+        "aic_cube_fp_ratio": "all_na",
+        "aiv_vec_sfu_ratio": "all_valid",
+        "aiv_vec_simt_vf_ratio": "all_valid"
+      }
+    },
+    "ResourceConflictRatio": {
+      "file": "ResourceConflictRatio.csv",
+      "field_count": 16,
+      "selected_fields": {
+        "aic_cube_wait_ratio": "all_na",
+        "aiv_vec_ldu_cflt_ratio": "all_valid",
+        "aiv_vec_sfu_cflt_ratio": "all_valid"
+      }
+    }
+  }
+}

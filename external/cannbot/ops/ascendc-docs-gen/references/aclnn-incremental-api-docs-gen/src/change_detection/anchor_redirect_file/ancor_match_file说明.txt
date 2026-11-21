@@ -1,0 +1,18 @@
+1-涉及代码
+ancor_match_file_0422.py
+llm_client.py
+uni_config.py
+
+
+2-使用
+python ancor_match_file_0422.py
+
+3-输入（示例为占位路径, 运行前替换为本机实际路径）
+    # 旧文件的ancor
+    anchor_path      = "<本机路径>/test_data/abs_aclnnAbs_support_evidence.json"
+   # 旧算子仓的code_map
+    origin_map_base  = "<本机路径>/operator/code_map_result/abs_origin"
+    # 变更算子仓的code_map
+    change_map_base  = "<本机路径>/operator/code_map_result/abs"
+    # 变更后的仓
+    change_repo_path = "<本机路径>/operator/abs"

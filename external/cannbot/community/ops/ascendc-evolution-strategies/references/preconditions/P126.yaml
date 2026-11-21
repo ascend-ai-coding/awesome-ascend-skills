@@ -1,0 +1,47 @@
+strategy_id: P126
+description: GM Tiling 表驱动变长任务调度适用性检查 — 算子为多 batch/变长 decode 场景，kernel 当前按 totalQ 均匀切分 + 除法反解坐标，尚无 GM 任务记录表。
+strategy_meta:
+  id: "P126"
+  slug: "P126_gm_tiling_table_task_schedule"
+  title: "P126: GM Tiling 表驱动变长任务调度（任务列表拍平进 GM，一次 launch 跑全 batch decode）"
+  bottlenecks: [tiling_imbalance, scalar_compute]
+  op_families: [attention, flash_attention]
+  conflicts_with: []
+  synergizes_with: [P107, P116, P125, P122]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p126_gm_tiling_table_task_schedule.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p126_gm_tiling_table_task_schedule.md"
+  playbook_slug: "P126_gm_tiling_table_task_schedule"
+checks:
+  - id: has_uniform_split
+    type: grep_count
+    pattern: 'blockLength|blkLen|blockIdx \\*|GetBlockIdx\\(\\) \\*'
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未检测到均匀切分模式 → 确认现有调度方式；若已是表驱动则 P126 已实施。"
+
+  - id: has_coord_div_decode
+    type: grep_count
+    pattern: '/ \\(N|S_\\)|% \\(N|% S_|rem /|rem %'
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到除法/取模坐标反解 → 任务参数可能已表驱动，P126 无收益。"
+
+  - id: no_task_table_yet
+    type: grep_count
+    pattern: "tilingParaSize|tilingHeadSize|formerTaskNum|offsetTiling"
+    files: [kernel, header]
+    expected: "== 0"
+    fail_msg: "已存在 GM 任务记录表（tilingParaSize/offsetTiling 证据）→ P126 已实施。"
+
+  - id: is_attention_family
+    type: grep_count
+    pattern: 'softmax|attention|kvSeqlen|kv_seq|Exp\\s*\\('
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "非 attention 类算子 → 变长任务表调度为 P126 在 FA/MLA decode 的配方，通用场景谨慎套用。"

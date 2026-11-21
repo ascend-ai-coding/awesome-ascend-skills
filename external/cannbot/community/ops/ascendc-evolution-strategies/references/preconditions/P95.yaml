@@ -1,0 +1,48 @@
+strategy_id: P95
+description: 标量逐元素运算向量化适用性检查 — 必须存在标量逐元素算术循环或 raw pointer 写回，且无大量 Adds/Muls
+
+strategy_meta:
+  id: "P95"
+  slug: "P95_scalar_elementwise_to_vector"
+  title: "P95: 标量逐元素运算向量化 (Scalar Element-wise → Adds/Muls Vector Chain)"
+  bottlenecks: [scalar_compute, compute_bound]
+  op_families: [elementwise, normalization, reduction, broadcast_mask]
+  conflicts_with: []
+  synergizes_with: [P67, P69, P84, P94]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p95_scalar_elementwise_to_vector.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p95_scalar_elementwise_to_vector.md"
+  playbook_slug: "P95_scalar_elementwise_to_vector"
+checks:
+  - id: has_scalar_elementwise_loop
+    type: grep_count
+    pattern: 'for\s*\([^)]*\+\+[^)]*\).*y\[.*\].*=.*x\[|for\s*\([^)]*\+\+[^)]*\).*dst\[.*\].*=.*src\['
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未检测到标量逐元素算术循环 → P95 无改造对象。考虑 P94 归约向量化或 P98 混合调度。"
+
+  - id: has_raw_pointer_elementwise
+    type: grep_count
+    pattern: 'reinterpret_cast\s*<\s*(float|half)\s*\*\s*>|\.GetPhyAddr\(\)'
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未检测到 raw pointer 标量计算痕迹 → 当前实现可能已较向量化，P95 收益有限。"
+
+  - id: not_already_vectorized
+    type: grep_count
+    pattern: '\b(Adds|Muls|Subs)\s*\('
+    files: [kernel, header]
+    expected: "<= 3"
+    fail_msg: "算子已大量使用 Adds/Muls/Subs → 标量-向量转换可能已进行。若仍有标量循环，请确认是否为 P98 混合调度的小 workload 路径。"
+
+  - id: has_vector_unit
+    type: grep_count
+    pattern: "AI_VECTOR_CORE|TaskType::AI_VECTOR|aiv"
+    files: [all]
+    expected: ">= 1"
+    fail_msg: "未检测到 AIV-only kernel 证据 → P95 面向 Vector 单元，Cube 主导算子不适用。"

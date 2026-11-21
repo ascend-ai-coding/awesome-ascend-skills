@@ -1,0 +1,42 @@
+# ----------------------------------------------------------------------------
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+# ----------------------------------------------------------------------------
+strategy_id: P161
+description: head-major K/V 转置放 wrapper 还是 kernel 适用性检查。
+
+strategy_meta:
+  id: "P161"
+  slug: "P161_transpose_wrapper_vs_kernel"
+  title: "P161: head-major 转置放 wrapper 还是 kernel：算端到端带宽账"
+  bottlenecks: [mte2_stall, memory_bound]
+  op_families: [attention, datapath]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p161_transpose_wrapper_vs_kernel.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p161_transpose_wrapper_vs_kernel.md"
+  playbook_slug: "P161_transpose_wrapper_vs_kernel"
+checks:
+  - id: has_transpose
+    type: grep_count
+    pattern: "transpose|npu_confusion_transpose|MTE2"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未发现转置/MTE2 路径 → P161 不适用。"
+  - id: has_fused
+    type: grep_count
+    pattern: "fused|workspace"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未发现 fused/双缓冲 workspace → P161 不适用。"

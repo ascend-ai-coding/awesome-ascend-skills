@@ -1,0 +1,47 @@
+strategy_id: P142
+description: Attention UB 常驻 O 累加器适用性检查 — 算子为 attention/FA 类，O 矩阵存在 per-KV-tile 更新，且 O_tile 可放进 UB。
+strategy_meta:
+  id: "P142"
+  slug: "P142_attention_ub_o_accumulator"
+  title: "P142: Attention UB 常驻 O 累加器"
+  bottlenecks: [mte3_stall, no_overlap, partial_overlap]
+  op_families: [attention, flash_attention]
+  conflicts_with: []
+  synergizes_with: [P81, P38, P119, P120, P121]
+  requires: []
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p142_attention_ub_o_accumulator.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p142_attention_ub_o_accumulator.md"
+  playbook_slug: "P142_attention_ub_o_accumulator"
+checks:
+  - id: is_attention_family
+    type: grep_count
+    pattern: "softmax|attention|FlashAttention|score|O_tile|O_Gm"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子无 attention/softmax 语义 → P142 不适用。"
+
+  - id: has_kv_loop
+    type: grep_count
+    pattern: "kvTile|kvN|for.*kv|nloops|seq"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 KV tile 循环 → 无 per-tile O 更新，无需 UB 常驻。"
+
+  - id: has_o_update
+    type: grep_count
+    pattern: "UpdateO|RescaleO|WriteO|DataCopy.*O|O_Gm"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 O 更新写回 → 确认 attention 结构后再应用。"
+
+  - id: o_tile_fits_ub
+    type: grep_count
+    pattern: "M_tile|BLOCK_M|d_head|dv|AllocTensor"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未找到 tile 尺寸信息 → 需先确认 O_tile 容量是否小于 UB 预算 20%。"

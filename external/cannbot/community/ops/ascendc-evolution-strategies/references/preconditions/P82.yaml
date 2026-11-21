@@ -1,0 +1,19 @@
+strategy_id: P82
+description: "P82: BufferPolicy Class for Multi-Stage Pipeline (手写 BufferPolicy 类替代 TQue 的多阶段流水策略)"
+
+strategy_meta:
+  id: "P82"
+  slug: "P82_manual_multi_buffer_pipeline_policy"
+  title: "P82: BufferPolicy Class for Multi-Stage Pipeline (手写 BufferPolicy 类替代 TQue 的多阶段流水策略)"
+  bottlenecks: [no_overlap]
+  op_families: [special]
+  conflicts_with: [P1]
+  synergizes_with: []
+  requires: []
+  complexity: "L1"
+  deprecated: true
+  deprecated_reason: "Code skeleton is identical copy-paste of P19 (BuffersPolicyDB class). P19 has richer content."
+  has_preconditions: false
+  has_playbook: false
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p82_manual_multi_buffer_pipeline_policy.md"

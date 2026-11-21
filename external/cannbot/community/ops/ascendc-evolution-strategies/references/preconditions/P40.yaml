@@ -1,0 +1,40 @@
+strategy_id: P40
+
+strategy_meta:
+  id: "P40"
+  slug: "P40_workspace_double_buffer"
+  title: "P40: Workspace 双缓冲中间结果常驻"
+  bottlenecks: [mte3_stall]
+  op_families: [datapath]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p40_workspace_double_buffer.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p40_workspace_double_buffer.md"
+  playbook_slug: "P40_workspace_double_buffer"
+checks:
+  - id: has_workspace
+    type: grep_count
+    pattern: "workspace|Workspace|ws|中间结果|intermediate"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 workspace/中间结果传递 → 无双缓冲优化空间，不适用 P40。"
+
+  - id: has_cube
+    type: grep_count
+    pattern: "Cube.*Vector|Vector.*Cube|CV|MIX"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 Cube+Vector 融合模式 → 无中间结果流水传递场景，不适用 P40。"
+
+  - id: has_dbworkspace
+    type: grep_count
+    pattern: "dbWorkspace|double.*buffer|pingpong|loop.*%.*2"
+    files: [kernel]
+    expected: ">= 0"
+    fail_msg: "已存在双缓冲逻辑 → 可能冗余，优先验证现有策略效果。"

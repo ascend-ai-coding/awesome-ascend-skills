@@ -1,0 +1,48 @@
+strategy_id: P3
+description: 小D多行合并适用性检查 — 算子必须有较小的内维维度，且当前逐行处理，未使用多行合并
+
+strategy_meta:
+  id: "P3"
+  slug: "P3_small_d_optimization"
+  title: "P3: Small-D Multi-Row Merging (小D多行合并优化)"
+  bottlenecks: [tiling_imbalance, undersize_transfer]
+  op_families: [normalization]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L0"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p3_small_d_optimization.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p3_small_d_optimization.md"
+  playbook_slug: "P3_small_d_optimization"
+checks:
+  - id: has_small_inner_dim
+    type: grep_count
+    pattern: 'embedding_dim|numLastDim|innerDim|featureDim|D\\b|dim.*512|dim.*256|dim.*128'
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子无小内维维度特征 → P3 不适用。检查是否为大维度 Matmul，考虑 P46/P78"
+
+  - id: row_by_row_processing
+    type: grep_count
+    pattern: "for.*row|rowsPerCore|rowIdx|row.*tile|CopyIn.*row"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无逐行处理模式 → 已可能使用多行合并或其他 tiling 策略。检查 P4 分核或 P67 Counter 模式"
+
+  - id: no_multi_row_merge_yet
+    type: grep_count
+    pattern: "ReinterpretCast.*row|multiRow|rowsPerUB|Sort|CreateVecIndex|Extract"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已使用多行合并或排序优化 → P3 已应用。检查是否所有路径都优化了"
+
+  - id: has_ub_space
+    type: grep_count
+    pattern: "InitBuffer|TBuf|TQue|BUFFER_NUM"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无 UB buffer 分配 → 无法 carve 多行 buffer。先实现基础 UB 管理"

@@ -1,0 +1,19 @@
+strategy_id: R8
+description: "R8: Mutex 细粒度同步"
+
+strategy_meta:
+  id: "R8"
+  slug: "R8_mutex_sync"
+  title: "R8: Mutex 细粒度同步"
+  bottlenecks: []
+  op_families: [datapath]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L1"
+  deprecated: true
+  deprecated_reason: "Uses fictional Mutex::Lock API. Overlaps with P28/P29/P30 sync strategies. Zero references."
+  has_preconditions: false
+  has_playbook: false
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/r8_mutex_sync.md"
