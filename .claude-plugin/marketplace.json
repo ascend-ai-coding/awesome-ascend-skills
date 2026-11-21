@@ -449,6 +449,17 @@
       ]
     },
     {
+      "name": "torch-op-validation",
+      "description": "按昇腾算子精度标准 2.1 验证 PyTorch 和 TorchNPU 算子，使用 ATK 执行与复现，输出功能、精度、内存、性能和确定性报告。",
+      "source": "./skills/ops/torch-op-validation",
+      "category": "ops",
+      "categories": [
+        "ops",
+        "leaf-skill",
+        "benchmarking"
+      ]
+    },
+    {
       "name": "ascend-ops",
       "description": "官方推荐的昇腾算子开发与迁移安装包。适用于 AscendC 算子开发、torch_npu 自定义算子接入、Triton-Ascend 迁移与算子基准测试场景。",
       "source": "./",
