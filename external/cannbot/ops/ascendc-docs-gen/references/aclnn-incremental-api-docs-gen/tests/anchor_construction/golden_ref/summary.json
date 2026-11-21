@@ -1,0 +1,578 @@
+{
+    "doc": {
+        "doc_path": "out/operator_storage/abs/base/docs",
+        "doc_name": "aclnnAbs.md",
+        "doc_part": "summary",
+        "md_format": [
+            "## 功能说明\n\n- 接口功能：为输入张量的每一个元素取绝对值。\n\n- 计算公式：\n\n$$\nout=|self|\n$$"
+        ],
+        "sub_part": {
+            "summary_clarify": [
+                {
+                    "content": "为输入张量的每一个元素取绝对值。"
+                }
+            ],
+            "summary_formula": [
+                {
+                    "content": "$$\nout=|self|\n$$"
+                }
+            ]
+        }
+    },
+    "anchor_tuple": [
+        {
+            "anchor_id": "anchor_file_001",
+            "anchor_information": {
+                "type": "file",
+                "level1": {
+                    "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.h",
+                    "file_name": "aclnn_abs.h"
+                },
+                "level2": {
+                    "code_map": {
+                        "nodes": [
+                            "aclnnAbsGetWorkspaceSize",
+                            "aclnnAbs"
+                        ],
+                        "edges": []
+                    },
+                    "token_hash": "/**\n * Copyright (c) 2025 Huawei Technologies Co., Ltd.\n * This program is free software, you can redistribute it and/or modify it under the terms and conditions of\n * CANN Open Software License Agreement Version 2.0 (the \"License\").\n * Please refer to the License for details. You may not use this file except in compliance with the License.\n * THIS SOFTWARE IS PROVIDED ON AN \"AS IS\" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,\n * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.\n * See LICENSE in the root of the software repository for the full text of the License.\n */\n\n#ifndef OP_API_INC_LEVEL2_ACLNN_ABS_H_\n#define OP_API_INC_LEVEL2_ACLNN_ABS_H_\n\n#include \"aclnn_util.h\"\n#include \"aclnn/aclnn_base.h\"\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n#define ACLNN_MAX_SHAPE_RANK 8\n\n/**\n * @brief aclnnAbs的第一段接口，根据具体的计算流程，计算workspace大小。\n * @domain aclnn_math\n * 算子功能：返回输入Tensor中每个元素绝对值的结果\n * 计算公式：\n * $$ out_{i} = abs(self_{i}) $$\n *\n * 计算图：\n * ```mermaid\n * graph LR\n *   A[(self)]--->B([l0op::Contiguous])\n *   B--->C([l0op::Abs])\n *   C--->D([l0op::ViewCopy])\n *   D--->E[(out)]\n * ```\n *\n * @param [in] self: 待进行abs计算的入参。npu device侧的aclTensor,\n * 数据类型支持BFLOAT16(仅昇腾910B AI处理器、昇腾910_93 AI处理器、昇腾950 AI处理器支持)FLOAT、FLOAT16、DOUBLE、\n * INT8、INT16、INT32、INT64、UINT8、BOOL，数据格式支持ND，支持非连续的Tensor。\n * @param [in] out: abs计算的出参。npu device侧的aclTensor,\n * 数据类型支持BFLOAT16(仅昇腾910B AI处理器、昇腾910_93 AI处理器、昇腾950 AI处理器支持)FLOAT、FLOAT16、DOUBLE、\n * INT8、INT16、INT32、INT64、UINT8、BOOL，数据格式支持ND，支持非连续的Tensor。\n * @param [out] workspaceSize: 返回用户需要在npu device侧申请的workspace大小。\n * @param [out] executor: 返回op执行器，包括算子计算流程\n * @return aclnnStatus: 返回状态码\n */\nACLNN_API aclnnStatus\naclnnAbsGetWorkspaceSize(const aclTensor* self, aclTensor* out, uint64_t* workspaceSize, aclOpExecutor** executor);\n\n/**\n * @brief aclnnAbs的第二段接口，用于执行计算。\n * @param [in] workspace: 在npu device侧申请的workspace内存起址。\n * @param [in] workspaceSize: 在npu device侧申请的workspace大小，由第一段接口aclnnAbsGetWorkspaceSize获取。\n * @param [in] exector: op执行器，包含了算子计算流程。\n * @param [in] stream: acl stream流。\n * @return aclnnStatus: 返回状态码\n */\nACLNN_API aclnnStatus\naclnnAbs(void* workspace, uint64_t workspaceSize, aclOpExecutor* executor, const aclrtStream stream);\n\n#ifdef __cplusplus\n}\n#endif\n\n#endif // OP_API_INC_LEVEL2_ACLNN_ABS_H_",
+                    "file_功能": "定义aclnnAbs算子的Level2 API头文件，提供获取Workspace大小和执行绝对值计算的两段式接口声明，支持多种数据类型及非连续Tensor。"
+                },
+                "level3": {
+                    "tree_id": "abs/base（## Abs算子基础实现目录，封装API接口、主机逻辑、图元数据、分块策略、内核计算及测试用例等核心模块）\n├── abs/base/op_api（## Abs算子API层实现目录，提供ACLNN接口定义、参数校验、数据类型适配及主机端调度入口）\n│   ├── aclnn_abs.cpp 实现Ascend NPU上Abs算子的ACLNN API层逻辑，负责参数校验、数据类型适配、内存布局处理及计算任务编排。\n│   ├── aclnn_abs.h 定义aclnnAbs算子的Level2 API头文件，提供获取Workspace大小和执行绝对值计算的两段式接口声明，支持多种数据类型及非连续Tensor。\n│   ├── abs.h 该文件是Abs算子Level 0 API的头文件，定义了面向底层执行器的绝对值计算接口声明，作为算子框架中Host侧调用Kernel的入口抽象层。\n│   └── abs.cpp 实现Abs算子的主机端调度逻辑，包括输出张量分配、形状推导、数据类型校验及根据芯片架构动态选择AiCore或AiCPU执行路径。\n├── abs/base/op_graph（## Abs算子图引擎注册目录，定义GE原型信息、输入输出接口及框架兼容性元数据）\n│   └── abs_proto.h 定义Abs算子在GE图引擎中的原型注册信息，声明算子的输入输出接口、支持的数据类型及框架兼容性，是算子接入计算图的基础元数据描述文件。\n├── abs/base/op_host（## Abs算子主机端通用逻辑目录，包含元数据定义、形状推导及特定架构Tiling策略实现）\n│   ├── abs_def.cpp 定义Abs算子的元数据规范，注册输入输出张量的数据类型、格式约束及AI Core硬件执行配置，是算子在框架中识别与调度的基础声明文件。\n│   └── abs_infershape.cpp 实现Abs算子的形状与数据类型推导逻辑。\n│   └── abs/base/op_host/arch35（## Abs算子Arch35架构主机端Tiling策略目录，负责分块参数生成与硬件资源适配）\n│   │   ├── abs_tiling_arch35.h 该文件定义了Arch35架构下Abs算子的Tiling策略头文件，负责声明主机端分块计算所需的数据结构与接口，用于指导内核按硬件资源进行任务切分。\n│   │   └── abs_tiling_arch35.cpp 该文件负责Ascend Arch35架构下Abs算子的Tiling策略生成。\n├── abs/base/op_kernel（## Abs算子设备端Kernel实现目录，包含Tiling数据结构、Kernel入口函数及DAG计算逻辑）\n│   ├── abs_apt.cpp 实现Abs算子在AI Core上的底层计算逻辑，作为设备端Kernel入口函数。\n│   └── abs_struct.h 定义Abs算子内核层专用的Tiling数据结构，用于在Host与Device间传递分块计算参数。\n│   └── abs/base/op_kernel/arch35（## Abs算子Arch35架构设备端Kernel目录，实现DAG计算流水线及复数高精度运算逻辑）\n│   │   ├── abs_dag.h 定义Abs算子在Arch35架构下的设备端DAG（有向无环图）计算流水线，通过模板化数据流编排实现绝对值运算的自动化调度与内存管理。\n│   │   └── abs_complex_dag.h 实现复数绝对值算子的AI Core底层DAG计算逻辑。\n└── abs/base/tests（## Abs算子单元测试总目录，覆盖API校验、形状推导及Tiling策略等功能的验证代码）\n    └── abs/base/tests/ut（## Abs算子单元测试集合目录，集中管理API、形状推导及Tiling策略的GTest验证代码）\n        ├── abs/base/tests/ut/op_api（## Abs算子API层单元测试目录，验证ACLNN接口的参数校验与Workspace获取功能）\n        │   └── test_aclnn_abs.cpp 该文件是Abs算子API层的单元测试代码，基于GTest框架验证`aclnnAbs`接口的参数校验逻辑。\n        └── abs/base/tests/ut/op_host（## Abs算子主机端逻辑单元测试目录，验证形状推导及Tiling策略在不同场景下的正确性）\n        │   └── test_abs_infershape.cpp 该文件是Abs算子形状推导（Infershape）功能的单元测试代码。\n            └── abs/base/tests/ut/op_host/arch35（## Abs算子Arch35架构Tiling策略单元测试目录，验证分块参数生成的正确性与异常处理）\n            │   └── test_abs_tiling_arch35.cpp 该文件是Abs算子在Arch35架构下的Tiling策略单元测试，用于验证不同数据类型（FP16/32、INT8/16/32/64、BF16及复数类型）的切分参数生成正确性，并覆盖输入输出类型不匹配、空Tensor等异常场景。"
+                }
+            },
+            "evidence": [
+                {
+                    "evidence_information": {
+                        "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.h",
+                        "file_name": "aclnn_abs.h",
+                        "file_功能": "定义aclnnAbs算子的Level2 API头文件，提供获取Workspace大小和执行绝对值计算的两段式接口声明，支持多种数据类型及非连续Tensor。",
+                        "file_content": "/**\n * Copyright (c) 2025 Huawei Technologies Co., Ltd.\n * This program is free software, you can redistribute it and/or modify it under the terms and conditions of\n * CANN Open Software License Agreement Version 2.0 (the \"License\").\n * Please refer to the License for details. You may not use this file except in compliance with the License.\n * THIS SOFTWARE IS PROVIDED ON AN \"AS IS\" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,\n * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.\n * See LICENSE in the root of the software repository for the full text of the License.\n */\n\n#ifndef OP_API_INC_LEVEL2_ACLNN_ABS_H_\n#define OP_API_INC_LEVEL2_ACLNN_ABS_H_\n\n#include \"aclnn_util.h\"\n#include \"aclnn/aclnn_base.h\"\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n#define ACLNN_MAX_SHAPE_RANK 8\n\n/**\n * @brief aclnnAbs的第一段接口，根据具体的计算流程，计算workspace大小。\n * @domain aclnn_math\n * 算子功能：返回输入Tensor中每个元素绝对值的结果\n * 计算公式：\n * $$ out_{i} = abs(self_{i}) $$\n *\n * 计算图：\n * ```mermaid\n * graph LR\n *   A[(self)]--->B([l0op::Contiguous])\n *   B--->C([l0op::Abs])\n *   C--->D([l0op::ViewCopy])\n *   D--->E[(out)]\n * ```\n *\n * @param [in] self: 待进行abs计算的入参。npu device侧的aclTensor,\n * 数据类型支持BFLOAT16(仅昇腾910B AI处理器、昇腾910_93 AI处理器、昇腾950 AI处理器支持)FLOAT、FLOAT16、DOUBLE、\n * INT8、INT16、INT32、INT64、UINT8、BOOL，数据格式支持ND，支持非连续的Tensor。\n * @param [in] out: abs计算的出参。npu device侧的aclTensor,\n * 数据类型支持BFLOAT16(仅昇腾910B AI处理器、昇腾910_93 AI处理器、昇腾950 AI处理器支持)FLOAT、FLOAT16、DOUBLE、\n * INT8、INT16、INT32、INT64、UINT8、BOOL，数据格式支持ND，支持非连续的Tensor。\n * @param [out] workspaceSize: 返回用户需要在npu device侧申请的workspace大小。\n * @param [out] executor: 返回op执行器，包括算子计算流程\n * @return aclnnStatus: 返回状态码\n */\nACLNN_API aclnnStatus\naclnnAbsGetWorkspaceSize(const aclTensor* self, aclTensor* out, uint64_t* workspaceSize, aclOpExecutor** executor);\n\n/**\n * @brief aclnnAbs的第二段接口，用于执行计算。\n * @param [in] workspace: 在npu device侧申请的workspace内存起址。\n * @param [in] workspaceSize: 在npu device侧申请的workspace大小，由第一段接口aclnnAbsGetWorkspaceSize获取。\n * @param [in] exector: op执行器，包含了算子计算流程。\n * @param [in] stream: acl stream流。\n * @return aclnnStatus: 返回状态码\n */\nACLNN_API aclnnStatus\naclnnAbs(void* workspace, uint64_t workspaceSize, aclOpExecutor* executor, const aclrtStream stream);\n\n#ifdef __cplusplus\n}\n#endif\n\n#endif // OP_API_INC_LEVEL2_ACLNN_ABS_H_"
+                    },
+                    "gene_rule": {
+                        "deter": "",
+                        "target": [
+                            [
+                                "summary_clarify"
+                            ],
+                            [
+                                "summary_formula"
+                            ]
+                        ]
+                    },
+                    "evidence_id": "ev_001"
+                }
+            ],
+            "note": "以下为file型标准结构"
+        },
+        {
+            "anchor_id": "anchor_file_002",
+            "anchor_information": {
+                "type": "file",
+                "level1": {
+                    "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+                    "file_name": "aclnn_abs.cpp"
+                },
+                "level2": {
+                    "code_map": {
+                        "nodes": [
+                            "GetDtypeSupportList",
+                            "GetCurrentPlatformInfo",
+                            "IsRegBase",
+                            "HasEmptyTensor",
+                            "IsEmpty",
+                            "SpecialDtypeTensorNeedPassthrough",
+                            "CheckNotNull",
+                            "CheckDtypeValid",
+                            "GetDataType",
+                            "IsComplexType",
+                            "find",
+                            "end",
+                            "CheckFormat",
+                            "ACLNN_ERR_PARAM_INVALID",
+                            "GetStorageFormat",
+                            "IsPrivateFormat",
+                            "CheckShape",
+                            "CheckParams",
+                            "ACLNN_ERR_PARAM_NULLPTR",
+                            "IsSupportComplexAbs",
+                            "CheckType",
+                            "aclnnAbsGetWorkspaceSize",
+                            "ACLNN_ERR_INNER_CREATE_EXECUTOR",
+                            "ACLNN_ERR_INNER_NULLPTR",
+                            "HasEmptyTensor",
+                            "ReleaseTo",
+                            "SpecialDtypeTensorNeedPassthrough",
+                            "GetWorkspaceSize",
+                            "IsSupportComplexAbs",
+                            "Abs",
+                            "get",
+                            "aclnnAbs",
+                            "CommonOpExecutorRun"
+                        ],
+                        "edges": [
+                            {
+                                "source": "GetDtypeSupportList",
+                                "type": "calls",
+                                "target": "GetCurrentPlatformInfo"
+                            },
+                            {
+                                "source": "GetDtypeSupportList",
+                                "type": "calls",
+                                "target": "IsRegBase"
+                            },
+                            {
+                                "source": "HasEmptyTensor",
+                                "type": "calls",
+                                "target": "IsEmpty"
+                            },
+                            {
+                                "source": "CheckDtypeValid",
+                                "type": "calls",
+                                "target": "GetDataType"
+                            },
+                            {
+                                "source": "CheckDtypeValid",
+                                "type": "calls",
+                                "target": "IsComplexType"
+                            },
+                            {
+                                "source": "CheckDtypeValid",
+                                "type": "calls",
+                                "target": "find"
+                            },
+                            {
+                                "source": "CheckDtypeValid",
+                                "type": "calls",
+                                "target": "end"
+                            },
+                            {
+                                "source": "CheckFormat",
+                                "type": "returns",
+                                "target": "ACLNN_ERR_PARAM_INVALID"
+                            },
+                            {
+                                "source": "CheckFormat",
+                                "type": "returns",
+                                "target": "ACLNN_ERR_PARAM_INVALID"
+                            },
+                            {
+                                "source": "CheckFormat",
+                                "type": "calls",
+                                "target": "GetStorageFormat"
+                            },
+                            {
+                                "source": "CheckFormat",
+                                "type": "calls",
+                                "target": "GetStorageFormat"
+                            },
+                            {
+                                "source": "CheckFormat",
+                                "type": "calls",
+                                "target": "IsPrivateFormat"
+                            },
+                            {
+                                "source": "CheckFormat",
+                                "type": "calls",
+                                "target": "GetStorageFormat"
+                            },
+                            {
+                                "source": "CheckParams",
+                                "type": "returns",
+                                "target": "ACLNN_ERR_PARAM_NULLPTR"
+                            },
+                            {
+                                "source": "CheckParams",
+                                "type": "returns",
+                                "target": "ACLNN_ERR_PARAM_INVALID"
+                            },
+                            {
+                                "source": "CheckParams",
+                                "type": "returns",
+                                "target": "ACLNN_ERR_PARAM_INVALID"
+                            },
+                            {
+                                "source": "CheckParams",
+                                "type": "returns",
+                                "target": "ACLNN_ERR_PARAM_INVALID"
+                            },
+                            {
+                                "source": "IsSupportComplexAbs",
+                                "type": "calls",
+                                "target": "IsComplexType"
+                            },
+                            {
+                                "source": "IsSupportComplexAbs",
+                                "type": "calls",
+                                "target": "GetCurrentPlatformInfo"
+                            },
+                            {
+                                "source": "IsSupportComplexAbs",
+                                "type": "calls",
+                                "target": "CheckType"
+                            },
+                            {
+                                "source": "aclnnAbsGetWorkspaceSize",
+                                "type": "returns",
+                                "target": "ACLNN_ERR_INNER_CREATE_EXECUTOR"
+                            },
+                            {
+                                "source": "aclnnAbsGetWorkspaceSize",
+                                "type": "returns",
+                                "target": "ACLNN_ERR_INNER_NULLPTR"
+                            },
+                            {
+                                "source": "aclnnAbsGetWorkspaceSize",
+                                "type": "returns",
+                                "target": "ACLNN_ERR_INNER_NULLPTR"
+                            },
+                            {
+                                "source": "aclnnAbsGetWorkspaceSize",
+                                "type": "returns",
+                                "target": "ACLNN_ERR_INNER_NULLPTR"
+                            },
+                            {
+                                "source": "aclnnAbsGetWorkspaceSize",
+                                "type": "returns",
+                                "target": "ACLNN_ERR_INNER_NULLPTR"
+                            },
+                            {
+                                "source": "aclnnAbsGetWorkspaceSize",
+                                "type": "calls",
+                                "target": "HasEmptyTensor"
+                            },
+                            {
+                                "source": "aclnnAbsGetWorkspaceSize",
+                                "type": "calls",
+                                "target": "ReleaseTo"
+                            },
+                            {
+                                "source": "aclnnAbsGetWorkspaceSize",
+                                "type": "calls",
+                                "target": "SpecialDtypeTensorNeedPassthrough"
+                            },
+                            {
+                                "source": "aclnnAbsGetWorkspaceSize",
+                                "type": "calls",
+                                "target": "GetWorkspaceSize"
+                            },
+                            {
+                                "source": "aclnnAbsGetWorkspaceSize",
+                                "type": "calls",
+                                "target": "ReleaseTo"
+                            },
+                            {
+                                "source": "aclnnAbsGetWorkspaceSize",
+                                "type": "calls",
+                                "target": "IsSupportComplexAbs"
+                            },
+                            {
+                                "source": "aclnnAbsGetWorkspaceSize",
+                                "type": "calls",
+                                "target": "GetDataType"
+                            },
+                            {
+                                "source": "aclnnAbsGetWorkspaceSize",
+                                "type": "calls",
+                                "target": "Abs"
+                            },
+                            {
+                                "source": "aclnnAbsGetWorkspaceSize",
+                                "type": "calls",
+                                "target": "get"
+                            },
+                            {
+                                "source": "aclnnAbsGetWorkspaceSize",
+                                "type": "calls",
+                                "target": "GetWorkspaceSize"
+                            },
+                            {
+                                "source": "aclnnAbsGetWorkspaceSize",
+                                "type": "calls",
+                                "target": "ReleaseTo"
+                            },
+                            {
+                                "source": "aclnnAbs",
+                                "type": "calls",
+                                "target": "CommonOpExecutorRun"
+                            }
+                        ]
+                    },
+                    "token_hash": "/**\n * Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.\n * This program is free software, you can redistribute it and/or modify it under the terms and conditions of\n * CANN Open Software License Agreement Version 2.0 (the \"License\").\n * Please refer to the License for details. You may not use this file except in compliance with the License.\n * THIS SOFTWARE IS PROVIDED ON AN \"AS IS\" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,\n * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.\n * See LICENSE in the root of the software repository for the full text of the License.\n */\n\n#include <unordered_map>\n#include \"aclnn_abs.h\"\n#include \"abs.h\"\n#include \"../../complex_abs/op_api/complex_abs.h\"\n#include \"aclnn_kernels/contiguous.h\"\n#include \"aclnn_kernels/common/op_error_check.h\"\n#include \"opdev/op_log.h\"\n#include \"opdev/op_dfx.h\"\n#include \"opdev/common_types.h\"\n#include \"opdev/data_type_utils.h\"\n#include \"opdev/make_op_executor.h\"\n#include \"opdev/platform.h\"\n#include \"op_api/aclnn_check.h\"\n\nusing namespace op;\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\nstatic const std::initializer_list<DataType> ASCEND910_DTYPE_DTYPE_SUPPORT_LIST = {\n    DataType::DT_DOUBLE, DataType::DT_FLOAT, DataType::DT_FLOAT16, DataType::DT_INT64, DataType::DT_INT32,\n    DataType::DT_INT16,  DataType::DT_INT8,  DataType::DT_UINT8,   DataType::DT_BOOL};\n\nstatic const std::initializer_list<DataType> ASCEND910B_DTYPE_DTYPE_SUPPORT_LIST = {\n    DataType::DT_DOUBLE, DataType::DT_FLOAT, DataType::DT_FLOAT16, DataType::DT_INT64, DataType::DT_INT32,\n    DataType::DT_INT16,  DataType::DT_INT8,  DataType::DT_UINT8,   DataType::DT_BOOL,  DataType::DT_BF16,\n    DataType::DT_COMPLEX64};\n\nstatic const std::initializer_list<DataType> ARCH_REGBASE_DTYPE_DTYPE_SUPPORT_LIST = {\n    DataType::DT_DOUBLE, DataType::DT_FLOAT, DataType::DT_FLOAT16, DataType::DT_INT64, DataType::DT_INT32,\n    DataType::DT_INT16,  DataType::DT_INT8,  DataType::DT_UINT8,   DataType::DT_BOOL,  DataType::DT_BF16,\n    DataType::DT_COMPLEX32,  DataType::DT_COMPLEX64};\n\nstatic const std::unordered_map<DataType, DataType> COMPLEX_IN_AND_OUT_DTYPE_MAP = {\n    {DataType::DT_COMPLEX32, DataType::DT_FLOAT16}, \n    {DataType::DT_COMPLEX64, DataType::DT_FLOAT},\n    {DataType::DT_COMPLEX128, DataType::DT_DOUBLE}\n};\n\nstatic const std::initializer_list<DataType>& GetDtypeSupportList()\n{\n    auto npuArch = GetCurrentPlatformInfo().GetCurNpuArch();\n    if (npuArch == NpuArch::DAV_2201) {\n        return ASCEND910B_DTYPE_DTYPE_SUPPORT_LIST;\n    } else if (IsRegBase(npuArch)) {\n        return ARCH_REGBASE_DTYPE_DTYPE_SUPPORT_LIST;\n    } else {\n        return ASCEND910_DTYPE_DTYPE_SUPPORT_LIST;\n    }\n}\n\nstatic bool HasEmptyTensor(const aclTensor* self)\n{\n    // 检查张量是否存在空维\n    if (self->IsEmpty()) {\n        return true;\n    }\n\n    return false;\n}\n\nstatic bool SpecialDtypeTensorNeedPassthrough(const aclTensor* self)\n{\n    if (self->GetDataType() == DataType::DT_UINT8 || self->GetDataType() == DataType::DT_BOOL) {\n        return true;\n    }\n\n    return false;\n}\n\nstatic bool CheckNotNull(const aclTensor* self, const aclTensor* out)\n{\n    OP_CHECK_NULL(self, return false);\n    OP_CHECK_NULL(out, return false);\n\n    return true;\n}\n\nstatic bool CheckDtypeValid(const aclTensor* self, const aclTensor* out)\n{\n    // 检查self的数据类型是否在支持列表内，out类型随动检查\n    auto supportList = GetDtypeSupportList();\n    OP_CHECK_DTYPE_NOT_SUPPORT(self, supportList, return false);\n\n    // 当self不为复数时，self和out数据类型必须一样\n    auto selfDtype = self->GetDataType();\n    if (IsComplexType(selfDtype)) {\n        auto promoteOutDtype = COMPLEX_IN_AND_OUT_DTYPE_MAP.find(selfDtype);\n        if (promoteOutDtype != COMPLEX_IN_AND_OUT_DTYPE_MAP.end()) {\n            OP_CHECK_DTYPE_NOT_MATCH(out, promoteOutDtype->second, return false);\n        }\n    } else {\n        OP_CHECK_DTYPE_NOT_MATCH(self, out->GetDataType(), return false);\n    }\n\n    return true;\n}\n\nstatic bool CheckFormat(const aclTensor* self, const aclTensor* out)\n{\n    // 输入输出的格式需要一致\n    if (self->GetStorageFormat() != out->GetStorageFormat()) {\n        OP_LOGE(\n            ACLNN_ERR_PARAM_INVALID, \"Format of input and output should be equal. self [%s], out [%s].\",\n            ToString(self->GetStorageShape()).GetString(), ToString(out->GetStorageShape()).GetString());\n        return false;\n    }\n\n    // self格式不能是私有格式\n    if (IsPrivateFormat(self->GetStorageFormat())) {\n        OP_LOGE(ACLNN_ERR_PARAM_INVALID, \"Format only support ND、NCHW、NHWC、HWCN、NDHWC、NCDHW.\");\n        return false;\n    }\n\n    return true;\n}\n\nstatic bool CheckShape(const aclTensor* self, const aclTensor* out)\n{\n    // 所有算子的维度都不能超过8\n    OP_CHECK_MAX_DIM(self, ACLNN_MAX_SHAPE_RANK, return false);\n\n    // self和out的shape必须一致\n    OP_CHECK_SHAPE_NOT_EQUAL(self, out, return false);\n\n    return true;\n}\n\nstatic aclnnStatus CheckParams(const aclTensor* self, const aclTensor* out)\n{\n    // 1. 检查参数是否为空指针\n    CHECK_RET(CheckNotNull(self, out), ACLNN_ERR_PARAM_NULLPTR);\n\n    // 2. 检查输入的数据类型是否在API支持的数据类型范围内，需要根据api定义校验\n    CHECK_RET(CheckDtypeValid(self, out), ACLNN_ERR_PARAM_INVALID);\n\n    // 3. 检查数据格式是否支持\n    CHECK_RET(CheckFormat(self, out), ACLNN_ERR_PARAM_INVALID);\n\n    // 4. 检查shape是否满足约束\n    CHECK_RET(CheckShape(self, out), ACLNN_ERR_PARAM_INVALID);\n\n    return ACLNN_SUCCESS;\n}\n\nstatic bool IsSupportComplexAbs(const op::DataType selfType) {\n    if (IsComplexType(selfType)) {\n        auto npuArch = GetCurrentPlatformInfo().GetCurNpuArch();\n        if (npuArch == NpuArch::DAV_2201) {\n            return CheckType(selfType, ASCEND910B_DTYPE_DTYPE_SUPPORT_LIST);\n        } else {\n            return false;\n        }\n    } else {\n        return false;\n    }\n}\n\naclnnStatus aclnnAbsGetWorkspaceSize(\n    const aclTensor* self, aclTensor* out, uint64_t* workspaceSize, aclOpExecutor** executor)\n{\n    L2_DFX_PHASE_1(aclnnAbs, DFX_IN(self), DFX_OUT(out));\n\n    // 固定写法，创建OpExecutor\n    auto uniqueExecutor = CREATE_EXECUTOR();\n    CHECK_RET(uniqueExecutor.get() != nullptr, ACLNN_ERR_INNER_CREATE_EXECUTOR);\n\n    // 固定写法，参数检查\n    auto ret = CheckParams(self, out);\n    CHECK_RET(ret == ACLNN_SUCCESS, ret);\n\n    // 空Tensor处理\n    if (HasEmptyTensor(self)) {\n        *workspaceSize = 0;\n        uniqueExecutor.ReleaseTo(executor);\n        return ACLNN_SUCCESS;\n    }\n\n    // self如果非连续，需要转换\n    auto selfContiguous = l0op::Contiguous(self, uniqueExecutor.get());\n    CHECK_RET(selfContiguous != nullptr, ACLNN_ERR_INNER_NULLPTR);\n\n    // UINT8和BOOL类型，直接拷贝透传\n    if (SpecialDtypeTensorNeedPassthrough(selfContiguous)) {\n        auto viewCopyResult = l0op::ViewCopy(selfContiguous, out, uniqueExecutor.get());\n        *workspaceSize = uniqueExecutor->GetWorkspaceSize();\n        uniqueExecutor.ReleaseTo(executor);\n        return (viewCopyResult != nullptr) ? ACLNN_SUCCESS : ACLNN_ERR_INNER_NULLPTR;\n    }\n\n    // 调用l0算子Abs进行计算\n    const aclTensor* absResult = nullptr;\n    if (IsSupportComplexAbs(selfContiguous->GetDataType())) {\n        absResult = l0op::ComplexAbs(selfContiguous, uniqueExecutor.get());\n    } else{\n        absResult = l0op::Abs(selfContiguous, uniqueExecutor.get());\n    }\n    CHECK_RET(absResult != nullptr, ACLNN_ERR_INNER_NULLPTR);\n\n    // 如果出参out是非连续Tensor，需要把计算完的连续Tensor转非连续\n    auto viewCopyResult = l0op::ViewCopy(absResult, out, uniqueExecutor.get());\n    CHECK_RET(viewCopyResult != nullptr, ACLNN_ERR_INNER_NULLPTR);\n\n    // 固定写法，获取计算过程中需要使用的workspace大小\n    *workspaceSize = uniqueExecutor->GetWorkspaceSize();\n    uniqueExecutor.ReleaseTo(executor);\n    return ACLNN_SUCCESS;\n}\n\naclnnStatus aclnnAbs(void* workspace, uint64_t workspaceSize, aclOpExecutor* executor, const aclrtStream stream)\n{\n    L2_DFX_PHASE_2(aclnnAbs);\n\n    return CommonOpExecutorRun(workspace, workspaceSize, executor, stream);\n}\n\n#ifdef __cplusplus\n}\n#endif\n",
+                    "file_功能": "定义aclnnAbs算子的Level2 API头文件，提供获取Workspace大小和执行绝对值计算的两段式接口声明，支持多种数据类型及非连续Tensor。"
+                },
+                "level3": {
+                    "tree_id": "abs/base（## Abs算子基础实现目录，封装API接口、主机逻辑、图元数据、分块策略、内核计算及测试用例等核心模块）\n├── abs/base/op_api（## Abs算子API层实现目录，提供ACLNN接口定义、参数校验、数据类型适配及主机端调度入口）\n│   ├── aclnn_abs.cpp 实现Ascend NPU上Abs算子的ACLNN API层逻辑，负责参数校验、数据类型适配、内存布局处理及计算任务编排。\n│   ├── aclnn_abs.h 定义aclnnAbs算子的Level2 API头文件，提供获取Workspace大小和执行绝对值计算的两段式接口声明，支持多种数据类型及非连续Tensor。\n│   ├── abs.h 该文件是Abs算子Level 0 API的头文件，定义了面向底层执行器的绝对值计算接口声明，作为算子框架中Host侧调用Kernel的入口抽象层。\n│   └── abs.cpp 实现Abs算子的主机端调度逻辑，包括输出张量分配、形状推导、数据类型校验及根据芯片架构动态选择AiCore或AiCPU执行路径。\n├── abs/base/op_graph（## Abs算子图引擎注册目录，定义GE原型信息、输入输出接口及框架兼容性元数据）\n│   └── abs_proto.h 定义Abs算子在GE图引擎中的原型注册信息，声明算子的输入输出接口、支持的数据类型及框架兼容性，是算子接入计算图的基础元数据描述文件。\n├── abs/base/op_host（## Abs算子主机端通用逻辑目录，包含元数据定义、形状推导及特定架构Tiling策略实现）\n│   ├── abs_def.cpp 定义Abs算子的元数据规范，注册输入输出张量的数据类型、格式约束及AI Core硬件执行配置，是算子在框架中识别与调度的基础声明文件。\n│   └── abs_infershape.cpp 实现Abs算子的形状与数据类型推导逻辑。\n│   └── abs/base/op_host/arch35（## Abs算子Arch35架构主机端Tiling策略目录，负责分块参数生成与硬件资源适配）\n│   │   ├── abs_tiling_arch35.h 该文件定义了Arch35架构下Abs算子的Tiling策略头文件，负责声明主机端分块计算所需的数据结构与接口，用于指导内核按硬件资源进行任务切分。\n│   │   └── abs_tiling_arch35.cpp 该文件负责Ascend Arch35架构下Abs算子的Tiling策略生成。\n├── abs/base/op_kernel（## Abs算子设备端Kernel实现目录，包含Tiling数据结构、Kernel入口函数及DAG计算逻辑）\n│   ├── abs_apt.cpp 实现Abs算子在AI Core上的底层计算逻辑，作为设备端Kernel入口函数。\n│   └── abs_struct.h 定义Abs算子内核层专用的Tiling数据结构，用于在Host与Device间传递分块计算参数。\n│   └── abs/base/op_kernel/arch35（## Abs算子Arch35架构设备端Kernel目录，实现DAG计算流水线及复数高精度运算逻辑）\n│   │   ├── abs_dag.h 定义Abs算子在Arch35架构下的设备端DAG（有向无环图）计算流水线，通过模板化数据流编排实现绝对值运算的自动化调度与内存管理。\n│   │   └── abs_complex_dag.h 实现复数绝对值算子的AI Core底层DAG计算逻辑。\n└── abs/base/tests（## Abs算子单元测试总目录，覆盖API校验、形状推导及Tiling策略等功能的验证代码）\n    └── abs/base/tests/ut（## Abs算子单元测试集合目录，集中管理API、形状推导及Tiling策略的GTest验证代码）\n        ├── abs/base/tests/ut/op_api（## Abs算子API层单元测试目录，验证ACLNN接口的参数校验与Workspace获取功能）\n        │   └── test_aclnn_abs.cpp 该文件是Abs算子API层的单元测试代码，基于GTest框架验证`aclnnAbs`接口的参数校验逻辑。\n        └── abs/base/tests/ut/op_host（## Abs算子主机端逻辑单元测试目录，验证形状推导及Tiling策略在不同场景下的正确性）\n        │   └── test_abs_infershape.cpp 该文件是Abs算子形状推导（Infershape）功能的单元测试代码。\n            └── abs/base/tests/ut/op_host/arch35（## Abs算子Arch35架构Tiling策略单元测试目录，验证分块参数生成的正确性与异常处理）\n            │   └── test_abs_tiling_arch35.cpp 该文件是Abs算子在Arch35架构下的Tiling策略单元测试，用于验证不同数据类型（FP16/32、INT8/16/32/64、BF16及复数类型）的切分参数生成正确性，并覆盖输入输出类型不匹配、空Tensor等异常场景。"
+                }
+            },
+            "evidence": [
+                {
+                    "evidence_information": {
+                        "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+                        "file_name": "aclnn_abs.cpp",
+                        "file_功能": "定义aclnnAbs算子的Level2 API头文件，提供获取Workspace大小和执行绝对值计算的两段式接口声明，支持多种数据类型及非连续Tensor。",
+                        "file_content": "/**\n * Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.\n * This program is free software, you can redistribute it and/or modify it under the terms and conditions of\n * CANN Open Software License Agreement Version 2.0 (the \"License\").\n * Please refer to the License for details. You may not use this file except in compliance with the License.\n * THIS SOFTWARE IS PROVIDED ON AN \"AS IS\" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,\n * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.\n * See LICENSE in the root of the software repository for the full text of the License.\n */\n\n#include <unordered_map>\n#include \"aclnn_abs.h\"\n#include \"abs.h\"\n#include \"../../complex_abs/op_api/complex_abs.h\"\n#include \"aclnn_kernels/contiguous.h\"\n#include \"aclnn_kernels/common/op_error_check.h\"\n#include \"opdev/op_log.h\"\n#include \"opdev/op_dfx.h\"\n#include \"opdev/common_types.h\"\n#include \"opdev/data_type_utils.h\"\n#include \"opdev/make_op_executor.h\"\n#include \"opdev/platform.h\"\n#include \"op_api/aclnn_check.h\"\n\nusing namespace op;\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\nstatic const std::initializer_list<DataType> ASCEND910_DTYPE_DTYPE_SUPPORT_LIST = {\n    DataType::DT_DOUBLE, DataType::DT_FLOAT, DataType::DT_FLOAT16, DataType::DT_INT64, DataType::DT_INT32,\n    DataType::DT_INT16,  DataType::DT_INT8,  DataType::DT_UINT8,   DataType::DT_BOOL};\n\nstatic const std::initializer_list<DataType> ASCEND910B_DTYPE_DTYPE_SUPPORT_LIST = {\n    DataType::DT_DOUBLE, DataType::DT_FLOAT, DataType::DT_FLOAT16, DataType::DT_INT64, DataType::DT_INT32,\n    DataType::DT_INT16,  DataType::DT_INT8,  DataType::DT_UINT8,   DataType::DT_BOOL,  DataType::DT_BF16,\n    DataType::DT_COMPLEX64};\n\nstatic const std::initializer_list<DataType> ARCH_REGBASE_DTYPE_DTYPE_SUPPORT_LIST = {\n    DataType::DT_DOUBLE, DataType::DT_FLOAT, DataType::DT_FLOAT16, DataType::DT_INT64, DataType::DT_INT32,\n    DataType::DT_INT16,  DataType::DT_INT8,  DataType::DT_UINT8,   DataType::DT_BOOL,  DataType::DT_BF16,\n    DataType::DT_COMPLEX32,  DataType::DT_COMPLEX64};\n\nstatic const std::unordered_map<DataType, DataType> COMPLEX_IN_AND_OUT_DTYPE_MAP = {\n    {DataType::DT_COMPLEX32, DataType::DT_FLOAT16}, \n    {DataType::DT_COMPLEX64, DataType::DT_FLOAT},\n    {DataType::DT_COMPLEX128, DataType::DT_DOUBLE}\n};\n\nstatic const std::initializer_list<DataType>& GetDtypeSupportList()\n{\n    auto npuArch = GetCurrentPlatformInfo().GetCurNpuArch();\n    if (npuArch == NpuArch::DAV_2201) {\n        return ASCEND910B_DTYPE_DTYPE_SUPPORT_LIST;\n    } else if (IsRegBase(npuArch)) {\n        return ARCH_REGBASE_DTYPE_DTYPE_SUPPORT_LIST;\n    } else {\n        return ASCEND910_DTYPE_DTYPE_SUPPORT_LIST;\n    }\n}\n\nstatic bool HasEmptyTensor(const aclTensor* self)\n{\n    // 检查张量是否存在空维\n    if (self->IsEmpty()) {\n        return true;\n    }\n\n    return false;\n}\n\nstatic bool SpecialDtypeTensorNeedPassthrough(const aclTensor* self)\n{\n    if (self->GetDataType() == DataType::DT_UINT8 || self->GetDataType() == DataType::DT_BOOL) {\n        return true;\n    }\n\n    return false;\n}\n\nstatic bool CheckNotNull(const aclTensor* self, const aclTensor* out)\n{\n    OP_CHECK_NULL(self, return false);\n    OP_CHECK_NULL(out, return false);\n\n    return true;\n}\n\nstatic bool CheckDtypeValid(const aclTensor* self, const aclTensor* out)\n{\n    // 检查self的数据类型是否在支持列表内，out类型随动检查\n    auto supportList = GetDtypeSupportList();\n    OP_CHECK_DTYPE_NOT_SUPPORT(self, supportList, return false);\n\n    // 当self不为复数时，self和out数据类型必须一样\n    auto selfDtype = self->GetDataType();\n    if (IsComplexType(selfDtype)) {\n        auto promoteOutDtype = COMPLEX_IN_AND_OUT_DTYPE_MAP.find(selfDtype);\n        if (promoteOutDtype != COMPLEX_IN_AND_OUT_DTYPE_MAP.end()) {\n            OP_CHECK_DTYPE_NOT_MATCH(out, promoteOutDtype->second, return false);\n        }\n    } else {\n        OP_CHECK_DTYPE_NOT_MATCH(self, out->GetDataType(), return false);\n    }\n\n    return true;\n}\n\nstatic bool CheckFormat(const aclTensor* self, const aclTensor* out)\n{\n    // 输入输出的格式需要一致\n    if (self->GetStorageFormat() != out->GetStorageFormat()) {\n        OP_LOGE(\n            ACLNN_ERR_PARAM_INVALID, \"Format of input and output should be equal. self [%s], out [%s].\",\n            ToString(self->GetStorageShape()).GetString(), ToString(out->GetStorageShape()).GetString());\n        return false;\n    }\n\n    // self格式不能是私有格式\n    if (IsPrivateFormat(self->GetStorageFormat())) {\n        OP_LOGE(ACLNN_ERR_PARAM_INVALID, \"Format only support ND、NCHW、NHWC、HWCN、NDHWC、NCDHW.\");\n        return false;\n    }\n\n    return true;\n}\n\nstatic bool CheckShape(const aclTensor* self, const aclTensor* out)\n{\n    // 所有算子的维度都不能超过8\n    OP_CHECK_MAX_DIM(self, ACLNN_MAX_SHAPE_RANK, return false);\n\n    // self和out的shape必须一致\n    OP_CHECK_SHAPE_NOT_EQUAL(self, out, return false);\n\n    return true;\n}\n\nstatic aclnnStatus CheckParams(const aclTensor* self, const aclTensor* out)\n{\n    // 1. 检查参数是否为空指针\n    CHECK_RET(CheckNotNull(self, out), ACLNN_ERR_PARAM_NULLPTR);\n\n    // 2. 检查输入的数据类型是否在API支持的数据类型范围内，需要根据api定义校验\n    CHECK_RET(CheckDtypeValid(self, out), ACLNN_ERR_PARAM_INVALID);\n\n    // 3. 检查数据格式是否支持\n    CHECK_RET(CheckFormat(self, out), ACLNN_ERR_PARAM_INVALID);\n\n    // 4. 检查shape是否满足约束\n    CHECK_RET(CheckShape(self, out), ACLNN_ERR_PARAM_INVALID);\n\n    return ACLNN_SUCCESS;\n}\n\nstatic bool IsSupportComplexAbs(const op::DataType selfType) {\n    if (IsComplexType(selfType)) {\n        auto npuArch = GetCurrentPlatformInfo().GetCurNpuArch();\n        if (npuArch == NpuArch::DAV_2201) {\n            return CheckType(selfType, ASCEND910B_DTYPE_DTYPE_SUPPORT_LIST);\n        } else {\n            return false;\n        }\n    } else {\n        return false;\n    }\n}\n\naclnnStatus aclnnAbsGetWorkspaceSize(\n    const aclTensor* self, aclTensor* out, uint64_t* workspaceSize, aclOpExecutor** executor)\n{\n    L2_DFX_PHASE_1(aclnnAbs, DFX_IN(self), DFX_OUT(out));\n\n    // 固定写法，创建OpExecutor\n    auto uniqueExecutor = CREATE_EXECUTOR();\n    CHECK_RET(uniqueExecutor.get() != nullptr, ACLNN_ERR_INNER_CREATE_EXECUTOR);\n\n    // 固定写法，参数检查\n    auto ret = CheckParams(self, out);\n    CHECK_RET(ret == ACLNN_SUCCESS, ret);\n\n    // 空Tensor处理\n    if (HasEmptyTensor(self)) {\n        *workspaceSize = 0;\n        uniqueExecutor.ReleaseTo(executor);\n        return ACLNN_SUCCESS;\n    }\n\n    // self如果非连续，需要转换\n    auto selfContiguous = l0op::Contiguous(self, uniqueExecutor.get());\n    CHECK_RET(selfContiguous != nullptr, ACLNN_ERR_INNER_NULLPTR);\n\n    // UINT8和BOOL类型，直接拷贝透传\n    if (SpecialDtypeTensorNeedPassthrough(selfContiguous)) {\n        auto viewCopyResult = l0op::ViewCopy(selfContiguous, out, uniqueExecutor.get());\n        *workspaceSize = uniqueExecutor->GetWorkspaceSize();\n        uniqueExecutor.ReleaseTo(executor);\n        return (viewCopyResult != nullptr) ? ACLNN_SUCCESS : ACLNN_ERR_INNER_NULLPTR;\n    }\n\n    // 调用l0算子Abs进行计算\n    const aclTensor* absResult = nullptr;\n    if (IsSupportComplexAbs(selfContiguous->GetDataType())) {\n        absResult = l0op::ComplexAbs(selfContiguous, uniqueExecutor.get());\n    } else{\n        absResult = l0op::Abs(selfContiguous, uniqueExecutor.get());\n    }\n    CHECK_RET(absResult != nullptr, ACLNN_ERR_INNER_NULLPTR);\n\n    // 如果出参out是非连续Tensor，需要把计算完的连续Tensor转非连续\n    auto viewCopyResult = l0op::ViewCopy(absResult, out, uniqueExecutor.get());\n    CHECK_RET(viewCopyResult != nullptr, ACLNN_ERR_INNER_NULLPTR);\n\n    // 固定写法，获取计算过程中需要使用的workspace大小\n    *workspaceSize = uniqueExecutor->GetWorkspaceSize();\n    uniqueExecutor.ReleaseTo(executor);\n    return ACLNN_SUCCESS;\n}\n\naclnnStatus aclnnAbs(void* workspace, uint64_t workspaceSize, aclOpExecutor* executor, const aclrtStream stream)\n{\n    L2_DFX_PHASE_2(aclnnAbs);\n\n    return CommonOpExecutorRun(workspace, workspaceSize, executor, stream);\n}\n\n#ifdef __cplusplus\n}\n#endif\n"
+                    },
+                    "gene_rule": {
+                        "deter": "",
+                        "target": [
+                            [
+                                "summary_clarify"
+                            ]
+                        ]
+                    },
+                    "evidence_id": "ev_002"
+                }
+            ],
+            "note": "以下为file型标准结构"
+        },
+        {
+            "anchor_id": "anchor_file_003",
+            "anchor_information": {
+                "type": "file",
+                "level1": {
+                    "file_path": "out/operator_storage/abs/base/op_kernel/abs_struct.h",
+                    "file_name": "abs_struct.h"
+                },
+                "level2": {
+                    "code_map": {
+                        "nodes": [
+                            "AbsNs",
+                            "AbsTilingData"
+                        ],
+                        "edges": []
+                    },
+                    "token_hash": "/**\n * Copyright (c) 2025 Huawei Technologies Co., Ltd.\n * This program is free software, you can redistribute it and/or modify it under the terms and conditions of\n * CANN Open Software License Agreement Version 2.0 (the \"License\").\n * Please refer to the License for details. You may not use this file except in compliance with the License.\n * THIS SOFTWARE IS PROVIDED ON AN \"AS IS\" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,\n * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.\n * See LICENSE in the root of the software repository for the full text of the License.\n */\n\n/* !\n * \\file abs_struct.h\n * \\brief\n */\n\n#ifndef ABS_STRUCT_H\n#define ABS_STRUCT_H\n\n#include \"atvoss/elewise/elewise_base_struct.h\"\n\nnamespace AbsNs {\nusing namespace Ops::Base;\nstruct AbsTilingData {\n    EleBaseTilingData baseTiling;\n};\n\n} // namespace AbsNs\n#endif // ABS_STRUCT_H",
+                    "file_功能": "定义Abs算子内核层专用的Tiling数据结构，用于在Host与Device间传递分块计算参数。该结构继承自Elementwise基础Tiling类，为Abs算子的并行切分策略提供数据载体支撑。"
+                },
+                "level3": {
+                    "tree_id": "abs/base（## Abs算子基础实现目录，封装API接口、主机逻辑、图元数据、分块策略、内核计算及测试用例等核心模块）\n├── abs/base/op_api（## Abs算子API层实现目录，提供ACLNN接口定义、参数校验、数据类型适配及主机端调度入口）\n│   ├── aclnn_abs.cpp 实现Ascend NPU上Abs算子的ACLNN API层逻辑，负责参数校验、数据类型适配、内存布局处理及计算任务编排。\n│   ├── aclnn_abs.h 定义aclnnAbs算子的Level2 API头文件，提供获取Workspace大小和执行绝对值计算的两段式接口声明，支持多种数据类型及非连续Tensor。\n│   ├── abs.h 该文件是Abs算子Level 0 API的头文件，定义了面向底层执行器的绝对值计算接口声明，作为算子框架中Host侧调用Kernel的入口抽象层。\n│   └── abs.cpp 实现Abs算子的主机端调度逻辑，包括输出张量分配、形状推导、数据类型校验及根据芯片架构动态选择AiCore或AiCPU执行路径。\n├── abs/base/op_graph（## Abs算子图引擎注册目录，定义GE原型信息、输入输出接口及框架兼容性元数据）\n│   └── abs_proto.h 定义Abs算子在GE图引擎中的原型注册信息，声明算子的输入输出接口、支持的数据类型及框架兼容性，是算子接入计算图的基础元数据描述文件。\n├── abs/base/op_host（## Abs算子主机端通用逻辑目录，包含元数据定义、形状推导及特定架构Tiling策略实现）\n│   ├── abs_def.cpp 定义Abs算子的元数据规范，注册输入输出张量的数据类型、格式约束及AI Core硬件执行配置，是算子在框架中识别与调度的基础声明文件。\n│   └── abs_infershape.cpp 实现Abs算子的形状与数据类型推导逻辑。\n│   └── abs/base/op_host/arch35（## Abs算子Arch35架构主机端Tiling策略目录，负责分块参数生成与硬件资源适配）\n│   │   ├── abs_tiling_arch35.h 该文件定义了Arch35架构下Abs算子的Tiling策略头文件，负责声明主机端分块计算所需的数据结构与接口，用于指导内核按硬件资源进行任务切分。\n│   │   └── abs_tiling_arch35.cpp 该文件负责Ascend Arch35架构下Abs算子的Tiling策略生成。\n├── abs/base/op_kernel（## Abs算子设备端Kernel实现目录，包含Tiling数据结构、Kernel入口函数及DAG计算逻辑）\n│   ├── abs_apt.cpp 实现Abs算子在AI Core上的底层计算逻辑，作为设备端Kernel入口函数。\n│   └── abs_struct.h 定义Abs算子内核层专用的Tiling数据结构，用于在Host与Device间传递分块计算参数。\n│   └── abs/base/op_kernel/arch35（## Abs算子Arch35架构设备端Kernel目录，实现DAG计算流水线及复数高精度运算逻辑）\n│   │   ├── abs_dag.h 定义Abs算子在Arch35架构下的设备端DAG（有向无环图）计算流水线，通过模板化数据流编排实现绝对值运算的自动化调度与内存管理。\n│   │   └── abs_complex_dag.h 实现复数绝对值算子的AI Core底层DAG计算逻辑。\n└── abs/base/tests（## Abs算子单元测试总目录，覆盖API校验、形状推导及Tiling策略等功能的验证代码）\n    └── abs/base/tests/ut（## Abs算子单元测试集合目录，集中管理API、形状推导及Tiling策略的GTest验证代码）\n        ├── abs/base/tests/ut/op_api（## Abs算子API层单元测试目录，验证ACLNN接口的参数校验与Workspace获取功能）\n        │   └── test_aclnn_abs.cpp 该文件是Abs算子API层的单元测试代码，基于GTest框架验证`aclnnAbs`接口的参数校验逻辑。\n        └── abs/base/tests/ut/op_host（## Abs算子主机端逻辑单元测试目录，验证形状推导及Tiling策略在不同场景下的正确性）\n        │   └── test_abs_infershape.cpp 该文件是Abs算子形状推导（Infershape）功能的单元测试代码。\n            └── abs/base/tests/ut/op_host/arch35（## Abs算子Arch35架构Tiling策略单元测试目录，验证分块参数生成的正确性与异常处理）\n            │   └── test_abs_tiling_arch35.cpp 该文件是Abs算子在Arch35架构下的Tiling策略单元测试，用于验证不同数据类型（FP16/32、INT8/16/32/64、BF16及复数类型）的切分参数生成正确性，并覆盖输入输出类型不匹配、空Tensor等异常场景。"
+                }
+            },
+            "evidence": [
+                {
+                    "evidence_information": {
+                        "file_path": "out/operator_storage/abs/base/op_kernel/abs_struct.h",
+                        "file_name": "abs_struct.h",
+                        "file_功能": "定义Abs算子内核层专用的Tiling数据结构，用于在Host与Device间传递分块计算参数。该结构继承自Elementwise基础Tiling类，为Abs算子的并行切分策略提供数据载体支撑。",
+                        "file_content": "/**\n * Copyright (c) 2025 Huawei Technologies Co., Ltd.\n * This program is free software, you can redistribute it and/or modify it under the terms and conditions of\n * CANN Open Software License Agreement Version 2.0 (the \"License\").\n * Please refer to the License for details. You may not use this file except in compliance with the License.\n * THIS SOFTWARE IS PROVIDED ON AN \"AS IS\" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,\n * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.\n * See LICENSE in the root of the software repository for the full text of the License.\n */\n\n/* !\n * \\file abs_struct.h\n * \\brief\n */\n\n#ifndef ABS_STRUCT_H\n#define ABS_STRUCT_H\n\n#include \"atvoss/elewise/elewise_base_struct.h\"\n\nnamespace AbsNs {\nusing namespace Ops::Base;\nstruct AbsTilingData {\n    EleBaseTilingData baseTiling;\n};\n\n} // namespace AbsNs\n#endif // ABS_STRUCT_H"
+                    },
+                    "gene_rule": {
+                        "deter": "",
+                        "target": [
+                            [
+                                "summary_formula"
+                            ]
+                        ]
+                    },
+                    "evidence_id": "ev_003"
+                }
+            ],
+            "note": "以下为file型标准结构"
+        },
+        {
+            "anchor_id": "anchor_file_004",
+            "anchor_information": {
+                "type": "file",
+                "level1": {
+                    "file_path": "out/operator_storage/abs/base/op_kernel/abs_apt.cpp",
+                    "file_name": "abs_apt.cpp"
+                },
+                "level2": {
+                    "code_map": {
+                        "nodes": [
+                            "abs"
+                        ],
+                        "edges": []
+                    },
+                    "token_hash": "/**\n * Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.\n * This program is free software, you can redistribute it and/or modify it under the terms and conditions of\n * CANN Open Software License Agreement Version 2.0 (the \"License\").\n * Please refer to the License for details. You may not use this file except in compliance with the License.\n * THIS SOFTWARE IS PROVIDED ON AN \"AS IS\" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,\n * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.\n * See LICENSE in the root of the software repository for the full text of the License.\n */\n\n/* !\n * \\file abs.cpp\n * \\brief y =|x|\n */\n#include \"kernel_operator.h\"\n#include \"kernel_tiling/kernel_tiling.h\"\n#include \"arch35/abs_dag.h\"\n#include \"arch35/abs_complex_dag.h\"\n#include \"atvoss/elewise/elewise_sch.h\"\n#include \"abs_struct.h\"\n\nusing namespace AscendC;\nusing namespace AbsNs;\nusing namespace AbsOp;\n\nextern \"C\" __global__ __aicore__ void abs(GM_ADDR x, GM_ADDR y, GM_ADDR workspace, GM_ADDR tiling)\n{\n    KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AIV_ONLY);\n    REGISTER_TILING_DEFAULT(AbsTilingData);\n    GET_TILING_DATA_WITH_STRUCT(AbsTilingData, tilingData, tiling);\n\n    TPipe pipe;\n    if (TILING_KEY_IS(101UL)) {\n        ElementwiseSch<0UL, AbsDag<bfloat16_t, float>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n        sch.Init(x, y);\n        sch.Process();\n    } else if (TILING_KEY_IS(102UL)) {\n        if constexpr (std::is_same<DTYPE_X, half>::value) {\n            ElementwiseSch<0UL, AbsDag<half, half>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n            sch.Init(x, y);\n            sch.Process();\n        } else if constexpr (std::is_same<DTYPE_X, float>::value) {\n            ElementwiseSch<0UL, AbsDag<float, float>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n            sch.Init(x, y);\n            sch.Process();\n        } else if constexpr (std::is_same<DTYPE_X, int8_t>::value) {\n            ElementwiseSch<0UL, AbsDag<int8_t, int8_t>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n            sch.Init(x, y);\n            sch.Process();\n        } else if constexpr (std::is_same<DTYPE_X, int16_t>::value) {\n            ElementwiseSch<0UL, AbsDag<int16_t, int16_t>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n            sch.Init(x, y);\n            sch.Process();\n        } else if constexpr (std::is_same<DTYPE_X, int32_t>::value) {\n            ElementwiseSch<0UL, AbsDag<int32_t, int32_t>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n            sch.Init(x, y);\n            sch.Process();\n        } else if constexpr (std::is_same<DTYPE_X, int64_t>::value) {\n            ElementwiseSch<0UL, AbsDag<int64_t, int64_t>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n            sch.Init(x, y);\n            sch.Process();\n        }\n    } else if (TILING_KEY_IS(103UL)) {\n        if constexpr (std::is_same<DTYPE_X, complex64>::value) {\n            ElementwiseSch<0UL, AbscomplexDag<complex64, float>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n            sch.Init(x, y);\n            sch.Process();\n        } else if constexpr (std::is_same<DTYPE_X, complex32>::value) {\n            ElementwiseSch<0UL, AbscomplexDag<complex32, half>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n            sch.Init(x, y);\n            sch.Process();\n        }\n    }\n    return;\n}",
+                    "file_功能": "实现Abs算子在AI Core上的底层计算逻辑，作为设备端Kernel入口函数。通过解析Tiling数据和类型键值，调度不同数据类型的Elementwise计算流程，支持实数及复数的绝对值运算。"
+                },
+                "level3": {
+                    "tree_id": "abs/base（## Abs算子基础实现目录，封装API接口、主机逻辑、图元数据、分块策略、内核计算及测试用例等核心模块）\n├── abs/base/op_api（## Abs算子API层实现目录，提供ACLNN接口定义、参数校验、数据类型适配及主机端调度入口）\n│   ├── aclnn_abs.cpp 实现Ascend NPU上Abs算子的ACLNN API层逻辑，负责参数校验、数据类型适配、内存布局处理及计算任务编排。\n│   ├── aclnn_abs.h 定义aclnnAbs算子的Level2 API头文件，提供获取Workspace大小和执行绝对值计算的两段式接口声明，支持多种数据类型及非连续Tensor。\n│   ├── abs.h 该文件是Abs算子Level 0 API的头文件，定义了面向底层执行器的绝对值计算接口声明，作为算子框架中Host侧调用Kernel的入口抽象层。\n│   └── abs.cpp 实现Abs算子的主机端调度逻辑，包括输出张量分配、形状推导、数据类型校验及根据芯片架构动态选择AiCore或AiCPU执行路径。\n├── abs/base/op_graph（## Abs算子图引擎注册目录，定义GE原型信息、输入输出接口及框架兼容性元数据）\n│   └── abs_proto.h 定义Abs算子在GE图引擎中的原型注册信息，声明算子的输入输出接口、支持的数据类型及框架兼容性，是算子接入计算图的基础元数据描述文件。\n├── abs/base/op_host（## Abs算子主机端通用逻辑目录，包含元数据定义、形状推导及特定架构Tiling策略实现）\n│   ├── abs_def.cpp 定义Abs算子的元数据规范，注册输入输出张量的数据类型、格式约束及AI Core硬件执行配置，是算子在框架中识别与调度的基础声明文件。\n│   └── abs_infershape.cpp 实现Abs算子的形状与数据类型推导逻辑。\n│   └── abs/base/op_host/arch35（## Abs算子Arch35架构主机端Tiling策略目录，负责分块参数生成与硬件资源适配）\n│   │   ├── abs_tiling_arch35.h 该文件定义了Arch35架构下Abs算子的Tiling策略头文件，负责声明主机端分块计算所需的数据结构与接口，用于指导内核按硬件资源进行任务切分。\n│   │   └── abs_tiling_arch35.cpp 该文件负责Ascend Arch35架构下Abs算子的Tiling策略生成。\n├── abs/base/op_kernel（## Abs算子设备端Kernel实现目录，包含Tiling数据结构、Kernel入口函数及DAG计算逻辑）\n│   ├── abs_apt.cpp 实现Abs算子在AI Core上的底层计算逻辑，作为设备端Kernel入口函数。\n│   └── abs_struct.h 定义Abs算子内核层专用的Tiling数据结构，用于在Host与Device间传递分块计算参数。\n│   └── abs/base/op_kernel/arch35（## Abs算子Arch35架构设备端Kernel目录，实现DAG计算流水线及复数高精度运算逻辑）\n│   │   ├── abs_dag.h 定义Abs算子在Arch35架构下的设备端DAG（有向无环图）计算流水线，通过模板化数据流编排实现绝对值运算的自动化调度与内存管理。\n│   │   └── abs_complex_dag.h 实现复数绝对值算子的AI Core底层DAG计算逻辑。\n└── abs/base/tests（## Abs算子单元测试总目录，覆盖API校验、形状推导及Tiling策略等功能的验证代码）\n    └── abs/base/tests/ut（## Abs算子单元测试集合目录，集中管理API、形状推导及Tiling策略的GTest验证代码）\n        ├── abs/base/tests/ut/op_api（## Abs算子API层单元测试目录，验证ACLNN接口的参数校验与Workspace获取功能）\n        │   └── test_aclnn_abs.cpp 该文件是Abs算子API层的单元测试代码，基于GTest框架验证`aclnnAbs`接口的参数校验逻辑。\n        └── abs/base/tests/ut/op_host（## Abs算子主机端逻辑单元测试目录，验证形状推导及Tiling策略在不同场景下的正确性）\n        │   └── test_abs_infershape.cpp 该文件是Abs算子形状推导（Infershape）功能的单元测试代码。\n            └── abs/base/tests/ut/op_host/arch35（## Abs算子Arch35架构Tiling策略单元测试目录，验证分块参数生成的正确性与异常处理）\n            │   └── test_abs_tiling_arch35.cpp 该文件是Abs算子在Arch35架构下的Tiling策略单元测试，用于验证不同数据类型（FP16/32、INT8/16/32/64、BF16及复数类型）的切分参数生成正确性，并覆盖输入输出类型不匹配、空Tensor等异常场景。"
+                }
+            },
+            "evidence": [
+                {
+                    "evidence_information": {
+                        "file_path": "out/operator_storage/abs/base/op_kernel/abs_apt.cpp",
+                        "file_name": "abs_apt.cpp",
+                        "file_功能": "实现Abs算子在AI Core上的底层计算逻辑，作为设备端Kernel入口函数。通过解析Tiling数据和类型键值，调度不同数据类型的Elementwise计算流程，支持实数及复数的绝对值运算。",
+                        "file_content": "/**\n * Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.\n * This program is free software, you can redistribute it and/or modify it under the terms and conditions of\n * CANN Open Software License Agreement Version 2.0 (the \"License\").\n * Please refer to the License for details. You may not use this file except in compliance with the License.\n * THIS SOFTWARE IS PROVIDED ON AN \"AS IS\" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,\n * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.\n * See LICENSE in the root of the software repository for the full text of the License.\n */\n\n/* !\n * \\file abs.cpp\n * \\brief y =|x|\n */\n#include \"kernel_operator.h\"\n#include \"kernel_tiling/kernel_tiling.h\"\n#include \"arch35/abs_dag.h\"\n#include \"arch35/abs_complex_dag.h\"\n#include \"atvoss/elewise/elewise_sch.h\"\n#include \"abs_struct.h\"\n\nusing namespace AscendC;\nusing namespace AbsNs;\nusing namespace AbsOp;\n\nextern \"C\" __global__ __aicore__ void abs(GM_ADDR x, GM_ADDR y, GM_ADDR workspace, GM_ADDR tiling)\n{\n    KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AIV_ONLY);\n    REGISTER_TILING_DEFAULT(AbsTilingData);\n    GET_TILING_DATA_WITH_STRUCT(AbsTilingData, tilingData, tiling);\n\n    TPipe pipe;\n    if (TILING_KEY_IS(101UL)) {\n        ElementwiseSch<0UL, AbsDag<bfloat16_t, float>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n        sch.Init(x, y);\n        sch.Process();\n    } else if (TILING_KEY_IS(102UL)) {\n        if constexpr (std::is_same<DTYPE_X, half>::value) {\n            ElementwiseSch<0UL, AbsDag<half, half>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n            sch.Init(x, y);\n            sch.Process();\n        } else if constexpr (std::is_same<DTYPE_X, float>::value) {\n            ElementwiseSch<0UL, AbsDag<float, float>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n            sch.Init(x, y);\n            sch.Process();\n        } else if constexpr (std::is_same<DTYPE_X, int8_t>::value) {\n            ElementwiseSch<0UL, AbsDag<int8_t, int8_t>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n            sch.Init(x, y);\n            sch.Process();\n        } else if constexpr (std::is_same<DTYPE_X, int16_t>::value) {\n            ElementwiseSch<0UL, AbsDag<int16_t, int16_t>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n            sch.Init(x, y);\n            sch.Process();\n        } else if constexpr (std::is_same<DTYPE_X, int32_t>::value) {\n            ElementwiseSch<0UL, AbsDag<int32_t, int32_t>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n            sch.Init(x, y);\n            sch.Process();\n        } else if constexpr (std::is_same<DTYPE_X, int64_t>::value) {\n            ElementwiseSch<0UL, AbsDag<int64_t, int64_t>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n            sch.Init(x, y);\n            sch.Process();\n        }\n    } else if (TILING_KEY_IS(103UL)) {\n        if constexpr (std::is_same<DTYPE_X, complex64>::value) {\n            ElementwiseSch<0UL, AbscomplexDag<complex64, float>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n            sch.Init(x, y);\n            sch.Process();\n        } else if constexpr (std::is_same<DTYPE_X, complex32>::value) {\n            ElementwiseSch<0UL, AbscomplexDag<complex32, half>::OpDag> sch(&(tilingData.baseTiling), &pipe);\n            sch.Init(x, y);\n            sch.Process();\n        }\n    }\n    return;\n}"
+                    },
+                    "gene_rule": {
+                        "deter": "",
+                        "target": [
+                            [
+                                "summary_formula"
+                            ]
+                        ]
+                    },
+                    "evidence_id": "ev_004"
+                }
+            ],
+            "note": "以下为file型标准结构"
+        },
+        {
+            "anchor_id": "anchor_file_005",
+            "anchor_information": {
+                "type": "file",
+                "level1": {
+                    "file_path": "out/operator_storage/abs/base/op_kernel/arch35/abs_complex_dag.h",
+                    "file_name": "abs_complex_dag.h"
+                },
+                "level2": {
+                    "code_map": {
+                        "nodes": [
+                            "AbsOp",
+                            "AbsComplexVf"
+                        ],
+                        "edges": []
+                    },
+                    "token_hash": "/**\n * Copyright (c) 2026 Huawei Technologies Co., Ltd.\n * This program is free software, you can redistribute it and/or modify it under the terms and conditions of\n * CANN Open Software License Agreement Version 2.0 (the \"License\").\n * Please refer to the License for details. You may not use this file except in compliance with the License.\n * THIS SOFTWARE IS PROVIDED ON AN \"AS IS\" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,\n * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.\n * See LICENSE in the root of the software repository for the full text of the License.\n */\n\n/* !\n * \\file abs_dag_complex.h\n * \\brief\n */\n\n#ifndef CANN_CUSTOM_OPS_ABS_DAG_COMPLEX_H\n#define CANN_CUSTOM_OPS_ABS_DAG_COMPLEX_H\n#include \"atvoss/util/dag.h\"\n#include \"atvoss/util/vec.h\"\n#include \"atvoss/util/placeholder.h\"\n#include \"atvoss/util/elems.h\"\n\nnamespace AbsOp {\nusing namespace AscendC;\nusing namespace Ops::Base;\n\nnamespace AbsComplexVf {\n\ntemplate <class T, class U>\nstruct AbscomplexCustom : public Vec::ElemwiseUnaryOP<T, U> {\n    __aicore__ inline AbscomplexCustom(LocalTensor<T>& dst, LocalTensor<U>& src, uint32_t count)\n    {\n#ifdef __CCE_AICORE__\n\n        // 常量定义 - float精度\n        constexpr uint32_t MIN_NORMAL_FLOAT = 0x00800000u;\n        constexpr float SCALE_UP = 16777216.0f;\n        constexpr float SCALE_DOWN = 5.9604644775390625e-8f;\n        constexpr int16_t SHR_NUM_FOR_FP32 = 23;\n        constexpr uint32_t EXP_BIAS = 0x3F800000u;      // 1.0的浮点表示(指数127，尾数0)\n\n        using calcTypeInt = typename std::conditional<AscendC::Std::IsSame<T, half>::value, uint16_t, uint32_t>::type;\n\n        // 寄存器定义\n        MicroAPI::RegTensor<T> vSrcReg0;\n        MicroAPI::RegTensor<T> vSrcReg1;\n        MicroAPI::RegTensor<float, MicroAPI::RegTraitNumOne> vA;\n        MicroAPI::RegTensor<float, MicroAPI::RegTraitNumOne> vB;\n        MicroAPI::RegTensor<uint32_t, MicroAPI::RegTraitNumOne> vA0;\n        MicroAPI::RegTensor<float, MicroAPI::RegTraitNumOne> vA1;\n        MicroAPI::RegTensor<float, MicroAPI::RegTraitNumOne> vB1;\n        MicroAPI::RegTensor<float, MicroAPI::RegTraitNumOne> vAS;\n        MicroAPI::RegTensor<float, MicroAPI::RegTraitNumOne> vBS;\n        MicroAPI::RegTensor<float, MicroAPI::RegTraitNumOne> vA1Sq;\n        MicroAPI::RegTensor<float, MicroAPI::RegTraitNumOne> vB1Sq;\n        MicroAPI::RegTensor<float, MicroAPI::RegTraitNumOne> vSumSq;\n        MicroAPI::RegTensor<float, MicroAPI::RegTraitNumOne> vS;\n        MicroAPI::RegTensor<T, MicroAPI::RegTraitNumOne> vResult;\n        MicroAPI::RegTensor<float, MicroAPI::RegTraitNumOne> vResultS;\n\n        MicroAPI::RegTensor<float, MicroAPI::RegTraitNumOne> vAbsSrcReg0;\n        MicroAPI::RegTensor<float, MicroAPI::RegTraitNumOne> vAbsSrcReg1;\n\n        MicroAPI::RegTensor<uint32_t, MicroAPI::RegTraitNumOne> vMinNormalFloat;\n        MicroAPI::RegTensor<uint32_t, MicroAPI::RegTraitNumOne> vExpBias;\n        MicroAPI::RegTensor<uint32_t, MicroAPI::RegTraitNumOne> vZero;\n        MicroAPI::RegTensor<float, MicroAPI::RegTraitNumOne> vSCALE_UP;\n        MicroAPI::RegTensor<float, MicroAPI::RegTraitNumOne> vSCALE_DOWN;\n\n        uint32_t sreg = (uint32_t)count;\n        MicroAPI::MaskReg preg;\n        MicroAPI::MaskReg preg2;\n        MicroAPI::MaskReg preg3;\n        MicroAPI::MaskReg preg4;\n        constexpr uint32_t vflen = AscendC::VECTOR_REG_WIDTH / sizeof(float);\n        constexpr uint32_t ub = AscendC::VECTOR_REG_WIDTH / AscendC::ONE_BLOCK_SIZE;\n\n        static constexpr uint32_t repeatStride = static_cast<uint32_t>(VECTOR_REG_WIDTH / sizeof(U));\n        uint16_t repeatTime = static_cast<uint16_t>(CeilDivision(count, repeatStride));\n        __ubuf__ T* srcAddr = (__ubuf__ T*)(src.GetPhyAddr());\n        __ubuf__ T* dstAddr = (__ubuf__ T*)(dst.GetPhyAddr());\n        __VEC_SCOPE__\n        {\n            // 加载常量\n            MicroAPI::Duplicate(vMinNormalFloat, MIN_NORMAL_FLOAT);\n            MicroAPI::Duplicate(vExpBias, EXP_BIAS);\n            MicroAPI::Duplicate(vSCALE_UP, SCALE_UP);\n            MicroAPI::Duplicate(vSCALE_DOWN, SCALE_DOWN);\n            MicroAPI::Duplicate(vZero, 0);\n\n            static constexpr AscendC::MicroAPI::CastTrait castTraitZero = {\n                AscendC::MicroAPI::RegLayout::ZERO, AscendC::MicroAPI::SatMode::UNKNOWN,\n                AscendC::MicroAPI::MaskMergeMode::ZEROING, RoundMode::UNKNOWN};\n            static constexpr AscendC::MicroAPI::CastTrait castTraitOne = {\n                AscendC::MicroAPI::RegLayout::ONE, AscendC::MicroAPI::SatMode::UNKNOWN,\n                AscendC::MicroAPI::MaskMergeMode::ZEROING, RoundMode::UNKNOWN};\n            static constexpr AscendC::MicroAPI::CastTrait castTrait32to16 = {\n                AscendC::MicroAPI::RegLayout::ZERO, AscendC::MicroAPI::SatMode::SAT,\n                AscendC::MicroAPI::MaskMergeMode::ZEROING, RoundMode::CAST_RINT};\n\n            for (uint16_t i = 0; i < repeatTime; i++) {\n                preg = MicroAPI::UpdateMask<float, MicroAPI::RegTraitNumOne>(sreg);\n                if constexpr (std::is_same<U, complex32>::value) {\n                    preg2 = AscendC::Reg::CreateMask<uint16_t, AscendC::Reg::MaskPattern::ALL>();\n                    Reg::LoadAlign(vSrcReg0, srcAddr + i * vflen * 2);\n                    Reg::Cast<float, T, castTraitZero>(vA, vSrcReg0, preg2);\n                    Reg::Cast<float, T, castTraitOne>(vB, vSrcReg0, preg2);\n                    Reg::Mul(vA1Sq, vA, vA, preg);\n                    Reg::Mul(vB1Sq, vB, vB, preg);\n                    Reg::Add(vSumSq, vA1Sq, vB1Sq, preg);\n                    Reg::Sqrt(vS, vSumSq, preg);\n                    Reg::Cast<T, float, castTrait32to16>(vResult, vS, preg);\n                    Reg::StoreAlign<T, Reg::StoreDist::DIST_PACK_B32>(dstAddr + i * vflen, vResult, preg);\n                } else {\n                    Reg::LoadAlign<T, Reg::LoadDist::DIST_DINTLV_B32>(vSrcReg0, vSrcReg1, srcAddr + i * vflen * 2);\n                    Reg::Abs(vAbsSrcReg0, vSrcReg0, preg);\n                    Reg::Abs(vAbsSrcReg1, vSrcReg1, preg);\n                    Reg::Compare<float, CMPMODE::GT>(preg2, vAbsSrcReg1, vAbsSrcReg0, preg);\n                    Reg::Select<float>(vA, vAbsSrcReg1, vAbsSrcReg0, preg2);\n                    Reg::Select<float>(vB, vAbsSrcReg0, vAbsSrcReg1, preg2);\n\n                    // 0的处理\n                    Reg::Compare<uint32_t, CMPMODE::EQ>(\n                        preg4, (AscendC::MicroAPI::RegTensor<uint32_t>&)vB, vZero, preg);\n\n                    // subnormal处理\n                    Reg::Compare<uint32_t, CMPMODE::LT>(\n                        preg3, (AscendC::MicroAPI::RegTensor<uint32_t>&)vA, vMinNormalFloat, preg);\n                    Reg::Mul(vAS, vA, vSCALE_UP, preg);\n                    Reg::Mul(vBS, vB, vSCALE_UP, preg);\n                    Reg::Select(vA, vAS, vA, preg3);\n                    Reg::Select(vB, vBS, vB, preg3);\n                    // 提取A的指数因子（对vAForExp操作）\n                    Reg::ShiftRights(vA0, (AscendC::Reg::RegTensor<uint32_t>&)vA, SHR_NUM_FOR_FP32, preg);\n                    Reg::ShiftLefts(vA0, vA0, SHR_NUM_FOR_FP32, preg);\n                    Reg::Sub((AscendC::Reg::RegTensor<uint32_t>&)vA1, (AscendC::Reg::RegTensor<uint32_t>&)vA, vA0, preg);\n                    Reg::Sub((AscendC::Reg::RegTensor<uint32_t>&)vB1, (AscendC::Reg::RegTensor<uint32_t>&)vB, vA0, preg);\n\n                    Reg::Add((AscendC::Reg::RegTensor<uint32_t>&)vA1, (AscendC::Reg::RegTensor<uint32_t>&)vA1, vExpBias, preg);\n                    Reg::Add((AscendC::Reg::RegTensor<uint32_t>&)vB1, (AscendC::Reg::RegTensor<uint32_t>&)vB1, vExpBias, preg);\n\n                    // 计算归化值\n                    Reg::Mul(vA1Sq, vA1, vA1, preg);\n                    Reg::Mul(vB1Sq, vB1, vB1, preg);\n                    Reg::Add(vSumSq, vA1Sq, vB1Sq, preg);\n                    Reg::Sqrt(vS, vSumSq, preg);\n\n                    Reg::Mul(vResult, vS, (AscendC::Reg::RegTensor<float>&)vA0, preg);\n                    Reg::Mul(vResultS, vResult, vSCALE_DOWN, preg);\n                    Reg::Select(vResult, vResultS, vResult, preg3);\n\n                    // 0的处理\n                    Reg::Select(vResult, vA, vResult, preg4);\n\n                    MicroAPI::StoreAlign(dstAddr + i * vflen, vResult, preg);\n                }\n            }\n        }\n#endif\n    }\n};\n} // namespace AbsComplexVf\n\ntemplate <typename U, typename T = float>\nstruct AbscomplexDag {\n    using OpCopyIn0 = Bind<Vec::CopyIn<U>, Placeholder::In0<U>>;\n    using OpResult = Bind<AbsComplexVf::AbscomplexCustom<T, U>, OpCopyIn0>;\n    using OpCopyOut = Bind<Vec::CopyOut<T>, Placeholder::Out0<T>, OpResult>;\n\n    using Outputs = Elems<OpCopyOut>;\n    using MemCfg = MemOptCfg<MemLevel::LEVEL_2>;\n    using OpDag = DAGSch<Outputs, void, MemCfg>;\n};\n} // namespace AbsOp\n#endif // CANN_CUSTOM_OPS_ABS_COMPLEX_DAG_H",
+                    "file_功能": "实现复数绝对值算子的AI Core底层DAG计算逻辑。针对complex32和complex64类型，通过手动管理向量寄存器与掩码，执行高精度的模长计算（sqrt(a²+b²)），并包含次正规数防溢出处理及零值保护机制。"
+                },
+                "level3": {
+                    "tree_id": "abs/base（## Abs算子基础实现目录，封装API接口、主机逻辑、图元数据、分块策略、内核计算及测试用例等核心模块）\n├── abs/base/op_api（## Abs算子API层实现目录，提供ACLNN接口定义、参数校验、数据类型适配及主机端调度入口）\n│   ├── aclnn_abs.cpp 实现Ascend NPU上Abs算子的ACLNN API层逻辑，负责参数校验、数据类型适配、内存布局处理及计算任务编排。\n│   ├── aclnn_abs.h 定义aclnnAbs算子的Level2 API头文件，提供获取Workspace大小和执行绝对值计算的两段式接口声明，支持多种数据类型及非连续Tensor。\n│   ├── abs.h 该文件是Abs算子Level 0 API的头文件，定义了面向底层执行器的绝对值计算接口声明，作为算子框架中Host侧调用Kernel的入口抽象层。\n│   └── abs.cpp 实现Abs算子的主机端调度逻辑，包括输出张量分配、形状推导、数据类型校验及根据芯片架构动态选择AiCore或AiCPU执行路径。\n├── abs/base/op_graph（## Abs算子图引擎注册目录，定义GE原型信息、输入输出接口及框架兼容性元数据）\n│   └── abs_proto.h 定义Abs算子在GE图引擎中的原型注册信息，声明算子的输入输出接口、支持的数据类型及框架兼容性，是算子接入计算图的基础元数据描述文件。\n├── abs/base/op_host（## Abs算子主机端通用逻辑目录，包含元数据定义、形状推导及特定架构Tiling策略实现）\n│   ├── abs_def.cpp 定义Abs算子的元数据规范，注册输入输出张量的数据类型、格式约束及AI Core硬件执行配置，是算子在框架中识别与调度的基础声明文件。\n│   └── abs_infershape.cpp 实现Abs算子的形状与数据类型推导逻辑。\n│   └── abs/base/op_host/arch35（## Abs算子Arch35架构主机端Tiling策略目录，负责分块参数生成与硬件资源适配）\n│   │   ├── abs_tiling_arch35.h 该文件定义了Arch35架构下Abs算子的Tiling策略头文件，负责声明主机端分块计算所需的数据结构与接口，用于指导内核按硬件资源进行任务切分。\n│   │   └── abs_tiling_arch35.cpp 该文件负责Ascend Arch35架构下Abs算子的Tiling策略生成。\n├── abs/base/op_kernel（## Abs算子设备端Kernel实现目录，包含Tiling数据结构、Kernel入口函数及DAG计算逻辑）\n│   ├── abs_apt.cpp 实现Abs算子在AI Core上的底层计算逻辑，作为设备端Kernel入口函数。\n│   └── abs_struct.h 定义Abs算子内核层专用的Tiling数据结构，用于在Host与Device间传递分块计算参数。\n│   └── abs/base/op_kernel/arch35（## Abs算子Arch35架构设备端Kernel目录，实现DAG计算流水线及复数高精度运算逻辑）\n│   │   ├── abs_dag.h 定义Abs算子在Arch35架构下的设备端DAG（有向无环图）计算流水线，通过模板化数据流编排实现绝对值运算的自动化调度与内存管理。\n│   │   └── abs_complex_dag.h 实现复数绝对值算子的AI Core底层DAG计算逻辑。\n└── abs/base/tests（## Abs算子单元测试总目录，覆盖API校验、形状推导及Tiling策略等功能的验证代码）\n    └── abs/base/tests/ut（## Abs算子单元测试集合目录，集中管理API、形状推导及Tiling策略的GTest验证代码）\n        ├── abs/base/tests/ut/op_api（## Abs算子API层单元测试目录，验证ACLNN接口的参数校验与Workspace获取功能）\n        │   └── test_aclnn_abs.cpp 该文件是Abs算子API层的单元测试代码，基于GTest框架验证`aclnnAbs`接口的参数校验逻辑。\n        └── abs/base/tests/ut/op_host（## Abs算子主机端逻辑单元测试目录，验证形状推导及Tiling策略在不同场景下的正确性）\n        │   └── test_abs_infershape.cpp 该文件是Abs算子形状推导（Infershape）功能的单元测试代码。\n            └── abs/base/tests/ut/op_host/arch35（## Abs算子Arch35架构Tiling策略单元测试目录，验证分块参数生成的正确性与异常处理）\n            │   └── test_abs_tiling_arch35.cpp 该文件是Abs算子在Arch35架构下的Tiling策略单元测试，用于验证不同数据类型（FP16/32、INT8/16/32/64、BF16及复数类型）的切分参数生成正确性，并覆盖输入输出类型不匹配、空Tensor等异常场景。"
+                }
+            },
+            "evidence": [
+                {
+                    "evidence_information": {
+                        "file_path": "out/operator_storage/abs/base/op_kernel/arch35/abs_complex_dag.h",
+                        "file_name": "abs_complex_dag.h",
+                        "file_功能": "实现复数绝对值算子的AI Core底层DAG计算逻辑。针对complex32和complex64类型，通过手动管理向量寄存器与掩码，执行高精度的模长计算（sqrt(a²+b²)），并包含次正规数防溢出处理及零值保护机制。",
+                        "file_content": "/**\n * Copyright (c) 2026 Huawei Technologies Co., Ltd.\n * This program is free software, you can redistribute it and/or modify it under the terms and conditions of\n * CANN Open Software License Agreement Version 2.0 (the \"License\").\n * Please refer to the License for details. You may not use this file except in compliance with the License.\n * THIS SOFTWARE IS PROVIDED ON AN \"AS IS\" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,\n * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.\n * See LICENSE in the root of the software repository for the full text of the License.\n */\n\n/* !\n * \\file abs_dag_complex.h\n * \\brief\n */\n\n#ifndef CANN_CUSTOM_OPS_ABS_DAG_COMPLEX_H\n#define CANN_CUSTOM_OPS_ABS_DAG_COMPLEX_H\n#include \"atvoss/util/dag.h\"\n#include \"atvoss/util/vec.h\"\n#include \"atvoss/util/placeholder.h\"\n#include \"atvoss/util/elems.h\"\n\nnamespace AbsOp {\nusing namespace AscendC;\nusing namespace Ops::Base;\n\nnamespace AbsComplexVf {\n\ntemplate <class T, class U>\nstruct AbscomplexCustom : public Vec::ElemwiseUnaryOP<T, U> {\n    __aicore__ inline AbscomplexCustom(LocalTensor<T>& dst, LocalTensor<U>& src, uint32_t count)\n    {\n#ifdef __CCE_AICORE__\n\n        // 常量定义 - float精度\n        constexpr uint32_t MIN_NORMAL_FLOAT = 0x00800000u;\n        constexpr float SCALE_UP = 16777216.0f;\n        constexpr float SCALE_DOWN = 5.9604644775390625e-8f;\n        constexpr int16_t SHR_NUM_FOR_FP32 = 23;\n        constexpr uint32_t EXP_BIAS = 0x3F800000u;      // 1.0的浮点表示(指数127，尾数0)\n\n        using calcTypeInt = typename std::conditional<AscendC::Std::IsSame<T, half>::value, uint16_t, uint32_t>::type;\n\n        // 寄存器定义\n        MicroAPI::RegTensor<T> vSrcReg0;\n        MicroAPI::RegTensor<T> vSrcReg1;\n        MicroAPI::RegTensor<float, MicroAPI::RegTraitNumOne> vA;\n        MicroAPI::RegTensor<float, MicroAPI::RegTraitNumOne> vB;\n        MicroAPI::RegTensor<uint32_t, MicroAPI::RegTraitNumOne> vA0;\n        MicroAPI::RegTensor<float, MicroAPI::RegTraitNumOne> vA1;\n        MicroAPI::RegTensor<float, MicroAPI::RegTraitNumOne> vB1;\n        MicroAPI::RegTensor<float, MicroAPI::RegTraitNumOne> vAS;\n        MicroAPI::RegTensor<float, MicroAPI::RegTraitNumOne> vBS;\n        MicroAPI::RegTensor<float, MicroAPI::RegTraitNumOne> vA1Sq;\n        MicroAPI::RegTensor<float, MicroAPI::RegTraitNumOne> vB1Sq;\n        MicroAPI::RegTensor<float, MicroAPI::RegTraitNumOne> vSumSq;\n        MicroAPI::RegTensor<float, MicroAPI::RegTraitNumOne> vS;\n        MicroAPI::RegTensor<T, MicroAPI::RegTraitNumOne> vResult;\n        MicroAPI::RegTensor<float, MicroAPI::RegTraitNumOne> vResultS;\n\n        MicroAPI::RegTensor<float, MicroAPI::RegTraitNumOne> vAbsSrcReg0;\n        MicroAPI::RegTensor<float, MicroAPI::RegTraitNumOne> vAbsSrcReg1;\n\n        MicroAPI::RegTensor<uint32_t, MicroAPI::RegTraitNumOne> vMinNormalFloat;\n        MicroAPI::RegTensor<uint32_t, MicroAPI::RegTraitNumOne> vExpBias;\n        MicroAPI::RegTensor<uint32_t, MicroAPI::RegTraitNumOne> vZero;\n        MicroAPI::RegTensor<float, MicroAPI::RegTraitNumOne> vSCALE_UP;\n        MicroAPI::RegTensor<float, MicroAPI::RegTraitNumOne> vSCALE_DOWN;\n\n        uint32_t sreg = (uint32_t)count;\n        MicroAPI::MaskReg preg;\n        MicroAPI::MaskReg preg2;\n        MicroAPI::MaskReg preg3;\n        MicroAPI::MaskReg preg4;\n        constexpr uint32_t vflen = AscendC::VECTOR_REG_WIDTH / sizeof(float);\n        constexpr uint32_t ub = AscendC::VECTOR_REG_WIDTH / AscendC::ONE_BLOCK_SIZE;\n\n        static constexpr uint32_t repeatStride = static_cast<uint32_t>(VECTOR_REG_WIDTH / sizeof(U));\n        uint16_t repeatTime = static_cast<uint16_t>(CeilDivision(count, repeatStride));\n        __ubuf__ T* srcAddr = (__ubuf__ T*)(src.GetPhyAddr());\n        __ubuf__ T* dstAddr = (__ubuf__ T*)(dst.GetPhyAddr());\n        __VEC_SCOPE__\n        {\n            // 加载常量\n            MicroAPI::Duplicate(vMinNormalFloat, MIN_NORMAL_FLOAT);\n            MicroAPI::Duplicate(vExpBias, EXP_BIAS);\n            MicroAPI::Duplicate(vSCALE_UP, SCALE_UP);\n            MicroAPI::Duplicate(vSCALE_DOWN, SCALE_DOWN);\n            MicroAPI::Duplicate(vZero, 0);\n\n            static constexpr AscendC::MicroAPI::CastTrait castTraitZero = {\n                AscendC::MicroAPI::RegLayout::ZERO, AscendC::MicroAPI::SatMode::UNKNOWN,\n                AscendC::MicroAPI::MaskMergeMode::ZEROING, RoundMode::UNKNOWN};\n            static constexpr AscendC::MicroAPI::CastTrait castTraitOne = {\n                AscendC::MicroAPI::RegLayout::ONE, AscendC::MicroAPI::SatMode::UNKNOWN,\n                AscendC::MicroAPI::MaskMergeMode::ZEROING, RoundMode::UNKNOWN};\n            static constexpr AscendC::MicroAPI::CastTrait castTrait32to16 = {\n                AscendC::MicroAPI::RegLayout::ZERO, AscendC::MicroAPI::SatMode::SAT,\n                AscendC::MicroAPI::MaskMergeMode::ZEROING, RoundMode::CAST_RINT};\n\n            for (uint16_t i = 0; i < repeatTime; i++) {\n                preg = MicroAPI::UpdateMask<float, MicroAPI::RegTraitNumOne>(sreg);\n                if constexpr (std::is_same<U, complex32>::value) {\n                    preg2 = AscendC::Reg::CreateMask<uint16_t, AscendC::Reg::MaskPattern::ALL>();\n                    Reg::LoadAlign(vSrcReg0, srcAddr + i * vflen * 2);\n                    Reg::Cast<float, T, castTraitZero>(vA, vSrcReg0, preg2);\n                    Reg::Cast<float, T, castTraitOne>(vB, vSrcReg0, preg2);\n                    Reg::Mul(vA1Sq, vA, vA, preg);\n                    Reg::Mul(vB1Sq, vB, vB, preg);\n                    Reg::Add(vSumSq, vA1Sq, vB1Sq, preg);\n                    Reg::Sqrt(vS, vSumSq, preg);\n                    Reg::Cast<T, float, castTrait32to16>(vResult, vS, preg);\n                    Reg::StoreAlign<T, Reg::StoreDist::DIST_PACK_B32>(dstAddr + i * vflen, vResult, preg);\n                } else {\n                    Reg::LoadAlign<T, Reg::LoadDist::DIST_DINTLV_B32>(vSrcReg0, vSrcReg1, srcAddr + i * vflen * 2);\n                    Reg::Abs(vAbsSrcReg0, vSrcReg0, preg);\n                    Reg::Abs(vAbsSrcReg1, vSrcReg1, preg);\n                    Reg::Compare<float, CMPMODE::GT>(preg2, vAbsSrcReg1, vAbsSrcReg0, preg);\n                    Reg::Select<float>(vA, vAbsSrcReg1, vAbsSrcReg0, preg2);\n                    Reg::Select<float>(vB, vAbsSrcReg0, vAbsSrcReg1, preg2);\n\n                    // 0的处理\n                    Reg::Compare<uint32_t, CMPMODE::EQ>(\n                        preg4, (AscendC::MicroAPI::RegTensor<uint32_t>&)vB, vZero, preg);\n\n                    // subnormal处理\n                    Reg::Compare<uint32_t, CMPMODE::LT>(\n                        preg3, (AscendC::MicroAPI::RegTensor<uint32_t>&)vA, vMinNormalFloat, preg);\n                    Reg::Mul(vAS, vA, vSCALE_UP, preg);\n                    Reg::Mul(vBS, vB, vSCALE_UP, preg);\n                    Reg::Select(vA, vAS, vA, preg3);\n                    Reg::Select(vB, vBS, vB, preg3);\n                    // 提取A的指数因子（对vAForExp操作）\n                    Reg::ShiftRights(vA0, (AscendC::Reg::RegTensor<uint32_t>&)vA, SHR_NUM_FOR_FP32, preg);\n                    Reg::ShiftLefts(vA0, vA0, SHR_NUM_FOR_FP32, preg);\n                    Reg::Sub((AscendC::Reg::RegTensor<uint32_t>&)vA1, (AscendC::Reg::RegTensor<uint32_t>&)vA, vA0, preg);\n                    Reg::Sub((AscendC::Reg::RegTensor<uint32_t>&)vB1, (AscendC::Reg::RegTensor<uint32_t>&)vB, vA0, preg);\n\n                    Reg::Add((AscendC::Reg::RegTensor<uint32_t>&)vA1, (AscendC::Reg::RegTensor<uint32_t>&)vA1, vExpBias, preg);\n                    Reg::Add((AscendC::Reg::RegTensor<uint32_t>&)vB1, (AscendC::Reg::RegTensor<uint32_t>&)vB1, vExpBias, preg);\n\n                    // 计算归化值\n                    Reg::Mul(vA1Sq, vA1, vA1, preg);\n                    Reg::Mul(vB1Sq, vB1, vB1, preg);\n                    Reg::Add(vSumSq, vA1Sq, vB1Sq, preg);\n                    Reg::Sqrt(vS, vSumSq, preg);\n\n                    Reg::Mul(vResult, vS, (AscendC::Reg::RegTensor<float>&)vA0, preg);\n                    Reg::Mul(vResultS, vResult, vSCALE_DOWN, preg);\n                    Reg::Select(vResult, vResultS, vResult, preg3);\n\n                    // 0的处理\n                    Reg::Select(vResult, vA, vResult, preg4);\n\n                    MicroAPI::StoreAlign(dstAddr + i * vflen, vResult, preg);\n                }\n            }\n        }\n#endif\n    }\n};\n} // namespace AbsComplexVf\n\ntemplate <typename U, typename T = float>\nstruct AbscomplexDag {\n    using OpCopyIn0 = Bind<Vec::CopyIn<U>, Placeholder::In0<U>>;\n    using OpResult = Bind<AbsComplexVf::AbscomplexCustom<T, U>, OpCopyIn0>;\n    using OpCopyOut = Bind<Vec::CopyOut<T>, Placeholder::Out0<T>, OpResult>;\n\n    using Outputs = Elems<OpCopyOut>;\n    using MemCfg = MemOptCfg<MemLevel::LEVEL_2>;\n    using OpDag = DAGSch<Outputs, void, MemCfg>;\n};\n} // namespace AbsOp\n#endif // CANN_CUSTOM_OPS_ABS_COMPLEX_DAG_H"
+                    },
+                    "gene_rule": {
+                        "deter": "",
+                        "target": [
+                            [
+                                "summary_formula"
+                            ]
+                        ]
+                    },
+                    "evidence_id": "ev_005"
+                }
+            ],
+            "note": "以下为file型标准结构"
+        },
+        {
+            "anchor_id": "anchor_file_006",
+            "anchor_information": {
+                "type": "file",
+                "level1": {
+                    "file_path": "out/operator_storage/abs/base/op_kernel/arch35/abs_dag.h",
+                    "file_name": "abs_dag.h"
+                },
+                "level2": {
+                    "code_map": {
+                        "nodes": [
+                            "AbsOp"
+                        ],
+                        "edges": []
+                    },
+                    "token_hash": "/**\n * Copyright (c) 2025 Huawei Technologies Co., Ltd.\n * This program is free software, you can redistribute it and/or modify it under the terms and conditions of\n * CANN Open Software License Agreement Version 2.0 (the \"License\").\n * Please refer to the License for details. You may not use this file except in compliance with the License.\n * THIS SOFTWARE IS PROVIDED ON AN \"AS IS\" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,\n * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.\n * See LICENSE in the root of the software repository for the full text of the License.\n */\n\n/* !\n * \\file abs_dag.h\n * \\brief\n */\n\n#ifndef CANN_CUSTOM_OPS_ABS_DAG_H\n#define CANN_CUSTOM_OPS_ABS_DAG_H\n#include \"atvoss/util/dag.h\"\n#include \"atvoss/util/vec.h\"\n#include \"atvoss/util/placeholder.h\"\n\nnamespace AbsOp {\nusing namespace AscendC;\nusing namespace Ops::Base;\n\ntemplate <typename U, typename T = float>\nstruct AbsDag {\n    using OpCopyIn0 = Bind<Vec::CopyIn<U>, Placeholder::In0<U>>;\n    using OpCopyIn0Cast = Bind<Vec::Cast<T, U, 0>, OpCopyIn0>;\n    using OpResult = Bind<Vec::Abs<T>, OpCopyIn0Cast>;\n    using OpResultCast = Bind<Vec::Cast<U, T, 1>, OpResult>;\n    using OpCopyOut = Bind<Vec::CopyOut<U>, Placeholder::Out0<U>, OpResultCast>;\n\n    using Outputs = Elems<OpCopyOut>;\n    using MemCfg = MemOptCfg<MemLevel::LEVEL_2>;\n    using OpDag = DAGSch<Outputs, void, MemCfg>;\n};\n} // namespace AbsOp\n#endif // CANN_CUSTOM_OPS_ABS_DAG_H",
+                    "file_功能": "定义Abs算子在Arch35架构下的设备端DAG（有向无环图）计算流水线，通过模板化数据流编排实现绝对值运算的自动化调度与内存管理。"
+                },
+                "level3": {
+                    "tree_id": "abs/base（## Abs算子基础实现目录，封装API接口、主机逻辑、图元数据、分块策略、内核计算及测试用例等核心模块）\n├── abs/base/op_api（## Abs算子API层实现目录，提供ACLNN接口定义、参数校验、数据类型适配及主机端调度入口）\n│   ├── aclnn_abs.cpp 实现Ascend NPU上Abs算子的ACLNN API层逻辑，负责参数校验、数据类型适配、内存布局处理及计算任务编排。\n│   ├── aclnn_abs.h 定义aclnnAbs算子的Level2 API头文件，提供获取Workspace大小和执行绝对值计算的两段式接口声明，支持多种数据类型及非连续Tensor。\n│   ├── abs.h 该文件是Abs算子Level 0 API的头文件，定义了面向底层执行器的绝对值计算接口声明，作为算子框架中Host侧调用Kernel的入口抽象层。\n│   └── abs.cpp 实现Abs算子的主机端调度逻辑，包括输出张量分配、形状推导、数据类型校验及根据芯片架构动态选择AiCore或AiCPU执行路径。\n├── abs/base/op_graph（## Abs算子图引擎注册目录，定义GE原型信息、输入输出接口及框架兼容性元数据）\n│   └── abs_proto.h 定义Abs算子在GE图引擎中的原型注册信息，声明算子的输入输出接口、支持的数据类型及框架兼容性，是算子接入计算图的基础元数据描述文件。\n├── abs/base/op_host（## Abs算子主机端通用逻辑目录，包含元数据定义、形状推导及特定架构Tiling策略实现）\n│   ├── abs_def.cpp 定义Abs算子的元数据规范，注册输入输出张量的数据类型、格式约束及AI Core硬件执行配置，是算子在框架中识别与调度的基础声明文件。\n│   └── abs_infershape.cpp 实现Abs算子的形状与数据类型推导逻辑。\n│   └── abs/base/op_host/arch35（## Abs算子Arch35架构主机端Tiling策略目录，负责分块参数生成与硬件资源适配）\n│   │   ├── abs_tiling_arch35.h 该文件定义了Arch35架构下Abs算子的Tiling策略头文件，负责声明主机端分块计算所需的数据结构与接口，用于指导内核按硬件资源进行任务切分。\n│   │   └── abs_tiling_arch35.cpp 该文件负责Ascend Arch35架构下Abs算子的Tiling策略生成。\n├── abs/base/op_kernel（## Abs算子设备端Kernel实现目录，包含Tiling数据结构、Kernel入口函数及DAG计算逻辑）\n│   ├── abs_apt.cpp 实现Abs算子在AI Core上的底层计算逻辑，作为设备端Kernel入口函数。\n│   └── abs_struct.h 定义Abs算子内核层专用的Tiling数据结构，用于在Host与Device间传递分块计算参数。\n│   └── abs/base/op_kernel/arch35（## Abs算子Arch35架构设备端Kernel目录，实现DAG计算流水线及复数高精度运算逻辑）\n│   │   ├── abs_dag.h 定义Abs算子在Arch35架构下的设备端DAG（有向无环图）计算流水线，通过模板化数据流编排实现绝对值运算的自动化调度与内存管理。\n│   │   └── abs_complex_dag.h 实现复数绝对值算子的AI Core底层DAG计算逻辑。\n└── abs/base/tests（## Abs算子单元测试总目录，覆盖API校验、形状推导及Tiling策略等功能的验证代码）\n    └── abs/base/tests/ut（## Abs算子单元测试集合目录，集中管理API、形状推导及Tiling策略的GTest验证代码）\n        ├── abs/base/tests/ut/op_api（## Abs算子API层单元测试目录，验证ACLNN接口的参数校验与Workspace获取功能）\n        │   └── test_aclnn_abs.cpp 该文件是Abs算子API层的单元测试代码，基于GTest框架验证`aclnnAbs`接口的参数校验逻辑。\n        └── abs/base/tests/ut/op_host（## Abs算子主机端逻辑单元测试目录，验证形状推导及Tiling策略在不同场景下的正确性）\n        │   └── test_abs_infershape.cpp 该文件是Abs算子形状推导（Infershape）功能的单元测试代码。\n            └── abs/base/tests/ut/op_host/arch35（## Abs算子Arch35架构Tiling策略单元测试目录，验证分块参数生成的正确性与异常处理）\n            │   └── test_abs_tiling_arch35.cpp 该文件是Abs算子在Arch35架构下的Tiling策略单元测试，用于验证不同数据类型（FP16/32、INT8/16/32/64、BF16及复数类型）的切分参数生成正确性，并覆盖输入输出类型不匹配、空Tensor等异常场景。"
+                }
+            },
+            "evidence": [
+                {
+                    "evidence_information": {
+                        "file_path": "out/operator_storage/abs/base/op_kernel/arch35/abs_dag.h",
+                        "file_name": "abs_dag.h",
+                        "file_功能": "定义Abs算子在Arch35架构下的设备端DAG（有向无环图）计算流水线，通过模板化数据流编排实现绝对值运算的自动化调度与内存管理。",
+                        "file_content": "/**\n * Copyright (c) 2025 Huawei Technologies Co., Ltd.\n * This program is free software, you can redistribute it and/or modify it under the terms and conditions of\n * CANN Open Software License Agreement Version 2.0 (the \"License\").\n * Please refer to the License for details. You may not use this file except in compliance with the License.\n * THIS SOFTWARE IS PROVIDED ON AN \"AS IS\" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,\n * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.\n * See LICENSE in the root of the software repository for the full text of the License.\n */\n\n/* !\n * \\file abs_dag.h\n * \\brief\n */\n\n#ifndef CANN_CUSTOM_OPS_ABS_DAG_H\n#define CANN_CUSTOM_OPS_ABS_DAG_H\n#include \"atvoss/util/dag.h\"\n#include \"atvoss/util/vec.h\"\n#include \"atvoss/util/placeholder.h\"\n\nnamespace AbsOp {\nusing namespace AscendC;\nusing namespace Ops::Base;\n\ntemplate <typename U, typename T = float>\nstruct AbsDag {\n    using OpCopyIn0 = Bind<Vec::CopyIn<U>, Placeholder::In0<U>>;\n    using OpCopyIn0Cast = Bind<Vec::Cast<T, U, 0>, OpCopyIn0>;\n    using OpResult = Bind<Vec::Abs<T>, OpCopyIn0Cast>;\n    using OpResultCast = Bind<Vec::Cast<U, T, 1>, OpResult>;\n    using OpCopyOut = Bind<Vec::CopyOut<U>, Placeholder::Out0<U>, OpResultCast>;\n\n    using Outputs = Elems<OpCopyOut>;\n    using MemCfg = MemOptCfg<MemLevel::LEVEL_2>;\n    using OpDag = DAGSch<Outputs, void, MemCfg>;\n};\n} // namespace AbsOp\n#endif // CANN_CUSTOM_OPS_ABS_DAG_H"
+                    },
+                    "gene_rule": {
+                        "deter": "",
+                        "target": [
+                            [
+                                "summary_formula"
+                            ]
+                        ]
+                    },
+                    "evidence_id": "ev_006"
+                }
+            ],
+            "note": "以下为file型标准结构"
+        },
+        {
+            "anchor_id": "anchor_note_007",
+            "anchor_information": {
+                "type": "note",
+                "level1": {
+                    "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.h",
+                    "behind_code": "aclnnStatus aclnnAbsGetWorkspaceSize(const aclTensor* self, aclTensor* out, uint64_t* workspaceSize, aclOpExecutor** executor)"
+                },
+                "level2": {
+                    "token_hash": "aclnnStatus aclnnAbsGetWorkspaceSize(const aclTensor* self, aclTensor* out, uint64_t* workspaceSize, aclOpExecutor** executor)\n* @brief aclnnAbs的第一段接口，根据具体的计算流程，计算workspace大小。\n * @domain aclnn_math\n * 算子功能：返回输入Tensor中每个元素绝对值的结果\n * 计算公式：\n * $$ out_{i} = abs(self_{i}) $$\n *\n * 计算图：\n * ```mermaid\n * graph LR\n *   A[(self)]--->B([l0op::Contiguous])\n *   B--->C([l0op::Abs])\n *   C--->D([l0op::ViewCopy])\n *   D--->E[(out)]\n * ```\n *\n * @param [in] self: 待进行abs计算的入参。npu device侧的aclTensor,\n * 数据类型支持BFLOAT16(仅昇腾910B AI处理器、昇腾910_93 AI处理器、昇腾950 AI处理器支持)FLOAT、FLOAT16、DOUBLE、\n * INT8、INT16、INT32、INT64、UINT8、BOOL，数据格式支持ND，支持非连续的Tensor。\n * @param [in] out: abs计算的出参。npu device侧的aclTensor,\n * 数据类型支持BFLOAT16(仅昇腾910B AI处理器、昇腾910_93 AI处理器、昇腾950 AI处理器支持)FLOAT、FLOAT16、DOUBLE、\n * INT8、INT16、INT32、INT64、UINT8、BOOL，数据格式支持ND，支持非连续的Tensor。\n * @param [out] workspaceSize: 返回用户需要在npu device侧申请的workspace大小。\n * @param [out] executor: 返回op执行器，包括算子计算流程\n * @return aclnnStatus: 返回状态码",
+                    "note_hash": "* @brief aclnnAbs的第一段接口，根据具体的计算流程，计算workspace大小。\n * @domain aclnn_math\n * 算子功能：返回输入Tensor中每个元素绝对值的结果\n * 计算公式：\n * $$ out_{i} = abs(self_{i}) $$\n *\n * 计算图：\n * ```mermaid\n * graph LR\n *   A[(self)]--->B([l0op::Contiguous])\n *   B--->C([l0op::Abs])\n *   C--->D([l0op::ViewCopy])\n *   D--->E[(out)]\n * ```\n *\n * @param [in] self: 待进行abs计算的入参。npu device侧的aclTensor,\n * 数据类型支持BFLOAT16(仅昇腾910B AI处理器、昇腾910_93 AI处理器、昇腾950 AI处理器支持)FLOAT、FLOAT16、DOUBLE、\n * INT8、INT16、INT32、INT64、UINT8、BOOL，数据格式支持ND，支持非连续的Tensor。\n * @param [in] out: abs计算的出参。npu device侧的aclTensor,\n * 数据类型支持BFLOAT16(仅昇腾910B AI处理器、昇腾910_93 AI处理器、昇腾950 AI处理器支持)FLOAT、FLOAT16、DOUBLE、\n * INT8、INT16、INT32、INT64、UINT8、BOOL，数据格式支持ND，支持非连续的Tensor。\n * @param [out] workspaceSize: 返回用户需要在npu device侧申请的workspace大小。\n * @param [out] executor: 返回op执行器，包括算子计算流程\n * @return aclnnStatus: 返回状态码"
+                }
+            },
+            "evidence": [
+                {
+                    "evidence_information": {
+                        "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.h",
+                        "content": "* @brief aclnnAbs的第一段接口，根据具体的计算流程，计算workspace大小。\n * @domain aclnn_math\n * 算子功能：返回输入Tensor中每个元素绝对值的结果\n * 计算公式：\n * $$ out_{i} = abs(self_{i}) $$\n *\n * 计算图：\n * ```mermaid\n * graph LR\n *   A[(self)]--->B([l0op::Contiguous])\n *   B--->C([l0op::Abs])\n *   C--->D([l0op::ViewCopy])\n *   D--->E[(out)]\n * ```\n *\n * @param [in] self: 待进行abs计算的入参。npu device侧的aclTensor,\n * 数据类型支持BFLOAT16(仅昇腾910B AI处理器、昇腾910_93 AI处理器、昇腾950 AI处理器支持)FLOAT、FLOAT16、DOUBLE、\n * INT8、INT16、INT32、INT64、UINT8、BOOL，数据格式支持ND，支持非连续的Tensor。\n * @param [in] out: abs计算的出参。npu device侧的aclTensor,\n * 数据类型支持BFLOAT16(仅昇腾910B AI处理器、昇腾910_93 AI处理器、昇腾950 AI处理器支持)FLOAT、FLOAT16、DOUBLE、\n * INT8、INT16、INT32、INT64、UINT8、BOOL，数据格式支持ND，支持非连续的Tensor。\n * @param [out] workspaceSize: 返回用户需要在npu device侧申请的workspace大小。\n * @param [out] executor: 返回op执行器，包括算子计算流程\n * @return aclnnStatus: 返回状态码",
+                        "behind_code": "aclnnStatus aclnnAbsGetWorkspaceSize(const aclTensor* self, aclTensor* out, uint64_t* workspaceSize, aclOpExecutor** executor)"
+                    },
+                    "gene_rule": {
+                        "deter": "",
+                        "target": [
+                            [
+                                "summary_clarify"
+                            ],
+                            [
+                                "summary_formula"
+                            ]
+                        ]
+                    },
+                    "evidence_id": "ev_007"
+                }
+            ],
+            "note": "以下为note型标准结构"
+        },
+        {
+            "anchor_id": "anchor_note_008",
+            "anchor_information": {
+                "type": "note",
+                "level1": {
+                    "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.h",
+                    "behind_code": "aclnnStatus aclnnAbs(void* workspace, uint64_t workspaceSize, aclOpExecutor* executor, const aclrtStream stream)"
+                },
+                "level2": {
+                    "token_hash": "aclnnStatus aclnnAbs(void* workspace, uint64_t workspaceSize, aclOpExecutor* executor, const aclrtStream stream)\n* @brief aclnnAbs的第二段接口，用于执行计算。\n * @param [in] workspace: 在npu device侧申请的workspace内存起址。\n * @param [in] workspaceSize: 在npu device侧申请的workspace大小，由第一段接口aclnnAbsGetWorkspaceSize获取。\n * @param [in] exector: op执行器，包含了算子计算流程。\n * @param [in] stream: acl stream流。\n * @return aclnnStatus: 返回状态码",
+                    "note_hash": "* @brief aclnnAbs的第二段接口，用于执行计算。\n * @param [in] workspace: 在npu device侧申请的workspace内存起址。\n * @param [in] workspaceSize: 在npu device侧申请的workspace大小，由第一段接口aclnnAbsGetWorkspaceSize获取。\n * @param [in] exector: op执行器，包含了算子计算流程。\n * @param [in] stream: acl stream流。\n * @return aclnnStatus: 返回状态码"
+                }
+            },
+            "evidence": [
+                {
+                    "evidence_information": {
+                        "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.h",
+                        "content": "* @brief aclnnAbs的第二段接口，用于执行计算。\n * @param [in] workspace: 在npu device侧申请的workspace内存起址。\n * @param [in] workspaceSize: 在npu device侧申请的workspace大小，由第一段接口aclnnAbsGetWorkspaceSize获取。\n * @param [in] exector: op执行器，包含了算子计算流程。\n * @param [in] stream: acl stream流。\n * @return aclnnStatus: 返回状态码",
+                        "behind_code": "aclnnStatus aclnnAbs(void* workspace, uint64_t workspaceSize, aclOpExecutor* executor, const aclrtStream stream)"
+                    },
+                    "gene_rule": {
+                        "deter": "",
+                        "target": [
+                            [
+                                "summary_clarify"
+                            ],
+                            [
+                                "summary_formula"
+                            ]
+                        ]
+                    },
+                    "evidence_id": "ev_008"
+                }
+            ],
+            "note": "以下为note型标准结构"
+        }
+    ]
+}

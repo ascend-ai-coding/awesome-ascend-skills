@@ -1,0 +1,124 @@
+/**
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * CANN Open Software License Agreement Version 2.0. THIS SOFTWARE IS PROVIDED "AS IS".
+ */
+
+/*!
+ * \file scan_base.template  (使用时改名为 scan_base.h)
+ * \brief Scan 族 Device 侧公共工具：促进类型、Cast 配置、log2/幂、二进制进位 memo 层级。
+ *        提取自 cumsum op_kernel/arch35/cumsum_base/cumsum_base.h（精简版）。
+ */
+#ifndef SCAN_BASE_H
+#define SCAN_BASE_H
+
+#include "kernel_operator.h"
+
+namespace ScanOps {
+using namespace AscendC;
+
+constexpr static uint32_t VL_FP32 = 64;      // 256B VReg / 4B
+constexpr static uint32_t VL = 64;           // alias, 256B / 4B（promote 后统一 4B 比较）
+constexpr static uint32_t BLOCK_SIZE = 32;
+constexpr static uint32_t UB_BLOCK = 32;
+constexpr static uint32_t VREG_BYTES = 256;
+
+#ifndef CUMMIN_INFINITY
+#define CUMMIN_INFINITY (__builtin_inff())
+#endif
+
+// fp16/bf16 <-> fp32 Cast 配置（min/max 比较、sum/prod 累加均在 fp32 下进行）
+constexpr static AscendC::Reg::CastTrait castTraitToFp32 = {
+    AscendC::Reg::RegLayout::ZERO, AscendC::Reg::SatMode::UNKNOWN,
+    AscendC::Reg::MaskMergeMode::ZEROING, AscendC::RoundMode::UNKNOWN};
+constexpr static AscendC::Reg::CastTrait castTraitFromFp32 = {
+    AscendC::Reg::RegLayout::ZERO, AscendC::Reg::SatMode::NO_SAT,
+    AscendC::Reg::MaskMergeMode::ZEROING, AscendC::RoundMode::CAST_RINT};
+
+// 促进类型：half/bfloat16_t -> float；float -> float；int32_t -> int32_t
+template <typename T> struct GetPromoteType { using Type = T; };
+template <> struct GetPromoteType<half> { using Type = float; };
+template <> struct GetPromoteType<bfloat16_t> { using Type = float; };
+
+// kernel 侧辅助函数（带 K 后缀避免与 host 侧同名函数冲突）
+__aicore__ inline int64_t CeilDiv(int64_t a, int64_t b) { return b == 0 ? a : (a + b - 1) / b; }
+__aicore__ inline int64_t CeilAlign(int64_t a, int64_t b) { return CeilDiv(a, b) * b; }
+__aicore__ inline int64_t CeilDivK(int64_t a, int64_t b) { return b == 0 ? a : (a + b - 1) / b; }
+__aicore__ inline int64_t CeilAlignK(int64_t a, int64_t b) { return CeilDivK(a, b) * b; }
+__aicore__ inline int64_t CeilLog2K(int64_t n) { int64_t k = 0; while (((int64_t)1 << k) < n) k++; return k; }
+__aicore__ inline int32_t CalPow2(int32_t k) { return 1 << k; }
+// 向上取整 log2（用于 Sklansky 层数 / UbChunk memo 层数）
+__aicore__ inline int32_t CalLog2(int32_t n) { int32_t l = 0; while ((1 << l) < n) l++; return l; }
+
+// lane 并行扫描的段长：段长即 lane 间的 UB 地址步长，步长一旦是 16B 的整数倍就会
+// 撞 bank（实测 2 的幂步长能慢 5 倍），这时取奇数错开；步长本来就细碎则保持原样。
+// host 侧算 UB 预算时必须用同一个函数（见 scan_cummin_tiling.template 的 GsSegLenHost）。
+__aicore__ inline int64_t GsSegLen(int64_t r, int64_t lanes, int64_t cBytes)
+{
+    int64_t s = CeilDivK(r, lanes);
+    return (s * cBytes % 16 == 0) ? (s | 1) : s;
+}
+
+// ---------------------------------------------------------------------------
+// combine 的单位元。**换算子时只需改这里和 combine 本身**：
+//   cummin -> +inf / 类型最大值      cummax -> -inf / 类型最小值
+//   cumsum -> 0                      cumprod -> 1
+//
+// 下面这份是 cummin 的：浮点取 +inf，整型没有 inf 就取类型最大值。
+// 幺元必须能被任何真实输入「压过去」，否则补齐区会污染结果。
+//
+// 半精度不能写字面量再转（编译器会把 +inf 折成饱和值），直接摆位模式：
+// fp16 的 +inf 是 0x7C00，bf16 是 0x7F80。
+// ---------------------------------------------------------------------------
+constexpr float SCAN_INFINITY = __builtin_huge_valf();
+
+template <typename C>
+__aicore__ inline C Identity()
+{
+    if constexpr (IsSameType<C, int32_t>::value) {
+        return (C)2147483647;
+    } else if constexpr (IsSameType<C, float>::value) {
+        return (C)SCAN_INFINITY;
+    } else {
+        uint16_t bits = IsSameType<C, half>::value ? (uint16_t)0x7C00 : (uint16_t)0x7F80;
+        return *reinterpret_cast<C*>(&bits);
+    }
+}
+
+// 二进制进位 memo 层级（UbChunk 层）：像二进制计数器一样合并 chunk 进位，O(log N) 层。
+// GetCacheID(idx) = popcount(idx ^ (idx+1)) - 1
+__aicore__ inline int32_t GetCacheID(int32_t idx) {
+    // 注意：ScalarGetCountOfValue 在不同 CANN 版本签名不同，若编译报错可替换为下面注释的 popcount：
+    // uint32_t v = (uint32_t)(idx ^ (idx + 1));
+    // v = v - ((v >> 1) & 0x55555555);
+    // v = (v & 0x33333333) + ((v >> 2) & 0x33333333);
+    // v = (v + (v >> 4)) & 0x0F0F0F0F;
+    // return (int32_t)((v * 0x01010101) >> 24) - 1;
+    return ScalarGetCountOfValue<1>(idx ^ (idx + 1)) - 1;
+}
+
+// ===========================================================================
+// ⚠️⚠️⚠️ 最关键的陷阱：AllocEventID vs FetchEventID ⚠️⚠️⚠️
+//
+// ping-pong 双缓冲的每个 buffer 必须用 **AllocEventID** 分配独立的事件 ID：
+//
+//   evMte2V_[0] = pipe->AllocEventID<HardEvent::MTE2_V>();   // ✅ 正确
+//   evMte2V_[1] = pipe->AllocEventID<HardEvent::MTE2_V>();   // ✅ 返回不同的 ID
+//
+// 绝不能用 FetchEventID：
+//
+//   evMte2V_[0] = GetTPipePtr()->FetchEventID(HardEvent::MTE2_V);  // ❌ 返回 0
+//   evMte2V_[1] = GetTPipePtr()->FetchEventID(HardEvent::MTE2_V);  // ❌ 也返回 0！
+//
+// FetchEventID 每次返回该事件类型的「默认」ID（通常 0），两个 buffer 的事件互相 alias，
+// 导致 ping-pong 同步完全失效——buffer 0 的 Wait 会吃掉 buffer 1 的 Set，
+// 数据在搬运中就被覆写，产生非确定性精度错误（不报错，只出错误结果）。
+//
+// 单缓冲顺序 Set/Wait 对（如 ScanRowRange 内的 MTE2_V）用 FetchEventID 是正确的：
+// 程序序保证 Set 在 Wait 前，同一个 ID 即可。但 ping-pong 的两个 buffer 并发推进，
+// 必须用独立 ID 才能区分「哪个 buffer 的事件」。
+//
+// 各模板的 Init() 方法已统一用 AllocEventID，切勿在集成时改回 FetchEventID。
+// ===========================================================================
+
+}  // namespace ScanOps
+#endif  // SCAN_BASE_H

@@ -163,13 +163,13 @@ __aicore__ inline void Process()
         BroadcastNddmaWithoutLoop/WithLoop(globalTensor, localTensor, ...);
 
         // 2. 普通输入：DataCopyPad 线性搬入
-        DataCopyPad(inputLocal, inputGm[gmOffset], {1, inputLength * sizeof(T), 0, 0});
+        DataCopyPad(inputLocal, inputGm[gmOffset], {1, inputLength * sizeof(T), 0, 0, 0});
 
         // 3. 计算
         Add(outputLocal, input0Local, input1Local, tileLength);
 
         // 4. 搬出
-        DataCopyPad(outputGm[outOffset], outputLocal, {1, tileLength * sizeof(T), 0, 0});
+        DataCopyPad(outputGm[outOffset], outputLocal, {1, tileLength * sizeof(T), 0, 0, 0});
     }
 }
 ```

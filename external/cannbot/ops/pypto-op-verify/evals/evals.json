@@ -1,0 +1,163 @@
+{
+  "skill_name": "pypto-op-verify",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "PyPTO kernel 的正确性验证方式",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "disabled": false
+      },
+      "prompt": "PyPTO kernel 写完了，golden 也有了，怎么验证它的正确性？",
+      "expected_output": "按 pypto-op-verify 的要求：先读 MEMORY.md 的 module_count 选路径（L0 单次端到端 / L1 走阶段化+逐模块边界验证）；用普通 Python 脚本 custom/<operator_name>/test_<operator_name>.py 从仓库根目录运行（python custom/<op>/test_<op>.py），对每个输出 leaf（含 tuple/list 的所有元素、dict 所有 key、嵌套结构）调用 detailed_tensor_compare 并要求 all_close，任何不匹配即非零退出；默认不用 pytest 作为 golden 对比驱动。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "L0 与 L1 验证路径选择",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "disabled": false
+      },
+      "prompt": "MEMORY.md 里 module_count=1，验证路径怎么选？",
+      "expected_output": "module_count=1 走 L0 验证路径：对每个输出 leaf 做单次端到端 detailed_tensor_compare(golden_final_output, pypto_final_output, ...)，无 staged 文件链、无逐模块验证日志，verifier 只产出 test_<op>.py 一个 E2E 测试；若 MEMORY.md 缺 module_count 字段默认按 L1 路径以保证安全并在 memory 记一行警告。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "多输出 tensor 的全面比较要求",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ]
+      },
+      "prompt": "kernel 有多个输出（包括元组和字典形式），验证时只比第一个输出可以吗？",
+      "expected_output": "不可以。对每个输出张量都要调用 detailed_tensor_compare 并要求 all_close，包括 tuple/list 的所有元素、dict 的所有 key、嵌套结构展平后的叶子张量；禁止只比较一个输出。任何不匹配都要非零退出并打印清晰的 PASS/FAIL 汇总。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 4,
+      "title": "pytest 不能作为 golden 对比默认驱动",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ]
+      },
+      "prompt": "我想用 pytest 来跑 golden 和 kernel 的对比验证，这样可以吗？",
+      "expected_output": "默认禁止用 pytest 作为 golden 与 PyPTO 端到端对比的驱动；应使用普通 Python 脚本 custom/<op>/test_<op>.py 从仓库根目录运行，pytest 仅可作为已记录的可选补充。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 5,
+      "title": "MEMORY.md 缺少 module_count 时的处理",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ]
+      },
+      "prompt": "我看的 MEMORY.md 里没有 module_count 字段，验证路径怎么选？",
+      "expected_output": "缺 module_count 时默认按 L1 路径以保证安全，并在 MEMORY.md 的 Development & debug log 记一行警告；L1 走完整阶段化文件链加逐模块 golden 加逐阶段验证日志。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 6,
+      "title": "L1 路径必须保留渐进集成证据",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "module_count=3，但最终 <op>_impl.py 的 E2E 已通过。可以删除 module1、module12、module123 和逐模块日志吗？",
+      "expected_output": "回复应拒绝：L1 还必须保留每个 milestone 的累积 staged 文件、逐模块 golden 边界比较和 MEMORY.md 的 Per-module verification log；每阶段先通过再产生下一阶段，最终 staged 文件作为 cleanup 的生产实现来源。E2E 通过不能替代渐进证据。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "规范化 golden 也必须对原始参考做等价验证",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "为了适配 PyPTO，我重写了用户提供的 golden。只要新 golden 和 kernel 一致，是否就算成功？",
+      "expected_output": "回复应说明不够：成功标准首先要求 normalized golden 与 original golden 在容差内一致，再用规范化 golden 对比 NPU 上的 PyPTO 输出；否则两边可能共同偏离用户数学语义。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 8,
+      "title": "NPU 结果是权威正确性信号",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "模拟器比较全部通过，但 NPU adversarial_runner 报一个输出不匹配。能否按模拟器结果判定成功？",
+      "expected_output": "回复应明确不能：adversarial_runner 在 TILE_FWK_DEVICE_ID 指定的 NPU 上执行 impl，NPU evaluation_report 的 status、first_failure 和 failure_category 是权威正确性信号；任何输出 leaf 不匹配都应非零失败。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 9,
+      "title": "循环模块用 inspection tensor 定位漂移迭代",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "一个含 pypto.loop(NT) 的模块最终输出错误，但单次输出 diff 无法定位到具体迭代。验证器应提供什么进一步信号？",
+      "expected_output": "回复应使用 inspection tensor 协议：impl 把 inspection_<name> 中间状态 assemble 出来，golden 提供 module_<k>_inspect()，通过 adversarial_runner.py --inspect <name> 逐迭代比较并在报告中给出 drift-onset iteration；纯 elementwise/pure-cube 模块可跳过。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 10,
+      "title": "减法累积必须加入 cancellation stress",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "算子包含两组 subtractive accumulation，随机输入全部通过。对抗用例还需要什么覆盖？",
+      "expected_output": "回复应要求 make_inputs 支持 cancellation_stress，为每个相减对至少生成一个 L5_cancellation_stress_* case，使被减两项的相对间隙达到目标值（默认 1e-5），用于暴露均匀随机输入遗漏的灾难性消减问题。",
+      "expectations": [],
+      "files": []
+    }
+  ]
+}

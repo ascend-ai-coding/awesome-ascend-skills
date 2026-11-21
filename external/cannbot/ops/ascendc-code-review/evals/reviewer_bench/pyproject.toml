@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reviewer-bench"
+version = "0.1.0"
+description = "AscendC 代码检视评测框架"
+requires-python = ">=3.8"
+dependencies = [
+    "pyyaml>=6.0",
+    "jinja2>=3.0",
+    "psutil>=5.9.0",
+    "openai>=1.0.0",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.1.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]

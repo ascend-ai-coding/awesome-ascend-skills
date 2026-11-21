@@ -1,0 +1,529 @@
+/*!
+ * \file merge_intra_core_base.h
+ * \brief Common constants, data structures, and CRTP base class shared by sort and kth_value
+ *        merge_intra_core kernels.
+ *        Phase 1 (Sort blocks in UB) and Phase 2 (Merge sorted blocks) use identical constants,
+ *        merge context, and member functions. Only Phase 3 (Extract and copy output) differs
+ *        between the two operators.
+ */
+
+#ifndef MERGE_INTRA_CORE_BASE_H
+#define MERGE_INTRA_CORE_BASE_H
+
+#include <cmath>
+#include "kernel_operator.h"
+#include "op_kernel/math_util.h"
+#include "op_kernel/platform_util.h"
+#include "merge_sort_constants.h"
+
+namespace MergeIntraCoreCommon {
+
+using namespace AscendC;
+
+using MergeSortConstants::DEALING_CONCAT_NUM_ONCE;
+using MergeSortConstants::DEALING_EXTRACT_NUM_ONCE;
+using MergeSortConstants::DEALING_SORT_NUM_ONCE;
+using MergeSortConstants::MERGE_INTRA_BUFFER_NUM;
+using MergeSortConstants::MERGE_LIST_MAX_NUM;
+using MergeSortConstants::UB_BLOCK_BYTES;
+
+// ======================== Shared Data Structures ========================
+
+struct MergeListContext {
+    uint32_t remains[MERGE_LIST_MAX_NUM] = {0};
+    uint32_t gmOffsets[MERGE_LIST_MAX_NUM] = {0};
+    uint32_t srcOffsets[MERGE_LIST_MAX_NUM] = {0};
+    uint32_t elemCounts[MERGE_LIST_MAX_NUM] = {0};
+    uint32_t listCount = 0;
+};
+
+// ======================== CRTP Base Class ========================
+
+/**
+ * @brief CRTP base class for merge_intra_core kernels.
+ *        Contains all shared member variables and the stable three-phase process shared by sort and kth_value.
+ *        Derived classes only initialize phase-specific UB buffers and implement Phase 3 output semantics.
+ * @tparam Derived CRTP derived type
+ * @tparam ValueType Input data type (float)
+ * @tparam IndexType Index data type (int32_t or int64_t)
+ * @tparam IsDescend Sort order: true for descending, false for ascending
+ */
+template <typename Derived, typename ValueType, typename IndexType, bool IsDescend>
+class MergeIntraCoreBase {
+public:
+    // ===== Shared member variables =====
+    TPipe* pipe_;
+    uint32_t blockIdx_ = 0;
+    GlobalTensor<ValueType> inputXGm_;
+    GlobalTensor<ValueType> outValueGm_;
+    GlobalTensor<IndexType> outIdxGm_;
+    GlobalTensor<ValueType> cacheGm_; // TMP_CACHE for intermediate sorted data (sort struct = 8 bytes)
+
+    int64_t batchNum_ = 0;
+    int64_t sortAxisNum_ = 0;
+    uint32_t batchPerCore_ = 0;
+    uint32_t blockSortSize_ = 0;    // Elements per UB sort block
+    uint32_t extractChunkSize_ = 0; // Elements per Phase3 extract iteration
+    uint32_t blocksPerRow_ = 0;
+    uint32_t maxCoreNum_ = 0;
+    uint32_t alignNum_ = 0; // blocksPerRow_ * blockSortSize_
+
+    uint32_t blockSortLen_ = 0;       // GetSortLen(blockSortSize_): sort struct length per block
+    uint32_t batchSortLen_ = 0;       // GetSortLen(alignNum_): sort struct length per batch
+    uint32_t lastBlockSize_ = 0;      // Actual element count of the last block
+    uint32_t sortBufferSize_ = 0;     // blockSortLen_ * sizeof(ValueType)
+    uint32_t sortRepeatTimes_ = 0;    // blockSortSize_ / DEALING_SORT_NUM_ONCE
+    uint32_t concatRepeatTimes_ = 0;  // blockSortSize_ / DEALING_CONCAT_NUM_ONCE
+    uint32_t maxMergeIterations_ = 0; // INT32_MAX / blockSortSize_
+
+    // Queues and buffers for UB sorting (Phase 1)
+    TQue<QuePosition::VECIN, MERGE_INTRA_BUFFER_NUM> inQueueX_;
+    TQue<QuePosition::VECOUT, MERGE_INTRA_BUFFER_NUM> outValueQueue_, outIdxQueue_, outIdxInt64Queue_;
+    TBuf<TPosition::VECCALC> concatTmpBuf_, sortTmpBuf_, indexTmpBuf_;
+    TQue<QuePosition::VECOUT, MERGE_INTRA_BUFFER_NUM> sortedOutQueue_;
+
+    // Merge queues (Phase 2)
+    TQue<QuePosition::VECIN, 1> mergeInQueue_;
+    TQue<QuePosition::VECOUT, 1> mergeOutQueue_;
+
+    // Extract queue (Phase 3)
+    TQue<QuePosition::VECIN, MERGE_INTRA_BUFFER_NUM> extractInQueue_;
+
+    // ===== Phase 1: Sort blocks in UB =====
+    __aicore__ inline void Process();
+    __aicore__ inline void SortSingleBatchInUb(GlobalTensor<ValueType> inputX, int64_t batchOffset);
+    __aicore__ inline void CopyInBlock(GlobalTensor<ValueType> inputX, LocalTensor<ValueType> xLocal,
+                                       uint32_t elemOffset, uint32_t actualElem);
+    __aicore__ inline void SortBlockToStruct(LocalTensor<ValueType> xLocal, LocalTensor<ValueType> sortedLocal,
+                                             uint32_t actualElem, uint32_t baseOffset);
+    __aicore__ inline void CopyOutToCache(LocalTensor<ValueType> sortedLocal, uint32_t blockId, uint32_t actualElem);
+
+    // ===== Phase 2: Merge sorted blocks =====
+    __aicore__ inline uint32_t MergeSingleBatch();
+    __aicore__ inline void MergeOneGroup(uint32_t groupStart, uint32_t groupBlockCount, uint32_t fullBlockElemCount,
+                                         uint32_t fullBlockSortLen, uint32_t lastBlockElemCount, uint32_t numBlocks,
+                                         uint32_t pingPongFlag, uint32_t& cumulativeOffset,
+                                         uint32_t& mergedGroupElemCount);
+    __aicore__ inline void CopyBlockChunk(int64_t srcAddr, int64_t dstAddr, uint32_t elemCount);
+    __aicore__ inline void DoIncrementalMerge(int64_t dstOffsetBase, MergeListContext& ctx);
+    __aicore__ inline uint32_t LoadListsToUb(LocalTensor<ValueType> ubMainInput,
+                                             uint16_t elementCountList[MERGE_LIST_MAX_NUM],
+                                             const MergeListContext& ctx);
+    __aicore__ inline uint32_t ExecuteMrgSort(LocalTensor<ValueType> dstLocal, LocalTensor<ValueType> ubMainInput,
+                                              uint16_t elementCountList[MERGE_LIST_MAX_NUM],
+                                              uint32_t listSortedNums[MERGE_LIST_MAX_NUM], uint32_t listCount);
+    __aicore__ inline void CopyRemainingList(MergeListContext& ctx, int64_t dstOffsetBase,
+                                             uint32_t& dstCumulativeOffset);
+
+private:
+    __aicore__ inline void PhaseBarrierAndReset();
+};
+
+// ======================== Shared Process Implementation ========================
+
+template <typename Derived, typename ValueType, typename IndexType, bool IsDescend>
+__aicore__ inline void MergeIntraCoreBase<Derived, ValueType, IndexType, IsDescend>::Process()
+{
+    int64_t startBatch = static_cast<int64_t>(this->blockIdx_) * this->batchPerCore_;
+    int64_t endBatch = (startBatch + this->batchPerCore_ < this->batchNum_) ? (startBatch + this->batchPerCore_) :
+                                                                              this->batchNum_;
+
+    if (startBatch >= this->batchNum_) {
+        return;
+    }
+
+    for (int64_t batchIdx = startBatch; batchIdx < endBatch; batchIdx++) {
+        // Phase 1: derived owns the phase-specific UB allocation; base owns phase ordering.
+        static_cast<Derived*>(this)->InitPhase1Buffers();
+        this->SortSingleBatchInUb(this->inputXGm_, batchIdx * this->sortAxisNum_);
+        PhaseBarrierAndReset();
+
+        // Phase 2: merge sorted blocks in the per-core ping-pong cache.
+        static_cast<Derived*>(this)->InitPhase2Buffers();
+        uint32_t resultRegion = this->MergeSingleBatch();
+        PhaseBarrierAndReset();
+
+        // Phase 3: derived writes either the full sorted row or the kth pair.
+        static_cast<Derived*>(this)->InitPhase3Buffers();
+        static_cast<Derived*>(this)->ExtractAndCopyOut(batchIdx, resultRegion);
+        this->pipe_->Reset();
+    }
+}
+
+template <typename Derived, typename ValueType, typename IndexType, bool IsDescend>
+__aicore__ inline void MergeIntraCoreBase<Derived, ValueType, IndexType, IsDescend>::PhaseBarrierAndReset()
+{
+    event_t eventId = static_cast<event_t>(this->pipe_->FetchEventID(HardEvent::MTE3_MTE2));
+    SetFlag<HardEvent::MTE3_MTE2>(eventId);
+    WaitFlag<HardEvent::MTE3_MTE2>(eventId);
+    this->pipe_->Reset();
+}
+
+// ======================== Phase 1 Implementations ========================
+
+template <typename Derived, typename ValueType, typename IndexType, bool IsDescend>
+__aicore__ inline void MergeIntraCoreBase<Derived, ValueType, IndexType, IsDescend>::SortSingleBatchInUb(
+    GlobalTensor<ValueType> inputX, int64_t batchOffset)
+{
+    for (uint32_t blockId = 0; blockId < this->blocksPerRow_; blockId++) {
+        uint32_t elemOffset = blockId * this->blockSortSize_;
+        uint32_t actualElem = (blockId < this->blocksPerRow_ - 1) ? this->blockSortSize_ : this->lastBlockSize_;
+
+        LocalTensor<ValueType> xLocal = this->inQueueX_.template AllocTensor<ValueType>();
+        CopyInBlock(inputX[batchOffset], xLocal, elemOffset, actualElem);
+        this->inQueueX_.EnQue(xLocal);
+
+        xLocal = this->inQueueX_.template DeQue<ValueType>();
+        LocalTensor<ValueType> sortedLocal = this->sortedOutQueue_.template AllocTensor<ValueType>();
+        SortBlockToStruct(xLocal, sortedLocal, actualElem, elemOffset);
+
+        this->inQueueX_.FreeTensor(xLocal);
+        this->sortedOutQueue_.EnQue(sortedLocal);
+        sortedLocal = this->sortedOutQueue_.template DeQue<ValueType>();
+
+        CopyOutToCache(sortedLocal, blockId, actualElem);
+    }
+}
+
+template <typename Derived, typename ValueType, typename IndexType, bool IsDescend>
+__aicore__ inline void MergeIntraCoreBase<Derived, ValueType, IndexType, IsDescend>::CopyInBlock(
+    GlobalTensor<ValueType> inputX, LocalTensor<ValueType> xLocal, uint32_t elemOffset, uint32_t actualElem)
+{
+    ValueType defaultValue = IsDescend ? static_cast<ValueType>(-INFINITY) : static_cast<ValueType>(NAN);
+
+    // For the last block (actualElem < blockSortSize_), Sort/Concat APIs process up to
+    // CeilAlign(actualElem, UB_BLOCK_BYTES) elements. DataCopyPad only pads to
+    // CeilAlign(actualElem, UB_BLOCK_BYTES/sizeof(ValueType)) which may be smaller.
+    // Pre-fill with Duplicate to cover the full aligned region, then overwrite valid data.
+    if (actualElem != this->blockSortSize_) {
+        uint32_t alignTile = Ops::Base::CeilAlign(actualElem, UB_BLOCK_BYTES);
+        Duplicate(xLocal, defaultValue, alignTile);
+        event_t eventId = static_cast<event_t>(this->pipe_->FetchEventID(HardEvent::V_MTE2));
+        SetFlag<HardEvent::V_MTE2>(eventId);
+        WaitFlag<HardEvent::V_MTE2>(eventId);
+    }
+
+    DataCopyExtParams dataCopyParam{1, static_cast<uint32_t>(actualElem * sizeof(ValueType)), 0, 0, 0};
+    uint32_t currTileSizeAlign = Ops::Base::CeilAlign(actualElem,
+                                                      static_cast<uint32_t>(UB_BLOCK_BYTES / sizeof(ValueType)));
+    DataCopyPadExtParams<ValueType> padParams{true, 0, static_cast<uint8_t>(currTileSizeAlign - actualElem),
+                                              defaultValue};
+    DataCopyPad(xLocal, inputX[elemOffset], dataCopyParam, padParams);
+}
+
+template <typename Derived, typename ValueType, typename IndexType, bool IsDescend>
+__aicore__ inline void MergeIntraCoreBase<Derived, ValueType, IndexType, IsDescend>::SortBlockToStruct(
+    LocalTensor<ValueType> xLocal, LocalTensor<ValueType> sortedLocal, uint32_t actualElem, uint32_t baseOffset)
+{
+    uint32_t alignSize = (actualElem == this->blockSortSize_) ? this->blockSortSize_ :
+                                                                Ops::Base::CeilAlign(actualElem, UB_BLOCK_BYTES);
+    uint32_t sortRepeatTimes = (actualElem == this->blockSortSize_) ?
+                                   this->sortRepeatTimes_ :
+                                   Ops::Base::CeilDiv(alignSize, DEALING_SORT_NUM_ONCE);
+    uint32_t concatRepeatTimes = (actualElem == this->blockSortSize_) ?
+                                     this->concatRepeatTimes_ :
+                                     Ops::Base::CeilDiv(alignSize, DEALING_CONCAT_NUM_ONCE);
+
+    LocalTensor<ValueType> concatTmpLocal = this->concatTmpBuf_.template Get<ValueType>();
+    LocalTensor<ValueType> sortTmpLocal = this->sortTmpBuf_.template Get<ValueType>();
+    LocalTensor<uint32_t> indexTmpLocal = this->indexTmpBuf_.template Get<uint32_t>();
+    ArithProgression<int32_t>(indexTmpLocal.template ReinterpretCast<int32_t>(), baseOffset, 1, actualElem);
+
+    // Flip sign bit so that ascending bit-order matches ascending numeric order for signed floats
+    // Note: Keep sign-flipped data for merge, flip back only in ExtractAndCopyChunk
+    if constexpr (!IsDescend) {
+        LocalTensor<int32_t> castTensor = xLocal.template ReinterpretCast<int32_t>();
+        Adds(castTensor, castTensor, 0x80000000, alignSize); // Flip sign bit for ascending float order
+    }
+
+    LocalTensor<ValueType> concatLocal;
+    Concat(concatLocal, xLocal, concatTmpLocal, concatRepeatTimes);
+    AscendC::Sort<ValueType, true>(sortedLocal, concatLocal, indexTmpLocal, sortTmpLocal, sortRepeatTimes);
+}
+
+template <typename Derived, typename ValueType, typename IndexType, bool IsDescend>
+__aicore__ inline void MergeIntraCoreBase<Derived, ValueType, IndexType, IsDescend>::CopyOutToCache(
+    LocalTensor<ValueType> sortedLocal, uint32_t blockId, uint32_t actualElem)
+{
+    // Cache is reused per batch (only 1 batch's cache allocated per core)
+    int64_t cacheOffset = static_cast<int64_t>(blockId) * this->blockSortLen_;
+
+    uint32_t sortLen = (actualElem == this->blockSortSize_) ? this->blockSortLen_ :
+                                                              AscendC::GetSortLen<ValueType>(actualElem);
+    // {blockCount, blockLen, srcStride, dstStride, rsv}
+    DataCopyExtParams copyParams{1, static_cast<uint32_t>(sortLen * sizeof(ValueType)), 0, 0, 0};
+
+    event_t eventId = static_cast<event_t>(this->pipe_->FetchEventID(HardEvent::V_MTE3));
+    SetFlag<HardEvent::V_MTE3>(eventId);
+    WaitFlag<HardEvent::V_MTE3>(eventId);
+
+    DataCopyPad(this->cacheGm_[cacheOffset], sortedLocal, copyParams);
+
+    this->sortedOutQueue_.FreeTensor(sortedLocal);
+}
+
+// ======================== Phase 2 Implementations ========================
+
+template <typename Derived, typename ValueType, typename IndexType, bool IsDescend>
+__aicore__ inline uint32_t MergeIntraCoreBase<Derived, ValueType, IndexType, IsDescend>::MergeSingleBatch()
+{
+    uint32_t numBlocks = this->blocksPerRow_;
+    // At any merge level, blocks 0..numBlocks-2 all have fullBlockElemCount elements,
+    // and the last block (numBlocks-1) has lastBlockElemCount elements.
+    uint32_t fullBlockElemCount = this->blockSortSize_;
+    uint32_t fullBlockSortLen = this->blockSortLen_;
+    uint32_t lastBlockElemCount = this->lastBlockSize_;
+
+    uint32_t pingPongFlag = 0;
+    uint32_t mergeRounds = 0;
+
+    while (numBlocks > 1) {
+        uint32_t cumulativeOffset = 0;
+        uint32_t newNumBlocks = 0;
+        uint32_t newFullBlockElemCount = 0;
+        uint32_t newLastBlockElemCount = 0;
+
+        for (uint32_t i = 0; i < numBlocks; i += MERGE_LIST_MAX_NUM) {
+            uint32_t groupBlockCount = (i + MERGE_LIST_MAX_NUM <= numBlocks) ? MERGE_LIST_MAX_NUM : (numBlocks - i);
+
+            uint32_t mergedGroupElemCount = 0;
+            MergeOneGroup(i, groupBlockCount, fullBlockElemCount, fullBlockSortLen, lastBlockElemCount, numBlocks,
+                          pingPongFlag, cumulativeOffset, mergedGroupElemCount);
+
+            // First full group establishes the new full block size
+            if (newNumBlocks == 0) {
+                newFullBlockElemCount = mergedGroupElemCount;
+            }
+            // Always update last — the final group in the loop becomes the last block
+            newLastBlockElemCount = mergedGroupElemCount;
+            newNumBlocks++;
+        }
+
+        // Defensive: prevent infinite loop if newNumBlocks doesn't decrease
+        if (newNumBlocks == 0 || newNumBlocks >= numBlocks) {
+            break;
+        }
+
+        numBlocks = newNumBlocks;
+        // If only one group was produced, full and last are the same
+        fullBlockElemCount = (numBlocks == 1) ? newLastBlockElemCount : newFullBlockElemCount;
+        fullBlockSortLen = AscendC::GetSortLen<ValueType>(fullBlockElemCount);
+        lastBlockElemCount = newLastBlockElemCount;
+        pingPongFlag = 1 - pingPongFlag;
+        mergeRounds++;
+
+        event_t eventId = static_cast<event_t>(this->pipe_->FetchEventID(HardEvent::MTE3_MTE2));
+        SetFlag<HardEvent::MTE3_MTE2>(eventId);
+        WaitFlag<HardEvent::MTE3_MTE2>(eventId);
+    }
+
+    return (mergeRounds == 0) ? 0 : pingPongFlag;
+}
+
+template <typename Derived, typename ValueType, typename IndexType, bool IsDescend>
+__aicore__ inline void MergeIntraCoreBase<Derived, ValueType, IndexType, IsDescend>::MergeOneGroup(
+    uint32_t groupStart, uint32_t groupBlockCount, uint32_t fullBlockElemCount, uint32_t fullBlockSortLen,
+    uint32_t lastBlockElemCount, uint32_t numBlocks, uint32_t pingPongFlag, uint32_t& cumulativeOffset,
+    uint32_t& mergedGroupElemCount)
+{
+    MergeListContext ctx;
+    ctx.listCount = groupBlockCount;
+
+    int64_t srcRegionOffset = (pingPongFlag == 0) ? 0 : this->batchSortLen_;
+    int64_t dstRegionOffset = (pingPongFlag == 0) ? this->batchSortLen_ : 0;
+
+    for (uint32_t j = 0; j < groupBlockCount; j++) {
+        uint32_t blockIdx = groupStart + j;
+        ctx.srcOffsets[j] = srcRegionOffset + blockIdx * fullBlockSortLen;
+        ctx.elemCounts[j] = (blockIdx < numBlocks - 1) ? fullBlockElemCount : lastBlockElemCount;
+    }
+
+    if (groupBlockCount > 1) {
+        DoIncrementalMerge(dstRegionOffset + cumulativeOffset, ctx);
+
+        mergedGroupElemCount = 0;
+        for (uint32_t j = 0; j < groupBlockCount; j++) {
+            mergedGroupElemCount += ctx.elemCounts[j];
+        }
+        cumulativeOffset += AscendC::GetSortLen<ValueType>(mergedGroupElemCount);
+    } else if (groupBlockCount == 1) {
+        mergedGroupElemCount = ctx.elemCounts[0];
+        if (ctx.elemCounts[0] > 0) {
+            int64_t srcOffset = ctx.srcOffsets[0];
+            uint32_t remainElems = ctx.elemCounts[0];
+            uint32_t srcChunkOffset = 0;
+            while (remainElems > 0) {
+                uint32_t chunkSize = (remainElems > this->blockSortSize_) ? this->blockSortSize_ : remainElems;
+                if (chunkSize == 0)
+                    break;
+                CopyBlockChunk(srcOffset + AscendC::GetSortLen<ValueType>(srcChunkOffset),
+                               dstRegionOffset + cumulativeOffset + AscendC::GetSortLen<ValueType>(srcChunkOffset),
+                               chunkSize);
+                remainElems -= chunkSize;
+                srcChunkOffset += chunkSize;
+            }
+            cumulativeOffset += AscendC::GetSortLen<ValueType>(ctx.elemCounts[0]);
+        }
+    }
+}
+
+template <typename Derived, typename ValueType, typename IndexType, bool IsDescend>
+__aicore__ inline void MergeIntraCoreBase<Derived, ValueType, IndexType, IsDescend>::CopyBlockChunk(int64_t srcAddr,
+                                                                                                    int64_t dstAddr,
+                                                                                                    uint32_t elemCount)
+{
+    uint32_t sortLen = AscendC::GetSortLen<ValueType>(elemCount);
+    LocalTensor<ValueType> srcLocal = this->mergeInQueue_.template AllocTensor<ValueType>();
+    DataCopyExtParams loadParams{1, static_cast<uint32_t>(sortLen * sizeof(ValueType)), 0, 0, 0};
+    DataCopyPad(srcLocal, this->cacheGm_[srcAddr], loadParams, {false, 0, 0, 0});
+    this->mergeInQueue_.EnQue(srcLocal);
+
+    srcLocal = this->mergeInQueue_.template DeQue<ValueType>();
+    LocalTensor<ValueType> outLocal = this->mergeOutQueue_.template AllocTensor<ValueType>();
+    Copy(outLocal, srcLocal, sortLen);
+    this->mergeOutQueue_.EnQue(outLocal);
+    this->mergeInQueue_.FreeTensor(srcLocal);
+
+    outLocal = this->mergeOutQueue_.template DeQue<ValueType>();
+    DataCopyExtParams copyParams{1, static_cast<uint32_t>(sortLen * sizeof(ValueType)), 0, 0, 0};
+    DataCopyPad(this->cacheGm_[dstAddr], outLocal, copyParams);
+    this->mergeOutQueue_.FreeTensor(outLocal);
+}
+
+template <typename Derived, typename ValueType, typename IndexType, bool IsDescend>
+__aicore__ inline void MergeIntraCoreBase<Derived, ValueType, IndexType, IsDescend>::DoIncrementalMerge(
+    int64_t dstOffsetBase, MergeListContext& ctx)
+{
+    if (ctx.listCount > MERGE_LIST_MAX_NUM)
+        return;
+
+    for (uint32_t i = 0; i < ctx.listCount; i++) {
+        ctx.remains[i] = ctx.elemCounts[i];
+    }
+
+    uint32_t dstCumulativeOffset = 0, loopGuard = 0;
+    while (loopGuard <= this->maxMergeIterations_) {
+        uint32_t activeLists = 0;
+        for (uint32_t i = 0; i < ctx.listCount; i++) {
+            if (ctx.remains[i] > 0)
+                activeLists++;
+        }
+        if (activeLists <= 1)
+            break;
+
+        LocalTensor<ValueType> ubMainInput = this->mergeInQueue_.template AllocTensor<ValueType>();
+        uint16_t elementCountList[MERGE_LIST_MAX_NUM] = {0, 0, 0, 0};
+        uint32_t remainListNum = LoadListsToUb(ubMainInput, elementCountList, ctx);
+        this->mergeInQueue_.EnQue(ubMainInput);
+
+        LocalTensor<ValueType> ubMainInputCalc = this->mergeInQueue_.template DeQue<ValueType>();
+        LocalTensor<ValueType> dstLocal = this->mergeOutQueue_.template AllocTensor<ValueType>();
+
+        uint32_t listSortedNums[MERGE_LIST_MAX_NUM] = {0, 0, 0, 0};
+        uint32_t mergedCount = ExecuteMrgSort(dstLocal, ubMainInputCalc, elementCountList, listSortedNums,
+                                              remainListNum);
+        if (mergedCount == 0) {
+            // FreeTensor can release AllocTensor'd buffers without EnQue/DeQue;
+            // it only returns the buffer handle to the idle pool.
+            this->mergeInQueue_.FreeTensor(ubMainInputCalc);
+            this->mergeOutQueue_.FreeTensor(dstLocal);
+            break;
+        }
+
+        this->mergeOutQueue_.EnQue(dstLocal);
+        this->mergeInQueue_.FreeTensor(ubMainInputCalc);
+
+        LocalTensor<ValueType> dstLocalOut = this->mergeOutQueue_.template DeQue<ValueType>();
+        DataCopyExtParams outCopyParams{
+            1, static_cast<uint32_t>(AscendC::GetSortLen<ValueType>(mergedCount) * sizeof(ValueType)), 0, 0, 0};
+        DataCopyPad(this->cacheGm_[dstOffsetBase + dstCumulativeOffset], dstLocalOut, outCopyParams);
+        this->mergeOutQueue_.FreeTensor(dstLocalOut);
+
+        uint32_t j = 0;
+        for (uint32_t i = 0; i < ctx.listCount; i++) {
+            if (ctx.remains[i] > 0) {
+                ctx.gmOffsets[i] += AscendC::GetSortLen<ValueType>(listSortedNums[j]);
+                ctx.remains[i] -= listSortedNums[j];
+                j++;
+            }
+        }
+        dstCumulativeOffset += AscendC::GetSortLen<ValueType>(mergedCount);
+        loopGuard++;
+    }
+
+    CopyRemainingList(ctx, dstOffsetBase, dstCumulativeOffset);
+}
+
+template <typename Derived, typename ValueType, typename IndexType, bool IsDescend>
+__aicore__ inline uint32_t MergeIntraCoreBase<Derived, ValueType, IndexType, IsDescend>::LoadListsToUb(
+    LocalTensor<ValueType> ubMainInput, uint16_t elementCountList[MERGE_LIST_MAX_NUM], const MergeListContext& ctx)
+{
+    uint32_t remainListNum = 0;
+    for (uint32_t i = 0; i < ctx.listCount; i++) {
+        if (ctx.remains[i] > 0) {
+            uint32_t loadCount = (ctx.remains[i] > this->blockSortSize_) ? this->blockSortSize_ : ctx.remains[i];
+            elementCountList[remainListNum] = static_cast<uint16_t>(loadCount);
+
+            int64_t srcAddr = ctx.srcOffsets[i] + ctx.gmOffsets[i];
+
+            DataCopyExtParams copyParams{
+                1, static_cast<uint32_t>(AscendC::GetSortLen<ValueType>(loadCount) * sizeof(ValueType)), 0, 0, 0};
+            DataCopyPadExtParams<ValueType> padParams{false, 0, 0, 0};
+            DataCopyPad(ubMainInput[this->blockSortLen_ * remainListNum], this->cacheGm_[srcAddr], copyParams,
+                        padParams);
+
+            remainListNum++;
+        }
+    }
+    return remainListNum;
+}
+
+template <typename Derived, typename ValueType, typename IndexType, bool IsDescend>
+__aicore__ inline uint32_t MergeIntraCoreBase<Derived, ValueType, IndexType, IsDescend>::ExecuteMrgSort(
+    LocalTensor<ValueType> dstLocal, LocalTensor<ValueType> ubMainInput, uint16_t elementCountList[MERGE_LIST_MAX_NUM],
+    uint32_t listSortedNums[MERGE_LIST_MAX_NUM], uint32_t listCount)
+{
+    LocalTensor<ValueType> tmpUbInputs[MERGE_LIST_MAX_NUM];
+    for (uint32_t j = 0; j < listCount; j++) {
+        tmpUbInputs[j] = ubMainInput[this->blockSortLen_ * j];
+    }
+    // Fill unused slots with duplicates; MrgSortSrcList requires 4 args, validBitTail controls actual participation
+    for (uint32_t j = listCount; j < MERGE_LIST_MAX_NUM; j++) {
+        tmpUbInputs[j] = tmpUbInputs[0];
+        elementCountList[j] = 0;
+    }
+
+    uint16_t validBitTail = (1 << listCount) - 1;
+
+    MrgSortSrcList sortList(tmpUbInputs[0], tmpUbInputs[1], tmpUbInputs[2], tmpUbInputs[3]);
+    MrgSort<ValueType, true>(dstLocal, sortList, elementCountList, listSortedNums, validBitTail, 1);
+
+    uint32_t mergedCount = 0;
+    for (uint32_t j = 0; j < listCount; j++) {
+        mergedCount += listSortedNums[j];
+    }
+    return mergedCount;
+}
+
+template <typename Derived, typename ValueType, typename IndexType, bool IsDescend>
+__aicore__ inline void MergeIntraCoreBase<Derived, ValueType, IndexType, IsDescend>::CopyRemainingList(
+    MergeListContext& ctx, int64_t dstOffsetBase, uint32_t& dstCumulativeOffset)
+{
+    for (uint32_t listIdx = 0; listIdx < ctx.listCount; listIdx++) {
+        while (ctx.remains[listIdx] > 0) {
+            uint32_t loadCount = (ctx.remains[listIdx] > this->blockSortSize_) ? this->blockSortSize_ :
+                                                                                 ctx.remains[listIdx];
+
+            CopyBlockChunk(ctx.srcOffsets[listIdx] + ctx.gmOffsets[listIdx], dstOffsetBase + dstCumulativeOffset,
+                           loadCount);
+
+            ctx.gmOffsets[listIdx] += AscendC::GetSortLen<ValueType>(loadCount);
+            ctx.remains[listIdx] -= loadCount;
+            dstCumulativeOffset += AscendC::GetSortLen<ValueType>(loadCount);
+        }
+    }
+}
+
+} // namespace MergeIntraCoreCommon
+
+#endif // MERGE_INTRA_CORE_BASE_H

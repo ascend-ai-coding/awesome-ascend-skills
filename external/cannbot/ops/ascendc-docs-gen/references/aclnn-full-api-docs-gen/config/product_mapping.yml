@@ -1,0 +1,53 @@
+# ACLNN 产品型号映射配置
+# 用户可以直接修改或新增下方映射项。
+# 同 chip 或 arch 冲突时，以本文件为准；未配置项由脚本内置默认值兜底。
+# 注意：最终文档允许出现的产品型号固定为 6 个对外产品型号；本文件只能调整映射方式，不能新增最终可输出的产品型号。
+# 允许的 product 值：
+# - Ascend 950PR&950DT系列产品
+# - Atlas A3系列产品
+# - Atlas A2系列产品
+# - Atlas 200I/500 A2推理产品
+# - Atlas推理系列产品
+# - Atlas训练系列产品
+
+chip_mapping:
+  - chip: Ascend 910D
+    product: Ascend 950PR&950DT系列产品
+  - chip: Ascend 910_95
+    product: Ascend 950PR&950DT系列产品
+  - chip: Ascend 950
+    product: Ascend 950PR&950DT系列产品
+  - chip: Ascend 910C
+    product: Atlas A3系列产品
+  - chip: Ascend 910_93
+    product: Atlas A3系列产品
+  - chip: Ascend 910B*
+    product: Atlas A2系列产品
+  - chip: Ascend 310B*
+    product: Atlas 200I/500 A2推理产品
+  - chip: Ascend 310P AIC
+    product: Atlas推理系列产品
+  - chip: Ascend 310P AIV
+    product: Atlas推理系列产品
+  - chip: Ascend 310P*
+    product: Atlas推理系列产品
+  - chip: Ascend 910
+    product: Atlas训练系列产品
+  - chip: Ascend 910A
+    product: Atlas训练系列产品
+
+npu_arch_mapping:
+  - arch: "3510"
+    product: Ascend 950PR&950DT系列产品
+  - arch: "3101"
+    product: Ascend 950PR&950DT系列产品
+  - arch: "2201"
+    product: Atlas A3系列产品
+  - arch: "2201"
+    product: Atlas A2系列产品
+  - arch: "3002"
+    product: Atlas 200I/500 A2推理产品
+  - arch: "2002"
+    product: Atlas推理系列产品
+  - arch: "1001"
+    product: Atlas训练系列产品

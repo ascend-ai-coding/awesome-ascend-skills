@@ -1,0 +1,33 @@
+strategy_id: P149
+description: CV 环/PRELAUNCH，需要核对 RING 槽数与 k_slots 适用性检查。
+
+strategy_meta:
+  id: "P149"
+  slug: "P149_ring_prelaunch_constraint"
+  title: "P149: CV 环加深：RING 槽与 PRELAUNCH 的硬约束"
+  bottlenecks: [sync_overhead, no_overlap]
+  op_families: [attention, cv_fusion]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p149_ring_prelaunch_constraint.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p149_ring_prelaunch_constraint.md"
+  playbook_slug: "P149_ring_prelaunch_constraint"
+checks:
+  - id: has_ring
+    type: grep_count
+    pattern: "RING|PRELAUNCH|k_slots"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未发现 RING/PRELAUNCH 结构 → P149 不适用。"
+  - id: has_pipeline
+    type: grep_count
+    pattern: "MTE2|MTE1|Fixpipe"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未发现 CV 流水搬运/计算路径 → P149 不适用。"

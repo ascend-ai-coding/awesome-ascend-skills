@@ -1,0 +1,30 @@
+{
+  "engine": "opencode",
+  "key_pool": [
+    {
+      "env": "DEEPSEEK_API_KEY_1",
+      "provider_key": "DEEPSEEK_API_KEY"
+    },
+    {
+      "env": "DEEPSEEK_API_KEY_2",
+      "provider_key": "DEEPSEEK_API_KEY"
+    },
+    {
+      "env": "DEEPSEEK_API_KEY_3",
+      "provider_key": "DEEPSEEK_API_KEY"
+    }
+  ],
+  "review": {
+    "skill_prompt": "使用 ascendc-code-review skill 检视 {pr_url}。PR 检视模式。",
+    "model": "deepseek/deepseek-v4-flash",
+    "timeout_sec": 6000,
+    "idle_timeout_sec": 6000,
+    "format": "text"
+  },
+  "execution": {
+    "max_parallel": 5,
+    "retry_on_failure": 1,
+    "retry_delay_sec": 30,
+    "output_dir": "./reports"
+  }
+}

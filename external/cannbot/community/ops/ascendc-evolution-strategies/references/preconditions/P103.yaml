@@ -1,0 +1,33 @@
+strategy_id: P103
+description: Cube Neumann 乘积式三角求逆 — 必须已是 MIX/Cube 架构且存在标量三角求解/递推循环
+
+strategy_meta:
+  id: "P103"
+  slug: "P103_cube_neumann_triangular_solve"
+  title: "P103: Cube Neumann 乘积式三角求逆（替代标量 forward substitution）"
+  bottlenecks: [scalar_compute, compute_bound]
+  op_families: [cv_fusion, attention, special]
+  conflicts_with: []
+  synergizes_with: [P102, P87]
+  requires: [P102]
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: false
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p103_cube_neumann_triangular_solve.md"
+  quantified_gain: [{"shape": "GDR triangular solve C=64 per chunk", "baseline_us": 98.0, "optimized_us": 3.0, "speedup": 30.0, "source": "gated_delta_rule_cv: AIV 标量 forward substitution 98µs/chunk → Cube Neumann 11 Mmad"}]
+checks:
+  - id: has_cube_architecture
+    type: grep_count
+    pattern: "KERNEL_TYPE_MIX|ASCEND_IS_AIC|Mmad"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 MIX/Cube 架构 → P103 依赖 Cube Mmad 链，先执行 P102 完成 CV 融合重写。"
+
+  - id: has_scalar_triangular_solve
+    type: grep_count
+    pattern: 'for\\s*\\([^)]*\\+\\+[^)]*\\)\\s*\\{?\\s*for\\s*\\([^)]*<\\s*[a-zA-Z_]+[^)]*\\)|solve|substitution'
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到标量三角求解/递推循环（j<i 型嵌套或 solve/substitution）→ 无三角求解瓶颈，不适用 P103。"

@@ -1,0 +1,25 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+
+# 算子 spec.yaml — boundary_conditions[].machine_check (kind=raises_error).error_type 枚举
+#
+# 语义类别（runtime-agnostic）：spec 层不引用具体 ACLNN 错误码常量；由各 runtime
+# adapter（ACLNN / PyTorch / MindSpore）在 ST/UT 阶段把语义类别映射到具体错误类型。
+#
+# 取值原则：
+#   * 类别名能让 agent 直接理解 case 期望失败原因
+#   * 仅描述算子能主动声明的"输入/属性非法"类失败；纯运行时异常（OOM、internal）
+#     仅作兜底，spec 用例通常不应主动断言
+schema_version: 1
+error_codes:
+  - shape_mismatch                  # 输入 shape 不满足约束（rank 不符、广播失败、维度冲突）
+  - dtype_not_supported             # 输入 dtype 不在支持集 / 多输入 dtype 组合非法
+  - attribute_value_out_of_range    # 算子属性（axis/keepdim/概率…）取值非法或越界
+  - null_input                      # 必填输入为空指针/空 tensor 但算子不允许
+  - out_of_memory                   # workspace/tiling 资源不足
+  - internal_error                  # 兜底：spec 用例一般不主动声明

@@ -1,0 +1,214 @@
+/**
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * CANN Open Software License Agreement Version 2.0. THIS SOFTWARE IS PROVIDED "AS IS".
+ */
+
+/*!
+ * \file cum_streaming_scan.template  (使用时改名为 cum_streaming_scan.h)
+ * \brief Scan 族流式前缀扫描 Kernel（arch35 / dav-3510），含 argmin/argmax 索引跟踪。
+ *
+ * 语义（以 min 为例，对齐 torch.cummin）：
+ *   values[.., i, ..]  = min(x[.., 0..i, ..])
+ *   indices[.., i, ..] = 取得该最小值的 R 位置（并列取更晚位置）
+ *
+ * 布局融合 (M, R, N)：M=扫描轴前维度乘积，N=扫描轴后维度乘积。
+ * work-item = mBlk 行 × nTileLen 列，向量宽 W=mBlk*nTileLen；核内沿 R 逐步流式扫描：
+ * 每个 r 载入该 r 的 [mBlk,nTileLen] 切片（strided DataCopyPad + Compact 打包成连续 W），
+ * 与常驻 UB 的 running-(value,idx) 做 VF 比较更新，直接写出该 r 的 values/indices。
+ *
+ * 数值：fp16/bf16 载入即升 fp32 比较（min/max 无误差），int32 直接比较；索引 int32。
+ * NaN：GT/LT 比较对 NaN 返回 false → NaN 被取用并向后传播（对齐 torch）。
+ *
+ * 适配 Cummax：把 CMPMODE::GT 换成 CMPMODE::LT，identity 从 +inf 换成 -inf。
+ * 适配 Cumsum/Cumprod（无索引）：把 Compare/Select 换成 Add/Mul，去掉 idx 相关分支。
+ */
+#ifndef CUM_STREAMING_SCAN_H
+#define CUM_STREAMING_SCAN_H
+
+#include "kernel_operator.h"
+#include "scan_tiling_data.h"
+
+#ifndef INFINITY
+#define INFINITY (__builtin_inff())
+#endif
+
+namespace ScanOps {
+using namespace AscendC;
+
+constexpr static uint32_t VL = 256 / sizeof(float);  // 64（promote 与 int32 均 4B）
+
+constexpr static AscendC::Reg::CastTrait castTraitToFp32 = {
+    AscendC::Reg::RegLayout::ZERO, AscendC::Reg::SatMode::UNKNOWN,
+    AscendC::Reg::MaskMergeMode::ZEROING, AscendC::RoundMode::UNKNOWN};
+constexpr static AscendC::Reg::CastTrait castTraitFromFp32 = {
+    AscendC::Reg::RegLayout::ZERO, AscendC::Reg::SatMode::NO_SAT,
+    AscendC::Reg::MaskMergeMode::ZEROING, AscendC::RoundMode::CAST_RINT};
+
+__aicore__ inline int64_t CeilDiv(int64_t a, int64_t b) { return b == 0 ? a : (a + b - 1) / b; }
+
+// T：values 存储类型；P：比较促进类型（fp16/bf16->float, float->float, int32->int32）
+template <typename T, typename P>
+class CumStreamingScan {
+public:
+    __aicore__ inline CumStreamingScan() {}
+
+    __aicore__ inline void Init(GM_ADDR x, GM_ADDR values, GM_ADDR indices,
+                                const ScanTilingData* td, TPipe* pipe) {
+        tl_ = td; pipe_ = pipe;
+        xGm_.SetGlobalBuffer((__gm__ T*)x);
+        valGm_.SetGlobalBuffer((__gm__ T*)values);
+        idxGm_.SetGlobalBuffer((__gm__ int32_t*)indices);
+        Wmax_ = tl_->mBlk * tl_->nTileLen;
+        pipe_->InitBuffer(xInBuf_, Wmax_ * sizeof(T));
+        pipe_->InitBuffer(curMinBuf_, Wmax_ * sizeof(P));
+        pipe_->InitBuffer(curIdxBuf_, Wmax_ * sizeof(int32_t));
+        pipe_->InitBuffer(valOutBuf_, Wmax_ * sizeof(T));
+    }
+
+    __aicore__ inline void Process() {
+        int64_t blockIdx = GetBlockIdx();
+        int64_t blockNum = GetBlockNum();
+        int64_t nOuter = tl_->nOuter;
+        for (int64_t workId = blockIdx; workId < tl_->totalWork; workId += blockNum) {
+            int64_t m0 = (workId / nOuter) * tl_->mBlk;
+            int64_t n0 = (workId % nOuter) * tl_->nTileLen;
+            int64_t mCnt = tl_->mBlk; if (m0 + mCnt > tl_->M) mCnt = tl_->M - m0;
+            int64_t nLen = tl_->nTileLen; if (n0 + nLen > tl_->N) nLen = tl_->N - n0;
+            if (mCnt <= 0 || nLen <= 0) continue;
+            ProcessWorkItem(m0, mCnt, n0, nLen);
+        }
+    }
+
+private:
+    __aicore__ inline void ProcessWorkItem(int64_t m0, int64_t mCnt, int64_t n0, int64_t nLen) {
+        uint32_t W = static_cast<uint32_t>(mCnt * nLen);
+        LocalTensor<T> xInUb = xInBuf_.template Get<T>();
+        LocalTensor<P> curMinUb = curMinBuf_.template Get<P>();
+        LocalTensor<int32_t> curIdxUb = curIdxBuf_.template Get<int32_t>();
+        LocalTensor<T> valOutUb = valOutBuf_.template Get<T>();
+        InitRunning(curMinUb, curIdxUb, W);
+        int64_t rn = tl_->R * tl_->N;
+        for (int64_t r = 0; r < tl_->R; r++) {
+            int64_t gmOff = m0 * rn + r * tl_->N + n0;
+            CopyInSlice(xInUb, gmOff, mCnt, nLen);
+            SetFlag<HardEvent::MTE2_V>(GetTPipePtr()->FetchEventID(HardEvent::MTE2_V));
+            WaitFlag<HardEvent::MTE2_V>(GetTPipePtr()->FetchEventID(HardEvent::MTE2_V));
+            ComputeStep(xInUb, curMinUb, curIdxUb, valOutUb, W, static_cast<int32_t>(r));
+            SetFlag<HardEvent::V_MTE3>(GetTPipePtr()->FetchEventID(HardEvent::V_MTE3));
+            WaitFlag<HardEvent::V_MTE3>(GetTPipePtr()->FetchEventID(HardEvent::V_MTE3));
+            CopyOutSlice(gmOff, curMinUb, valOutUb, curIdxUb, mCnt, nLen);
+            SetFlag<HardEvent::MTE3_MTE2>(GetTPipePtr()->FetchEventID(HardEvent::MTE3_MTE2));
+            WaitFlag<HardEvent::MTE3_MTE2>(GetTPipePtr()->FetchEventID(HardEvent::MTE3_MTE2));
+        }
+        // ★ WAR 屏障：一核处理多 work-item 时，本 item 末次 CopyOut(MTE3) 读 curMin/curIdx，
+        // 下一 item InitRunning(V) 覆写它们。MTE3_MTE2 只约束 MTE3->MTE2，不约束 MTE3->V。
+        // 缺此屏障会使每个 work-item 最后一个 r 的 idx 被覆写成 0（实测踩坑，见 usage_guide.md §4）。
+        SetFlag<HardEvent::MTE3_V>(GetTPipePtr()->FetchEventID(HardEvent::MTE3_V));
+        WaitFlag<HardEvent::MTE3_V>(GetTPipePtr()->FetchEventID(HardEvent::MTE3_V));
+    }
+
+    __aicore__ inline void InitRunning(const LocalTensor<P>& curMinUb,
+                                       const LocalTensor<int32_t>& curIdxUb, uint32_t W) {
+        uint16_t loops = static_cast<uint16_t>(CeilDiv(W, VL));
+        __ubuf__ P* minp = (__ubuf__ P*)curMinUb.GetPhyAddr();
+        __ubuf__ int32_t* idxp = (__ubuf__ int32_t*)curIdxUb.GetPhyAddr();
+        __VEC_SCOPE__ {
+            AscendC::Reg::RegTensor<P> infReg;
+            AscendC::Reg::RegTensor<int32_t> zeroReg;
+            AscendC::Reg::MaskReg pMask;
+            uint32_t cnt = W;
+            if constexpr (IsSameType<P, float>::value) {
+                AscendC::Reg::Duplicate(infReg, static_cast<float>(INFINITY));  // Cummax: -INFINITY
+            } else {
+                AscendC::Reg::Duplicate(infReg, static_cast<int32_t>(2147483647));  // Cummax: INT_MIN
+            }
+            AscendC::Reg::Duplicate(zeroReg, static_cast<int32_t>(0));
+            for (uint16_t j = 0; j < loops; j++) {
+                pMask = AscendC::Reg::UpdateMask<uint32_t>(cnt);
+                AscendC::Reg::StoreAlign(minp + j * VL, infReg, pMask);
+                AscendC::Reg::StoreAlign(idxp + j * VL, zeroReg, pMask);
+            }
+        }
+    }
+
+    __aicore__ inline void ComputeStep(const LocalTensor<T>& xInUb, const LocalTensor<P>& curMinUb,
+                                       const LocalTensor<int32_t>& curIdxUb,
+                                       const LocalTensor<T>& valOutUb, uint32_t W, int32_t r) {
+        uint16_t loops = static_cast<uint16_t>(CeilDiv(W, VL));
+        __ubuf__ T* xp = (__ubuf__ T*)xInUb.GetPhyAddr();
+        __ubuf__ P* minp = (__ubuf__ P*)curMinUb.GetPhyAddr();
+        __ubuf__ int32_t* idxp = (__ubuf__ int32_t*)curIdxUb.GetPhyAddr();
+        __ubuf__ T* valp = (__ubuf__ T*)valOutUb.GetPhyAddr();
+        __VEC_SCOPE__ {
+            AscendC::Reg::RegTensor<P> xReg, minReg, newMinReg;
+            AscendC::Reg::RegTensor<int32_t> idxReg, rReg, newIdxReg;
+            AscendC::Reg::MaskReg pMask, geMask;
+            uint32_t cnt = W;
+            AscendC::Reg::Duplicate(rReg, r);
+            for (uint16_t j = 0; j < loops; j++) {
+                pMask = AscendC::Reg::UpdateMask<uint32_t>(cnt);
+                if constexpr (IsSameType<T, P>::value) {
+                    AscendC::Reg::LoadAlign(xReg, (__ubuf__ P*)xp + j * VL);
+                } else {
+                    AscendC::Reg::RegTensor<T> b16;
+                    AscendC::Reg::LoadAlign<T, AscendC::Reg::LoadDist::DIST_UNPACK_B16>(b16, xp + j * VL);
+                    Cast<P, T, castTraitToFp32>(xReg, b16, pMask);
+                }
+                AscendC::Reg::LoadAlign(minReg, minp + j * VL);
+                AscendC::Reg::LoadAlign(idxReg, idxp + j * VL);
+                // Cummin last-occurrence: gtMask=(x>curMin)，x<=curMin 时取 x 并更新 idx=r。
+                // Cummax：改成 CMPMODE::LT（ltMask=(x<curMax)，x>=curMax 时取 x）。
+                AscendC::Reg::Compare<P, CMPMODE::GT>(geMask, xReg, minReg, pMask);
+                AscendC::Reg::Select<P>(newMinReg, minReg, xReg, geMask);
+                AscendC::Reg::Select<int32_t>(newIdxReg, idxReg, rReg, geMask);
+                AscendC::Reg::StoreAlign(minp + j * VL, newMinReg, pMask);
+                AscendC::Reg::StoreAlign(idxp + j * VL, newIdxReg, pMask);
+                if constexpr (IsSameType<T, P>::value) {
+                    AscendC::Reg::StoreAlign((__ubuf__ P*)valp + j * VL, newMinReg, pMask);
+                } else {
+                    AscendC::Reg::RegTensor<T> b16o;
+                    Cast<T, P, castTraitFromFp32>(b16o, newMinReg, pMask);
+                    AscendC::Reg::StoreAlign<T, AscendC::Reg::StoreDist::DIST_PACK_B32>(valp + j * VL, b16o, pMask);
+                }
+            }
+        }
+    }
+
+    __aicore__ inline void CopyInSlice(const LocalTensor<T>& xInUb, int64_t gmOff,
+                                       int64_t mCnt, int64_t nLen) {
+        DataCopyExtParams p;
+        p.blockCount = static_cast<uint16_t>(mCnt);
+        p.blockLen = static_cast<uint32_t>(nLen * sizeof(T));
+        p.srcStride = static_cast<uint32_t>((tl_->R * tl_->N - nLen) * sizeof(T));
+        p.dstStride = 0;
+        DataCopyPadExtParams<T> pad{false, 0, 0, 0};
+        DataCopyPad<T, PaddingMode::Compact>(xInUb, xGm_[gmOff], p, pad);
+    }
+
+    __aicore__ inline void CopyOutSlice(int64_t gmOff, const LocalTensor<P>& curMinUb,
+                                        const LocalTensor<T>& valOutUb,
+                                        const LocalTensor<int32_t>& curIdxUb, int64_t mCnt, int64_t nLen) {
+        LocalTensor<T> valSrc = valOutUb;
+        if constexpr (IsSameType<T, P>::value) valSrc = curMinUb.template ReinterpretCast<T>();
+        DataCopyExtParams vp;
+        vp.blockCount = static_cast<uint16_t>(mCnt);
+        vp.blockLen = static_cast<uint32_t>(nLen * sizeof(T));
+        vp.srcStride = 0;
+        vp.dstStride = static_cast<uint32_t>((tl_->R * tl_->N - nLen) * sizeof(T));
+        DataCopyPad<T, PaddingMode::Compact>(valGm_[gmOff], valSrc, vp);
+        DataCopyExtParams ip;
+        ip.blockCount = static_cast<uint16_t>(mCnt);
+        ip.blockLen = static_cast<uint32_t>(nLen * sizeof(int32_t));
+        ip.srcStride = 0;
+        ip.dstStride = static_cast<uint32_t>((tl_->R * tl_->N - nLen) * sizeof(int32_t));
+        DataCopyPad<int32_t, PaddingMode::Compact>(idxGm_[gmOff], curIdxUb, ip);
+    }
+
+private:
+    GlobalTensor<T> xGm_; GlobalTensor<T> valGm_; GlobalTensor<int32_t> idxGm_;
+    TPipe* pipe_ = nullptr; const ScanTilingData* tl_ = nullptr; int64_t Wmax_ = 0;
+    TBuf<> xInBuf_; TBuf<> curMinBuf_; TBuf<> curIdxBuf_; TBuf<> valOutBuf_;
+};
+
+}  // namespace ScanOps
+#endif  // CUM_STREAMING_SCAN_H

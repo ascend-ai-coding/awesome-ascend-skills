@@ -1,0 +1,68 @@
+{
+    "terminology": {
+        "terms": [
+            "aclnn",
+            "aclTensor",
+            "workspace",
+            "workspaceSize",
+            "executor",
+            "stream",
+            "aclnnStatus",
+            "aclOpExecutor",
+            "aclrtStream"
+        ],
+        "sensitive_words_replace": {
+            "HBM": "高带宽内存",
+            "算力切分": "昇腾虚拟化实例",
+            "910B": "Atlas A2系列产品",
+            "910C": "Atlas A3系列产品",
+            "310P": "Atlas推理系列产品",
+            "致命": "关键",
+            "缺陷": "问题",
+            "静默升级": "升级",
+            "强制升级": "升级",
+            "Fatal": "Critical",
+            "Defect": "Issue"
+        },
+        "sensitive_words_ban": [
+            {
+                "keywords": ["算力密度", "芯片面积", "晶体管数量", "NAND 层数", "128层", "192层"],
+                "reason": "产品规格/供应链信息"
+            },
+            {
+                "keywords": ["14nm", "16nm", "12nm", "10nm", "7nm", "5nm", "DDR5", "LP DDR5"],
+                "reason": "芯片工艺信息"
+            },
+            {
+                "keywords": ["开源"],
+                "reason": "涉及许可条款"
+            },
+            {
+                "keywords": ["1910", "1980", "1911", "1971", "1981", "1982", "1951", "1952", "PG1", "PG2"],
+                "reason": "芯片内部型号（代号）"
+            },
+            {
+                "keywords": ["Atlas 300T A2"],
+                "reason": "已下线产品"
+            }
+        ]
+    },
+    "structure": {
+        "avg_sentence_length": 25,
+        "short_long_ratio": "4:6"
+    },
+    "format": {
+        "table_style": "html表格格式：8列参数说明表（参数名、输入/输出、描述、使用说明、数据类型、数据格式、维度、非连续Tensor）+ 3列返回值表（返回码/状态码、码值、描述），同一返回码只占一行、各失败原因合并在描述中，不用rowspan拆行",
+        "code_style": "使用代码块包围、调用示例中包含完整 main 函数",
+        "heading_structure": "1级=算子名、2级=产品支持情况/功能说明/函数原型/函数接口/约束说明/调用示例",
+        "list_style": "短横线列表 + 嵌套表格",
+        "special_markers": ["$$公式$$", "<term>产品名</term>", "<table>复杂表格</table>"]
+    },
+    "punctuation": {
+        "preferred_marks": ["：", "、", "；"]
+    },
+    "tone": {
+        "person": "third",
+        "tense": "present"
+    }
+}

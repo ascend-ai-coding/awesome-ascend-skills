@@ -1,0 +1,18 @@
+{
+  "name": "markdown-it",
+  "version": "15.0.3",
+  "license": "MIT",
+  "source": "https://github.com/markdown-it/markdown-it/tree/15.0.3",
+  "files": [
+    {
+      "name": "markdown-it.umd.min.cjs",
+      "url": "https://cdn.jsdelivr.net/npm/markdown-it@15.0.3/dist/browser/markdown-it.umd.min.js",
+      "sha256": "391f2aa638e75e6c7859d0a5c5650ef0956722a45998f17e05b83bc655778e1e"
+    },
+    {
+      "name": "LICENSE",
+      "url": "https://cdn.jsdelivr.net/npm/markdown-it@15.0.3/LICENSE",
+      "sha256": "792c48c5a849a15fdf9e37e8bcf9e6d1dd13b32b46c642a748a0a46a9919d473"
+    }
+  ]
+}

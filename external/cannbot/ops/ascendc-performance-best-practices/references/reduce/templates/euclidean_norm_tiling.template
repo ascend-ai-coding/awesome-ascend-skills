@@ -1,0 +1,425 @@
+/**
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
+
+/*!
+ * \file euclidean_norm_tiling.h
+ * \brief EuclideanNorm 两个"多轴交错归约"模板的 host 侧门控 + tiling（纯 C++，可 host 编译验证）。
+ *
+ * 本文件提取自完整 host tiling，仅保留两个交错模板所需的部分：
+ *   - Pattern 预处理链（去 1 / 合轴 / 补 leading A / 补 R → 归一成 A 起头严格交替的 pattern）；
+ *   - ComputeAxisStrides（dense 行优先 stride）；
+ *   - TryComputeFastTiling      → 路径 A（偶数轴 ≥6 tail-R，ARAR...AR，内块 [A,R,A,R]，两段式 + workspace）；
+ *   - TryComputeFastRARATiling  → 路径 B（奇数轴 ≥7 tail-A，ARAR...A，内块 [R,A,R,A]，无 workspace）；
+ *   - ComputeInterleavedTiling  → 驱动：预处理后依次试两个门控。
+ *
+ * 门控是"精准打击"型窄条件：只在交错布局导致 MTE2 碎读、且内块/burst 满足硬阈值时命中，
+ * 否则返回 false 由调用方回退到普通归约模板。支持 dtype ∈ {fp32, fp16, bf16}（计算全程升 fp32）；
+ * 关键阈值（burst / 内块每行大小）经上板实测校准，不能仅凭 mte2_ratio 判定（见 .md「关键洞察」）。
+ *
+ * 使用：去 .template 后缀落地为 euclidean_norm_tiling.h；依赖 euclidean_norm_tiling_data.h。
+ */
+#ifndef EUCLIDEAN_NORM_TILING_H
+#define EUCLIDEAN_NORM_TILING_H
+
+#include <algorithm>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <set>
+#include <vector>
+
+#include "euclidean_norm_tiling_data.h"
+
+namespace euclidean_norm_host {
+
+// ─── 整数工具 ───
+inline int64_t CeilDiv(int64_t a, int64_t b) { return (b == 0) ? 0 : ((a + b - 1) / b); }
+inline int64_t CeilAlign(int64_t a, int64_t b) { return (b == 0) ? a : (CeilDiv(a, b) * b); }
+inline int64_t FloorAlign(int64_t a, int64_t b) { return (b == 0) ? a : ((a / b) * b); }
+
+// dtypeCode: 0=fp32, 1=fp16, 2=bf16, 3=int32
+inline int64_t DtypeSize(int dtypeCode) { return (dtypeCode == 0 || dtypeCode == 3) ? 4 : 2; }
+
+static constexpr int32_t kMinAxisNum = 2;
+static constexpr int32_t kMaxAxisNum = MAX_PATTERN_RANK;
+
+struct Ctx {
+    int64_t coreNum = 0;
+    int64_t ubSize = 0;
+    int64_t blockSize = 32;
+    int64_t cacheLineSize = 256;
+
+    int dtypeCode = 0;
+    int64_t dtypeSize = 0;
+    std::vector<int64_t> xShape;
+    std::vector<int64_t> reduceAxes;
+
+    std::vector<int64_t> axisShape;
+    std::vector<bool> isReduceAxis;
+    int32_t axisNum = 0;
+    bool isTailR = false;
+};
+
+struct Result {
+    EuclideanNormTilingData td;
+    int templateType = 0;  // 2=fast(路径A), 3=fast-RARA(路径B)
+    int isEmptyTensor = 0;
+    int isTailR = 0;
+    int blockDim = 1;
+    int64_t workspaceBytes = 0; // 路径A: groupCnt×coresPerGroup×outLanes×4；路径B: 0
+    bool isFast = false;
+    bool isFastRARA = false;
+};
+
+// ─── axes 归一化 ───
+inline bool NormalizeAxes(Ctx& ctx, const std::vector<int64_t>& axesRaw)
+{
+    const int64_t xRank = static_cast<int64_t>(ctx.xShape.size());
+    ctx.reduceAxes.clear();
+    if (axesRaw.empty()) {
+        ctx.reduceAxes.reserve(xRank);
+        for (int64_t i = 0; i < xRank; ++i) ctx.reduceAxes.push_back(i);
+        return true;
+    }
+    std::set<int64_t> seen;
+    for (size_t i = 0; i < axesRaw.size(); ++i) {
+        int64_t v = axesRaw[i];
+        if (v < -xRank || v >= xRank) return false;
+        const int64_t norm = (v < 0) ? (v + xRank) : v;
+        if (!seen.insert(norm).second) return false;
+        ctx.reduceAxes.push_back(norm);
+    }
+    std::sort(ctx.reduceAxes.begin(), ctx.reduceAxes.end());
+    return true;
+}
+
+inline void BuildInitialAxisList(Ctx& ctx)
+{
+    const size_t rank = ctx.xShape.size();
+    ctx.axisShape = ctx.xShape;
+    ctx.isReduceAxis.assign(rank, false);
+    for (int64_t a : ctx.reduceAxes) ctx.isReduceAxis[static_cast<size_t>(a)] = true;
+}
+
+// ─── Pattern 预处理 4 步：去 1 / 合轴 / 补 leading A / 补 R ───
+inline void DropSizeOneAxes(Ctx& ctx)
+{
+    std::vector<int64_t> newShape;
+    std::vector<bool> newIsR;
+    for (size_t i = 0; i < ctx.axisShape.size(); ++i) {
+        if (ctx.axisShape[i] != 1) {
+            newShape.push_back(ctx.axisShape[i]);
+            newIsR.push_back(ctx.isReduceAxis[i]);
+        }
+    }
+    if (newShape.empty()) {
+        newShape.push_back(1);
+        newIsR.push_back(false);
+    }
+    ctx.axisShape = std::move(newShape);
+    ctx.isReduceAxis = std::move(newIsR);
+}
+
+inline void FuseAxis(Ctx& ctx)
+{
+    std::vector<int64_t> fusedShape;
+    std::vector<bool> fusedIsR;
+    for (size_t i = 0; i < ctx.axisShape.size(); ++i) {
+        if (!fusedShape.empty() && fusedIsR.back() == ctx.isReduceAxis[i]) {
+            fusedShape.back() *= ctx.axisShape[i];
+        } else {
+            fusedShape.push_back(ctx.axisShape[i]);
+            fusedIsR.push_back(ctx.isReduceAxis[i]);
+        }
+    }
+    ctx.axisShape = std::move(fusedShape);
+    ctx.isReduceAxis = std::move(fusedIsR);
+}
+
+inline void PadLeadingOneA(Ctx& ctx)
+{
+    if (!ctx.axisShape.empty() && ctx.isReduceAxis.front()) {
+        ctx.axisShape.insert(ctx.axisShape.begin(), 1);
+        ctx.isReduceAxis.insert(ctx.isReduceAxis.begin(), false);
+    }
+}
+
+inline void PadRIfPureA(Ctx& ctx)
+{
+    bool hasR = false;
+    for (bool b : ctx.isReduceAxis) {
+        if (b) { hasR = true; break; }
+    }
+    if (!hasR) {
+        if (ctx.axisShape.size() == 1 && ctx.axisShape[0] == 1) {
+            ctx.axisShape.push_back(1);
+            ctx.isReduceAxis.push_back(true);
+        } else {
+            ctx.axisShape.insert(ctx.axisShape.begin(), {1, 1});
+            ctx.isReduceAxis.insert(ctx.isReduceAxis.begin(), {false, true});
+        }
+    }
+}
+
+inline bool PreprocessPattern(Ctx& ctx)
+{
+    DropSizeOneAxes(ctx);
+    FuseAxis(ctx);
+    PadLeadingOneA(ctx);
+    PadRIfPureA(ctx);
+
+    ctx.axisNum = static_cast<int32_t>(ctx.axisShape.size());
+    if (ctx.axisNum < kMinAxisNum || ctx.axisNum > kMaxAxisNum) return false;
+    // A 起头 + 严格交替：偶数轴必 A，奇数轴必 R
+    for (int32_t i = 0; i < ctx.axisNum; ++i) {
+        const bool wantR = (i % 2 == 1);
+        if (ctx.isReduceAxis[static_cast<size_t>(i)] != wantR) return false;
+    }
+    ctx.isTailR = (ctx.axisNum % 2 == 0);
+    return true;
+}
+
+inline void ComputeAxisStrides(const Ctx& ctx, int64_t outStride[])
+{
+    int64_t acc = 1;
+    for (int32_t i = ctx.axisNum - 1; i >= 0; --i) {
+        outStride[i] = acc;
+        acc *= ctx.axisShape[static_cast<size_t>(i)];
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 路径 A 门控 + tiling（交错 tail-R，偶数轴 ARARAR...AR，内块 [A,R,A,R]）
+//
+// 命中条件（窄门控，只针对交错 A-R 布局导致 MTE2 碎读的场景）：
+//   1. dtype ∈ {fp32, fp16, bf16}（计算全程升 fp32；int32 平方需精确整数，不走 fast）
+//   2. PreprocessPattern 后 axisNum 为偶数且 ≥6，严格 ARAR...AR（A 起头交替，isTailR）
+//   3. 内块 = 末 4 轴 [A,R,A,R]（S=axisNum-4），物理连续（stride 校验）
+//   4. rows 轴 = 轴[S-1]（R），stride == innerElems（内块连续于其后）
+//   5. 内块整块字节 32B 对齐（kernel 用连续 DataCopy 载入，须 32B 对齐）
+//   6. ★ burst 病态：最内 R 轴 × dtypeSize ≤ 16B（连续大 burst 的收益区）
+//   7. ★ rows 轴够大（≥ kFastMinRows）：小 rows 时两步规约+屏障开销反超 MTE2 增益
+//   8. 内块可整块放进 UB（chunkA0 == szA0，无需分块 —— 分块实测负收益）
+//   9. 外层 A 轴乘积（groupCnt）≤ coreNum，且 rows 轴够多核切分
+// 不命中返回 false，回退到普通归约模板。
+// ════════════════════════════════════════════════════════════════════════════
+static constexpr int64_t kFastMaxBurstBytes = 16; // 最内 R 轴 burst 上限（病态区判据）
+static constexpr int64_t kFastMinRows = 8;        // rows 轴最小切分/累加规模
+
+inline bool TryComputeFastTiling(Ctx& ctx, Result& out)
+{
+    if (ctx.dtypeCode != 0 && ctx.dtypeCode != 1 && ctx.dtypeCode != 2) return false; // fp32/fp16/bf16
+    const int32_t N = ctx.axisNum;
+    if (N < 6 || (N % 2) != 0) return false; // 偶数轴 ≥6（tail-R）
+    if (!ctx.isTailR) return false;
+    // 严格 ARAR...AR 已由 PreprocessPattern 保证（偶 A 奇 R）
+
+    int64_t axisStride[MAX_PATTERN_RANK] = {0};
+    ComputeAxisStrides(ctx, axisStride);
+
+    const int32_t S = N - 4;             // 内块起始（末 4 轴 [A,R,A,R]）
+    const int32_t rowsAxisIdx = N - 5;   // 内块前的 R 轴，被切分 + 连续载入
+    const int64_t A0 = ctx.axisShape[S], R0 = ctx.axisShape[S + 1];
+    const int64_t A1 = ctx.axisShape[S + 2], R1 = ctx.axisShape[S + 3];
+    const int64_t innerElems = A0 * R0 * A1 * R1;
+    const int64_t outLanes = A0 * A1;
+
+    // 连续性校验：内块最内轴 stride 必须为 1，rows 轴 stride == innerElems
+    if (axisStride[N - 1] != 1) return false;
+    if (axisStride[rowsAxisIdx] != innerElems) return false;
+
+    // ★ 内块整块字节数须 32B 对齐：kernel 用连续 DataCopy 逐 row（=innerElems 元素）载入，
+    //   DataCopy 要求传输字节 32B 对齐；否则非对齐搬运产生错误数据（如 innerElems=40, fp16=80B）。
+    if ((innerElems * ctx.dtypeSize) % 32 != 0) return false;
+
+    // ★ burst 病态判据：最内 R 轴（R1）× dtypeSize ≤ 16B → 正是连续化收益区
+    if (R1 * ctx.dtypeSize > kFastMaxBurstBytes) return false;
+
+    // ★ rows 轴够大：小 rows 时两步规约 + 屏障固定开销反超 MTE2 增益
+    const int64_t rowsSize = ctx.axisShape[rowsAxisIdx];
+    if (rowsSize < kFastMinRows) return false;
+
+    const int64_t sliceStride = R0 * A1 * R1;         // 一个 A0 面的元素数
+
+    // 固定 buffer（与 chunkA0 无关的部分）：tmp(16K) + partBuf + outQ（fp32 workspace）
+    const int64_t fixedIndep = 16 * 1024 + CeilAlign(outLanes, 8) * 4 * 2;
+    const int64_t avail = ctx.ubSize - fixedIndep;
+    if (avail <= 0) return false;
+
+    // 每单位 chunkA0 的字节：inQ(2×1×sliceStride×dtypeSize) + acc(sliceStride×4,fp32)
+    //   + red(R0*A1×4) + plane(R0×4) + dstA4(4)
+    const int64_t perA0 = 2 * sliceStride * ctx.dtypeSize + sliceStride * 4 + R0 * A1 * 4 + R0 * 4 + 4;
+    int64_t chunkA0 = avail / perA0;
+    if (chunkA0 < 1) return false;         // 一个 A0 面都放不下 → 不适用（交给 normal）
+    if (chunkA0 > A0) chunkA0 = A0;
+    // 【实测结论】内块需分块（chunkA0 < A0）时，fast 的分块屏障 + 逐平面规约开销
+    //   会吃掉 MTE2 增益（-9%）。只在内块能整块放下（无需分块）时才用 fast。
+    if (chunkA0 < A0) return false;
+
+    const int64_t chunkElems = chunkA0 * sliceStride;
+    // 余量内提 rowsPerLoad（增大 burst）：剩余 UB / (2×chunkElems×dtypeSize)
+    const int64_t usedAtRpl1 = fixedIndep + 2 * chunkElems * ctx.dtypeSize + chunkElems * 4
+                             + chunkA0 * R0 * A1 * 4 + chunkA0 * R0 * 4 + CeilAlign(chunkA0, 8) * 4;
+    int64_t rowsPerLoad = 1;
+    const int64_t spare = ctx.ubSize - usedAtRpl1;
+    if (spare > 0) {
+        rowsPerLoad += spare / (2 * chunkElems * ctx.dtypeSize);
+    }
+    if (rowsPerLoad > 8) rowsPerLoad = 8;
+    if (rowsPerLoad > rowsSize) rowsPerLoad = rowsSize;
+    if (rowsPerLoad < 1) rowsPerLoad = 1;
+
+    // 分组 & 多核：group = ∏ 外层 A 轴（偶数轴 < S），coresPerGroup 切 rows 轴
+    int64_t groupCnt = 1;
+    for (int32_t i = 0; i < S; ++i) {
+        if (i % 2 == 0) groupCnt *= ctx.axisShape[i];
+    }
+    if (groupCnt <= 0 || groupCnt > ctx.coreNum) return false;
+    int64_t coresPerGroup = ctx.coreNum / groupCnt;
+    if (coresPerGroup < 1) coresPerGroup = 1;
+    if (coresPerGroup > rowsSize) coresPerGroup = rowsSize; // 不超过可切分行数
+    const int64_t usedCoreNum = groupCnt * coresPerGroup;
+
+    EuclideanNormTilingData* td = &out.td;
+    memset(td, 0, sizeof(EuclideanNormTilingData));
+    td->axisNum = ctx.axisNum;
+    for (int32_t i = 0; i < MAX_PATTERN_RANK; ++i) {
+        td->axisShape[i] = (i < ctx.axisNum) ? ctx.axisShape[static_cast<size_t>(i)] : 1;
+        td->axisStride[i] = (i < ctx.axisNum) ? axisStride[i] : 0;
+    }
+    td->usedCoreNum = static_cast<int32_t>(usedCoreNum);
+    td->fastInnerStart = S;
+    td->fastGroupCnt = groupCnt;
+    td->fastCoresPerGroup = coresPerGroup;
+    td->fastRowsAxisIdx = rowsAxisIdx;
+    td->fastRowsPerLoad = rowsPerLoad;
+    td->fastInnerChunkA0 = chunkA0;
+
+    out.templateType = 2;
+    out.isEmptyTensor = 0;
+    out.isTailR = 1;
+    out.isFast = true;
+    out.blockDim = static_cast<int>(usedCoreNum);
+    out.workspaceBytes = groupCnt * coresPerGroup * outLanes * static_cast<int64_t>(sizeof(float));
+    return true;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 路径 B 门控（交错 tail-A，奇数轴 ARARAR...A，内块 [R,A,R,A]，无 workspace）
+//
+// 命中条件：
+//   1. dtype ∈ {fp32, fp16, bf16}
+//   2. PreprocessPattern 后 axisNum 为奇数且 ≥7，严格 ARAR...A（tail-A，isTailR==false）
+//   3. 内块 = 末 4 轴 [R,A,R,A]（S=axisNum-4），物理连续（最内轴 stride==1，R0 轴 stride==innerRowElems）
+//   4. 内块整块字节 32B 对齐（kernel 连续 DataCopy 载入 chunkR0×innerRowElems 元素）
+//   5. slab 数 = ∏(内块外 A 轴) ≥ coreNum/2（并行度）
+//   6. innerRowElems ≥ 512（内块每行 ≥ 1KB(fp16)/2KB(fp32)，连续大 burst 才有价值）
+//   7. 内块最内行 [A0,R1,A1] 至少能放下一块（chunkR0 ≥ 1）
+// 不命中返回 false。
+// ════════════════════════════════════════════════════════════════════════════
+inline bool TryComputeFastRARATiling(Ctx& ctx, Result& out)
+{
+    if (ctx.dtypeCode != 0 && ctx.dtypeCode != 1 && ctx.dtypeCode != 2) return false; // fp32/fp16/bf16
+    const int32_t N = ctx.axisNum;
+    if (N < 7 || (N % 2) != 1) return false; // 奇数轴 ≥7（tail-A）
+    if (ctx.isTailR) return false;        // 需 tail-A
+
+    int64_t axisStride[MAX_PATTERN_RANK] = {0};
+    ComputeAxisStrides(ctx, axisStride);
+
+    const int32_t S = N - 4;              // 内块起始（末 4 轴 [R,A,R,A]）
+    const int64_t R0 = ctx.axisShape[S], A0 = ctx.axisShape[S + 1];
+    const int64_t R1 = ctx.axisShape[S + 2], A1 = ctx.axisShape[S + 3];
+    const int64_t innerRowElems = A0 * R1 * A1;      // 固定 R0 的一行
+    const int64_t outLanes = A0 * A1;
+
+    // 连续性校验
+    if (axisStride[N - 1] != 1) return false;
+    if (axisStride[S] != innerRowElems) return false;
+
+    // ★ 内块一行字节数须 32B 对齐（kernel 连续 DataCopy 载入 chunkR0×innerRowElems 元素）。
+    if ((innerRowElems * ctx.dtypeSize) % 32 != 0) return false;
+
+    // slab = ∏(内块外 A 轴，偶数轴 < S)
+    int64_t slabCnt = 1;
+    for (int32_t i = 0; i < S; ++i) {
+        if (i % 2 == 0) slabCnt *= ctx.axisShape[i];
+    }
+    if (slabCnt < 1) return false;
+    // slab 太少则并行度不足（每核独占 slab，无跨核切 R）→ 大量核闲置，fast 无优势。
+    if (slabCnt * 2 < ctx.coreNum) return false;
+    // 【实测结论】内块每行太小时，连续载入无 MTE2 收益，反被每 slab 的 ReduceStep2
+    //   屏障 + 小规约开销拖垮（innerRowElems=80 → 慢28%；=8 → 慢10×）。要求每行 ≥ 512 元素。
+    if (innerRowElems < 512) return false;
+
+    // UB 预算：inQ(DB=2 × chunkR0 × innerRowElems × dtypeSize) + acc(innerRowElems×4,fp32)
+    //          + tmp(16K) + plane(R1*A1×4) + part+outQ
+    const int64_t fixedBytes = innerRowElems * 4        // acc（fp32）
+                             + 16 * 1024                // tmp
+                             + R1 * A1 * 4              // plane
+                             + CeilAlign(outLanes, 8) * 4 * 2; // part + outQ
+    const int64_t avail = ctx.ubSize - fixedBytes;
+    if (avail <= 0) return false;
+    int64_t chunkR0 = avail / (2 * innerRowElems * ctx.dtypeSize);  // DB=2
+    if (chunkR0 < 1) return false;
+    if (chunkR0 > R0) chunkR0 = R0;
+    if (chunkR0 > 8) chunkR0 = 8;  // 收敛，8×innerRowElems 已足够大 burst
+
+    int64_t usedCoreNum = (slabCnt < ctx.coreNum) ? slabCnt : ctx.coreNum;
+
+    EuclideanNormTilingData* td = &out.td;
+    memset(td, 0, sizeof(EuclideanNormTilingData));
+    td->axisNum = ctx.axisNum;
+    for (int32_t i = 0; i < MAX_PATTERN_RANK; ++i) {
+        td->axisShape[i] = (i < ctx.axisNum) ? ctx.axisShape[static_cast<size_t>(i)] : 1;
+        td->axisStride[i] = (i < ctx.axisNum) ? axisStride[i] : 0;
+    }
+    td->usedCoreNum = static_cast<int32_t>(usedCoreNum);
+    td->fastInnerStart = S;
+    td->raraSlabCnt = slabCnt;
+    td->raraChunkR0 = chunkR0;
+
+    out.templateType = 3;
+    out.isEmptyTensor = 0;
+    out.isTailR = 0;
+    out.isFastRARA = true;
+    out.blockDim = static_cast<int>(usedCoreNum);
+    out.workspaceBytes = 0;
+    return true;
+}
+
+// ─── 驱动：预处理后依次试两个交错门控。命中返回 true 并填 out；否则 false（调用方回退普通模板）。─
+inline bool ComputeInterleavedTiling(const std::vector<int64_t>& xShapeIn, const std::vector<int64_t>& axesRaw,
+                                     int dtypeCode, int64_t coreNum, int64_t ubSize, Result& out)
+{
+    Ctx ctx;
+    ctx.coreNum = coreNum;
+    ctx.ubSize = ubSize;
+    ctx.blockSize = 32;
+    ctx.cacheLineSize = 256;
+    ctx.dtypeCode = dtypeCode;
+    ctx.dtypeSize = DtypeSize(dtypeCode);
+    if (coreNum <= 0 || ubSize <= 0) return false;
+
+    ctx.xShape = xShapeIn;
+    if (ctx.xShape.empty()) ctx.xShape.push_back(1);
+
+    if (!NormalizeAxes(ctx, axesRaw)) return false;
+    BuildInitialAxisList(ctx);
+    if (!PreprocessPattern(ctx)) return false;
+
+    if (TryComputeFastTiling(ctx, out)) return true;      // 路径 A
+    if (TryComputeFastRARATiling(ctx, out)) return true;  // 路径 B
+    return false;                                         // 回退普通归约模板
+}
+
+} // namespace euclidean_norm_host
+
+#endif // EUCLIDEAN_NORM_TILING_H

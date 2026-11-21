@@ -1,0 +1,40 @@
+strategy_id: P50
+
+strategy_meta:
+  id: "P50"
+  slug: "P50_swiglu_fusion"
+  title: "P50: SwiGLU 融合流水线 (SwiGLU Fusion Pipeline)"
+  bottlenecks: [compute_bound, partial_overlap]
+  op_families: [cv_fusion, moe]
+  conflicts_with: []
+  synergizes_with: [P51, P73]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p50_swiglu_fusion.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p50_swiglu_fusion.md"
+  playbook_slug: "P50_swiglu_fusion"
+checks:
+  - id: has_swiglu
+    type: grep_count
+    pattern: "SwiGLU|swiglu|sigmoid|gate|Mul.*Exp|FFN"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 SwiGLU 相关计算模式 → 不适用 P50。检查 P69 或 P81。"
+
+  - id: has_cube
+    type: grep_count
+    pattern: "Cube.*Vector|Vector.*Cube|CV|MIX"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 Cube+Vector 融合模式 → SwiGLU 融合流水线无意义，不适用 P50。"
+
+  - id: has_pipebarrier
+    type: grep_count
+    pattern: "PipeBarrier|SyncAll|SetFlag|WaitFlag"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到同步原语 → 无流水线优化空间，不适用 P50。"

@@ -1,0 +1,34 @@
+strategy_id: P130
+description: 1×1 Conv 翻转 GEMM 适用性检查 — 算子为 1×1 pointwise 卷积（kH=kW=1, s=1, p=0, d=1），且当前仍走 wrepack+im2col 两级发射。
+
+strategy_meta:
+  id: "P130"
+  slug: "P130_1x1conv_flipped_gemm"
+  title: "P130: 1×1 Conv 翻转 GEMM（原始布局即操作数，免 wrepack/im2col）"
+  bottlenecks: [compute_bound, mte2_stall]
+  op_families: [matmul, special]
+  conflicts_with: []
+  synergizes_with: [P129, P131]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p130_1x1conv_flipped_gemm.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p130_1x1conv_flipped_gemm.md"
+  playbook_slug: "P130_1x1conv_flipped_gemm"
+checks:
+  - id: is_1x1_conv
+    type: grep_count
+    pattern: "kH|kernelH|kernelSize"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "无卷积参数证据 → 需人工确认 kH==kW==1 后使用 P130。"
+
+  - id: has_repack_or_im2col
+    type: grep_count
+    pattern: "repack|wrepack|im2col|Im2col"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未检测到 wrepack/im2col 发射 → 可能已是翻转 GEMM 路径。"

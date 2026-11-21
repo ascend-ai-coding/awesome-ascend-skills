@@ -1,0 +1,51 @@
+# Example snapshot_manifest.yaml for gated_delta_rule_backward M2 bisection.
+# Place at custom/gated_delta_rule_backward/_debug/snapshot_manifest.yaml
+#
+# This mirrors the 11 hand-written debug stages found in
+# custom/gated_delta_rule_backward/debug/ — one manifest replaces all of them.
+
+op:     gated_delta_rule_backward
+module: M2
+case:   L5_cancellation_stress_dS_small_gap   # must exist in adversarial_suite.json
+modes:  [sim, npu]                            # default; omit to use both
+atol:   1.0e-3
+rtol:   1.0e-3
+
+notes: |
+  Reproducing the d_s_new cancellation observed during initial development.
+  Each inspection point is chosen so that the drift-onset iter tells us
+  whether the bug is in d_s_decayed, q_eff_doc_scaled, w_T_dvtotal, or in
+  their composition (d_s_tmp -> d_s_new).
+
+intermediates:
+  # Before the NT loop: verify the initial carrier state matches golden.
+  - name: d_s_init
+    shape: [K, V]
+    probe_point: before_nt_loop
+    # Optional — the golden-side expression for this intermediate. The
+    # generator inserts it into module_2_inspect(). If you leave this out,
+    # @pypto-op-debugger must fill in the per-iteration capture in the golden-snapshot
+    # file by hand.
+    golden_expression: "inputs['dht'].reshape(B, H, K, V)"
+
+  # Inside the NT loop (per-chunk probes).
+  - name: d_s_decayed
+    shape: [K, V]
+    probe_point: inside_nt_loop
+    # No golden_expression provided here — the generator stubs it; @pypto-op-debugger fills in.
+
+  - name: q_eff_doc_scaled
+    shape: [K, V]
+    probe_point: inside_nt_loop
+
+  - name: w_T_dvtotal
+    shape: [K, V]
+    probe_point: inside_nt_loop
+
+  - name: d_s_tmp                  # d_s_decayed + q_eff_doc_scaled (pre-subtraction)
+    shape: [K, V]
+    probe_point: inside_nt_loop
+
+  - name: d_s_new                  # d_s_tmp - w_T_dvtotal (the suspect)
+    shape: [K, V]
+    probe_point: inside_nt_loop

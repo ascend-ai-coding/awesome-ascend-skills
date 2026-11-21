@@ -1,0 +1,41 @@
+strategy_id: P140
+description: MLA（kvHeads=1）且 M-tile 被小值封顶 — 放大共享-KV 的 M-tile 的适用性判断
+strategy_meta:
+  id: "P140"
+  slug: "P140_mla_large_m_tile"
+  title: "P140: MLA（kvHeads=1）的 M-tile 放大到 qHeads（UB/L0 自适应）"
+  bottlenecks: [cube_bound, scalar_loading]
+  op_families: [attention, flash_attention]
+  conflicts_with: []
+  synergizes_with: [P137, P138, P110]
+  requires: [P138]
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p140_mla_large_m_tile.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p140_mla_large_m_tile.md"
+  playbook_slug: "P140_mla_large_m_tile"
+  quantified_gain: [{"shape": "SparseFlashAttention MLA case9/11/13（Dk512 kvHeads=1, 910c）", "baseline_us": 1018.0, "optimized_us": 523.0, "speedup": 1.95, "source": "cannbench-evo round_16-18，BenchSite job_816dad0819d7：MLA case 整体 -33%~-49%"}]
+checks:
+  - id: has_shared_kv_ratio
+    type: grep_count
+    pattern: 'kvHeads|qHeads\\s*/\\s*kvHeads|groupSize|N2|groupTile'
+    files: [host, tiling]
+    expected: ">= 1"
+    fail_msg: "未发现 qHeads/kvHeads 共享 K/V 关系 → P140（按共享行数定 M-tile）不适用"
+
+  - id: mla_like_small_kv
+    type: grep_value
+    pattern: 'kvHeads\\s*[=]\\s*1|kvHeadNum\\s*[=]\\s*1'
+    files: [host, tiling, kernel]
+    expected_value: "1"
+    fail_msg: "kvHeads>1（GQA/MHA），共享行数小，P140 的放大收益有限——确认是否仍需要"
+
+  - id: m_tile_capped_small
+    type: grep_value
+    pattern: 'kCubeMaxM\\s*=\\s*(\\d+)'
+    files: [header, tiling]
+    expected_value: "128"
+    fail_msg: "kCubeMaxM 非 128（可能仍被 64/32 封顶）→ P140 可考虑放大；若已是运行时 mTileCap 自适应则已应用"

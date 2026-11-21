@@ -1,0 +1,57 @@
+#ifndef TOP_K_DIRECT_TILING_DATA_H
+#define TOP_K_DIRECT_TILING_DATA_H
+
+#include <cstdint>
+
+// Direct-launch adaptation of the official registered TilingData. Field order and
+// scalar types are identical to top_k_tiling_arch35.h.template.
+struct TopKTilingDataSimd {
+    int32_t isLargest = 1;
+    int32_t isSort = 1;
+    uint64_t sortLoopTimes = 0;
+    uint32_t unsortedDimParallel = 0;
+    uint64_t unsortedDimNum = 0;
+    uint32_t lastDimNeedCore = 0;
+    uint32_t numTileDataSize = 0;
+    uint32_t platformCoreNum = 0;
+    uint32_t topkAcApiTmpBufferSize = 0;
+    uint32_t mergSortAcApiNeedBufferSize = 0;
+    uint64_t oneCoreRowNum = 0;
+    uint32_t batchNumInUb = 0;
+    uint32_t tailLoopBatchNum = 0;
+    uint32_t tailBatchNum = 0;
+    uint32_t tailTileNum = 0;
+    uint32_t modeType = 0;
+    uint32_t isInInt32Range = 1;
+    int64_t lastAxisNum = 0;
+    int64_t topKRealValue = 0;
+    int64_t lastDimTileNum = 0;
+    int64_t outputLastDimValue = 0;
+    int64_t lastDimTileNumTimes = 0;
+    uint32_t tilingKeyForSort = 0;
+    uint32_t sortLoopTimesForSort = 0;
+    uint32_t unsortedDimParallelForSort = 0;
+    uint64_t unsortedDimNumForSort = 0;
+    uint32_t lastDimTileNumForSort = 0;
+    uint32_t lastDimNeedCoreForSort = 0;
+    uint32_t numTileDataSizeForSort = 0;
+    uint32_t sortAcApiNeedBufferSizeForSort = 0;
+    uint32_t mergSortAcApiNeedBufferSizeForSort = 0;
+    uint32_t oneCoreRowNumForSort = 0;
+    uint32_t outputLastDimValueForSort = 0;
+    uint32_t isInInt32RangeForSort = 0;
+    int64_t lastAxisNumForSort = 0;
+    uint32_t modeTypeForSort = 0;
+    uint64_t keyParams0 = 0;
+    uint32_t keyParams1 = 0;
+    uint32_t keyParams2 = 0;
+    uint32_t keyParams3 = 0;
+    uint32_t keyParams4 = 0;
+    uint32_t keyParams5 = 0;
+    uint32_t tmpUbSize = 0;
+    uint32_t sortAndTopkTileDataSize = 0;
+    uint32_t sortAndTopkBlockTileNum = 0;
+    uint32_t sortAndTopkTailTileNum = 0;
+};
+
+#endif

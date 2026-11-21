@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "S2P1_cases.task-a",
+  "title": "S2P1 Cases",
+  "type": "array",
+  "items": { "$ref": "#/$defs/case_record" },
+  "$defs": {
+    "case_record": {
+      "type": "object",
+      "required": ["id", "reachability", "case_values"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "path_id": { "type": ["string", "null"] },
+        "path_name": { "type": ["string", "null"] },
+        "tiling_key": { "type": ["integer", "null"] },
+        "tiling_path_id": { "type": ["string", "null"] },
+        "kernel_branch_id": { "type": ["string", "null"] },
+        "reachability": { "enum": ["reachable", "tiling_no_kernel", "unresolved", "unmapped"] },
+        "case_values": { "type": "object" },
+        "purpose": { "type": "string" },
+        "evidence": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    }
+  }
+}

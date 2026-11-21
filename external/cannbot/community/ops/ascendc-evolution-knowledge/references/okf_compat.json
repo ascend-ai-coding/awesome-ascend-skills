@@ -1,0 +1,1736 @@
+{
+  "schema_version": "okf-compat.v1",
+  "source": "legacy skills/evolution-knowledge/references/okf/strategies/discovered (merged by id)",
+  "note": "Only structured OKF metadata; card body remains in cannbot-knowledge.",
+  "cards": {
+    "X1": {
+      "title": "Inline Target Capture",
+      "description": "在 Online Softmax 的前向流式扫描过程中，当处理到包含目标索引的 tile 时，立即捕获目标元素的原始值（如 target logit）， 避免在扫描完成后再用一次独立的 DataCopy 回读目标 tile。这将 \"reduce + lookup\" 两步操作融合为单次遍历， 对于 CrossEntropyLoss 等需要同时做全行归约和单点索引查找的算子，可完全消除一个独立的 pa",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "reduction"
+      ],
+      "bottlenecks": [
+        "mte2_stall",
+        "no_overlap"
+      ],
+      "tags": [
+        "cross_entropy",
+        "inline_target",
+        "reduction",
+        "online_softmax"
+      ]
+    },
+    "X10": {
+      "title": "设备侧分组调度 + NZ plane 权重缓存（Grouped Matmul Cube 化）",
+      "description": "Grouped matmul（group_list 为 device 端 cumsum）的 Cube 化不要在 host 侧展开分组计划：每个 AIC 核在设备侧自行从 group_list 构建本核的 (group, M-block) 调度（empty group 自然跳过，无 host 同步）；每个专家的 weight 以 NZ plane 形式作为静态缓存放入 GM workspace，ti",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "matmul",
+        "moe"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "mte3_stall",
+        "no_overlap",
+        "scalar_compute",
+        "tiling_imbalance"
+      ],
+      "tags": [
+        "compute_bound",
+        "matmul",
+        "moe",
+        "mte3_stall",
+        "no_overlap",
+        "quantization",
+        "scalar_compute",
+        "tiling_imbalance"
+      ]
+    },
+    "X11": {
+      "title": "ND-drain + L0B 喂给率驱动 baseM 扩升（量化 Matmul Cube 利用率修复）",
+      "description": "c220 (910B) 上 MatmulImpl 的多 fragment NZ drain 是芯片缺陷（与 orgM 对齐无关，已证伪对齐假说）， 而 ND int32 多行 drain 完全正确——Cube 输出格式应路由到 ND。真正的 AIC 瓶颈不是 B 的 L2 refetch（scM 扩 16x 时间纹丝不动），而是 **L0B-fill:mad 比**：baseM=16 时每个 ba",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "matmul"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "l2_cache_thrash",
+        "mte3_stall",
+        "no_overlap",
+        "scalar_compute"
+      ],
+      "tags": [
+        "compute_bound",
+        "l2_cache_thrash",
+        "matmul",
+        "mte3_stall",
+        "no_overlap",
+        "quantization",
+        "scalar_compute"
+      ]
+    },
+    "X12": {
+      "title": "量化 GEMV 纯 VEC 流式路径（小 M 分流）",
+      "description": "对 weight-quant matmul（y = x @ ((w+o)*s) + b，w 为 int8），当 M 小（1-8，GEMV 类）时放弃 cube，走纯 VEC streaming：代数重构把 per-N scale 提出 K 循环（y[m,n] = s[n]*(sum_k x[m,k]*w[k,n] + o[n]*rowsum(x[m])) + b[n]，热 K 循环内零反量化乘加）",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "matmul",
+        "reduction"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "mte2_stall",
+        "scalar_compute",
+        "tiling_imbalance"
+      ],
+      "tags": [
+        "compute_bound",
+        "matmul",
+        "mte2_stall",
+        "quantization",
+        "reduction",
+        "scalar_compute",
+        "tiling_imbalance"
+      ]
+    },
+    "X13": {
+      "title": "Shape 自适应双引擎分流 (M-Threshold Hybrid Routing)",
+      "description": "当单一执行引擎（cube / vector）无法覆盖全部输入 shape 时，在 host 侧（op plugin）按 shape 特征（如 M 维度）路由到两条完整的独立 kernel 路径：小 M（GEMV 类）走纯 VEC streaming 内核吃带宽极限，中大 M 走 cube 内核吃 MAC 吞吐。分发阈值不靠猜，用实测证据校准：中间区间（如 M∈[3,4]）按 K*N 流量是否足以摊",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "matmul"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "scalar_compute",
+        "tiling_imbalance"
+      ],
+      "tags": [
+        "compute_bound",
+        "matmul",
+        "quantization",
+        "scalar_compute",
+        "tiling_imbalance"
+      ]
+    },
+    "X14": {
+      "title": "Mix-Kernel 跨核生产者/消费者融合 (Pairwise AIV-Producer/AIC-Consumer Fusion)",
+      "description": "当流水线中存在独立的前置 VEC pass（如 dequant/cast），且硬件路径（int8 直接进 cube）被证伪时，将该 VEC pass 与 cube kernel 融合进**单个 mix kernel**：AIC ci 与其配对 AIV（2ci, 2ci+1）组成生产者/消费者对，AIV 按 AIC 的消费顺序（如 (nIdx,kIdx) strip）生产中间数据到 write-on",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "matmul"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "l2_cache_thrash",
+        "mte2_stall",
+        "mte3_stall",
+        "no_overlap",
+        "scalar_compute"
+      ],
+      "tags": [
+        "compute_bound",
+        "l2_cache_thrash",
+        "matmul",
+        "mte2_stall",
+        "mte3_stall",
+        "no_overlap",
+        "quantization",
+        "scalar_compute"
+      ]
+    },
+    "X15": {
+      "title": "递归拆分-并行投影外提 (Recurrent Split: Hoist Parallel Projection)",
+      "description": "对 RNN/LSTM/GRU/scan 类含串行循环的算子，将计算拆为\"非递归部分\"与\"严格串行部分\"： 非递归投影（如全部时间步的 x@W_ih）与循环无关，可一次性合并为单个大 GEMM，外提到 host 侧 调用框架/库的高性能 GEMM（自动走 Cube 单元）；自定义内核只保留严格串行的递归残差 （如每步 h@W_hh + 门激活 + 状态更新），并将递归权重（W_hh）在 UB 常驻、",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "matmul"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "mte3_stall",
+        "scalar_compute"
+      ],
+      "tags": [
+        "compute_bound",
+        "matmul",
+        "mte3_stall",
+        "scalar_compute"
+      ]
+    },
+    "X16": {
+      "title": "循环算子 H-slice 多核切分 (Recurrent H-Slice Multi-Core Split)",
+      "description": "对 LSTM/GRU/RNN/scan 类含串行循环的算子，时间维不可并行，并行度只能从 batch×hidden 中榨取。 当 batch 小（核空闲）时，将 hidden 维度切分到多个 AIV 核：每核独占一段隐藏单元 [hStart, hEnd) 及对应的 4 个门控列，W_hh 切片 [hSlice, 4·hSlice] 每核只加载一次并跨 batch tile 与全部时间步复用（UB",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "matmul"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "scalar_compute",
+        "tiling_imbalance"
+      ],
+      "tags": [
+        "compute_bound",
+        "matmul",
+        "scalar_compute",
+        "tiling_imbalance"
+      ]
+    },
+    "X17": {
+      "title": "FP32-via-BF16 Hi/Lo 拆分 3-GEMM（Cube 不吃 fp32 时的保精度路径）",
+      "description": "910B Cube 的 Mmad 不直接消费 fp32 输入。将 fp32 操作数拆分为 bf16 双分量 `x ≈ hi + lo`（hi = cast_bf16(x)，lo = cast_bf16(x − hi)），用 3 个 bf16 GEMM `hi·hi + hi·lo + lo·hi`（fp32 累加）逼近 fp32 GEMM，获得 Cube 级吞吐 + 接近 fp32 的精度（~1e",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "matmul"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "scalar_compute"
+      ],
+      "tags": [
+        "compute_bound",
+        "matmul",
+        "scalar_compute"
+      ]
+    },
+    "X18": {
+      "title": "Fused img2col LoadData3D 随路展开（含 band 窗口化突破 L1 容量）",
+      "description": "卷积的 im2col GM 物化路径流量为 `特征图→UB→GM→L1→L0`，GM 往返可占整算子 70%。 fused 模式让 **A 侧不落地**：特征图转 NC1HWC0 常驻 L1，用 img2col LoadData3D （pad/stride/dilation 硬件处理）从 L1 直接随路展开进 L0A，B 侧复用 K-major 权重 ws。CopyOut/epilogue/m/n",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "cv_fusion",
+        "matmul"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "mte3_stall",
+        "scalar_compute"
+      ],
+      "tags": [
+        "compute_bound",
+        "conv2d",
+        "cv_fusion",
+        "matmul",
+        "mte3_stall",
+        "scalar_compute"
+      ]
+    },
+    "X19": {
+      "title": "1×1 Conv 翻转 GEMM（原始布局即操作数，免 wrepack/im2col）",
+      "description": "1×1 卷积的 im2col 是恒等变换：NCHW 原始布局的 x 本身就是 `[K=Ci, M=H*W]` 的 GEMM B 操作数。把 GEMM **翻转**——A = 原始权重 [Co, Ci]（跨图共享，免 wrepack）、 B = 原始 x [Ci, H*W]（免 im2col 发射）、acc = [Co, H*W] fp32——epilogue 按通道行 加 bias 后直接写出 N",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "cv_fusion",
+        "matmul",
+        "reduction"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "mte2_stall",
+        "mte3_stall"
+      ],
+      "tags": [
+        "compute_bound",
+        "conv2d",
+        "cv_fusion",
+        "matmul",
+        "mte2_stall",
+        "mte3_stall",
+        "reduction"
+      ]
+    },
+    "X2": {
+      "title": "大张量驻留 Device、仅小索引过总线",
+      "description": "对于 host 协调的 gather/scatter/routing 类算子（host 预先排序并算好索引、kernel 仅做按索引搬运）， **不要**把大数据张量 (N×H) 做 device→host→device 往返再在 CPU gather，而是让大张量**全程驻留 device**， 只把小的 int32 索引张量 (N×K，比数据小一两个数量级) 过总线交给 CPU 做必须的排序，",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "index_scatter",
+        "datapath"
+      ],
+      "bottlenecks": [
+        "bus_contention",
+        "mte2_stall"
+      ],
+      "tags": [
+        "bus_contention",
+        "datapath",
+        "index_scatter",
+        "mte2_stall"
+      ]
+    },
+    "X20": {
+      "title": "Host 侧权重预打包结果 LRU 缓存（Weight Repack Cache）",
+      "description": "权重布局变换（K-major repack、fractal 重排、量化打包等）的输出是 （weight 内容, shape, dtype, 目标布局）的**确定函数**。推理场景同一权重张量 被反复卷积/矩阵乘，repack 结果逐 bit 相同——host 侧做 LRU 缓存，命中时 **跳过整个 repack kernel 发射**，直接复用缓存的 workspace。",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "cv_fusion",
+        "elementwise",
+        "matmul"
+      ],
+      "bottlenecks": [
+        "l2_cache_thrash",
+        "no_overlap"
+      ],
+      "tags": [
+        "conv2d",
+        "cv_fusion",
+        "elementwise",
+        "l2_cache_thrash",
+        "matmul",
+        "no_overlap",
+        "quantization"
+      ]
+    },
+    "X21": {
+      "title": "910B2C Cube 化平台纪律 + 数据驱动 Kahan 精度路由",
+      "description": "在 910B2C（DAV_2201）上把 AIV 算子 Cube 化时，正确性杀手往往不是算法而是**平台纪律**： 四条独立实证的平台陷阱会静默产出垃圾/hang，且 CANN 不报错。逐一避坑后，Cube 路线 才能真正落地；对 fp32 L0C 累加必然超差的相消重元素 case，用**数据驱动预扫描**（非 shape 硬编码）按一般性能量规则分流到 Kahan 兜底，保住全量精度。 四条",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "cv_fusion",
+        "matmul"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "mte2_stall",
+        "mte3_stall",
+        "no_overlap",
+        "scalar_compute"
+      ],
+      "tags": [
+        "compute_bound",
+        "conv2d",
+        "cv_fusion",
+        "matmul",
+        "mte2_stall",
+        "mte3_stall",
+        "no_overlap",
+        "scalar_compute"
+      ]
+    },
+    "X22": {
+      "title": "Depthwise 直接卷积（绕过 im2col+GEMM）",
+      "description": "depthwise(groups==Cin, cig==1) 卷积用单 AIV fp32 向量卷积内核直接计算逐通道 kh*kw dot product，替代 im2col+GEMM 4 阶段流水线——无 im2col、无 GEMM、无 fp16 分裂、无 GM workspace、无 Cube。Tile=(image,co-block8,oh-block) 保证 32B 对齐存储；对齐 interior 向量化 + 标量 head/tail 独立 corr 缓冲消除 S/V hazard。",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "convolution"
+      ],
+      "bottlenecks": [
+        "scalar_compute",
+        "mte3_stall",
+        "compute_bound"
+      ],
+      "tags": [
+        "depthwise",
+        "conv2d",
+        "vector-conv",
+        "im2col-bypass"
+      ]
+    },
+    "X23": {
+      "title": "X23: Batched Spatial 全宽向量化 + 编译器驱动标量预取",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "conv",
+        "cv_fusion",
+        "elementwise"
+      ],
+      "bottlenecks": [
+        "scalar_loading",
+        "scalar_compute"
+      ],
+      "tags": [
+        "batched-spatial",
+        "s-pipe-latency-hiding",
+        "pragma-unroll",
+        "full-width-vectorization"
+      ]
+    },
+    "X24": {
+      "title": "X24: AIC_ONLY 任务类型压设备 launch 地板（固定开销主导算子）",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "matmul",
+        "elementwise",
+        "reduction"
+      ],
+      "bottlenecks": [
+        "scalar_compute",
+        "no_overlap",
+        "compute_bound"
+      ],
+      "tags": [
+        "aic-only",
+        "device-launch-floor",
+        "fixed-overhead-dominated",
+        "tiny-shape",
+        "KERNEL_TYPE"
+      ]
+    },
+    "X25": {
+      "title": "X25: 向量权重广播（Brcb + MulAddDst）替代 S-pipe 标量读",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "conv",
+        "cv_fusion",
+        "elementwise",
+        "matmul"
+      ],
+      "bottlenecks": [
+        "scalar_loading",
+        "scalar_compute"
+      ],
+      "tags": [
+        "vector-broadcast",
+        "brcb",
+        "muladddst",
+        "scalar-read-elimination",
+        "s-pipe-bypass",
+        "batched-spatial"
+      ]
+    },
+    "X26": {
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "conv",
+        "deconv",
+        "scatter",
+        "gather"
+      ],
+      "bottlenecks": [
+        "mte2_stall",
+        "undersize_transfer"
+      ],
+      "tags": [
+        "col2im",
+        "tap-batch",
+        "pipeline-barrier",
+        "event-sync",
+        "dav-2201"
+      ]
+    },
+    "X27": {
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "matmul"
+      ],
+      "bottlenecks": [
+        "fixed_overhead_dominated",
+        "scalar_compute",
+        "compute_bound"
+      ],
+      "tags": [
+        "manual-mmad",
+        "transpose-on-load",
+        "full-shape-grid",
+        "aic-only",
+        "no-host-transpose",
+        "LoadToL0B"
+      ]
+    },
+    "X28": {
+      "title": "小 S Prefill FA 自适应 KV Chunk 粒度",
+      "description": "FA/GQA prefill 的 kvPad=align_up(S, nChunk) 在 nChunk=256/128 时对小 S 产生 4-85x 序列 padding 浪费（attention 在 mask 覆盖列白算）。按 S 自适应 nChunk（小 S 用 64，kvPad=align_up(S,64)）并让 kernel 支持尾块 partial chunk，消除 padding 冗余计算。GroupedQueryAttention 上小/中 case attention device 时间降 2-4x，geomean 0.500->0.588。",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "attention",
+        "flash_attention"
+      ],
+      "bottlenecks": [
+        "undersize_transfer",
+        "tiling_imbalance"
+      ],
+      "tags": [
+        "attention",
+        "flash_attention",
+        "gqa",
+        "prefill",
+        "padding",
+        "kv-chunk",
+        "tiling"
+      ]
+    },
+    "X29": {
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "conv",
+        "deconv"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "mte2_stall"
+      ],
+      "tags": [
+        "convtranspose",
+        "stride1",
+        "shift-free",
+        "dense-direct",
+        "gather-elimination",
+        "dav-2201"
+      ]
+    },
+    "X3": {
+      "title": "端到端 dtype 直传下沉 (End-to-End Dtype Passthrough)",
+      "description": "对多 dtype elementwise / foreach 算子，瓶颈往往不在 kernel 计算，而在 **wrapper / host 侧把低精度输入 (fp16/bf16) 全量 `.to(fp32)` 升 cast，kernel 再按 fp32 读写**——这使 HBM 流量相对原始 dtype 膨胀约 5x （fp16: wrapper 入 cast 3x(读2B+写4B)=18B +",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "elementwise"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "mte2_stall",
+        "scalar_compute",
+        "tiling_imbalance"
+      ],
+      "tags": [
+        "compute_bound",
+        "elementwise",
+        "mte2_stall",
+        "scalar_compute",
+        "tiling_imbalance"
+      ]
+    },
+    "X30": {
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "attention",
+        "flash_attention",
+        "matmul"
+      ],
+      "bottlenecks": [
+        "no_overlap",
+        "mte2_stall",
+        "scalar_compute"
+      ],
+      "tags": [
+        "attention",
+        "mqa",
+        "gqa",
+        "heads-merge",
+        "layout",
+        "token-major",
+        "head-minor",
+        "kernel-elimination"
+      ]
+    },
+    "X31": {
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "reduction",
+        "elementwise",
+        "attention"
+      ],
+      "bottlenecks": [
+        "scalar_compute",
+        "compute_bound"
+      ],
+      "tags": [
+        "softmax",
+        "max-trick",
+        "bounded-logits",
+        "translation-invariance",
+        "barrier-reduction"
+      ]
+    },
+    "X32": {
+      "title": "",
+      "description": "",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "attention",
+        "matmul"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "mte2_stall",
+        "mte3_stall",
+        "no_overlap",
+        "scalar_compute"
+      ],
+      "tags": [
+        "attention",
+        "compute_bound",
+        "gqa",
+        "matmul",
+        "mte2_stall",
+        "mte3_stall",
+        "no_overlap",
+        "prefill",
+        "scalar_compute"
+      ]
+    },
+    "X33": {
+      "title": "",
+      "description": "",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "attention",
+        "matmul"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "l2_cache_thrash",
+        "mte2_stall",
+        "mte3_stall",
+        "no_overlap",
+        "scalar_compute"
+      ],
+      "tags": [
+        "attention",
+        "compute_bound",
+        "gqa",
+        "l2_cache_thrash",
+        "matmul",
+        "mte2_stall",
+        "mte3_stall",
+        "no_overlap",
+        "prefill",
+        "scalar_compute"
+      ]
+    },
+    "X34": {
+      "title": "",
+      "description": "反卷积 fallback（cube GEMM + col2im）中，**GEMM 中间矩阵 G[mg, ng] 仅 0.03-2MB、GEMM ~9us 非瓶颈**；真正瓶颈是 col2im 散射——逐输出行 (n,co,oh) 循环 tap，每 tap 一次 64B undersize GM 加载 + Gather + parity 过滤 + PIPE_ALL（~274us/大 case）。 把",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "matmul",
+        "reduction"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "l2_cache_thrash",
+        "mte2_stall",
+        "mte3_stall",
+        "no_overlap",
+        "scalar_compute",
+        "tiling_imbalance"
+      ],
+      "tags": [
+        "compute_bound",
+        "l2_cache_thrash",
+        "matmul",
+        "mte2_stall",
+        "mte3_stall",
+        "no_overlap",
+        "reduction",
+        "scalar_compute",
+        "tiling_imbalance"
+      ]
+    },
+    "X35": {
+      "title": "MatmulImpl Host 固定开销消除 + 全覆盖串行多 tile",
+      "description": "MatmulImpl 高阶 API 每次调用含固定 host/device 开销（GetTiling + TilingHeader H2D + workspace at::zeros 清零 ~6.5us/次），对小到中 shape（输出 ≤4×L0C）是 launch-bound 主因。消除四类固定开销：workspace at::empty（位精确验证）、per-shape tiling 缓存、workspace 缓存复用、kernel 核内串行多 tile 遍历（for tile+=blockDim，End 只调一次，修复 totalBlock>blockDim 漏算并保证全核忙碌）。配套自适应 core re-grid（L0C 约束 + 目标 totalBlock∈[8,24]，大 shape 保留对齐 tile 避免 Cube 掩码浪费）。",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "matmul"
+      ],
+      "bottlenecks": [
+        "scalar_loading",
+        "tiling_imbalance",
+        "no_overlap",
+        "mte2_stall"
+      ],
+      "tags": [
+        "matmul",
+        "host-overhead",
+        "launch-bound",
+        "workspace",
+        "tiling-cache",
+        "multi-core",
+        "serial-tile"
+      ]
+    },
+    "X36": {
+      "title": "Zero-Host-Padding AIV Small-Matmul",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "matmul"
+      ],
+      "bottlenecks": [
+        "undersize_transfer",
+        "fake_mte2_bound",
+        "scalar_loading"
+      ],
+      "tags": [
+        "aiv",
+        "vector",
+        "host-padding",
+        "small-shape",
+        "zero-pad"
+      ]
+    },
+    "X37": {
+      "title": "FP32-via-FP16 Hi/Lo 4-GEMM Cube Decomposition",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "flash_attention",
+        "matmul",
+        "conv"
+      ],
+      "bottlenecks": [
+        "scalar_compute",
+        "compute_bound"
+      ],
+      "tags": [
+        "fp32",
+        "fp16",
+        "cube",
+        "hi-lo",
+        "decomposition",
+        "precision"
+      ]
+    },
+    "X38": {
+      "title": "GM-Workspace-Ring KV-tile 宽度缩放 + Host 批量权重打包",
+      "description": "针对采用 GM workspace ring 队列（AIC 写 S/P/O 经 GM 中转给 AIV）的 FA 算子，每 KV tile 固定握手开销主导（AIC scalar_ratio~0.8, AIV~0.7, cube MAC 仅 4-6%）时：1) kvN 自适应（seq<=64 用 64 避免尾块浪费，seq>64 用 128）直接减半 GM ring 往返次数 + 翻倍 MM1/MM2 cube GEMM 尺寸，workspace/buffer 按 128 max 分配仅 slot stride/MM n-k/fixpipe/softmax srcK/mask 变运行时 kvN，sPad align_up(seq,kvN) 修越界；2) host 侧融合投影的 per-head 权重打包 copy-storm（48+ 次 narrow().copy_()，fp32 case 占墙钟~40%）批量化为 cat+pad+reshape+单次 strided copy（heads 多时），输出改 at::empty。FlashAttentionV2 mean 0.579→0.856（geomean 0.530→0.794）。",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "flash_attention",
+        "attention",
+        "matmul"
+      ],
+      "bottlenecks": [
+        "scalar_loading",
+        "scalar_compute",
+        "mte2_stall",
+        "undersize_transfer",
+        "compute_bound"
+      ],
+      "tags": [
+        "flash_attention",
+        "workspace-ring",
+        "kv-tile",
+        "host-packing",
+        "scalar_loading",
+        "cube-efficiency",
+        "causal",
+        "gqa"
+      ]
+    },
+    "X39": {
+      "title": "host 侧全写 workspace 免零初始化（at::zeros → at::empty）",
+      "description": "算子 host 侧每次 forward 调用分配大块 workspace（及输出 buffer）时，若 kernel 会**写满全部区域**（无读前未写）， 用 `at::empty` 替代 `at::zeros`，消除每次调用对数百 MB~GB 级内存的 memset（清零写）。 大 case 下 memset 是 memory-bound 地板，消除后直接降低每次调用的固定成本。",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "attention",
+        "elementwise"
+      ],
+      "bottlenecks": [
+        "mte2_stall",
+        "tiling_imbalance"
+      ],
+      "tags": [
+        "attention",
+        "elementwise",
+        "gqa",
+        "mte2_stall",
+        "tiling_imbalance"
+      ]
+    },
+    "X4": {
+      "title": "Concat-Fused Strided DMA + Two-Level Skv Reduction",
+      "description": "针对 decode/MTP attention（单行/小批量 Q、长 Skv）的 **DMA-launch-latency-bound** 瓶颈（非 BW）： 1. **Concat 折叠进 K-tile DMA**：一个 tile 用两条 MTE2（nope-tile / rope-tile）以 strided dst 交错写入连续 `[T,D_qk]` UB（ND2NZ 式 packed lo",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "attention",
+        "flash_attention",
+        "reduction"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "mte2_stall",
+        "scalar_compute"
+      ],
+      "tags": [
+        "attention",
+        "compute_bound",
+        "decode",
+        "flash_attention",
+        "gqa",
+        "mla",
+        "mte2_stall",
+        "reduction",
+        "scalar_compute"
+      ]
+    },
+    "X40": {
+      "title": "",
+      "description": "",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "elementwise",
+        "matmul",
+        "reduction"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "no_overlap",
+        "tiling_imbalance"
+      ],
+      "tags": [
+        "compute_bound",
+        "elementwise",
+        "matmul",
+        "no_overlap",
+        "reduction",
+        "tiling_imbalance"
+      ]
+    },
+    "X41": {
+      "title": "singleCoreN 对齐 baseN 倍数（量化 Matmul L0B 填充利用率修复）",
+      "description": "量化 matmul 大 shape 的 AIC 瓶颈是 **L0B-fill:mad 比 / L2→L1 喂给率**（aic_mte2_ratio≈0.92 近饱和，mac_ratio≈0.45），而非 MAC。当 `MatmulApiTiling` 返回的 `singleCoreN` 不是 `baseN` 的整数倍（如 342 = 256+86）时，每个 block 的最后一个 base-N t",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "matmul"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "l2_cache_thrash",
+        "mte2_stall",
+        "tiling_imbalance"
+      ],
+      "tags": [
+        "compute_bound",
+        "l2_cache_thrash",
+        "matmul",
+        "mte2_stall",
+        "quantization",
+        "tiling_imbalance"
+      ]
+    },
+    "X42": {
+      "title": "路由选中分支消除（one-hot selector 预计算 → 只算被选中分支）",
+      "description": "当算子在主计算**之前**已由一个廉价 router/selector 产生 **one-hot 选择向量**（如 AdaptiveAttention 的 router argmax→sel、MoE 的 expert router），而输出 = sum_i sel_i · branch_i(x)（one-hot 下即只取被选中分支），则**全部未选中分支的计算都是纯浪费**。 按 batch/to",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "attention",
+        "matmul",
+        "moe"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "mte3_stall",
+        "no_overlap",
+        "scalar_compute"
+      ],
+      "tags": [
+        "attention",
+        "compute_bound",
+        "matmul",
+        "moe",
+        "mte3_stall",
+        "no_overlap",
+        "scalar_compute"
+      ]
+    },
+    "X43": {
+      "title": "Cube 输出 FixPipe 融合 Epilogue（C_TYPE=输出 dtype + SetBias，acc 不落 GM）",
+      "description": "Matmul 流水最后一段是 L0C → FixPipe → GM 的输出通路。把独立 epilogue kernel（bias-add + cast + requant）下沉进 cube 的 FixPipe 阶段：**C_TYPE 直接设为输出 dtype（fp16/bf16）**， `EnableBias` + `SetBias` 在 FixPipe 内做 fp32 acc + bias 后再",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "cv_fusion",
+        "elementwise",
+        "matmul",
+        "reduction"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "mte3_stall",
+        "no_overlap",
+        "scalar_compute"
+      ],
+      "tags": [
+        "compute_bound",
+        "cv_fusion",
+        "elementwise",
+        "matmul",
+        "mte3_stall",
+        "no_overlap",
+        "quantization",
+        "reduction",
+        "scalar_compute"
+      ]
+    },
+    "X44": {
+      "title": "fp32 Cube mmad 全量重写替代向量模拟 matmul（SetHF32(false) 全精度）",
+      "description": "基线内核用 AIV 向量标量模拟 matmul（16×16 tile 逐点 GetValue 累加）完全绕过 Cube 矩阵 单元，是数量级性能杀手。把算子内全部 matmul（attention 的 QK^T/PV/W_o）改用 Matmul 高阶 API（`ASCENDC_CUBE_ONLY` + `REGIST_MATMUL_OBJ` + `IterateAll`）直接走 fp32 Cube",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "attention",
+        "matmul",
+        "reduction"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "no_overlap",
+        "scalar_compute"
+      ],
+      "tags": [
+        "attention",
+        "compute_bound",
+        "matmul",
+        "no_overlap",
+        "reduction",
+        "scalar_compute"
+      ]
+    },
+    "X45": {
+      "title": "",
+      "description": "",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "attention",
+        "matmul"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "mte2_stall",
+        "mte3_stall",
+        "no_overlap",
+        "scalar_compute"
+      ],
+      "tags": [
+        "attention",
+        "compute_bound",
+        "gqa",
+        "matmul",
+        "mte2_stall",
+        "mte3_stall",
+        "no_overlap",
+        "prefill",
+        "quantization",
+        "scalar_compute"
+      ]
+    },
+    "X46": {
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "attention",
+        "flash_attention"
+      ],
+      "bottlenecks": [
+        "no_overlap",
+        "mte2_stall",
+        "partial_overlap"
+      ],
+      "tags": [
+        "cv-pipeline",
+        "two-pass",
+        "softmax",
+        "gm-workspace-ring",
+        "handshake",
+        "credit",
+        "chunk",
+        "software-pipelining"
+      ]
+    },
+    "X47": {
+      "title": "",
+      "description": "",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "attention",
+        "elementwise",
+        "matmul",
+        "reduction"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "mte3_stall",
+        "scalar_compute"
+      ],
+      "tags": [
+        "attention",
+        "compute_bound",
+        "elementwise",
+        "matmul",
+        "mte3_stall",
+        "reduction",
+        "scalar_compute"
+      ]
+    },
+    "X48": {
+      "title": "链式 GEMM M-block 归属调度（第一阶段输出复用）",
+      "description": "两阶段 GEMM 链（FFN 的 GEMM1→激活→GEMM2、QK^T→softmax→PV、SwiGLU 等）在朴素实现中，若按 `(mi, ni)` 输出 tile 划分任务，每个 tile 独立执行完整串行链，则 **GEMM1（第一阶段）会被重复计算 nBlocks 次**（同一 M-block 的每个 N 输出 tile 各算一遍）。nBlocks 越大病态越慢（FFN case23",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "attention",
+        "matmul",
+        "moe"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "mte3_stall"
+      ],
+      "tags": [
+        "attention",
+        "compute_bound",
+        "matmul",
+        "moe",
+        "mte3_stall"
+      ]
+    },
+    "X49": {
+      "title": "两阶段 GEMM 跨核生产/消费切分（N-split stage-split + GM-volatile flag）",
+      "description": "两阶段 GEMM 链（FFN 的 GEMM1→act→GEMM2、QK^T+PV 等）若按 M-block 归属（X48）或 (mi,ni) tile 分任务，阶段一（GEMM1）的并行度受 mBlocks 限制（小 M 大 N2 时仅 4-8 核工作，其余空转，cube_utilization 仅 8%）。**N-split stage-split**：把\"h 的生产\"与\"h 的消费\"拆到不同核",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "matmul"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "mte2_stall",
+        "mte3_stall",
+        "no_overlap",
+        "scalar_compute"
+      ],
+      "tags": [
+        "compute_bound",
+        "matmul",
+        "mte2_stall",
+        "mte3_stall",
+        "no_overlap",
+        "scalar_compute"
+      ]
+    },
+    "X5": {
+      "title": "GQA-Decode GEMV->GEMM (M=N_q)",
+      "description": "对 GQA decode/MTP（N_kv=1，一个 token 的全部 N_q 个 query head 共享同一个 KV head），把 decode 注意力的 M 维取为 **N_q（128/64）而非 S**。于是一块 = 一个 (b,s) token、grid=B·S、M=N_q，QK^T=`Q[N_q,D_qk]@K^T[D_qk,S_kv]` 与 PV=`P[N_q,S_kv]@V[",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "attention",
+        "flash_attention",
+        "matmul"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "mte2_stall",
+        "scalar_compute",
+        "tiling_imbalance"
+      ],
+      "tags": [
+        "attention",
+        "compute_bound",
+        "decode",
+        "flash_attention",
+        "gqa",
+        "matmul",
+        "mla",
+        "mte2_stall",
+        "scalar_compute",
+        "tiling_imbalance"
+      ]
+    },
+    "X50": {
+      "title": "",
+      "description": "decode 稀疏 MLA（QK^T→softmax→PV→epilogue 链）基线为 5 个串行 AIV kernel， 每个 kernel 把中间结果（wsScores/wsProbs/wsOut）物化到 GM，且并行粒度仅 j （decode 单 token sumQ=1 时只有 1/48 AIV 核工作）。三重组合拳： 1. **kernel 融合**：qk_vec+softmax+pv",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "attention",
+        "matmul"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "mte2_stall",
+        "mte3_stall",
+        "no_overlap",
+        "scalar_compute",
+        "tiling_imbalance"
+      ],
+      "tags": [
+        "attention",
+        "compute_bound",
+        "decode",
+        "gqa",
+        "matmul",
+        "mla",
+        "mte2_stall",
+        "mte3_stall",
+        "no_overlap",
+        "scalar_compute",
+        "tiling_imbalance"
+      ]
+    },
+    "X51": {
+      "title": "大 S 小 landmark 统一 cube-core 路由阈值扩展",
+      "description": "低秩/近似注意力（Nyström landmark approximation）在 **S 大但 landmark L 小** 的区域 （如 S=463-897、L=2-11），score GEMM（Ql@Kl^T / Q@Kl^T / Ql@K^T）退化为**小 M（landmark）× 大 K（S）** 的窄 GEMM。若路由阈值保守（`useCubeCore` 要求 LP>=16），这些 c",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "attention",
+        "matmul"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "scalar_compute"
+      ],
+      "tags": [
+        "attention",
+        "compute_bound",
+        "matmul",
+        "scalar_compute"
+      ]
+    },
+    "X52": {
+      "title": "Host 数据通路消除（reshape-materialization 消除 + 条件 at::empty + 单 pass strided-gather transpose）",
+      "description": "融合 GQA/FA 管线 host 侧是 host-overhead-bound 的（小 shape ~50-70us torch ops + launch，kernel 仅 10-15us）。host 侧每 forward 有大量中间张量物化： 1. `permute().reshape()` 非连续视图强制先物化转置再 copy_——同一转置 GM 往返 2 次。 2. `at::zeros`",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "attention",
+        "matmul"
+      ],
+      "bottlenecks": [
+        "l2_cache_thrash",
+        "mte3_stall"
+      ],
+      "tags": [
+        "attention",
+        "gqa",
+        "l2_cache_thrash",
+        "matmul",
+        "mte3_stall"
+      ]
+    },
+    "X53": {
+      "title": "批量 2D online softmax（跨 head-group 向量化，热循环 0 标量）+ 自适应 head-group tiling",
+      "description": "decode/GQA/MLA 类 attention 内核的 online softmax 若按 **per-head** 逐 block 处理，每个 row-block 每 head 要做 ReduceMax[1,bw]+GetValue、ReduceSum[1,bw]+GetValue、ScalarExp → scalar pipe 是主导瓶颈（实测 scalar_ratio 0.39）。两个",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "attention",
+        "reduction"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "mte2_stall",
+        "scalar_compute",
+        "tiling_imbalance"
+      ],
+      "tags": [
+        "attention",
+        "compute_bound",
+        "decode",
+        "gqa",
+        "mla",
+        "mte2_stall",
+        "reduction",
+        "scalar_compute",
+        "tiling_imbalance"
+      ]
+    },
+    "X54": {
+      "title": "(q, head-block) 任务切分 + 全宽 per-head 归约（消除归约指令爆炸）+ 双缓冲 tile gather + PV 行树归约",
+      "description": "Batch MLA PagedAttention decode（nope/kpe split-KV）父实现工作项 = (q, 全部 H head)，对 H=32/Dc=512 等长 KV 大 H case 有三个结构缺陷： 1. **并行度不足**：任务数 = totalQ；case43 totalQ=10 → 40 个 AIV 核只用 10 核（25% 利用率）。 2. **归约指令爆炸**：Q",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "attention",
+        "matmul",
+        "reduction"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "mte2_stall",
+        "mte3_stall",
+        "scalar_compute"
+      ],
+      "tags": [
+        "attention",
+        "compute_bound",
+        "decode",
+        "matmul",
+        "mla",
+        "mte2_stall",
+        "mte3_stall",
+        "reduction",
+        "scalar_compute"
+      ]
+    },
+    "X55": {
+      "title": "Shared-im2col 双分支 Conv-on-Cube（一份 im2col 供两分支 + HF32-for-fp32 conv 路由）",
+      "description": "融合算子含**两个共享同一输入 x 的 3x3 conv 分支**（如 Dual Attention 的位置/通道注意力分支）时： 1. **一份 im2col 矩阵供两分支复用**：纯 AIV kernel 构建一次 im2col Ic[B,9C,N]（fp32），两个分支的 conv GEMM 都读它——im2col 构建成本从 2 次摊销为 1 次。 2. **两个 fp32 Cube GE",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "attention",
+        "cv_fusion",
+        "matmul"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "scalar_compute"
+      ],
+      "tags": [
+        "attention",
+        "compute_bound",
+        "conv2d",
+        "cv_fusion",
+        "matmul",
+        "scalar_compute"
+      ]
+    },
+    "X56": {
+      "title": "STRIDE-SPARSE residue-block Cube attention（stride-mask 按 residue 分组只算有效列）",
+      "description": "strided-mask self-attention 的 mask `score[i,j]` 有限 iff `i%stride == j%stride`，因此每个 query 行只需要**自己 residue class 的 Srmax=ceil(S/stride) 个 key**，而非全 S_pad 宽。父内核算稠密 S_pad 宽 QK^T/softmax/PV，浪费 stride 倍 Cu",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "attention",
+        "matmul"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "scalar_compute"
+      ],
+      "tags": [
+        "attention",
+        "compute_bound",
+        "matmul",
+        "scalar_compute"
+      ]
+    },
+    "X57": {
+      "title": "attn+outproj 单 kernel 链融合 + native proj BLOCK_M 64 头合并 GEMM",
+      "description": "MIX attention（AIC QK^T/PV + AIV softmax）与输出投影是两个串行 kernel，中间物化 [padM,Dp] attn GM workspace + 一次 launch。融合为单 kernel：Phase 1 MIX attention 写 attn [padM,Dp] → `SyncAll<true>` GM grid barrier 分隔 → Phase 2",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "attention",
+        "matmul"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "mte3_stall",
+        "no_overlap",
+        "scalar_compute"
+      ],
+      "tags": [
+        "attention",
+        "compute_bound",
+        "gqa",
+        "matmul",
+        "mla",
+        "mte3_stall",
+        "no_overlap",
+        "scalar_compute"
+      ]
+    },
+    "X58": {
+      "title": "N=1 matvec 链归约突破（多相位拆分 + RA 二叉树 ReduceSum + Broadcast 消标量 + PipeBarrier 松弛）",
+      "description": "通道/空间自注意力等 **N=1 matvec 链** 算子（每输出元素 = 权重的逐元素乘加链，本质纯 Vector 管道、Cube 因 M=1/N=1 不可用）曾长期被判\"1.0x 物理不可达\"。本次进化以四杠杆组合彻底推翻该判断：**① 多相位链拆分**（把长 matvec 链拆成 n 个阶段，消除 gN 倍冗余链重算，每块只读自己 slice 消冗余全 X 读）；**② RA 二叉树 Re",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "attention",
+        "matmul",
+        "reduction"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "mte2_stall",
+        "scalar_compute"
+      ],
+      "tags": [
+        "attention",
+        "compute_bound",
+        "matmul",
+        "mte2_stall",
+        "reduction",
+        "scalar_compute"
+      ]
+    },
+    "X59": {
+      "title": "Nibble 分形批转置（可分离偏移表 + 向量链整批 + DMA 合并）",
+      "description": "对\"低精度打包数据（int4 nibble）→ Cube 分形布局（ZN fractal）\"的 kernel 内转换预处理， 当逐小窗口（如 64k×32B）处理时向量指令序列化开销与碎 DMA 主导实际耗时（ Roofline 带宽 效率仅 ~2%），将转换粒度整批放大：同一 K 条带上连续多个窗口合并为一轮，nibble 提取的 half 域技巧链（And/Cast/Muls/Adds flo",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "matmul"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "mte2_stall",
+        "mte3_stall",
+        "no_overlap",
+        "scalar_compute"
+      ],
+      "tags": [
+        "compute_bound",
+        "matmul",
+        "mte2_stall",
+        "mte3_stall",
+        "no_overlap",
+        "quantization",
+        "scalar_compute"
+      ]
+    },
+    "X6": {
+      "title": "Merge Partial + Reduce Kernel for Split-KV FlashDecode",
+      "description": "在 Split-KV FlashDecode 实现中，算子通常拆分为两个独立的 kernel launch： 1. **partial kernel**：每个 (task, split) 单元独立扫描其 token 子区间， 产出 online-softmax 的中间状态 `(m, l, acc[D])` 并写入 workspace； 2. **reduce kernel**：读取所有 split",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "attention",
+        "flash_attention",
+        "reduction"
+      ],
+      "bottlenecks": [
+        "bus_contention",
+        "compute_bound",
+        "mte2_stall",
+        "mte3_stall",
+        "scalar_compute"
+      ],
+      "tags": [
+        "attention",
+        "bus_contention",
+        "compute_bound",
+        "decode",
+        "flash_attention",
+        "mte2_stall",
+        "mte3_stall",
+        "quantization",
+        "reduction",
+        "scalar_compute"
+      ]
+    },
+    "X60": {
+      "title": "向量链发射最小化（代数重写 + calcount 合并）",
+      "description": "当 profiling 显示 Vector busy 高但数据吞吐极低（每条向量指令平均仅 ~4-5ns ≈ 发射率墙， Scalar busy 与 Vector busy 同高且来自指令发射）时，优化目标应从\"数据通路带宽\"切换为 \"指令/发射单元数\"：(1) 用**位代数恒等式**重写数值链——如用伴随掩码 And（b&0x08）替代 floor 取整技巧链（x*k+c 后 cast），一条恒",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "matmul"
+      ],
+      "bottlenecks": [
+        "mte2_stall",
+        "mte3_stall",
+        "no_overlap",
+        "scalar_compute"
+      ],
+      "tags": [
+        "matmul",
+        "mte2_stall",
+        "mte3_stall",
+        "no_overlap",
+        "quantization",
+        "scalar_compute"
+      ]
+    },
+    "X61": {
+      "title": "硬件转置指令替代 vgather 通路（v4dtrans + strided UB copy 交织）",
+      "description": "当数据重排的 vgather 吞吐被\"每 repeat 上限元素数\"钉死在发射率墙（如 m200 Gather 128 half/repeat，32 条微指令/窗口不可再压）时，检查芯片 platform_config 的 **Intrinsic 清单**寻找专用转置指令：310P3 无 v4trans 但**有 v4dtrans/vtranspose**。 `Transpose(dst, src",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "matmul"
+      ],
+      "bottlenecks": [
+        "mte2_stall",
+        "no_overlap",
+        "scalar_compute"
+      ],
+      "tags": [
+        "matmul",
+        "mte2_stall",
+        "no_overlap",
+        "quantization",
+        "scalar_compute"
+      ]
+    },
+    "X7": {
+      "title": "Token Block Size (TB) Tuning for Pure-Vector Attention",
+      "description": "在纯 AIV（Vector）实现的 FlashDecode / TurboQuant decode 中，kernel 内部以 **token block（TB）** 为单位处理 KV cache：每个 chunk 加载 `TB` 个 token 的 slot，解量化后做 `q·K`、softmax、weighted-V 累加。TB 的选择直接决定： 1. **标量控制流占比**：TB 越小，循环迭",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "attention",
+        "flash_attention"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "l2_cache_thrash",
+        "mte3_stall",
+        "scalar_compute",
+        "tiling_imbalance"
+      ],
+      "tags": [
+        "attention",
+        "compute_bound",
+        "decode",
+        "flash_attention",
+        "l2_cache_thrash",
+        "mte3_stall",
+        "quantization",
+        "scalar_compute",
+        "tiling_imbalance"
+      ]
+    },
+    "X71": {
+      "title": "L0 竞态事件语义分诊：虚拟 flag vs 硬件 L0 一致性 flag（HSetFlag MemoryT::L0B）",
+      "description": "cube L0 ping-pong 只用 SetFlag/WaitFlag<M_MTE1|MTE1_M> 时，这些是虚拟 flag（SetFlagInternal<PIPE_M,PIPE_MTE1>，不带任何 L0 cache 维护），整批 launch 下仍会报 L0B read/write conflict（507015）。CANN 另有硬件一致性形式 HSetFlag/HWaitFlag<HardEvent, MemoryT::L0B, isVirtual=false>(id)（kernel_event.h:814-882，hset_flag 携带 mem_t），语义上才匹配该 hazard。但 910B2C+CANN 9.1.0 实测：H flag 在孤立重复下数值正确且 clean（case32 30-60 iter、case26 60 iter），却在 canonical 混合入口序列（pair→quad→quad→pair，且先跑参考模型）中稳定 507014 aicore task timeout；『全量 H』与『仅 quad rung H』两种分配两次独立复现。结论：该环境 H flag 不可作为竞态修复交付；X62 PIPE_ALL 仍是唯一安全兜底，X63 回收其一半代价。",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "attention",
+        "flash_attention",
+        "cv_fusion",
+        "matmul"
+      ],
+      "bottlenecks": [
+        "mte2_stall",
+        "no_overlap"
+      ],
+      "tags": [
+        "l0a",
+        "l0b",
+        "507015",
+        "507014",
+        "hsetflag",
+        "memoryt-l0b",
+        "virtual-flag",
+        "cube",
+        "event-sync",
+        "race-fix",
+        "negative-result"
+      ]
+    },
+    "X72": {
+      "title": "精度地板归因：正确圆整 QK 判定 + hi/lo PV 反证",
+      "description": "FA 类算子 canonical allclose 长期卡在极少数元素（~1.3e-3）时，用三步判定是否还有闭合空间：(1) 用 fp64 精确 QK 重算 golden 输出——若与 golden 逐位相同，说明 golden 的 bmm 是正确圆整的，残差全部来自我方 QK 累加顺序；(2) 用不同 PV 累加顺序的 golden 变体证明 PV 顺序不是来源；(3) hi/lo 拆分 PV 会放大误差（48_GqaSparseFwd case36：3→243 违规），因为 golden 对 P 的 10-bit TF32-RZ 截断是共模项、必须复现而非消除。结论：没有正确圆整的 QK 就没有闭合路径，应及时停止并交付 49/50 + 旧生态标准 50/50。",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "attention",
+        "flash_attention"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "near_optimal"
+      ],
+      "tags": [
+        "precision-floor",
+        "tf32",
+        "qk-accumulation",
+        "hi-lo-pv",
+        "allclose",
+        "golden-attribution",
+        "case36"
+      ]
+    },
+    "X8": {
+      "title": "Host-Side Precomputation of Constant Offset Tables",
+      "description": "许多 AscendC kernel 在 `Init` 阶段会计算一些**仅由超参数决定、与输入数据无关** 的常量表，例如： - 量化/反量化的 bit offset 表 - gather 索引表 - stride/alignment 修正表 - RoPE 频率表 - softmax 的 stride offset 表 这些表目前在 device 端通过标量循环计算（`SetValue`），每个",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "attention",
+        "flash_attention"
+      ],
+      "bottlenecks": [
+        "compute_bound",
+        "mte2_stall",
+        "mte3_stall",
+        "no_overlap",
+        "scalar_compute",
+        "tiling_imbalance"
+      ],
+      "tags": [
+        "attention",
+        "compute_bound",
+        "decode",
+        "flash_attention",
+        "mte2_stall",
+        "mte3_stall",
+        "no_overlap",
+        "scalar_compute",
+        "tiling_imbalance"
+      ]
+    },
+    "X9": {
+      "title": "Deferred Scaling — 反量化仿射结构的代数重排（延迟缩放）",
+      "description": "反量化 decode 类 kernel 的典型结构是： ``` 对 nTok*D 个元素逐一施加 per-token 缩放/偏移（D-wide Muls/Adds × nTok） → 然后马上被归约（ReduceSum / 加权累加）消费成低维量 ``` P94/P95 能把包裹这些向量指令的**标量外壳**向量化，但向量指令本身的数量 （2~3 × nTok 条 D-wide op）并未减少。本",
+      "confidence": "single_op",
+      "status": "active",
+      "op_families": [
+        "quantization",
+        "reduction"
+      ],
+      "bottlenecks": [
+        "bus_contention",
+        "l2_cache_thrash",
+        "mte2_stall",
+        "scalar_compute"
+      ],
+      "tags": [
+        "affine",
+        "bus_contention",
+        "dequant",
+        "l2_cache_thrash",
+        "mte2_stall",
+        "quantization",
+        "reduction",
+        "scalar_compute"
+      ]
+    }
+  },
+  "failure_patterns": {
+    "F1": {
+      "title": "F1: P22+A1:reduction:tail_precision",
+      "key": "P22+A1:reduction:tail_precision",
+      "phenomenon": "precision_failure",
+      "severity": "major",
+      "status": "stub",
+      "failed_combination": [
+        "P22",
+        "A1"
+      ],
+      "operator_type": [
+        "reduction"
+      ],
+      "occurrences": 0,
+      "tags": [
+        "task.debugging",
+        "topic.precision"
+      ],
+      "description": "精度失败，ulp 误差集中在最后一个 tile（尾块未对齐 32B）。",
+      "doc_path": "knowledge/contrib/ascendc/optimizations/evolution_strategies/failure_patterns/f1_p22_a1_reduction_tail_precision.md"
+    },
+    "F2": {
+      "title": "F2: multi-kernel:cube_registration",
+      "key": "multi-kernel:cube_registration",
+      "phenomenon": "build_failure",
+      "severity": "blocking",
+      "status": "active",
+      "failed_combination": [
+        "P102",
+        "P128"
+      ],
+      "operator_type": [
+        "conv",
+        "matmul",
+        "cv_fusion"
+      ],
+      "occurrences": 1,
+      "tags": [
+        "task.debugging",
+        "topic.compilation"
+      ],
+      "description": "910B2C 上做多 kernel Cube 流水线（im2col AIV + wrepack AIV + GEMM AIC + epilogue AIV，5 个 `extern \"C\" __global__` kernel 写在一个 `op_kernel/*.cpp`）时，**单文件多 kernel 只注册一个 binary**——所有 kernel（包括已验证可用的原始 vector kernel）输出全零，无编译错误、无运行时报错",
+      "doc_path": "knowledge/contrib/ascendc/optimizations/evolution_strategies/failure_patterns/f2_multikernel_cube_registration_breaks.md"
+    },
+    "F3": {
+      "title": "F3: manual-mmad:loaddata3d-16x16-only",
+      "key": "manual-mmad:loaddata3d-16x16-only",
+      "phenomenon": "precision_failure",
+      "severity": "blocking",
+      "status": "active",
+      "failed_combination": [
+        "P87"
+      ],
+      "operator_type": [
+        "matmul"
+      ],
+      "occurrences": 3,
+      "tags": [
+        "task.debugging",
+        "topic.precision"
+      ],
+      "description": "手动 mmad kernel 用 `LoadData3D`（L1→L0A/L0B 的 tile 加载辅助函数）做分形搬运时，**只对 16x16x16 identity 输出正确**；对真实 shape（32x128、32x48、13x29 等）输出错误。无编译错误、无报错，静默精度失败。为保精度被迫 `useManual=0` 全退回 MatmulImpl fallback，手动 kernel 从未真正 dispatch（5_Matm",
+      "doc_path": "knowledge/contrib/ascendc/optimizations/evolution_strategies/failure_patterns/f3_manual_mmad_loaddata3d_16x16_trap.md"
+    },
+    "F4": {
+      "title": "F4: MTE1_M+M_MTE1:L0A/L0B:event_window_conflict",
+      "key": "MTE1_M+M_MTE1:L0A/L0B:event_window_conflict",
+      "phenomenon": "runtime_failure",
+      "severity": "blocking",
+      "status": "active",
+      "failed_combination": [
+        "MTE1_M",
+        "M_MTE1",
+        "L1_DRAIN=false"
+      ],
+      "operator_type": [
+        "attention",
+        "cv_fusion",
+        "matmul"
+      ],
+      "occurrences": 2,
+      "tags": [
+        "task.debugging",
+        "topic.data_movement",
+        "topic.programming_model"
+      ],
+      "description": "批量/连续 launch 时随机（大 shape 0–2 次迭代内、小 shape 40 次不现）报：",
+      "doc_path": "knowledge/contrib/ascendc/optimizations/evolution_strategies/failure_patterns/f4_l0a_l0b_event_window_conflict.md"
+    },
+    "F5": {
+      "title": "F5: cv_split_fa:ring_iteration_cost:gm_bytes_bound",
+      "key": "cv_split_fa:ring_iteration_cost:gm_bytes_bound",
+      "phenomenon": "performance_negative",
+      "severity": "major",
+      "status": "active",
+      "failed_combination": [
+        "P122",
+        "P18",
+        "X38"
+      ],
+      "operator_type": [
+        "attention",
+        "flash_attention"
+      ],
+      "occurrences": 2,
+      "tags": [
+        "task.debugging",
+        "topic.data_movement",
+        "topic.programming_model"
+      ],
+      "description": "CV 分离（AIC 算 QK^T/P@V，AIV 算 softmax，S/P 经 GM workspace 中转）的 FA 内核，",
+      "doc_path": "knowledge/contrib/ascendc/optimizations/evolution_strategies/failure_patterns/f5_cv_split_fa_ring_cost_equals_gm_bytes.md"
+    },
+    "F6": {
+      "title": "F6: P4+P140+P142:attention:dc-split-doubles-gather",
+      "key": "P4+P140+P142:attention:dc-split-doubles-gather",
+      "phenomenon": "performance_negative",
+      "severity": "major",
+      "status": "active",
+      "failed_combination": [
+        "P4",
+        "P140",
+        "P142"
+      ],
+      "operator_type": [
+        "attention",
+        "flash_attention",
+        "mla"
+      ],
+      "occurrences": 1,
+      "tags": [
+        "task.debugging",
+        "topic.data_movement",
+        "topic.kv_cache"
+      ],
+      "description": "P4+P140+P142:attention:dc-split-doubles-gather (performance_negative)",
+      "doc_path": "knowledge/contrib/ascendc/optimizations/evolution_strategies/failure_patterns/f6_dc_split_doubles_kv_gather.md"
+    },
+    "F7": {
+      "title": "F7: P61+P125:attention:mte2-inorder-hoist-gather-blocks-c2",
+      "key": "P61+P125:attention:mte2-inorder-hoist-gather-blocks-c2",
+      "phenomenon": "performance_negative",
+      "severity": "major",
+      "status": "active",
+      "failed_combination": [
+        "P61",
+        "P125"
+      ],
+      "operator_type": [
+        "attention",
+        "flash_attention",
+        "mla"
+      ],
+      "occurrences": 1,
+      "tags": [
+        "task.debugging",
+        "topic.data_movement"
+      ],
+      "description": "P61+P125:attention:mte2-inorder-hoist-gather-blocks-c2 (performance_negative)",
+      "doc_path": "knowledge/contrib/ascendc/optimizations/evolution_strategies/failure_patterns/f7_mte2_inorder_hoist_gather_blocks_consumer.md"
+    },
+    "F8": {
+      "title": "F8: HSetFlag+MemoryT::L0B:mixed_entry_sequence:507014",
+      "key": "HSetFlag+MemoryT::L0B:mixed_entry_sequence:507014",
+      "phenomenon": "runtime_failure",
+      "severity": "blocking",
+      "status": "active",
+      "failed_combination": [
+        "X62",
+        "HSetFlag",
+        "MemoryT::L0B"
+      ],
+      "operator_type": [
+        "attention",
+        "cv_fusion",
+        "matmul"
+      ],
+      "occurrences": 2,
+      "tags": [
+        "task.debugging",
+        "topic.data_movement",
+        "topic.programming_model"
+      ],
+      "description": "用硬件 L0 一致性 flag（`HSetFlag/HWaitFlag<HardEvent::M_MTE1|MTE1_M, MemoryT::L0B, false>`）替换",
+      "doc_path": "knowledge/contrib/ascendc/optimizations/evolution_strategies/failure_patterns/f8_hflag_l0b_coherent_mixed_entry_hang.md"
+    },
+    "F9": {
+      "title": "F9: eval_harness:msprof_case_loader:root_jsonl_poisoning",
+      "key": "eval_harness:msprof_case_loader:root_jsonl_poisoning",
+      "phenomenon": "precision_failure",
+      "severity": "blocking",
+      "status": "active",
+      "failed_combination": [],
+      "operator_type": [
+        "attention",
+        "flash_attention",
+        "matmul",
+        "reduction",
+        "elementwise"
+      ],
+      "occurrences": 1,
+      "tags": [
+        "task.debugging",
+        "topic.architecture"
+      ],
+      "description": "进化变体的 canonical `evaluation_results.json` 里 `timing_summary.n_cases_total` 变成 10（或 6/16 等），",
+      "doc_path": "knowledge/contrib/ascendc/optimizations/evolution_strategies/failure_patterns/f9_msprof_case_loader_jsonl_poisoning.md"
+    }
+  }
+}

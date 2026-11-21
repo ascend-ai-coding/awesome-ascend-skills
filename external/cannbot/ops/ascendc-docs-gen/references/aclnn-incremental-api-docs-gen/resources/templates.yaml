@@ -1,0 +1,504 @@
+doc_parts:
+  support:
+    label: 支持的产品
+    products:
+    - npu: '950'
+      id: id1
+      product: Ascend 950PR&950DT系列产品
+    - npu: A3
+      id: id2
+      product: Atlas A3系列产品
+    - npu: 910b
+      id: id3
+      product: Atlas A2系列产品
+    - npu: 310b
+      id: id4
+      product: Atlas 200I/500 A2推理产品
+    - npu: 310p
+      id: id5
+      product: Atlas推理系列产品
+    - npu: '910'
+      id: id6
+      product: Atlas训练系列产品
+    requirement: |-
+      按照模板顺序，使用无序列表列出所有产品，支持写「支持」，不支持写「不支持」。
+      正确性：按照实际情况填写。
+      一致性：各API中列出的产品型号顺序与规范顺序保持一致。按照模板顺序使用无序列表列出。
+      term标记对：产品名需加<term>xxx</term>标记对，且符合html语法规范。
+      npu注释对：针对文档中具体产品型号内容需要使用注释对包裹，格式为<!-- npu="芯片代号" id编号 -->和<!-- end id编号 -->。
+      注1：全局芯片表如下，顺序不要改变，dev仓包含全部芯片，开源仓仅包含开源芯片。
+      注2：若每新增一款产品，需所有aclnn全量适配，给出「支持/不支持」说明。建议开发脚本先批量增加「不支持」说明，再按AR依次放开支持。
+    template: |-
+      ## 产品支持情况
+
+      <!-- npu="950" id1 -->
+      - <term>Ascend 950PR&950DT系列产品</term>：支持
+      <!-- end id1 -->
+      <!-- npu="A3" id2 -->
+      - <term>Atlas A3系列产品</term>：支持
+      <!-- end id2 -->
+      <!-- npu="910b" id3 -->
+      - <term>Atlas A2系列产品</term>：支持
+      <!-- end id3 -->
+      <!-- npu="310b" id4 -->
+      - <term>Atlas 200I/500 A2推理产品</term>：不支持
+      <!-- end id4 -->
+      <!-- npu="310p" id5 -->
+      - <term>Atlas推理系列产品</term>：支持
+      <!-- end id5 -->
+      <!-- npu="910" id6 -->
+      - <term>Atlas训练系列产品</term>：支持
+      <!-- end id6 -->
+  summary:
+    label: 功能说明
+    requirement: |-
+      1、简要介绍接口功能，增加V版本之间功能对比
+      2、罗列计算公式
+      3、多个aclnn接口写在一个文档内的情况，需要简要介绍多个aclnn接口间的区别。Inplace和非Inplace的接口区别默认已知不写。
+      目标：指导用户快速理解算子使用场景、计算逻辑和作用。
+      ①算子接口功能（必选）：讲清楚接口功能、计算逻辑、使用场景、与其他接口关系（若有请提供跳转链接）等，可参考友商表述，但不能使用友商术语。
+      ②计算公式（可选）：复杂算子建议有公式，公式变量需给出解释。
+      ③示例（可选）：复杂算子，根据实际需要，可通过示例阐述计算逻辑。
+      ④公式要求：第一，保证公式位置缩进正确（缩进2个空格），属于「计算公式」段落。第二，对于行内公式，与上下文字之间必需加空行，且$后不能有空字符，否则昇腾社区展示有问题。
+      ⑤区分芯片：若功能在不同芯片上有差异，请分别描述，无序列表形式。
+    template: |-
+      ## 功能说明
+
+      - 接口功能：完成任意两个张量的矩阵乘计算。
+      - 版本演进：本接口兼容aclnnXxxxV2功能，在其基础上新增支持xxx功能。
+      - 计算公式：
+
+        - 场景1：先计算xx，再计算xxx，输出xxx。
+
+          $$
+          out_i = self_i+alpha \times other_i
+          $$
+
+        - 场景2：先计算xx，再计算xxx，输出xxx。
+
+          $$
+          out_i = self_i+alpha
+          $$
+  function_proto:
+    label: 函数原型
+    requirement: |-
+      1、固定写法，介绍算子两段式接口调用流程
+      2、每个接口一个单独的代码块，每行一个参数，各行参数缩进位置要对齐规整。
+      3、标明Cpp语言类型。不添加用于解释参数的注释信息。
+    template: |-
+      ## 函数原型
+
+      每个算子分为两段式接口，必须先调用"aclnnXxxGetWorkspaceSize"接口获取计算所需workspace大小以及包含了算子计算流程的执行器，再调用"aclnnXxx"接口执行计算。
+
+      ```cpp
+      aclnnStatus aclnnXxxGetWorkspaceSize(
+        const aclTensor  *self,
+        const aclTensor  *other,
+        const aclScalar  *alpha,
+        char             *beta,
+        uint64_t          theta,
+        double            x,
+        bool              flag,
+        aclTensor        *out,
+        uint64_t         *workspaceSize,
+        aclOpExecutor    **executor)
+      ```
+
+      ```cpp
+      aclnnStatus aclnnXxx(
+        void             *workspace,
+        uint64_t          workspaceSize,
+        aclOpExecutor    *executor,
+        aclrtStream       stream)
+      ```
+  sub_function_hash:
+    aclnnXxxGetWorkspaceSize_param_and_return:
+      label: aclnn(inplace)XxxGetWorkspaceSize 参数说明与返回值
+      requirement: |-
+        **参数说明**
+        1、表格固定呈现8个字段，不支持自定义。
+            - ①参数名：参数名（参数类型），要求中文括号+\*前后不带空格+宽度自定义，要求参数名不能换行。
+            - ②描述：给出参数含义+公式变量映射，不要写约束。
+            - ④数据类型：仅aclXxx类型参数（如aclTensor/aclTensorList/aclScalar/aclIntArray等）需要填写；非此类对象，属于C本身自带的参数类型（如char*/bool/uint64/float/double等），不需要填写。
+            - ⑤数据格式：ND、FRACTAL_NZ（NZ）等
+            - ⑥非连续Tensor：不涉及的打-，涉及的参数若支持非连续打√、不支持的打×。
+            - ③使用说明（其他字段无法承载的剩余内容）：
+                - 空Tensor支持度（必选，支持和不支持讲清楚）+参数带Optioal后缀需显式讲传空指针场景+其他约束（取值/范围/场景等）
+                - 备注：实际软件要求“空Tensor”默认支持，但是资料公共地方没说明过，因此建议所有接口显式讲清楚，避免混淆。
+        2、区分芯片写作：
+            - 数据类型、shape、format、取值等信息，表里提供所有产品支持的并集，差异描述放在表下方。注意：不要在表格里区分芯片描述，差异化描述在表格外，以npu注释对+无序列表形式组织。
+            - 表下方差异化描述必须使用npu注释对包裹，格式为<!-- npu="芯片代号" id编号 -->和<!-- end id编号 -->，npu值可逗号分隔多个芯片。
+            - 产品名必须加<term>xxx</term>标记对。
+            - id编号说明：本章节从id10开始连续编排（用于唯一标识产品标签块，组装成文档后会统一重编号）。
+        3、表格自动生成md语法
+        4、表格位置：必须在“参数说明”子标题模块内，要缩进下
+        5、符号要求：①中文语境用中文符号；②空格不允许有，例如中英文混合不能有空格。
+        6、表格格式要求：
+            - 单元格不允许空，若不涉及请用中横线“-”
+            - 列宽要求：“参数名”列、“返回码/状态码”列内容不可换行显示，其它列宽见下述要求，总列宽和固定，一般不要超过1550px，否者昇腾官网显示不ok
+            - 原文档已有表格的宽度与列宽必须原样保留，禁止按下述示例列宽/总宽重排或取整；下述列宽仅用于原文缺失表格时新建
+
+        ```
+         <table style="undefined;table-layout: fixed; width: 1500px"><colgroup> <!--工具调整列宽时，所列宽总和最大不要超过1550-->
+         <col style="width: 180px"> <!-- 参数名：自行调整列宽，原则：不能换行展示-->
+         <col style="width: 120px"> <!-- 输入/输出：不要修改这个数值-->
+         <col style="width: 300px">  <!-- 描述列宽-->
+         <col style="width: 350px">  <!-- 使用说明列宽-->
+         <col style="width: 250px">  <!-- 数据类型列宽-->
+         <col style="width: 100px">  <!--数据格式：格式较长时可设置为120px-->
+         <col style="width: 100px"> <!-- 维度(shape)：内容较少时可以适当缩小列宽-->
+         <col style="width: 100px">  <!--非连续的tensor：不要修改这个数值-->
+         </colgroup>
+         <thead>
+           <tr>
+             <th>参数名</th>
+             <th>输入/输出</th>
+             <th>描述</th>
+             <th>使用说明</th>
+             <th>数据类型</th>
+             <th>数据格式</th>
+             <th>维度(shape)</th>
+             <th>非连续Tensor</th>
+           </tr></thead>
+         <tbody>
+           <tr>
+             <td>self</td>
+             <td>输入</td>
+             <td>公式中的输入self。</td>
+             <td><ul><li>支持空Tensor。</li><li>数据类型与other的数据类型需满足数据类型推导规则（参见<a href="../../../docs/context/互推导关系.md" target="_blank">互推导关系</a>）。</li><li>shape需要与other满足<a href="../../../docs/context/broadcast关系.md" target="_blank">broadcast关系</a>。</li></td>
+             <td>FLOAT、FLOAT16、DOUBLE、INT32、INT64、INT16、INT8、UINT8、BOOL、COMPLEX128、COMPLEX64、BFLOAT16</td>
+             <td>ND</td>
+             <td>0-8</td>
+             <td>√</td>
+           </tr>
+           <tr>
+           ......
+           </tr>
+        .....
+        </tbody></table>
+        ```
+        **返回值**
+        1、内容要求：表格呈现，字段名固定为“返回码/状态码、码值、描述”，描述指出异常可能的原因（例如空指针、数据类型、shape等）。拦截场景一定是上文“参数说明”已提到过的。覆盖对应阶段接口实现中显式返回的异常码（包括使用通用错误码的分支），不能按错误码名称前缀排除或只在表外说明；仅由框架或运行时透传、接口内未明确列出的通用异常通过aclnn返回码链接说明。
+        2、写作粒度：尽量写大颗粒原因，不要写细节，提供定位方向即可。同一返回码类型和错误码数值只占一行，各失败原因合并在描述中，不用rowspan拆行。原因笼统些，例如下方罗列的：
+            - xx、xx存在空指针
+            - xx、xx或xx的数据类型不在支持的范围内
+            - xx、xx或xx的数据类型不匹配
+            - xx、xx或xx的shape维度不在支持的范围内
+            - xx、xx的shape维度不匹配
+            - xx、xx的shape不满足broadcast规则
+            - xx的shape不满足输出shape推导公式
+        3、芯片要求：校验表里原因不要区分芯片，最好模糊和笼统，因为本表不支持按芯片过滤
+        4、表格位置：表格缩进，与“返回值”文字对齐，表格下方文字缩进
+        5、表格要求：列宽必须保证“返回码/状态码”内容不换行显示，列宽请参见以下数值。原文档已有表格的宽度与列宽必须原样保留，禁止改成本节示例列宽；示例列宽仅用于新建表格
+
+        ```
+        <table style="undefined;table-layout: fixed; width: 1000px"><colgroup>    <!-- 一般列宽总长固定为1000px值，不要超过-->
+        <col style="width: 300px">   <!-- 返回码/状态码：不能换行呈现-->
+        <col style="width: 150px">  <!-- 码值：一般较短-->
+        <col style="width: 550px">   <!-- 描述：一般最长-->
+        </colgroup>
+        ```
+      template: |-
+        ## aclnnAbsGetWorkspaceSize
+
+        - **参数说明**
+
+          <table style="undefined;table-layout: fixed; width: 1500px"><colgroup>
+          <col style="width: 180px">
+          <col style="width: 120px">
+          <col style="width: 300px">
+          <col style="width: 350px">
+          <col style="width: 250px">
+          <col style="width: 100px">
+          <col style="width: 100px">
+          <col style="width: 100px">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>参数名</th>
+              <th>输入/输出</th>
+              <th>描述</th>
+              <th>使用说明</th>
+              <th>数据类型</th>
+              <th>数据格式</th>
+              <th>维度(shape)</th>
+              <th>非连续Tensor</th>
+            </tr></thead>
+          <tbody>
+            <tr>
+              <td>self（aclTensor*）</td>
+              <td>输入</td>
+              <td>表示xxx含义，对应公式中self。</td>
+              <td><ul><li>支持空Tensor。</li><li>数据类型与other的数据类型需满足数据类型推导规则（参见<a href="../../../docs/context/互推导关系.md" target="_blank">互推导关系</a>）。</li><li>shape需要与other满足<a href="../../../docs/context/broadcast关系.md" target="_blank">broadcast关系</a>。</li></td>
+              <td>FLOAT、FLOAT16、DOUBLE、INT32、INT64、INT16、INT8、UINT8、BOOL、COMPLEX128、COMPLEX64、BFLOAT16</td>
+              <td>ND</td>
+              <td>0-8</td>
+              <td>√</td>
+            </tr>
+            <tr>
+              <td>other（aclTensor*）</td>
+              <td>输入</td>
+              <td>表示xxx含义，对应公式中other。</td>
+              <td><ul><li>支持空Tensor。</li><li>shape需要与self满足<a href="../../../docs/context/broadcast关系.md" target="_blank">broadcast关系</a>。</li></td>
+              <td>数据类型与self保持一致。</td>
+              <td>ND</td>
+              <td>0-8</td>
+              <td>√</td>
+            </tr>
+            <tr>
+              <td>alpha（aclScalar*）</td>
+              <td>输入</td>
+              <td>表示xxx含义，对应公式中alpha。</td>
+              <td>预留参数，当前暂不支持，传入空指针即可。</td>
+              <td>INT64</td>
+              <td>-</td>
+              <td>-</td>
+              <td>-</td>
+            </tr>
+           <tr>
+              <td>beta（char*）</td>
+              <td>输入</td>
+              <td>表示xxx含义，对应公式中xx。</td>
+              <td>预留参数，当前暂不支持，传入空指针即可。</td>
+              <td>-</td>
+              <td>-</td>
+              <td>-</td>
+              <td>-</td>
+            </tr>
+            <tr>
+              <td>theta（uint64_t）</td>
+              <td>输入</td>
+              <td>表示xxx含义，对应公式中xx。</td>
+              <td>取值范围为[xx, xx]</td>
+              <td>-</td>
+              <td>-</td>
+              <td>-</td>
+              <td>-</td>
+            </tr>
+             <tr>
+              <td>x（double）</td>
+              <td>输入</td>
+              <td>表示xxx含义，对应公式中xx。</td>
+              <td>取值范围为[xx, xx]</td>
+              <td>-</td>
+              <td>-</td>
+              <td>-</td>
+              <td>-</td>
+            </tr>
+             <tr>
+              <td>x（double）</td>
+              <td>输入</td>
+              <td>表示xxx含义，对应公式中xx。</td>
+              <td>取值范围为[xx, xx]</td>
+              <td>-</td>
+              <td>-</td>
+              <td>-</td>
+              <td>-</td>
+            </tr>
+            <tr>
+              <td>out（xx）</td>
+              <td>输出</td>
+              <td>表示xxx含义，对应公式中out。</td>
+              <td><ul><li>不支持空Tensor。</li><li>数据类型需要是self与other推导之后可转换的数据类型(参见<a href="../../../docs/context/互推导关系.md" target="_blank">互推导关系</a>)。</li><li>shape需要是self与other broadcast之后的shape。</li></td>
+              <td>FLOAT、FLOAT16、DOUBLE、INT32、INT64、INT16、INT8、UINT8、BOOL、COMPLEX128、COMPLEX64、BFLOAT16</td>
+              <td>ND</td>
+              <td>1-8</td>
+              <td>√</td>
+            </tr>
+            <tr>
+              <td>workspaceSize（xx）</td>
+              <td>输出</td>
+              <td>返回需要在Device侧申请的workspace大小。</td>
+              <td>-</td>
+              <td>-</td>
+              <td>-</td>
+              <td>-</td>
+              <td>-</td>
+            </tr>
+            <tr>
+              <td>executor(xx)</td>
+              <td>输出</td>
+              <td>返回op执行器，包含了算子计算流程。</td>
+              <td>-</td>
+              <td>-</td>
+              <td>-</td>
+              <td>-</td>
+              <td>-</td>
+            </tr>
+          </tbody></table>
+
+          <!-- npu="910,310p" id10 -->
+          - <term>Atlas训练系列产品</term>、<term>Atlas推理系列产品</term>：数据类型不支持BFLOAT16、HIFLOAT8。
+          <!-- end id10 -->
+          <!-- npu="A3,910b" id11 -->
+          - <term>Atlas A3系列产品</term>、<term>Atlas A2系列产品</term>：数据类型不支持HIFLOAT8。
+          <!-- end id11 -->
+
+          **注：表格里罗列所有芯片数据类型的并集，表格下方紧跟npu注释对包裹的产品差异化描述，说明哪些产品不支持哪些数据类型。**- **返回值**
+          aclnnStatus：返回状态码，具体参见[aclnn返回码](../../../docs/context/aclnn返回码.md)。
+
+          第一段接口完成入参校验，出现以下场景时报错：
+
+          <table style="undefined;table-layout: fixed; width: 1000px"><colgroup>
+          <col style="width: 300px">
+          <col style="width: 150px">
+          <col style="width: 550px">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>返回码/状态码</th>
+              <th>码值</th>
+              <th>描述</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td> ACLNN_ERR_PARAM_NULLPTR </td>
+              <td> 161001 </td>
+              <td>selfRef、other、alpha、out存在空指针。</td>
+            </tr>
+            <tr>
+              <td> ACLNN_ERR_PARAM_INVALID </td>
+              <td> 161002 </td>
+              <td>selfRef、other或alpha的数据类型不在支持的范围之内；selfRef、other或alpha的数据类型不匹配；selfRef或other的shape维度不在支持的范围之内；selfRef、other的shape不满足broadcast规则。</td>
+            </tr>
+          </tbody></table>
+        ```
+    aclnnXxx_param_and_return:
+      label: aclnn(inplace)Xxx 参数说明与返回值
+      requirement: |-
+        **参数说明**
+        1、字段固定：列出每个参数名称，属于输入/输出/可选输入/可选输出，并简要描述参数的功能，避免堆砌大量文字。
+        2、缩进要求：表格缩进，与“参数说明”文字对齐，表格下方文字缩进。
+        3、表格内容：表格中无内容用-填充，“参数名”列内容不可换行显示。原文档已有表格的宽度与列宽必须原样保留，禁止改成本节示例列宽；仅原文缺失表格时才新建表格，列宽根据内容调整到合适，一般列宽总长为1000px。
+
+        ```
+        <table style="undefined;table-layout: fixed; width: 1000px"><colgroup>  <!-- 仅新建表格时参考：一般列宽总长固定为1000px值，每列宽可自行调整；已有表格样式原样保留-->
+        <col style="width: 180px">
+        <col style="width: 100px">
+        <col style="width: 720px">
+        </colgroup>
+        ```
+        ```
+        **返回值**
+        固定写法，仅一行：
+        ```
+        aclnnStatus：返回状态码，具体参见[aclnn返回码](../../../docs/context/aclnn返回码.md)。
+        ```
+      template: |-
+        ## aclnnAbs
+
+        - **参数说明**
+
+          <table>
+          <colgroup>
+          <col style="width: 180px">
+          <col style="width: 100px">
+          <col style="width: 720px">
+          </colgroup>
+          <thead>
+            <tr><th>参数名</th><th>输入/输出</th><th>描述</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>workspace</td><td>输入</td><td>在Device侧申请的workspace内存地址。</td></tr>
+            <tr><td>workspaceSize</td><td>输入</td><td>在Device侧申请的workspace大小，由第一段接口aclnnAbsGetWorkspaceSize获取。</td></tr>
+            <tr><td>executor</td><td>输入</td><td>op执行器，包含了算子计算流程。</td></tr>
+            <tr><td>stream</td><td>输入</td><td>指定执行任务的Stream。</td></tr>
+          </tbody>
+          </table>
+        - **返回值**
+          aclnnStatus：返回状态码，具体参见[aclnn返回码](../../../docs/context/aclnn返回码.md)。
+  constraint:
+    label: 约束说明
+    requirement: |-
+      单个参数的约束，就近写在表格里。
+      多个参数的组合约束，可以单独写在这个约束章节（复杂约束）。
+      对于算子原生语义就存在的约束即竞品也存在的通用约束一律不写，不要重写使用说明里的内容。
+      列出该算子在昇腾硬件上实现时的特有限制（即并非其数学定义所固有的限制）。从使用场景、硬件/软件资源、对系统/网络性能或精度影响等角度说明。若无约束填写「无」,不允许空章节。无序列表形式。
+      写作清单如下：
+      ①确定性计算（必选项）：（固定话术，三选一）
+        - aclnnXxx默认确定性实现。
+        - aclnnXxx默认非确定性实现，支持通过aclrtSetSysParamOpt开启确定性。
+        - aclnnXxx默认非确定性实现，不支持通过aclrtSetSysParamOpt开启确定性。
+      ②确定性计算在docs/zh/op_api_list.md要简写（必选项）：（固定话术，配置在表头已说明）
+      ③输入shape限制：有超出原生语义的维度限制，需在此说明
+      ④输入值域限制：输入数据必须在某值域范围内，在特定范围外存在精度或性能问题的情况，需在此说明
+      ⑤输入属性限制：输入属性必须在某值域范围内，在特定范围外拦截报错的情况，需在此说明
+      ⑥输入数据类型限制：有某些数据类型在特定模式下性能极差，需在此说明
+      ⑦其他限制：按产品区分描述
+      ⑧Batch一致性说明（可选，话术3选1）：
+        - 默认Batch一致性实现：在xxx条件/xxx场景下满足。
+        - 默认非Batch一致性实现，支持通过aclrtSetSysParamOpt开启Batch一致性：在xxx条件/xxx场景下满足。
+        - 默认非Batch一致性实现，不支持通过aclrtSetSysParamOpt开启Batch一致性。
+      ⑨芯片标签要求：
+        - 涉及芯片差异化描述时，必须使用npu注释对包裹，格式为<!-- npu="芯片代号" id编号 -->和<!-- end id编号 -->。
+        - id编号说明：本章节从id20开始连续编排（用于唯一标识产品标签块，组装成文档后会统一重编号）。
+        - 产品名必须加<term>xxx</term>标记对。
+        - npu值与产品映射关系（固定，不可更改）：
+          - 950  -> Ascend 950PR&950DT系列产品
+          - A3   -> Atlas A3系列产品
+          - 910b -> Atlas A2系列产品
+          - 310b -> Atlas 200I/500 A2推理产品
+          - 310p -> Atlas推理系列产品
+          - 910  -> Atlas训练系列产品
+        - 当某个差异化描述涉及多个芯片产品时，npu值使用逗号分隔，例如npu="910,310p"表示Atlas训练系列产品和Atlas推理系列产品的共同约束。
+    template: |-
+      ## 约束说明
+
+      - 确定性说明：aclnnXxx默认确定性实现。
+
+      - Batch一致性说明：在xxx场景下，默认非Batch一致性实现，支持通过aclrtSetSysParamOpt开启Batch一致性。
+
+
+      <!-- npu="A3,910b,950" id20 -->
+      - <term>Atlas A3系列产品</term>、<term>Atlas A2系列产品</term>、<term>Ascend 950PR&950DT系列产品</term>：
+
+        <details>
+        <summary>xx场景1说明：</summary>
+
+        - 数据类型：场景1要求xx参数和xx参数数据类型为FLOAT16、BFLOAT16、BOOL。
+        - 数据格式：xxx
+        - 参数Shape：xxx
+
+        </details>
+      <!-- end id20 -->
+      <!-- npu="910,310p" id21 -->
+      - <term>Atlas训练系列产品</term>、<term>Atlas推理系列产品</term>：不支持场景1，仅支持场景2。
+      <!-- end id21 -->
+  example:
+    label: 示例
+    requirement: |-
+      1、提供完整的代码示例，包括头文件、接口调用、结果验证
+      2、代码必须可编译运行
+      3、示例应覆盖典型使用场景
+      4、代码注释简洁明了，不解释参数（参数在参数说明章节已解释）
+    template: |-
+      ## 示例
+
+      ```cpp
+      #include "acl/acl.h"
+
+      int main() {
+          // 初始化ACL
+          aclInit(nullptr);
+
+          // 创建输入tensor
+          // ...
+
+          // 调用两段式接口
+          uint64_t workspaceSize;
+          aclOpExecutor *executor;
+          aclnnAbsGetWorkspaceSize(self, out, &workspaceSize, &executor);
+
+          void *workspace = nullptr;
+          aclrtMalloc(&workspace, workspaceSize);
+
+          aclnnAbs(workspace, workspaceSize, executor, stream);
+
+          // 释放资源
+          // ...
+
+          aclFinalize();
+          return 0;
+      }
+      ```

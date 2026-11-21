@@ -1,6 +1,9 @@
 ---
 schema_version: 1
 op_name: {operator_name}
+# supported_dtypes 语义：输入/输出 tensor 的 dtype 集合，必须与 REQUIRE.md
+# 声明一致；权重 buffer 与中间计算 dtype
+# （如量化权重 int8、中间累加 float32）不得写入。
 supported_dtypes: [bfloat16]
 p0_shapes: [[1024, 128], [1024, 256], [1024, 512]]
 tolerance: {tolerance}
@@ -53,17 +56,23 @@ Algorithm: {algorithm_name}
 
 ### 5. 输入输出规格
 
+> **布局（layout）必填**：每个 tensor（含权重 buffer）都必须显式声明其**实际物理布局**（ND / NZ），不得省略。布局以输入数据给定为准：**用户给定 NZ 就按 NZ 作为 kernel 输入，没有特别指定 或 给定 ND 时就按 ND**；kernel 与 golden 对同一 tensor 的布局口径必须一致（golden 按 ND 产出而 kernel 输入为 NZ 时，须在"说明"列标注该装载转换点）。NZ 内轴仅支持32B对齐。
+
 **输入规格**:
 
-| 变量 | Shape | Dtype | 动态轴 | 置信度 | 说明 |
-|------|-------|-------|--------|--------|------|
-| {name} | {shape} | {dtype} | {dynamic_axes} | {confidence} | {description} |
+| 变量 | Shape | Dtype | 布局 | 动态轴 | 置信度 | 说明 |
+|------|-------|-------|---------------|--------|--------|------|
+| {name} | {shape} | {dtype} | {layout} | {dynamic_axes} | {confidence} | {description} |
 
 **输出规格**:
 
-| 变量 | Shape | Dtype | 动态轴 | 置信度 | 说明 |
-|------|-------|-------|--------|--------|------|
-| {name} | {shape} | {dtype} | {dynamic_axes} | {confidence} | {description} |
+| 变量 | Shape | Dtype | 布局 | 动态轴 | 置信度 | 说明 |
+|------|-------|-------|---------------|--------|--------|------|
+| {name} | {shape} | {dtype} | {layout} | {dynamic_axes} | {confidence} | {description} |
+
+### 5.1 kernel 需用、golden 可不用的输入（条件适用：attention 等含 softmax/归约统计量的算子）
+
+输入为 kernel 直接使用、golden 可不使用（重算）的统计量（如 softmax `m`/`l`，即 `l_input`/`m_input`）时：kernel 默认直接读取（`consume`），重算须论证留痕；golden 重算只定精度对齐，不定 kernel 算法；真值输入由输入工厂提供（见 `pypto-golden-generate` 的 reference-normalization.md）。
 
 ### 6. 数据类型支持
 

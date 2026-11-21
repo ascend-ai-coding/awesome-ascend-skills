@@ -1,0 +1,40 @@
+strategy_id: P65
+
+strategy_meta:
+  id: "P65"
+  slug: "P65_ub_bank_conflict_avoidance"
+  title: "P65: UB Bank 冲突规避 (UB Bank Conflict Avoidance)"
+  bottlenecks: [bus_contention]
+  op_families: [datapath]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p65_ub_bank_conflict_avoidance.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p65_ub_bank_conflict_avoidance.md"
+  playbook_slug: "P65_ub_bank_conflict_avoidance"
+checks:
+  - id: has_vector
+    type: grep_count
+    pattern: "Vector|vector|VEC|Add|Mul|计算"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 Vector 计算逻辑 → 无 bank 冲突优化空间，不适用 P65。"
+
+  - id: has_localtensor
+    type: grep_count
+    pattern: "UB|ub|LocalTensor|TBuf|InitBuffer"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 UB 使用 → 无 bank 冲突场景，不适用 P65。"
+
+  - id: has_bank
+    type: grep_count
+    pattern: "bank|Bank|冲突|conflict|stride"
+    files: [kernel]
+    expected: ">= 0"
+    fail_msg: "已存在 bank 冲突规避逻辑 → 可能冗余，优先验证现有策略效果。"
