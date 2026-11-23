@@ -9,6 +9,8 @@ description: 按昇腾算子精度标准 2.1 验证 PyTorch 和 TorchNPU 算子�
 
 首次使用见[安装、任务示例与报告图解](references/walkthrough.md)，可先在本机生成离线报告，再接入实际测试环境。
 
+需要测试看板或运行进度时，使用[Allure 与已有 Grafana 接入](references/platform-integration.md)。适配器可选，仅导出文件，不启动服务或修改现有监控。
+
 ## 快速开始
 
 1. 填写算子、环境和验收依据。单个 API 提供调用参数即可，批量任务可使用现有算子清单。[任务示例](assets/task-example.json)

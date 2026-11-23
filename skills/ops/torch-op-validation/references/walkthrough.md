@@ -134,6 +134,8 @@ python3 scripts/validate_golden.py assets/golden-records-example.json \
 
 ## 五项结果与失败复现
 
+需要汇总历史测试或在运行时查看进度，可选用 [Allure 与已有 Grafana 接入](platform-integration.md)。原有 HTML 和 CSV 继续生成。
+
 功能检查返回结构、dtype、形状、别名和梯度。精度按 2.1 分类及等级判定，保留三方数据。内存、性能和确定性分别记录测量范围、重复方式及适用判据。[专项测试](specialized-tests.md)
 
 失败包保留原 ATK case ID、配置、插件依赖、输入与梯度、哈希和执行参数。运行助手后查看新 ATK 报告，核对原错误或超差是否出现。`execution.json` 保存命令退出状态，复现状态初始为 `NOT_EVALUATED`。[单用例复现](atk.md#单用例复现)
