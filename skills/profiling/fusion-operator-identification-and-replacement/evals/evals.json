@@ -1,0 +1,52 @@
+{
+  "skill_name": "fusion-operator-identification-and-replacement",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "我们在 Atlas 800I A2（910B）上跑 Qwen 系列模型推理，用 msprof 抓了一个 prefill step 的数据，聚合表和时间线片段在这个文件里（examples/sample-profiling-report.md，注意其中的数据为虚构演示数据，就当它是我们的真实数据格式来演示）。模型源码暂时不方便提供，框架是 transformers + torch_npu eager 模式。帮我分析：1) 哪些算子已经是融合算子；2) 性能热点和瓶颈在哪；3) 有没有值得做自定义融合算子替换的地方，按优先级排一下。CANN 和 torch_npu 的版本号我稍后补给你。",
+      "expected_output": "按 SKILL.md 的 10 节报告结构输出：第 2 节先声明数据边界（无源码/图时融合识别的置信度上限）；第 3 节融合识别带置信度分级并说明哪些结论无法确认；第 4 节瓶颈分类给出证据（算子类型耗时占比）；第 5 节候选清单包含全部 8 个必备字段并按收益/可行性/成本排序；性能预测为理论估算并展示计算过程（含带宽反推标定）；缺少 CANN/torch_npu 版本导致的兼容性结论标 ⚠ 需核实并列入第 10 节待补充信息。",
+      "files": ["examples/sample-profiling-report.md"],
+      "expectations": [
+        "输出包含 10 节结构的全部章节（执行摘要、输入数据完整性与分析前提、现有融合算子识别结果、性能瓶颈分析、候选清单、详细技术分析、性能预测及依据、风险、验证方案、最终建议及待补充信息）",
+        "识别出 RMSNorm 展开链（Add/Mul/ReduceSum/Rsqrt/Mul/Mul）与 SwiGLU 展开（Sigmoid/Mul/Mul）以及 attention 展开（BatchMatMul/Add/SoftmaxV2）为未融合候选序列",
+        "融合算子识别结果带置信度标注（确认/高置信/待核实），并明确说明缺少模型源码与图 dump 时哪些结论无法达到'确认'级",
+        "瓶颈分类给出证据：GEMM 类占比、elementwise 链占比、TransData 占比等具体数字",
+        "候选清单每条包含：候选算子或算子序列、当前耗时证据、融合可行性、预期收益来源、实现成本、风险、预测可信程度、验证方法 八个字段",
+        "评估候选前查阅了 npu-fused-op-catalog.md，对 RMSNorm 候选优先建议调用现成 npu_add_rms_norm 系列接口而非自研",
+        "所有性能数字标注为理论估算，展示了计算过程与假设（如带宽反推），未编造实测加速比，且同时给出序列级与端到端两个口径",
+        "将 CANN/torch_npu 版本缺失列入待补充信息，相关兼容性结论标注需核实",
+        "对 TransData 候选因缺少布局信息不下硬性结论，说明需要补充什么数据"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "我们的 DeepSeek 类模型在 910B 上推理，Profiling 时间线里每个 decoder 层都看到 Add → Mul → ReduceSum → Rsqrt → Mul → Mul → Cast 这样一条序列（RMSNorm 手写展开），BF16，shape 是 [token_num, 5120]，token_num 在 decode 时 1~32、prefill 时最大 4096。有人建议我们写一个 AscendC 自定义融合算子把这条序列合起来。帮我评估可行性，给出方案和替换后的性能预期。环境是 CANN 8.0.RC1、torch_npu 2.1.0.post1（示例环境，具体支持情况请帮我确认一下）。",
+      "expected_output": "先查阅 references/npu-fused-op-catalog.md，发现 torch_npu 已有 npu_add_rms_norm / npu_add_rms_norm_cast 等现成融合算子，首选方案是改调用现成接口而非直接自研 AscendC，并给出'为什么现成优先'的理由与自研作为备选的触发条件；对现成接口在 CANN 8.0.RC1 / torch_npu 2.1.0.post1 的可用性给出核实途径、无法确认处标 ⚠；给出可行性维度分析（数学语义、shape/对齐、dtype、布局、精度、硬件约束）；性能预测用访存量/带宽模型展开计算，区分 decode 小 token_num（launch 主导）与 prefill 大 token_num（带宽主导）两种情形；给出精度风险与完整验证方案。",
+      "files": [],
+      "expectations": [
+        "先查 npu-fused-op-catalog.md 并明确指出 npu_add_rms_norm（及 npu_add_rms_norm_cast 等变体）现成算子的存在，首选建议为改调用而非自研 AscendC",
+        "说明选择'改调用'的理由（成本低一个量级）以及何时才需要退回自研（现成接口语义/shape/dtype/版本不满足）",
+        "对现成算子在用户给定 CANN/torch_npu 版本下的可用性给出核实途径（官方文档/Release Notes/最小用例验证），无法直接确认处标注 ⚠ 需核实，不凭空断言兼容",
+        "给出可行性维度分析：数学语义等价性（累加顺序/精度）、尾轴对齐、BF16 与 FP32 累加、布局、UB 容量等",
+        "性能预测展示计算过程（各算子访存量估算、带宽假设与标定来源），并区分 decode（token_num 1~32，launch 开销主导）与 prefill（token_num 最大 4096，带宽主导）两种情形给出不同结论",
+        "所有预测数字标注为理论估算并列出假设，无编造的实测加速比",
+        "包含精度风险分析（累加顺序、Cast 位置）与替换前后验证方案（microbenchmark 边界 shape 覆盖、端到端、atol/rtol 对齐）"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "这是我们 NPU 上抓的 profiling 导出，只有一张按算子名聚合的耗时表：MatMul 45%、Add 12%、TransData 10%、Softmax 8%、Mul 7%，剩下是零散小算子。没有 shape、没有 dtype、没有时间线，芯片型号和 CANN 版本也没记录。帮我们判断哪些算子可以融合优化，预估一下能提速多少？",
+      "expected_output": "明确说明数据不足及其后果：无时间线/源码无法确认融合关系与序列模式；无 shape/dtype 无法计算访存量；无环境版本无法核实兼容性。给出当前数据能支撑的有限结论（热点构成、初步瓶颈假设及其局限）；列出具体待补充数据清单（时间线或 start time、shape、dtype、环境版本、模型源码或计算图、prefill/decode 区分）；对'能提速多少'只给条件化/定性回答（如给出拿到数据后如何估算的路径），不编造加速比；不声称模型已使用或未使用某种融合算子；不把 TransData 直接判定为可消除。",
+      "files": [],
+      "expectations": [
+        "明确拒绝在数据不足时给出具体加速比数字，并解释原因（缺 shape 无法算访存、缺时间线无法确认序列）",
+        "列出具体的待补充数据清单：时间线/start time、shape、dtype、CANN/驱动/框架版本、模型源码或计算图等",
+        "给出基于聚合表的有限结论（如 GEMM 为主、elementwise 占比可观等初步判断）并明确其局限性",
+        "未声称模型已使用或未使用某种融合算子（缺少证据链时不下此结论）",
+        "未将 TransData 直接判定为可消除，而是说明需要布局与上下游信息才能判断",
+        "可给出条件化估算路径（说明拿到哪些数据后可以怎么估），但不输出无依据的数字",
+        "输出结构仍遵循报告框架或清晰说明当前为信息收集阶段的简化输出"
+      ]
+    }
+  ]
+}

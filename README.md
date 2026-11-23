@@ -271,6 +271,7 @@ cp -r awesome-ascend-skills/skills/ops/npu-op-benchmark your-project/.agents/ski
 | Skill | 描述 |
 |------|------|
 | [profiling-analysis](skills/profiling/profiling-analysis/SKILL.md) | Profiling 性能分析技能集：识别下发、通信、计算瓶颈 |
+| [fusion-operator-identification-and-replacement](skills/profiling/fusion-operator-identification-and-replacement/SKILL.md) | 从昇腾 Profiling 数据识别已有融合算子，按瓶颈、替换可行性和预期收益排序候选算子。 |
 | [mindspeed-llm-train-profiler](skills/profiling/mindspeed-llm-train-profiler/SKILL.md) | 自动化完成 MindSpeed-LLM 训练 Profiling 数据采集 |
 | [mindspeed-mm-train-profiler](skills/profiling/mindspeed-mm-train-profiler/SKILL.md) | 自动化完成 MindSpeed-MM 多模态训练 Profiling 数据采集 |
 | [pytorch-profiling-collection](skills/profiling/pytorch-profiling-collection/SKILL.md) | 基于 torch_npu.profiler 的通用训练/推理脚本 Profiling 采集（非 MindSpeed 场景） |
