@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "evidence_class": "synthetic",
+  "state": "running",
+  "planned": 10,
+  "completed": 3,
+  "failed": 1,
+  "running": 1,
+  "started_at_seconds": 1700000000,
+  "updated_at_seconds": 1700000010
+}

@@ -1,0 +1,202 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Existing Prometheus",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "title": "Torch operator validation",
+  "uid": "torch-op-validation",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "timezone": "browser",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "tags": [
+    "torch-op-validation"
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "evidence_class",
+        "label": "Evidence class",
+        "type": "custom",
+        "query": "hardware,synthetic,unverified",
+        "current": {
+          "text": "hardware",
+          "value": "hardware"
+        },
+        "options": [
+          {
+            "text": "hardware",
+            "value": "hardware",
+            "selected": true
+          },
+          {
+            "text": "synthetic",
+            "value": "synthetic",
+            "selected": false
+          },
+          {
+            "text": "unverified",
+            "value": "unverified",
+            "selected": false
+          }
+        ]
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Completed / planned slots",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "torch_op_progress_slots{evidence_class=\"$evidence_class\",kind=~\"planned|completed\"}",
+          "legendFormat": "{{stream}} {{kind}} {{status}} {{state}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Failed / running slots",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "torch_op_progress_slots{evidence_class=\"$evidence_class\",kind=~\"failed|running\"}",
+          "legendFormat": "{{stream}} {{kind}} {{status}} {{state}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Heartbeat age (seconds)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "time() - torch_op_progress_updated_at_seconds{evidence_class=\"$evidence_class\"}",
+          "legendFormat": "{{stream}} {{kind}} {{status}} {{state}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Run lifecycle",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "torch_op_run_state{evidence_class=\"$evidence_class\"}",
+          "legendFormat": "{{stream}} {{kind}} {{status}} {{state}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Final result rows by status",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (stream, status) (torch_op_result_rows{evidence_class=\"$evidence_class\"})",
+          "legendFormat": "{{stream}} {{kind}} {{status}} {{state}}"
+        }
+      ]
+    }
+  ]
+}

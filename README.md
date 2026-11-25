@@ -283,6 +283,7 @@ cp -r awesome-ascend-skills/skills/ops/npu-op-benchmark your-project/.agents/ski
 | [ascendc](skills/ops/ascendc/SKILL.md) | AscendC 算子端到端开发（ascend-kernel 自定义算子）：环境→工程初始化→两级 tiling 设计→用例→op_host/op_kernel 代码生成与框架注册→编译调试→接口文档→精度评估与精度调试→torch_npu.profiler 性能评估→性能优化→代码检视（自包含模板/脚本/样例） |
 | [ascend-opplugin](skills/ops/ascend-opplugin/SKILL.md) | op-plugin 环境安装与 torch_npu 自定义算子接入 |
 | [triton-ascend-migration](skills/ops/triton-ascend-migration/SKILL.md) | GPU/CUDA Triton 算子迁移到 Triton-Ascend |
+| [torch-op-validation](skills/ops/torch-op-validation/SKILL.md) | PyTorch / TorchNPU 算子五类测试、2.1 精度验收与 ATK 失败复现，输出 CSV / HTML；[使用示例与报告图解](skills/ops/torch-op-validation/references/walkthrough.md) |
 
 ### 工程知识与专项方向
 

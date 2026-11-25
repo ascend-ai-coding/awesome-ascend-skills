@@ -1,0 +1,192 @@
+{
+  "mode": "smoke",
+  "precision_policy": {
+    "requested_standard": "Ascend operator precision standard 2.1",
+    "approved_revision": "2.1",
+    "source_sha256": null,
+    "formal_acceptance": false,
+    "purpose": "Smoke example; select the level per operator and supply the adopted standard before formal acceptance.",
+    "ratio_denominator_err": null,
+    "ratio_err_source": null,
+    "ratio_err_interpretation": null,
+    "device_nan_prefill": {
+      "required": true,
+      "status": "NOT_RUN",
+      "scope": null
+    },
+    "statistical_recheck": {
+      "recommended_seed_samples": 1000,
+      "minimum_seed_samples": 200,
+      "bootstrap_resamples": 2000,
+      "confidence_level": 0.95,
+      "quantile_method": null
+    },
+    "diagnostic_recording": {
+      "enabled": true,
+      "pairs": [
+        "candidate_golden",
+        "peer_golden",
+        "candidate_peer"
+      ],
+      "acceptance_thresholds": false,
+      "per_output_leaf": true,
+      "missing_values": "null; never substitute zero"
+    },
+    "golden_mapping_file": "golden-dtype-map.json",
+    "golden_mapping_id": "torch-op-validation/golden-dtype-map-v1",
+    "golden_metadata_gate": {
+      "script": "../scripts/validate_golden.py",
+      "preflight_gate": "--strict-plan",
+      "executed_records_gate": "--strict",
+      "input_records": "Export per-operand source_dtype/golden_dtype/verified_before_call plus upstream records and actual execution evidence; task targets do not establish execution."
+    }
+  },
+  "suites": [
+    "function",
+    "accuracy",
+    "memory",
+    "performance",
+    "determinism"
+  ],
+  "implementations": {
+    "candidate": {
+      "backend": "npu",
+      "device": null
+    },
+    "peer": {
+      "backend": "cuda",
+      "device": null
+    },
+    "golden": {
+      "backend": "cpu",
+      "compute_dtype": "float32"
+    }
+  },
+  "cases": [
+    {
+      "operator": "torch.nn.functional.rms_norm",
+      "workload": "training",
+      "phase": "forward_backward",
+      "source_kind": "generic",
+      "inputs": [
+        {
+          "name": "input",
+          "dtype": "bfloat16",
+          "shape": [
+            64,
+            1024
+          ],
+          "requires_grad": true
+        },
+        {
+          "name": "weight",
+          "dtype": "bfloat16",
+          "shape": [
+            1024
+          ],
+          "requires_grad": true
+        }
+      ],
+      "attrs": {
+        "normalized_shape": [
+          1024
+        ],
+        "eps": 1e-06
+      },
+      "generator": {
+        "distribution": "normal",
+        "seed": 1234,
+        "grad_seed": 1235,
+        "mean": 0,
+        "stddev": 1
+      },
+      "operator_category": "floating",
+      "accuracy_level": "L1",
+      "precision_repeats_required": 50,
+      "comparison_parameters": {
+        "ratio_denominator_err": 0.00390625,
+        "ratio_err_source": "section 4.5.1; BFLOAT16 Small Value Threshold in section 4.5.3",
+        "ratio_err_interpretation": "Normal-ratio floor; distinct from the small-value absolute-error limit",
+        "small_value_threshold": 0.00390625,
+        "small_value_error": 1.52587890625e-05
+      },
+      "golden_plan": {
+        "execution_status": "NOT_RUN",
+        "input_dtypes": {
+          "input": "float32",
+          "weight": "float32"
+        },
+        "verified_before_call": false,
+        "upstream_dtype": "float32"
+      }
+    },
+    {
+      "operator": "torch.nn.functional.scaled_dot_product_attention",
+      "workload": "decode",
+      "phase": "forward",
+      "source_kind": "generic",
+      "inputs": [
+        {
+          "name": "query",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            8,
+            1,
+            64
+          ]
+        },
+        {
+          "name": "key",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            8,
+            257,
+            64
+          ]
+        },
+        {
+          "name": "value",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            8,
+            257,
+            64
+          ]
+        }
+      ],
+      "attrs": {
+        "dropout_p": 0,
+        "is_causal": false
+      },
+      "generator": {
+        "distribution": "normal",
+        "seed": 1236,
+        "mean": 0,
+        "stddev": 1
+      },
+      "operator_category": "floating",
+      "accuracy_level": "L1",
+      "precision_repeats_required": 50,
+      "comparison_parameters": {
+        "ratio_denominator_err": 0.00390625,
+        "ratio_err_source": "section 4.5.1; BFLOAT16 Small Value Threshold in section 4.5.3",
+        "ratio_err_interpretation": "Normal-ratio floor; distinct from the small-value absolute-error limit",
+        "small_value_threshold": 0.00390625,
+        "small_value_error": 1.52587890625e-05
+      },
+      "golden_plan": {
+        "execution_status": "NOT_RUN",
+        "input_dtypes": {
+          "query": "float32",
+          "key": "float32",
+          "value": "float32"
+        },
+        "verified_before_call": false,
+        "upstream_dtype": null
+      }
+    }
+  ]
+}
