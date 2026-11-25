@@ -1,5 +1,7 @@
 # ATK 安装、执行与失败复现
 
+批量前按[状态处理与有限重测](status-and-retry.md)检查参数、标杆和最小用例；临时环境故障修复后只补跑受影响项，保留每次尝试。数值失败仍遵循下文及 2.1 复检要求。
+
 ## 验证安装
 
 从官方项目或交付方获取 ATK wheel，核对 Python ABI、操作系统、架构、后端和 SHA256。[ATK 官方项目](https://gitcode.com/AscendTest/ATK)

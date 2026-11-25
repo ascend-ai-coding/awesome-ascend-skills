@@ -24,6 +24,12 @@ STATUSES = (
     "PASS", "FAIL", "ERROR", "TIMEOUT", "UNSUPPORTED", "NOT_RUN",
     "NOT_APPLICABLE", "BLOCKED", "MEASURED",
 )
+STATUS_GROUPS = {
+    "通过": ("PASS",),
+    "不通过": ("FAIL",),
+    "待处理": ("ERROR", "TIMEOUT", "BLOCKED", "NOT_RUN", "MEASURED", "UNSUPPORTED"),
+    "不适用": ("NOT_APPLICABLE",),
+}
 EVIDENCE_CLASSES = {
     "synthetic": "合成示例",
     "hardware": "设备测试记录",
@@ -206,6 +212,10 @@ def summarize(run, rows, root):
         "result_count": len(rows),
         "metric_count": sum(len(row.get("metrics", [])) for row in rows),
         "status_counts": {status: sum(counts[suite][status] for suite in SUITES) for status in STATUSES},
+        "status_group_counts": {
+            group: sum(counts[suite][status] for suite in SUITES for status in statuses)
+            for group, statuses in STATUS_GROUPS.items()
+        },
         "suites": counts,
         "missing_artifacts": sorted(missing),
     }
@@ -224,14 +234,15 @@ def _artifact_link(path, root, output):
     return f'<a href="{href}">{_text(path)}</a>'
 
 
-def _summary_table(summary):
-    headings = "".join(f"<th scope=\"col\">{name}</th>" for name in STATUSES)
+def _summary_table(summary, grouped=False):
+    groups = STATUS_GROUPS if grouped else {status: (status,) for status in STATUSES}
+    headings = "".join(f"<th scope=\"col\">{name}</th>" for name in groups)
     rows = []
     for suite, counts in summary["suites"].items():
-        cells = "".join(f"<td>{counts[status]}</td>" for status in STATUSES)
+        cells = "".join(f"<td>{sum(counts[status] for status in statuses)}</td>" for statuses in groups.values())
         rows.append(f"<tr><th scope=\"row\">{suite}</th>{cells}</tr>")
     return (
-        '<div class="scroll"><table class="summary"><thead><tr><th scope="col">专项</th>'
+        f'<div class="scroll"><table class="summary" id="{"summary-groups" if grouped else "summary-statuses"}"><thead><tr><th scope="col">专项</th>'
         f"{headings}</tr></thead><tbody>{''.join(rows)}</tbody></table></div>"
     )
 
@@ -389,8 +400,9 @@ def _write_html(path, run, rows, summary, root, comparisons=()):
 <span><strong>{summary["metric_count"]}</strong>指标</span>
 <span><strong>{missing_count}</strong>缺失附件</span></div>
 {precision_intro}
-<h2>专项统计</h2>{_summary_table(summary)}
-<p class="muted">统计来自输入记录。报告生成器只汇总各条记录的状态。</p>
+<h2>专项统计</h2>{_summary_table(summary, grouped=True)}
+<p class="muted">概览归为通过、不通过、待处理和不适用。待处理含执行异常、未运行、缺证据、不支持或仅测量；不代表都需重测。明细保留原始状态。这里统计的是专项结果，不是算子正式验收。</p>
+<details><summary>展开原始状态统计</summary>{_summary_table(summary)}</details>
 <h2>用例明细</h2><div class="filters">
 <label>搜索用例<input id="query" type="search"></label>{filters}
 <label><span><input id="issues" type="checkbox"> 仅失败、错误、超时及阻塞</span></label></div>

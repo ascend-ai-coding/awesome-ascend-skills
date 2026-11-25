@@ -2,6 +2,8 @@
 
 先把执行记录整理成 `bundle.json`。随报告保存计划、环境与标准版本、输入和输出哈希、执行命令、原始 ATK 报告和复现包。按所用标准判定后填写结果。渲染脚本按输入记录生成表格和统计。
 
+HTML 概览默认显示通过、不通过、待处理、不适用四类，可展开原始九种状态统计。`summary.json` 另提供 `status_group_counts`；原有 `status_counts`、CSV 与明细不变。合并规则及重测方式见[状态处理与有限重测](status-and-retry.md)。
+
 ## 规范化结果
 
 使用 Python 3.9 或更高版本。可用合成用例检查输出格式。[报告示例](../assets/report-example.json)

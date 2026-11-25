@@ -32,6 +32,8 @@ allure generate "$RUN_DIR/allure-results" --output "$RUN_DIR/allure-report"
 
 synthetic / unverified 记录统一 skipped；hardware 的 PASS 若引用文件缺失则显示 broken。所有行的原状态均在说明和附件保留。Allure 展示的是专项结果，不能将平台通过率等同于算子正式 2.1 验收。
 
+Skill 的 HTML 概览将原状态归为四类，Allure 沿用平台状态，Grafana 保留原始指标。两者含义和有限重测见[状态处理](status-and-retry.md)；合成示例全部 skipped 是演示策略，不是五项设备测试全部失败。
+
 默认只附结构化结果，不复制引用文件。确认获准交付后加 `--include-evidence`，复制该行 `evidence` 和 `reproduction` 引用的文件。复现清单的其他依赖不会递归收集；需要完整复现包时先打包为获准的证据附件再引用。结构化记录本身也可能含受限信息，上传前同样检查。
 
 历史身份使用 API、case_id、阶段、专项、执行端、标杆和参数，不含本轮 run ID。生成新结果时 UUID 独立。确保 case_id 稳定，在结果 metadata 的 dtype / input_dtype、shape、layout、attrs、case_parameters 中保留区分用例的参数；多输入、种子和计算模式可放 case_parameters。更换标准或输入语义时应能区分。跨批趋势还需按 Allure 版本保留其历史存储，不将多个批次误当成一次 launch 的重试。

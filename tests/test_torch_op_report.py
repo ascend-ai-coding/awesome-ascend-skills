@@ -141,6 +141,33 @@ class ReportTest(unittest.TestCase):
             rows = list(reader)
             return reader.fieldnames, rows
 
+    def test_grouped_overview_keeps_original_states_and_attempt_evidence(self):
+        states = ['PASS', 'FAIL', 'ERROR', 'TIMEOUT', 'BLOCKED', 'NOT_RUN',
+                  'MEASURED', 'UNSUPPORTED', 'NOT_APPLICABLE']
+        attempts = [{'attempt': 1, 'status': 'ERROR', 'evidence': 'attempt-1/log.txt'},
+                    {'attempt': 2, 'status': 'PASS', 'evidence': 'attempt-2/log.txt'}]
+        self.bundle['results'] = [
+            {**self.case, 'case_id': status, 'status': status,
+             'metadata': {'attempts': attempts} if status == 'PASS' else {}}
+            for status in states
+        ]
+        done = self.invoke()
+        self.assertEqual(done.returncode, 0, done.stderr)
+        summary = json.loads((self.output / 'summary.json').read_text())
+        self.assertEqual(summary['status_group_counts'],
+                         {'通过': 1, '不通过': 1, '待处理': 6, '不适用': 1})
+        self.assertEqual(summary['status_counts'], dict.fromkeys(states, 1))
+        self.assertEqual(summary['result_count'], 9)  # Attempts do not become new cases.
+        with (self.output / 'results.csv').open(newline='', encoding='utf-8') as stream:
+            rows = list(csv.DictReader(stream))
+        self.assertEqual([row['status'] for row in rows], states)
+        self.assertEqual(json.loads(rows[0]['metadata_json'])['attempts'], attempts)
+        text = (self.output / 'report.html').read_text()
+        groups = ReportTable(text, 'summary-groups').rows
+        original = ReportTable(text, 'summary-statuses').rows
+        self.assertEqual(groups[1], ['1', '1', '6', '1'])
+        self.assertEqual(original[1], ['1'] * 9)
+
     def test_generic_outputs_and_safe_links(self):
         (self.root / "raw").mkdir()
         (self.root / "raw" / "run log #1.txt").write_text("log", encoding="utf-8")
