@@ -1,6 +1,6 @@
 # Allure 与已有 Grafana 接入
 
-这是可选的文件适配层，不改变测试、2.1 判定或原有 HTML / CSV。`export_platform.py` 仅用 Python 标准库，不连接网络，不安装平台或采集设备数据。先从技能目录执行以下离线示例。
+`export_platform.py` 是可选的离线文件适配器，仅依赖 Python 标准库。它复用测试记录，供已有 Allure / Prometheus 平台读取。先从技能目录执行以下示例。
 
 ## Allure：结果、附件和历史
 
@@ -10,7 +10,7 @@ python3 scripts/export_platform.py allure assets/report-example.json \
   --out "$RUN_DIR/allure-results"
 ```
 
-每个专项结果生成一个 `*-result.json` 及原始记录 JSON 附件，保留逐叶三方比较。输出目录须为新目录。示例是 synthetic，Allure 中全部显示 skipped，不能当作硬件通过记录。
+每个专项结果生成一个 `*-result.json` 及原始记录 JSON 附件，保留逐叶三方比较。输出使用新目录。合成示例在 Allure 中统一显示 skipped。
 
 ![Allure 3.33.0 的合成示例](images/allure-platform.png)
 
@@ -32,9 +32,9 @@ allure generate "$RUN_DIR/allure-results" --output "$RUN_DIR/allure-report"
 
 synthetic / unverified 记录统一 skipped；hardware 的 PASS 若引用文件缺失则显示 broken。所有行的原状态均在说明和附件保留。Allure 展示的是专项结果，不能将平台通过率等同于算子正式 2.1 验收。
 
-Skill 的 HTML 概览将原状态归为四类，Allure 沿用平台状态，Grafana 保留原始指标。两者含义和有限重测见[状态处理](status-and-retry.md)；合成示例全部 skipped 是演示策略，不是五项设备测试全部失败。
+HTML 四类概览、Allure 状态和 Grafana 指标的对应关系及有限重测见[状态处理](status-and-retry.md)。
 
-默认只附结构化结果，不复制引用文件。确认获准交付后加 `--include-evidence`，复制该行 `evidence` 和 `reproduction` 引用的文件。复现清单的其他依赖不会递归收集；需要完整复现包时先打包为获准的证据附件再引用。结构化记录本身也可能含受限信息，上传前同样检查。
+默认附结构化结果；加 `--include-evidence` 可复制该行 `evidence` 和 `reproduction` 引用的文件。完整复现包需先打包再引用，其他依赖不会递归收集。对外上传的记录和附件均应在获准交付范围内。
 
 历史身份使用 API、case_id、阶段、专项、执行端、标杆和参数，不含本轮 run ID。生成新结果时 UUID 独立。确保 case_id 稳定，在结果 metadata 的 dtype / input_dtype、shape、layout、attrs、case_parameters 中保留区分用例的参数；多输入、种子和计算模式可放 case_parameters。更换标准或输入语义时应能区分。跨批趋势还需按 Allure 版本保留其历史存储，不将多个批次误当成一次 launch 的重试。
 
@@ -83,7 +83,7 @@ export_prometheus(Path("run/progress.prom"), "worker-1", progress_path=snapshot)
 # 结束后用实际状态更新 completed / failed / running 和 state，再发布快照。
 ```
 
-以上 import 需让 Python 能找到技能 scripts 目录，例如执行器启动前设置经过核验的 `PYTHONPATH`。快照目录由执行方准备。示例未调用设备，不是可直接开始训练的脚本。
+将技能 scripts 目录加入执行器的 Python 搜索路径，例如设置 `PYTHONPATH`，并提前创建快照目录。将上述调用接入已有执行器的用例边界和心跳逻辑。
 
 快照使用[进度示例](../assets/progress-example.json)中的字段：
 

@@ -28,7 +28,7 @@
 | `complex32` | `complex64` | 在参考计算前升精 |
 | `complex64` | `complex64` | 不升精 |
 
-`complex32` 的实部、虚部各为 FP16；`complex64` 的实部、虚部各为 FP32。这是精度方案说明，不代表某个算子或设备支持相应 dtype，也不代表已完成其测试。映射未覆盖的 dtype 不自行推断，须取得适用规则或将该条目标为 `BLOCKED`。
+`complex32` 的实部、虚部各为 FP16；`complex64` 的实部、虚部各为 FP32。算子和平台支持范围按实际版本核对；映射未覆盖的 dtype 补充适用规则前记为 `BLOCKED`。
 
 FP32 和 complex64 保持原 dtype 是本映射的有效方案，不因与待测端 dtype 相同而判为缺少 Golden。将 FP32 用例的 Golden 自动改成 FP64，或将 complex64 自动改成 complex128，不符合本映射；这类结果可另存辅助诊断，不能替代规定方案下的结果。修正规则后须重新执行受影响的参考计算及其比较，不得只改报告标签。
 
@@ -42,9 +42,9 @@ FP32 和 complex64 保持原 dtype 是本映射的有效方案，不因与待测
 
 可在 `run.metadata.golden_precision_plan` 中记录逐 dtype 规则、来源和执行检查证据，在逐叶上下文中登记实际输入、计算、累加与输出 dtype。CPU 不支持规定 dtype 或不能证明参考实现符合方案时，选择有依据的替代参考或将受影响条目标为 `BLOCKED`；不得静默更换 dtype 并继续宣称 Golden 已验证。非计算类、整数类及量化类按各自分支处理，不强套浮点升精方案。
 
-### Golden 元数据门禁
+### Golden 记录检查
 
-[`validate_golden.py`](../scripts/validate_golden.py)核对执行器导出的调用前 dtype 记录，默认读取[映射文件](../assets/golden-dtype-map.json)，仅依赖 Python 标准库。它不运行 Torch、ATK 或设备计算，也不验证记录的真实性；执行器仍须保存真实输入检查、源码与运行证据。传入的 `evidence` 是证据引用，检查器只要求引用非空，不打开文件或把文件存在等同于实际执行。
+[`validate_golden.py`](../scripts/validate_golden.py)离线核对执行器导出的调用前 dtype，默认读取[映射文件](../assets/golden-dtype-map.json)，仅依赖 Python 标准库。执行器保存输入检查、源码和运行证据；检查器保留 `evidence` 引用并要求其非空，不打开或鉴真所引用文件。
 
 输入示例是尚未执行的 FP32 计划：
 
@@ -80,7 +80,7 @@ python3 scripts/validate_golden.py run/golden-records.json --out run/golden-chec
 
 输出目录的父目录须已存在，报告文件须为新文件。每个 case 同时保存 `plan_status` 和实际记录的 `status`；上述未执行示例为 `plan_status=PASS`、`status=BLOCKED`。`--strict-plan` 按前者决定退出码，`--strict` 按后者决定，所选门禁非 PASS 返回 1；输入结构错误返回 2。
 
-已知映射与实际记录不符时为 `FAIL`，问题类型是 `golden_policy_mismatch`，不代表算子数值失败。未知 dtype、缺输入／上游、缺调用前验证或缺执行记录为 `BLOCKED`。输出 dtype、FP64 比较器统计类型均不能代替操作数的调用前记录。复杂 dtype 的映射配置通过，也不证明其数值、ULP 或设备支持已验证。
+映射与记录不符时为 `FAIL`，问题类型为 `golden_policy_mismatch`，与算子数值失败分开。未知 dtype、缺输入／上游、缺调用前验证或缺执行记录为 `BLOCKED`。检查依据是调用前操作数记录，输出 dtype 和比较器统计类型另行保存；数值、ULP 与设备支持按实际测试记录评定。
 
 | 类别 | 范围 | 比对与通过条件 |
 | --- | --- | --- |
