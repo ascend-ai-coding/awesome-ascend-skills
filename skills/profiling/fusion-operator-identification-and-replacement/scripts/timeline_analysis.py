@@ -7,7 +7,7 @@ Usage:
     python timeline_analysis.py <kernel_details.csv> [--step-op TYPE] [--step-gap-ms N]
 
 Key outputs (the evidence a fusion-analysis report needs):
-  - busy ratio over the capture window (sum of durations / window) -> dispatch-bound?
+  - busy ratio over the capture window (union of device intervals / window) -> dispatch-bound?
   - per-stream gap distribution -> launch overhead evidence
   - adjacent pairs on each stream -> unfused sequence candidates (with counts)
   - step count via a per-step signature op (e.g. the LM-head matmul)
@@ -49,25 +49,31 @@ def main():
     args = ap.parse_args()
 
     rows = []
+    device_streams = defaultdict(list)
     with open(args.kernel_details, newline='', encoding='utf-8') as f:
         for row in csv.DictReader(f):
             try:
                 rows.append((clean(row['Stream ID']), float(clean(row['Start Time(us)'])),
                              float(clean(row['Duration(us)'])), clean(row['Type'])))
+                sid, start, _, op = rows[-1]
+                device_streams[clean(row.get('Device_id', 'unknown')), sid].append((start, op))
             except (ValueError, KeyError):
                 continue
     rows.sort(key=lambda r: r[1])
 
     t0 = rows[0][1] if rows else 0.0
     t1 = max(s + d for _, s, d, _ in rows) if rows else 0.0
-    busy = sum(d for _, _, d, _ in rows)
-    print(f'window_us={t1 - t0:.1f} sum_duration_us={busy:.1f} busy_ratio={busy / (t1 - t0) * 100:.2f}%')
+    total_duration = sum(d for _, _, d, _ in rows)
+    if t1 <= t0:
+        ap.error("no positive observation window; check timestamps and column names")
+    busy = sum(end - start for start, end in merged_intervals((s, d) for _, s, d, _ in rows))
+    print(f'window_us={t1 - t0:.1f} sum_duration_us={total_duration:.1f} busy_ratio={busy / (t1 - t0) * 100:.2f}%')
 
     by_stream = defaultdict(list)
     for sid, s, d, t in rows:
         by_stream[sid].append((s, d, t))
 
-    result = {'window_us': round(t1 - t0, 1), 'sum_duration_us': round(busy, 1),
+    result = {'window_us': round(t1 - t0, 1), 'sum_duration_us': round(total_duration, 1), 'busy_us': round(busy, 1),
               'busy_ratio_pct': round(busy / (t1 - t0) * 100, 2), 'streams': {}}
 
     for sid, lst in sorted(by_stream.items(), key=lambda kv: -len(kv[1])):
@@ -129,6 +135,16 @@ def main():
             print(f"steps via {args.step_op}: count={len(steps)}, kernels/step={per_step:.0f}, "
                   f"busy/step={per_step_busy:.1f}us")
 
+    # Retain rare and widely spaced transitions for the full candidate review.
+    inventory = []
+    for (device, sid), events in sorted(device_streams.items()):
+        events.sort(key=lambda event: event[0])
+        counts = defaultdict(int)
+        for (_, first), (_, second) in zip(events, events[1:]):
+            counts[first, second] += 1
+        for (first, second), count in sorted(counts.items()):
+            inventory.append(dict(device=device, stream=sid, first=first, second=second, count=count))
+    result['all_adjacent_pairs'] = inventory
     out = Path('timeline_analysis.json')
     with open(out, 'w', encoding='utf-8') as f:
         json.dump(result, f, ensure_ascii=False, indent=2)

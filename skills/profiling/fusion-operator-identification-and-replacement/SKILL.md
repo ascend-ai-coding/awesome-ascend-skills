@@ -1,162 +1,101 @@
 ---
 name: fusion-operator-identification-and-replacement
-description: Identify existing fused operators and custom fused-operator replacement opportunities for large models (Qwen, DeepSeek, GLM, etc.) running on Huawei Ascend NPUs by analyzing profiling data (msprof op_summary, torch_npu profiler traces, kernel_details.csv, trace_view.json, MindStudio Insight exports). Classifies operators into single / op-library fused / graph-compiler auto-fused / custom fused, attributes bottlenecks to compute / memory / communication / dispatch, and produces a ranked candidate list with feasibility, risks, and evidence-grounded performance predictions — separating theoretical estimates from empirical ones, never fabricating speedups, and recommending to keep the current implementation when gains are unclear. Use this skill whenever the user mentions Ascend/昇腾 NPU, 融合算子, fused operator, operator fusion, 算子融合, 算子替换, 自定义融合, AscendC custom kernel opportunities, profiling 热点分析, 性能瓶颈分析, Qwen/DeepSeek/GLM inference performance on 910B/910C/310P — even if they only hand over a profiling CSV or trace file without explicitly mentioning fusion.
+description: 根据整网训练或推理的 torch_npu.profiler 数据定位可融合的小算子序列。输出识别报告，经用户确认后逐项调用 torch_npu 现有融合接口或开发自定义融合算子，实测精度和性能并给出模型接入代码。
 ---
 
-# 昇腾大模型融合算子识别与替换助手
+# 昇腾整网融合算子识别与替换
 
-分析昇腾 NPU 上 Qwen、DeepSeek、GLM 等大模型的 Profiling 数据，识别模型中**已经存在**的融合算子，发现**适合自定义融合算子替换或优化**的候选部分，并提出有依据的实现方案与性能预测。
+## 从哪里开始
 
-本 Skill 的产出是**分析报告与建议**。未经用户明确批准，不得修改模型代码、替换算子、重编译工程或改变生产环境——所有改动建议都以方案形式给出，由用户决定是否执行。
+用户提供整网训练或推理的 profiler 导出目录后，先回答三个问题：哪些小算子共同完成了一个计算、它们在模型哪里、哪个融合实现可能接替它们。第一轮交付 Markdown 识别报告；第二轮仅对用户选定的候选运行对照实验，给出结论和接入代码。
 
----
+| 当前拿到的输入 | 可以交付什么 |
+|---|---|
+| 只有按算子类型汇总的耗时表 | 热点及补采要求。缺少执行顺序，无法把某个 Add 归到具体层。 |
+| kernel 明细和 trace | 按 rank、stream 和时间定位实例，沿关联事件找 host 调用；报告调用栈实际覆盖的位置。 |
+| 另有模型源码或图 | 核实依赖、分支和中间输出，将候选落到文件、方法和替换代码段。 |
+| 已确认候选，另有目标 NPU、模型启动命令和代表输入 | 构建验证副本，执行逐项精度和性能 A/B。 |
 
-## 核心原则：证据优先
+## 阶段一 · 定位并报告候选
 
-整个分析围绕一个信念展开：**一条结论如果不能追溯到具体证据，就不该出现在报告里。**
+### 1. 从热点回到模型调用点
 
-1. **不凭名称下结论。** kernel 名称只是线索（弱证据）。"某模型已使用融合算子"或"某两个算子已融合"的判断，必须由算子序列、输入输出 Shape、框架配置或图 dump 交叉验证（证据链分级见 `references/profiling-analysis.md`）。
-2. **不得将 Profiling 耗时直接当成替换后的可节省耗时。** 算子耗时里含下发（launch）开销、带宽利用率不足、流水重叠等成分，替换后能省多少要单独估算（见 `references/performance-estimation.md`）。
-3. **不编造数字。** 预测必须区分**理论估算**（基于计算模型推导）与**经验预测**（基于历史实测数据外推），写明假设、计算方法、适用条件和不确定性。数据不足时给出条件化估计（"若有效带宽按 X 计，则…"）或明确要求补充信息，禁止编造加速比。
-4. **不将理论预测写成实测结果。** 报告中理论数字与实测数字必须显式区分标注。
-5. **不为融合而融合。** 如果当前融合实现已经较优（如已经在用 FlashAttention 类、AddRmsNorm 类算子），或自定义融合收益不明确，明确建议**保留现有实现**并说明理由。
-6. **不确定就标注。** 对不确定的算子名称、融合行为和兼容性结论，逐条标注"⚠ 需核实"，并写清核实途径。
-7. **优先官方资料。** 结论优先参考昇腾官方文档、官方算子资料、CANN 文档与可信的模型实现（索引见 `references/ascend-operator-reference.md`）；引用时注明来源与适用版本，不得编造文档、接口或数据。
+从 profiler 导出目录提取设备、rank、step、stream、采集配置和软件版本。记录训练或推理，以及 forward、backward、prefill、decode 等实际覆盖的阶段。用 references/torch_npu-profiler-export.md 解释字段，用 scripts/aggregate_kernels.py、scripts/timeline_analysis.py 和 scripts/inspect_profiler_db.py 聚合热点和查询事件。分析在独立工作目录运行。对只有汇总表的输入，列出热点及缺少的时间线、shape 或调用栈。
+从时间线中提取重复出现的小算子链。用 host 与 kernel 的关联事件回溯框架调用、模块路径、源码文件和行号；列出原始事件标识或时间戳，区分相同算子在不同层的调用。根据源码或计算图核实张量生产者、使用者、分支、原地更新与中间输出。时间相邻只能提出假设。缺调用栈或源码时给出 rank、step、stream、时间区间等可复查坐标，标注待定位并列出需要补采或提供的材料。
+从每个 rank 的 trace_view.json 单独取证。例如运行 python scripts/locate_trace.py trace_view.json MatMul，逐行读取匹配事件的 pid、tid、时间、关联的 host 事件及调用栈。以事件时间与 kernel_details.csv 的 stream、shape 对照。没有唯一关联时保留全部线索或标记未定位；只在源码或图中核实依赖后确定替换边界。
 
----
+### 2. 核实小算子链并选择实现
 
-## 参考文件
-
-| 文件 | 何时读取 | 内容 |
+| 源码或图中观察到的计算 | 优先核对的接口 | 最容易漏掉的条件 |
 |---|---|---|
-| `references/profiling-analysis.md` | 解析任何 Profiling 数据前 | 数据来源与产物、字段解释、聚合方法、瓶颈分类、融合识别证据链 |
-| `references/torch_npu-profiler-export.md` | 用户交付 torch_npu profiler / msprof 导出目录时 | 导出文件清单与相互关系、统计口径(单位/分母/双流)、实测解析陷阱(尾随制表符、空 Call Stack 列、db 与 CSV 行数差异等)、数据内环境证据提取、时间线与步结构推断、host↔kernel 对应路径 |
-| `scripts/` | 需要聚合 kernel 明细、重建时间线、查 profiler db 时 | 经真实数据验证过的解析脚本(`aggregate_kernels.py` / `timeline_analysis.py` / `inspect_profiler_db.py`)——**先复用这些再考虑自研**;脚本把结果 JSON 写到当前目录,不污染输入目录 |
-| `references/fusion-rules.md` | 识别融合机会、判定可行性时 | 融合收益来源、常见大模型融合模式、可行性判定维度、排除条件、风险与成本分级 |
-| `references/npu-fused-op-catalog.md` | **评估任何候选之前必读** | torch_npu 已有融合算子清单（77 个）——先查重，能调用的现成算子不要自研 |
-| `references/torch_npu/` | 评估候选、核实接口参数与产品支持情况时 | torch_npu 全量接口文档快照（op-plugin master `b80a2fdf`，2026-10-10，TorchNPU 26.2.0 时点），按 `torch_npu-<接口名>.md` 索引 |
-| `references/performance-estimation.md` | 做任何性能预测前 | 估算模型、带宽/算力标定方法、误差来源、置信度分级、实测验证方法 |
-| `references/ascend-operator-reference.md` | 需查官方文档、核实版本兼容性时 | 昇腾官方资料索引、环境自查命令、核实方法 |
-| `examples/sample-profiling-report.md` | 需要输入样例或报告格式参考时 | **虚构**示例数据与报告演示（明确标注虚构，不得引用为证据） |
+| 残差相加后沿尾轴做 RMSNorm | npu_add_rms_norm | epsilon、累加精度、残差是否还有其他使用者 |
+| 对 gate 做 SiLU，再和 up 逐元素相乘 | npu_swiglu | 打包顺序、切分轴，以及额外拼接的代价 |
+| 旋转部分通道后与 cos、sin 组合 | npu_rotary_mul | 旋转布局、广播维度、未旋转的通道 |
+| QK 转置乘、mask、softmax、与 V 相乘 | npu_fusion_attention | causal mask 方向、布局、dropout 和反向语义 |
 
-> `npu-fused-op-catalog.md` 的表内链接指向官方在线文档（固定为整理时的 op-plugin commit `b80a2fdf`，最新版本将 URL 中 commit 号替换为 `master`）；本 Skill 同时内置该快照的完整接口文档副本 `references/torch_npu/`。评估候选算子时，**先读本地副本中对应接口的文档**（含"产品支持情况"、函数原型、参数的 dtype/shape/布局约束），再下兼容性结论。
+对每个子图检查 references/npu-fused-op-catalog.md 和 references/torch_npu/，结合目标版本已安装接口核实语义、设备、shape、dtype、布局和反向支持。可直接覆盖的归入「已有接口」；查明现有接口无法覆盖的归入「自定义开发」，记录检索范围和缺口。版本或接口能力待核实时保留待定。已融合且无需改动的位置从替换清单中剔除。
+### 3. 输出识别报告
+第一阶段一次列全本次输入可识别的候选，再请用户选择。优先级只决定排序。逐 rank 查看 timeline_analysis.json 的 all_adjacent_pairs，覆盖每个设备和流，包括只出现一次和间隔较大的线索。结合 host 关联、源码或图补查跨流、非相邻依赖和可独立替换的子链；逐项考虑已有接口、自定义和路线待定。将对应同一调用点与替换边界的线索合并，保留各位置、规格与出现次数。已确认和有具体融合假设但证据待补的候选都给编号；单纯相邻、已融合、跨请求边界等列入排除记录。报告注明输入覆盖范围、未能检查的范围和每项待补证据。
+每个候选给稳定编号，列出模型位置及定位证据、小算子和张量依赖、真实输入规格、执行次数和耗时、替换路线、拟用接口或内核语义、预计收益来源、风险及验证所缺条件。按整网影响与可行性排序。统计设备忙碌时间时按设备取执行区间并集，另列 kernel 累计耗时。理论估算注明假设。
 
----
+使用 references/identification_report_format.md 排版。已有接口候选先查 references/common_fusion_ops.md 和目标环境的 python scripts/query_torch_npu_api.py show API名 --full，再按实际调用点给出替换前后示例，复用模型开关、保留 fallback、对齐 AMP、布局和全部返回值。缺源码时提供带适用条件的独立调用示例，标注待匹配的位置。自定义候选写明拟议接口、输入输出及原始计算，留待确认后生成内核。收益依据可参考 references/fusion_value_assessment.md。上游文件来源见 references/msagent-source.md。
 
-## 工作流程
+**报告里的代码应具体到什么程度？** 以 SwiGLU 为例，假设模型的投影已将 gate 和 up 按此顺序打包在最后一维，且两半等宽。下面的函数保留原始计算，便于阶段二用同一输入切换分支。实际报告应把开关和函数映射到用户模型，并核实目标版本支持当前 dtype、shape 和反向路径。
 
-收到任务后按以下 7 步执行。信息不全时不要跳步——第 1、2 步的缺口会直接决定后面所有结论的可信度。
+```python
+import torch.nn.functional as F
 
-### 第 1 步：确认环境
 
-向用户确认或从环境自查（命令见 `references/ascend-operator-reference.md`）：
+def apply_swiglu(gate_up, use_fused):
+    if use_fused and gate_up.device.type == "npu":
+        import torch_npu
 
-- **模型**：名称与版本（Qwen2.5-72B？DeepSeek-V3？GLM-4？）、稠密还是 MoE、是否量化（W8A8、INT8 KV Cache 等）
-- **推理框架**：MindIE / vllm-ascend / transformers + torch_npu（eager 还是图模式/torchair）/ MindSpore，以及版本
-- **硬件**：NPU 型号（910B1/B2/B3/B4、910C、310P 等）、卡数与拓扑
-- **软件栈**：CANN 版本、驱动/固件版本、torch 与 torch_npu 版本、ATB 等加速库版本
-- **Profiling 方式**：msprof / torch_npu profiler / MindStudio，采集参数（时长、是否带 stack/shape/memory）
+        return torch_npu.npu_swiglu(gate_up, dim=-1)
 
-**Profiling 数据自身通常已带部分环境证据**（NPU 型号、rank↔device 映射等，提取方法见 `references/torch_npu-profiler-export.md` §4）——先查数据再问用户，查不到的才进入待补充清单。判断采集配置时**必须查数据内容，不能只看列名或文件 schema**（例如 Call Stack 列存在却可能全空：with_stack 是否开启，以 trace 中有无 `python_function` 事件为准）。
-
-任何一项缺失，都记入报告第 10 节"待补充信息"，并在受影响的结论上标注影响。
-
-### 第 2 步：输入数据完整性检查
-
-盘点用户提供了什么：op_summary / kernel_details / trace_view / 模型源码 / 计算图 dump / 框架配置。torch_npu profiler 导出目录的文件清单、相互关系与已知解析陷阱见 `references/torch_npu-profiler-export.md` §1/§3；盘点表中的每个数字（行数、大小、条目数）都要**真的从对应文件数出来并注明来源**——不同文件/表的同名统计可能不同（如 db TASK 表与 task_time.csv 行数不同）。
-
-**明确说明这份 Profiling 能支持哪些结论、哪些结论仍需计算图或源代码。** 例如：只有聚合的 op_summary 时，能做热点排序与初步瓶颈分类，但不能确认图编译器自动融合（需要图 dump 或图模式开关对比实验）。这一节是后续所有结论的边界声明，必须写在报告开头而不是结论之后。
-
-### 第 3 步：性能热点分析
-
-方法见 `references/profiling-analysis.md`，导出文件的口径细则见 `references/torch_npu-profiler-export.md` §2/§5（聚合/时间线可用 `scripts/` 下脚本起步）。产出：
-
-- 按算子类型聚合的耗时排行（总耗时、调用次数、平均耗时、占比），**口径三件套显式声明**：单位（us）、聚合键（kernel Type）、分母（kernel 总时长，与 op_statistic 的 Ratio 同口径）；**不得把采集窗口时长当占比分母**
-- **busy 率与间隙**：ΣDuration ÷ 采集窗口跨度，以及 kernel 间隙分布（中位/均值/总量）。这两个数必须算——只看聚合排行会把"下发/launch 主导"的负载误判成算力瓶颈（实测案例：GEMM 占 kernel 时间 49%，但 busy 仅占窗口 3.4%，瓶颈在 host 下发）
-- 时间线视角（有 start time 时）：kernel 间隙、stream 分布、通信与计算是否重叠；步结构估算（步数、每步 kernel 数、每步 busy），**写明用什么标记 kernel 切步**；报告"典型 shape"时**按实例计数给分布**——首步可能是 prefill 或热身，不能拿它当典型值
-- 瓶颈归类：**计算瓶颈 / 内存访问瓶颈 / 通信瓶颈 / 调度（下发）开销 / 其他（H2D/D2H、内存分配等）**，每一类都给出对应证据
-
-### 第 4 步：现有融合算子识别
-
-把 Profiling 中的算子分为四类（判定方法与证据链见 `references/profiling-analysis.md` §6；torch_npu 导出格式下 E2 证据（host↔kernel 对应）的落地路径见 `references/torch_npu-profiler-export.md` §6——注意 operator_details.csv 没有时间戳列，不能直接做时间对应）：
-
-| 类别 | 含义 | 判定要点 |
-|---|---|---|
-| 单算子 | kernel 与一个基础数学操作一一对应（MatMul、Add、Rsqrt、Cast…） | 语义单一，与源码原生算子对应 |
-| 算子库融合算子 | CANN / torch_npu 公开融合接口对应的 kernel | 对照 `npu-fused-op-catalog.md`，名称匹配只是弱证据 |
-| 图编译器自动融合 | 图模式下编译器（如 GE 融合引擎）把算子子图合并为一个 kernel | 需要图 dump、融合日志或开关对比实验佐证 |
-| 自定义融合算子 | 推理框架或用户自研算子（如 vllm-ascend、MindSpeed 内置实现） | 需要源码佐证 |
-
-每个识别结果标注置信度（**确认 / 高置信 / 待核实**）及其证据来源。
-
-### 第 5 步：候选自定义融合算子替换清单
-
-发现未融合的算子序列后，**先查 `references/npu-fused-op-catalog.md`**：已有现成融合算子的，优先建议"改调用现有接口"而不是自研。没有现成算子的，按 `references/fusion-rules.md` 做可行性判定与排除条件筛查。
-
-候选清单按**预期收益 × 可行性 ÷ 实现成本**排序（定性评级即可，但必须写明理由）。每条候选至少包含以下字段：
-
-> 候选算子或算子序列 ｜ 当前耗时证据 ｜ 融合可行性 ｜ 预期收益来源 ｜ 实现成本 ｜ 风险 ｜ 预测可信程度 ｜ 验证方法
-
-### 第 6 步：高优先级候选的详细分析
-
-对排名靠前的候选逐个给出：
-
-- 融合前后的计算流程（输入输出张量、数据流走向）
-- 实现方案（调用现成接口 / AscendC 自研 / 框架侧改造），以及选择该方案的理由
-- 性能预测及其依据（用 `references/performance-estimation.md` 的方法展开计算过程，标明置信度）
-- 精度、兼容性与工程风险
-- 验证步骤（按报告第 9 节的要求写清）
-
-### 第 7 步：总结
-
-汇总推荐方案（明确优先级顺序）、待补充信息清单（含每项的核实途径）、下一步工作建议。
-
----
-
-## 报告输出格式
-
-分析实际模型时，**始终**按以下结构输出报告：
-
-```
-1. 执行摘要
-2. 输入数据完整性与分析前提
-3. 现有融合算子识别结果
-4. 性能瓶颈分析
-5. 候选自定义融合算子替换清单
-6. 候选方案的详细技术分析
-7. 替换后性能预测及其依据
-8. 精度、兼容性和工程风险
-9. 替换前后验证方案
-10. 最终建议及待补充信息
+    gate, up = gate_up.chunk(2, dim=-1)
+    return F.silu(gate) * up
 ```
 
-要求：
+若模型分别生成 gate 和 up，先记录各自的生产者；替换需要拼接时，把拼接也纳入计时。若 trace 只出现相邻的 SiLU 和 Mul，缺少两者共享张量的证据，在候选条目中标明待核实的依赖。
 
-- 第 2 节在具体结论之前给出，声明数据边界；盘点表中的每个数字注明来源文件（不同文件/表的同名统计可能不同）。
-- 第 4 节必须包含 busy 率与 kernel 间隙证据，不能只给聚合排行——否则会把下发主导的负载误判为算力瓶颈。
-- 第 5 节候选清单包含上述 8 个必备字段。
-- 第 7 节的每个数字都要能回答三个问题：**怎么算的？假设是什么？是理论估算还是实测/经验数据？**
-- 第 10 节汇总所有"⚠ 需核实"项及核实途径。
+报告末尾给出完整验证顺序（首批、后备、各自路线）并等待确认。说明用户可选择编号，也可授权按整份队列推进。用户回复“按建议开始阶段二”即执行报告中已列明的完整队列；明确限定编号、路线或预算时按该范围执行。没有可靠候选时说明所缺证据。
 
----
+## 阶段二 · 对确认的候选逐个实施
 
-## 约束与红线
+保留原始实现作为 baseline。在独立验证目录中为每个编号建立可复现用例，记录模型位置、环境版本、输入来源和运行命令。
 
-- 优先参考昇腾官方文档、官方算子资料、CANN 文档及可信的模型实现；引用时注明来源与适用版本，**不得编造文档、接口或数据**。
-- 需要时**核实特定 CANN、驱动、芯片和算子开发接口之间的版本兼容性**；无法核实就标注 ⚠，不 下结论。
-- **不得假设所有连续算子都能融合**——必须考虑数据依赖、计算语义、精度、布局和硬件执行约束（判定方法见 `references/fusion-rules.md`）。
-- **不得将 Profiling 中的耗时直接当成替换后的可节省耗时。**
-- **不得在缺少证据时声称某个模型已经使用了某种融合算子。**
-- **未经批准不得修改模型代码、替换算子、重编译工程或改变生产环境。**
-- 对不确定的算子名称、融合行为和兼容性结论，**标明需要进一步核实的内容**。
+### 路线 A · 调用已有接口
 
----
+读取目标版本的接口原型并做最小调用。提供可运行的原始函数与替换函数，展示 import、参数映射、权重、epsilon 等属性、返回值及下游用到的中间张量。核对训练梯度路径。若实际接口不支持，记录失败原因；转自定义开发前向用户确认变更后的方案。
 
-## 何时建议保留现有实现
+### 路线 B · 开发自定义融合算子
 
-出现以下任一情况时，明确建议保留现有实现，不要为了给出优化建议而强行推荐融合：
+例如某段归一化同时向旁路返回中间张量：先核对目标版本所有相关接口的返回值；如果已有接口能返回该张量，回到路线 A。确认缺口后，写出每个输出的 shape、dtype、使用者和梯度需求，把这份契约同时用于内核签名、PyTorch 注册和测试。对于动态 shape，分别说明内核支持的范围与回退到原实现的条件。
+从原始子图提取数学公式、输入输出契约、累加精度、广播与动态维约束；设计融合边界、分块、片上缓冲和尾块处理。在目标栈上生成可构建的内核、构建与注册代码、PyTorch 调用封装和替换示例。训练场景实现或注册所需 backward。用目标环境编译、加载并执行最小用例，记录命令和产物。无法编译时保留源码及具体阻塞原因。
 
-- 该序列已经在使用性能合理的融合算子（如 FlashAttention 类、AddRmsNorm 类 kernel），且无证据表明其实现低效
-- 候选序列占总耗时比例很小（经验参考：<1%~2%，且绝对耗时小），融合收益无法覆盖工程与维护成本
-- 存在硬性排除条件（见 `references/fusion-rules.md` §4）
-- 数据不足以判断收益、且用户无法补充——此时给出"需要什么数据才能下结论"，而不是给一个没有依据的方向
+### 逐项验证记录
+
+以阶段一的完整索引跟踪每个编号。每完成一项，用实测结果更新剩余项的优先级，在已授权范围内直接执行下一项。首批全失败、收益不足或局部阻塞时仍继续。例如大融合只支持另一种 KV 布局，先排查无需改变缓存的归一化与旋转子链，再查独立的采样候选。只有依赖同一失败条件且已有证据时才跳过相关项；记录受影响的编号和依据。转自定义开发、改变模型契约等未授权方案单列待确认，同时继续其他可执行项。所有授权项均有结论或具体阻塞、达到用户约定的停止条件时才收尾。结尾逐项列出已测、排除、受阻与范围外候选。
+
+随机算子先写明业务要求。需要逐样本重放时，对比相同 seed 的输出和后续 RNG 状态；通常的随机采样按概率语义验收，以固定种子记录可复现实验，比较目标分布和下游抽样行为。只在业务要求重放时将逐元素一致设为门槛。统计验收通过后继续实际规格性能测试；报告区分分布偏差、回放差异、接口不适配和性能回退。具体方法见 references/verification_workflow.md。
+
+每次只切换一个候选，使用同一启动命令、种子、权重和输入。先验证输出及训练梯度，精度失败即终止该项性能测试。训练使用 references/verification_workflow.md 的 JSONL 字段、scripts/merge_jsonl.py 与 assets/validation_report_template.html 生成逐项报告；先核对两组 step 完整对应，使用项目约定的阈值。推理用相同输入比较 logits、确定性解码输出或任务指标，分开记录 prefill 首 token 延迟、decode 每 token 延迟、吞吐及其负载条件；非生成模型采用对应任务输出和请求延迟。推理报告用 Markdown 列出两组实测值和复现命令。两个场景都以同一候选编号关联识别报告、代码、原始日志与接入说明。
+
+### 实测与判定
+
+1. **精度**：对同一组输入和权重运行 baseline 与替换实现。覆盖采集中高频规格、边界 shape 和实际 dtype，逐输出检查形状、类型、最大绝对/相对误差及非有限值。先确定适合该算子的容差及来源。训练时对齐随机状态、上游梯度，并比较输入和参数梯度；含随机算子时核实随机语义。
+2. **性能**：同一硬件、模式、输入和并行配置下预热，NPU 同步后多轮计时，每轮结束同步。单列编译开销、样本数、延迟中位数与波动。训练覆盖前反向；推理区分 prefill/decode。对可接入的模型副本做同负载整网 A/B，记录 step 时间或吞吐以及任务精度变化。记录脚本、原始结果与复现命令。
+3. **逐项结论**：精度通过且目标整网指标的收益超过测量波动，判「该换」；精度失败、性能回退或可靠测量显示收益不足，判「不该换」并列出原因。缺设备、源码、代表输入或整网验证时写「待验证」，说明已有的局部实测、具体缺口与续跑命令。禁止将估算或微基准加速比写作整网收益。
+4. **接入指导**：对「该换」项给出与实际模型文件、类、方法匹配的前后代码片段，标明安装或加载步骤、适用版本与输入条件、切换开关、原路径回退及整网回归命令。确认验证候选仅授权独立验证，修改用户模型另按用户要求执行。
+
+### 阶段二报告的「逐项判定」表
+
+沿用阶段一编号，每个候选一行，依次列出「编号、原算子或计算、目标融合算子或实际替换实现、支持情况、不支持原因、精度对比、性能对比、结论」。写出可定位的接口名；图编译写后端与实际算子链，代码改写写明复用或消除的操作。已执行项分别填写精度与性能实测结果；当前规格不支持时，两栏填“—”，原因单列。具体填法见 references/verification_workflow.md 的同名章节。
+
+## 交付前核对
+
+- [ ] 每个候选都能回到原始事件或源码；待核实的位置写明了补证方法。
+- [ ] 识别报告含路线、位置、示例或拟议接口，以及需要用户选择的编号。
+- [ ] 已确认的每个编号都有独立结论，能从结论找到 baseline、替换代码和原始测量记录。
+- [ ] 「逐项判定」表中每个编号都能看出要换什么、能否运行、测出了什么，以及最终是否采用。
+- [ ] 推荐接入的候选给出了模型调用点、启用条件、回退方法和整网复测命令。
