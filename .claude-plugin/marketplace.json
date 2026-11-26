@@ -564,7 +564,7 @@
     },
     {
       "name": "fusion-operator-identification-and-replacement",
-      "description": "从昇腾 Profiling 数据识别已有融合算子，按瓶颈、替换可行性和预期收益排序候选算子。",
+      "description": "从整网 torch_npu.profiler 数据定位小算子链，经确认后验证已有接口或自定义融合算子的精度、性能与接入方案。",
       "source": "./skills/profiling/fusion-operator-identification-and-replacement",
       "category": "profiling",
       "categories": [
