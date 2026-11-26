@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>算子融合替换验证报告</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <style>
+        :root {
+            --primary: #2563eb; 
+            --success: #16a34a; 
+            --danger: #dc2626;  
+            --skip: #6b7280;
+            --bg: #f3f4f6; --card-bg: #ffffff; --border: #e5e7eb;
+            --diff-del-bg: #fee2e2; --diff-add-bg: #dcfce3;
+            --diff-empty-bg: #f8fafc; /* 空白占位符的颜色 */
+        }
+        
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: var(--bg); margin: 0; padding: 20px; color: #1f2937; }
+        .container { max-width: 1400px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+        .card { background: var(--card-bg); border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 20px; border: 1px solid var(--border); }
+        .card-title { font-size: 1.25rem; font-weight: 600; margin-top: 0; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+        
+        .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; }
+        .info-item { display: flex; flex-direction: column; }
+        .info-label { font-size: 0.875rem; color: #6b7280; font-weight: 500; }
+        .info-value { font-size: 1rem; font-weight: 600; margin-top: 4px; }
+        .status-badge { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 0.875rem; font-weight: 600; color: white; text-align: center; }
+        .status-Pass { background-color: var(--success); }
+        .status-Fail { background-color: var(--danger); }
+        .status-Skip { background-color: var(--skip); }
+        
+        .cmd-box { background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 6px; font-family: monospace; overflow-x: auto; margin-bottom: 10px; font-size: 0.9rem; }
+        .cmd-label { font-size: 0.875rem; font-weight: bold; margin-bottom: 5px; color: #374151; }
+
+        /* ========= 全新优化的 Diff 样式 ========= */
+        .diff-container { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; font-family: monospace; font-size: 0.9rem; margin-bottom: 15px; }
+        .diff-header { background: #f9fafb; padding: 8px 12px; border-bottom: 1px solid var(--border); font-weight: bold; color: #1f2937; }
+        .diff-content { display: flex; width: 100%; }
+        
+        /* 核心修复 1：左右分栏提取到最外层，保证全文件唯一滚动条 */
+        .diff-pane { width: 50%; overflow-x: auto; padding-bottom: 10px; }
+        .diff-pane-left { border-right: 1px solid var(--border); }
+        
+        .diff-row { display: flex; min-width: max-content; }
+        .diff-row.del { background-color: var(--diff-del-bg); }
+        .diff-row.add { background-color: var(--diff-add-bg); }
+        
+        /* 核心修复 2：针对缺失行的空白占位符样式 */
+        .diff-row.empty { background-color: var(--diff-empty-bg); }
+        .diff-row.empty .diff-line-num { background-color: #f1f5f9; border-right-color: #e2e8f0; }
+
+        /* 核心修复 3：Hunk 之间的跳转分隔符 (类似 GitHub) */
+        .diff-row.hunk-sep { background-color: #f1f5f9; border-top: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; }
+        .diff-row.hunk-sep .diff-line-num { background: #e2e8f0; color: #64748b; }
+        .diff-row.hunk-sep .diff-code { color: #64748b; font-style: italic; }
+
+        .diff-line-num { 
+            width: 40px; flex-shrink: 0; background: #f9fafb; color: #9ca3af; text-align: right; 
+            padding: 2px 8px; user-select: none; border-right: 1px solid var(--border);
+            position: sticky; left: 0; z-index: 1;
+        }
+        .diff-code { padding: 2px 8px; white-space: pre; }
+
+        /* ========= 图表及表格样式 ========= */
+        .chart-wrapper { position: relative; }
+        .chart-container { width: 100%; height: 400px; }
+        .chart-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(255,255,255,0.9); display: flex; align-items: center; justify-content: center; z-index: 10; display: none; }
+        .overlay-text { font-size: 1.5rem; font-weight: bold; color: var(--danger); }
+        .btn { padding: 4px 12px; border: 1px solid var(--border); background: #fff; cursor: pointer; border-radius: 4px; font-size: 0.875rem; }
+        .btn:hover { background: #f3f4f6; }
+
+        .table-toolbar { display: flex; justify-content: space-between; margin-bottom: 10px; }
+        .search-input { padding: 6px 12px; border: 1px solid var(--border); border-radius: 4px; width: 200px; }
+        .table-wrapper { max-height: 500px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; }
+        table { width: 100%; border-collapse: collapse; text-align: right; font-size: 0.875rem; }
+        th, td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+        th { background: #f9fafb; position: sticky; top: 0; z-index: 1; text-align: right; font-weight: 600; color: #374151; }
+        th:first-child, td:first-child { text-align: left; }
+        tr:hover { background-color: #f3f4f6; cursor: pointer; }
+        .text-danger { color: var(--danger); font-weight: bold; }
+        .text-success { color: var(--success); font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div id="app"></div>
+</div>
+
+<script>
+    // XSS 防御及 HTML 转义
+    function escapeHTML(str) {
+        if (str === null || str === undefined) return '';
+        return String(str).replace(/[&<>'"]/g, tag => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+        }[tag] || tag));
+    }
+
+    const COLOR_PRIMARY = '#2563eb'; 
+    const COLOR_SUCCESS = '#16a34a'; 
+    const COLOR_DANGER = '#dc2626';  
+
+    const REPORT_DATA = {
+        basic_info: {
+            task_name: "Llama-3-8B Pretraining",
+            candidate_name: "FlashAttention_v2_Fusion",
+            baseline_status: "Completed",
+            fused_status: "Completed",
+            final_conclusion: "Fail", 
+            work_dir: "/workspace/models/llama3",
+            hardware: "8x NVIDIA H100",
+            world_size: 8,
+            rank_count: 8
+        },
+        commands: {
+            baseline_cmd: "torchrun --nproc_per_node=8 train.py --config llama3_8b.json --use-baseline",
+            fused_cmd: "torchrun --nproc_per_node=8 train.py --config llama3_8b.json --use-fused",
+            script_path: "/workspace/models/llama3/train.py",
+            data_path: "/data/corpus/llama_tokens_v2",
+            ckpt_path: "/checkpoints/llama3_baseline"
+        },
+        diffs: [
+            {
+                file_path: "src/models/example_model/modeling_example.py",
+                hunks: [
+                    {
+                        old_line: 31, new_line: 31,
+                        old_code: "from ...utils import TransformersKwargs, auto_docstring, logging",
+                        new_code: "from ...utils import TransformersKwargs, auto_docstring, is_torch_npu_available"
+                    },
+                    {
+                        old_line: 33, new_line: 36,
+                        old_code: "from ...utils.output_capturing import OutputRecorder, capture_outputs\nfrom ..common.modeling_common import RMSNorm",
+                        new_code: "from ...utils.output_capturing import OutputRecorder, capture_outputs\n\n\nif is_torch_npu_available():\n    import torch_npu\nfrom ..common.modeling_common import RMSNorm"
+                    },
+                    {
+                        old_line: 69, new_line: 70,
+                        old_code: "class ModelRMSNorm(RMSNorm):\n    pass",
+                        new_code: "class ModelRMSNorm(RMSNorm):\n    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:\n        if is_torch_npu_available():\n            return torch_npu.npu_rms_norm(\n                hidden_states,\n                self.weight.to(dtype=hidden_states.dtype),\n                epsilon=self.variance_epsilon,\n            )[0].to(hidden_states.dtype)\n\n        input_dtype = hidden_states.dtype\n        hidden_states = hidden_states.to(torch.float32)\n        variance = hidden_states.pow(2).mean(-1, keepdim=True)\n        hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)\n        return self.weight * hidden_states.to(input_dtype)"
+                    }
+                ]
+            }
+        ],
+        metrics: [
+            { step: 1, phase: "warmup", base_loss: 10.5123, fused_loss: 10.5123, base_time: 0.65, fused_time: 0.42 },
+            { step: 2, phase: "warmup", base_loss: 9.1234, fused_loss: 9.1234, base_time: 0.62, fused_time: 0.40 },
+            { step: 3, phase: "active", base_loss: 8.4512, fused_loss: 8.4512, base_time: 0.63, fused_time: 0.41 }
+        ],
+        thresholds: { max_rel_diff: 0.001, first_fail_step: 3 }
+    };
+
+    REPORT_DATA.metrics.forEach(m => {
+        m.abs_diff = Math.abs(m.fused_loss - m.base_loss);
+        m.rel_diff = m.base_loss === 0 ? 0 : (m.abs_diff / m.base_loss);
+        m.time_delta = m.fused_time - m.base_time;
+        m.speedup = m.fused_time === 0 ? 0 : (m.base_time / m.fused_time);
+        m.is_precision_fail = REPORT_DATA.thresholds.first_fail_step !== null && m.step >= REPORT_DATA.thresholds.first_fail_step;
+    });
+
+    const isPrecisionFailed = REPORT_DATA.basic_info.final_conclusion === 'Fail';
+    let lossChartInstance = null;
+    let timeChartInstance = null;
+    let isLossLogScale = false;
+
+    function renderApp() {
+        const app = document.getElementById('app');
+        app.innerHTML = `
+            <div class="card">
+                <h2 class="card-title">基本信息 <span class="status-badge status-${escapeHTML(REPORT_DATA.basic_info.final_conclusion)}">${escapeHTML(REPORT_DATA.basic_info.final_conclusion)}</span></h2>
+                <div class="info-grid">
+                    <div class="info-item"><span class="info-label">模型/任务名称</span><span class="info-value">${escapeHTML(REPORT_DATA.basic_info.task_name)}</span></div>
+                    <div class="info-item"><span class="info-label">替换算子</span><span class="info-value">${escapeHTML(REPORT_DATA.basic_info.candidate_name)}</span></div>
+                    <div class="info-item"><span class="info-label">Baseline 状态</span><span class="info-value">${escapeHTML(REPORT_DATA.basic_info.baseline_status)}</span></div>
+                    <div class="info-item"><span class="info-label">Fused 状态</span><span class="info-value">${escapeHTML(REPORT_DATA.basic_info.fused_status)}</span></div>
+                    <div class="info-item"><span class="info-label">硬件环境</span><span class="info-value">${escapeHTML(REPORT_DATA.basic_info.hardware)}</span></div>
+                    <div class="info-item"><span class="info-label">工作目录</span><span class="info-value">${escapeHTML(REPORT_DATA.basic_info.work_dir)}</span></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2 class="card-title">实际运行记录</h2>
+                <div class="cmd-label">Baseline Command:</div>
+                <div class="cmd-box">${escapeHTML(REPORT_DATA.commands.baseline_cmd) || '信息缺失'}</div>
+                <div class="cmd-label">Fused Command:</div>
+                <div class="cmd-box">${escapeHTML(REPORT_DATA.commands.fused_cmd) || '信息缺失'}</div>
+            </div>
+
+            <div class="card">
+                <h2 class="card-title">真实代码修改对比 (Baseline vs Fused)</h2>
+                <div id="diff-render-area"></div>
+            </div>
+
+            <div class="card">
+                <h2 class="card-title">Loss 精度对比 <button class="btn" onclick="toggleLossScale()">切换 Log/Linear 坐标</button></h2>
+                <div class="chart-wrapper"><div id="lossChart" class="chart-container"></div></div>
+            </div>
+
+            <div class="card">
+                <h2 class="card-title">Step Time 性能对比</h2>
+                <div class="chart-wrapper">
+                    <div id="timeChart" class="chart-container"></div>
+                    <div id="perf-skip-overlay" class="chart-overlay"><div class="overlay-text">⚠️ 性能验证跳过：精度未通过</div></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2 class="card-title">逐 Step 明细表</h2>
+                <div class="table-toolbar">
+                    <input type="number" id="stepSearch" class="search-input" placeholder="搜索 Step..." oninput="filterTable()">
+                </div>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Step</th><th>Phase</th><th>Base Loss</th><th>Fused Loss</th>
+                                <th>Abs Diff</th><th>Rel Diff</th><th>Base Time (s)</th>
+                                <th>Fused Time (s)</th><th>耗时差值(s)</th><th>Speedup</th><th>状态</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+
+        renderDiffs();
+        initCharts();
+        renderTable(REPORT_DATA.metrics);
+
+        if (isPrecisionFailed) {
+            document.getElementById('perf-skip-overlay').style.display = 'flex';
+        }
+    }
+
+    function renderDiffs() {
+        const area = document.getElementById('diff-render-area');
+        if(!REPORT_DATA.diffs || REPORT_DATA.diffs.length === 0) return;
+
+        let html = '';
+        REPORT_DATA.diffs.forEach(diff => {
+            html += `<div class="diff-container"><div class="diff-header">${escapeHTML(diff.file_path)}</div>`;
+            
+            // 💡 修复重点：将 leftHtml 和 rightHtml 的拼装提取到 Hunk 循环外部
+            let leftHtml = '';
+            let rightHtml = '';
+
+            diff.hunks.forEach(hunk => {
+                // 💡 修复重点：插入分割行，优雅解决“行号跳变”带来的视觉断层问题
+                leftHtml += `
+                <div class="diff-row hunk-sep">
+                    <div class="diff-line-num">...</div>
+                    <div class="diff-code">@@ -${hunk.old_line} @@</div>
+                </div>`;
+                rightHtml += `
+                <div class="diff-row hunk-sep">
+                    <div class="diff-line-num">...</div>
+                    <div class="diff-code">@@ +${hunk.new_line} @@</div>
+                </div>`;
+
+                const oldLines = hunk.old_code.split('\n');
+                const newLines = hunk.new_code.split('\n');
+                const maxLen = Math.max(oldLines.length, newLines.length);
+
+                for(let i=0; i<maxLen; i++) {
+                    const oldLNum = hunk.old_line + i;
+                    const newLNum = hunk.new_line + i;
+                    const oldContent = oldLines[i] !== undefined ? oldLines[i] : '';
+                    const newContent = newLines[i] !== undefined ? newLines[i] : '';
+                    
+                    const leftClass = oldLines[i] !== undefined ? 'del' : 'empty';
+                    const rightClass = newLines[i] !== undefined ? 'add' : 'empty';
+
+                    leftHtml += `
+                    <div class="diff-row ${leftClass}">
+                        <div class="diff-line-num">${oldLines[i] !== undefined ? oldLNum : ''}</div>
+                        <div class="diff-code">${escapeHTML(oldContent)}</div>
+                    </div>`;
+
+                    rightHtml += `
+                    <div class="diff-row ${rightClass}">
+                        <div class="diff-line-num">${newLines[i] !== undefined ? newLNum : ''}</div>
+                        <div class="diff-code">${escapeHTML(newContent)}</div>
+                    </div>`;
+                }
+            });
+            
+            // 💡 修复重点：将 diff-pane 放到循环外部，确保只生成一组包裹所有代码的滚动条
+            html += `
+            <div class="diff-content">
+                <div class="diff-pane diff-pane-left">${leftHtml}</div>
+                <div class="diff-pane diff-pane-right">${rightHtml}</div>
+            </div></div>`;
+        });
+        area.innerHTML = html;
+    }
+
+    function initCharts() {
+        lossChartInstance = echarts.init(document.getElementById('lossChart'));
+        timeChartInstance = echarts.init(document.getElementById('timeChart'));
+
+        const steps = REPORT_DATA.metrics.map(m => m.step);
+        const baseLoss = REPORT_DATA.metrics.map(m => m.base_loss);
+        const fusedLoss = REPORT_DATA.metrics.map(m => m.fused_loss);
+        const baseTime = REPORT_DATA.metrics.map(m => m.base_time);
+        const fusedTime = REPORT_DATA.metrics.map(m => m.fused_time);
+
+        const markPointCfg = REPORT_DATA.thresholds.first_fail_step ? {
+            data: [{
+                name: 'First Fail',
+                coord: [REPORT_DATA.thresholds.first_fail_step - 1, REPORT_DATA.metrics[REPORT_DATA.thresholds.first_fail_step - 1].fused_loss],
+                value: 'Fail',
+                itemStyle: { color: COLOR_DANGER }
+            }]
+        } : null;
+
+        const tooltipFormatter = (params, type) => {
+            const index = params[0].dataIndex;
+            const m = REPORT_DATA.metrics[index];
+            let res = `<div style="font-weight:bold;border-bottom:1px solid #ccc;padding-bottom:5px;margin-bottom:5px;">Step: ${m.step} (${escapeHTML(m.phase)})</div>`;
+            
+            if (type === 'loss') {
+                res += `Baseline Loss: ${m.base_loss.toExponential(4)}<br/>`;
+                res += `Fused Loss: ${m.fused_loss.toExponential(4)}<br/>`;
+                const diffColor = m.is_precision_fail ? COLOR_DANGER : 'inherit';
+                res += `<span style="color:${diffColor}">Abs Diff: ${m.abs_diff.toExponential(4)}</span><br/>`;
+                res += `<span style="color:${diffColor}">Rel Diff: ${(m.rel_diff * 100).toFixed(4)}%</span>`;
+            } else {
+                let deltaStr = m.time_delta > 0 ? `+${m.time_delta.toFixed(4)}` : m.time_delta.toFixed(4);
+                let deltaColor = m.time_delta < 0 ? COLOR_SUCCESS : (m.time_delta > 0 ? COLOR_DANGER : 'inherit');
+                let speedupColor = m.speedup > 1 ? COLOR_SUCCESS : (m.speedup < 1 ? COLOR_DANGER : 'inherit');
+                
+                res += `Baseline Time: ${m.base_time.toFixed(4)} s<br/>`;
+                res += `Fused Time: ${m.fused_time.toFixed(4)} s<br/>`;
+                res += `Time Delta: <strong style="color:${deltaColor}">${deltaStr} s</strong><br/>`;
+                res += `Speedup: <strong style="color:${speedupColor}">${m.speedup.toFixed(2)}x</strong>`;
+            }
+            return res;
+        };
+
+        const lossOption = {
+            tooltip: { trigger: 'axis', formatter: p => tooltipFormatter(p, 'loss'), axisPointer:{type:'cross'} },
+            legend: { data: ['Baseline Loss', 'Fused Loss'] },
+            dataZoom: [{ type: 'inside' }, { type: 'slider', bottom: 10 }],
+            xAxis: { type: 'category', data: steps, name: 'Step' },
+            yAxis: { type: 'value', name: 'Loss', scale: true },
+            series: [
+                { name: 'Baseline Loss', type: 'line', data: baseLoss, itemStyle: { color: COLOR_PRIMARY } }, 
+                { name: 'Fused Loss', type: 'line', data: fusedLoss, itemStyle: { color: COLOR_DANGER }, markPoint: markPointCfg, lineStyle: { type: 'dashed' } } 
+            ]
+        };
+
+        const timeOption = {
+            tooltip: { trigger: 'axis', formatter: p => tooltipFormatter(p, 'time'), axisPointer:{type:'cross'} },
+            legend: { data: ['Baseline Time', 'Fused Time'] },
+            dataZoom: [{ type: 'inside' }, { type: 'slider', bottom: 10 }],
+            xAxis: { type: 'category', data: steps, name: 'Step' },
+            yAxis: { type: 'value', name: 'Time (s)', scale: true },
+            series: [
+                { name: 'Baseline Time', type: 'line', data: baseTime, itemStyle: { color: COLOR_PRIMARY } }, 
+                { name: 'Fused Time', type: 'line', data: fusedTime, itemStyle: { color: COLOR_SUCCESS } } 
+            ]
+        };
+
+        lossChartInstance.setOption(lossOption);
+        if(!isPrecisionFailed) timeChartInstance.setOption(timeOption);
+    }
+
+    function toggleLossScale() {
+        isLossLogScale = !isLossLogScale;
+        lossChartInstance.setOption({
+            yAxis: { type: isLossLogScale ? 'log' : 'value' }
+        });
+    }
+
+    function renderTable(data) {
+        const tbody = document.getElementById('tableBody');
+        tbody.innerHTML = data.map((m) => {
+            const statusStr = m.is_precision_fail ? '<span class="text-danger">Fail</span>' : '<span class="text-success">Pass</span>';
+            
+            let deltaClass = m.time_delta < 0 ? "text-success" : (m.time_delta > 0 ? "text-danger" : "");
+            let deltaStr = (m.time_delta > 0 ? "+" : "") + m.time_delta.toFixed(4);
+            let speedupClass = m.speedup > 1 ? "text-success" : (m.speedup < 1 ? "text-danger" : "");
+
+            return `
+                <tr onmouseenter="highlightChart(${m.step})" onmouseleave="downlightChart()">
+                    <td style="text-align:left;">${m.step}</td>
+                    <td>${escapeHTML(m.phase)}</td>
+                    <td>${m.base_loss.toExponential(4)}</td>
+                    <td>${m.fused_loss.toExponential(4)}</td>
+                    <td>${m.abs_diff.toExponential(4)}</td>
+                    <td class="${m.is_precision_fail ? 'text-danger' : ''}">${(m.rel_diff * 100).toFixed(4)}%</td>
+                    <td>${m.base_time.toFixed(4)}</td>
+                    <td>${m.fused_time.toFixed(4)}</td>
+                    <td class="${deltaClass}">${deltaStr}</td>
+                    <td class="${speedupClass}">${m.speedup.toFixed(2)}x</td>
+                    <td>${statusStr}</td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    function filterTable() {
+        const val = document.getElementById('stepSearch').value;
+        if (!val) {
+            renderTable(REPORT_DATA.metrics);
+            return;
+        }
+        const filtered = REPORT_DATA.metrics.filter(m => m.step.toString() === val);
+        renderTable(filtered);
+    }
+
+    function highlightChart(step) {
+        const index = REPORT_DATA.metrics.findIndex(m => m.step === step);
+        if (index === -1) return;
+        
+        lossChartInstance.dispatchAction({ type: 'showTip', seriesIndex: 0, dataIndex: index });
+        if(!isPrecisionFailed) timeChartInstance.dispatchAction({ type: 'showTip', seriesIndex: 0, dataIndex: index });
+    }
+    
+    function downlightChart() {
+        lossChartInstance.dispatchAction({ type: 'hideTip' });
+        if(!isPrecisionFailed) timeChartInstance.dispatchAction({ type: 'hideTip' });
+    }
+
+    window.addEventListener('resize', () => {
+        lossChartInstance?.resize();
+        timeChartInstance?.resize();
+    });
+
+    renderApp();
+</script>
+</body>
+</html>

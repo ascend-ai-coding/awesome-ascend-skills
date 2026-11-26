@@ -1,0 +1,116 @@
+{
+  "skill_name": "fusion-operator-identification-and-replacement",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "我们在 Atlas 800I A2（910B）上跑 Qwen 系列模型推理，用 msprof 抓了一个 prefill step 的数据，聚合表和时间线片段在这个文件里（examples/sample-profiling-report.md，注意其中的数据为虚构演示数据，就当它是我们的真实数据格式来演示）。模型源码暂时不方便提供，框架是 transformers + torch_npu eager 模式。帮我分析：1) 哪些算子已经是融合算子；2) 性能热点和瓶颈在哪；3) 有没有值得做自定义融合算子替换的地方，按优先级排一下。CANN 和 torch_npu 的版本号我稍后补给你。",
+      "expected_output": "阶段一列出可回溯的候选及尚缺证据，请用户选择编号，停止。",
+      "files": [
+        "examples/sample-profiling-report.md"
+      ],
+      "expectations": [
+        "明确样例是虚构数据",
+        "列出时间线定位与待确认的源码位置",
+        "查现有接口后分流，报告后停止"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "已选定已有接口候选 C1，用户已确认进入阶段二。对 DeepSeek decode 中的 residual + RMSNorm 做替换验证。只提供 BF16 [token_num,5120] 的 shape，没有 NPU 或模型源码。",
+      "expected_output": "输出 baseline、接口调用和可复现验证代码；无设备则结论待验证。",
+      "files": [],
+      "expectations": [
+        "核对接口与残差返回值",
+        "提供精度和性能对照用例",
+        "不虚构实测数据或源码位置"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "这是我们 NPU 上抓的 profiling 导出，只有一张按算子名聚合的耗时表：MatMul 45%、Add 12%、TransData 10%、Softmax 8%、Mul 7%，剩下是零散小算子。没有 shape、没有 dtype、没有时间线，芯片型号和 CANN 版本也没记录。帮我们判断哪些算子可以融合优化，预估一下能提速多少？",
+      "expected_output": "列出数据缺口与热点，停在阶段一。",
+      "files": [],
+      "expectations": [
+        "无法从聚合表确认调用位置和数据依赖",
+        "不给出虚构收益",
+        "请求时间线和定位材料"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "已确认自定义候选 C2。训练模型的源码、输入样本和 NPU 验证环境已提供。目标版本现有接口无法覆盖该子图的中间输出。",
+      "files": [],
+      "expected_output": "生成并构建自定义算子，逐项实测后判定是否接入。",
+      "expectations": [
+        "保留中间输出并覆盖 backward",
+        "提供注册、编译、调用与 baseline",
+        "比较输出及梯度和整网训练 step 时间",
+        "依据实测判定并为通过项提供接入与回退代码"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "这是为测试构造的单 rank torch_npu trace。请定位 Silu 和 Mul 并评估能否换 SwiGLU。",
+      "files": [
+        "examples/trace-location-demo.json"
+      ],
+      "expected_output": "只将 Silu 关联到 demo_model.py:42；Mul 只给时间线位置，数据流待核实。",
+      "expectations": [
+        "不把相邻事件当作 SwiGLU 的证明",
+        "保留两个事件的不同定位置信度",
+        "停在识别报告"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "已确认候选 C1 为已有接口，整网生成推理的模型、回放输入和 NPU 已提供。请验证并交付接入指导。",
+      "files": [],
+      "expected_output": "比较输出、prefill/decode 延迟与吞吐，逐项记录实测结论。",
+      "expectations": [
+        "精度不通过时直接否决",
+        "精度通过后以同负载整网 A/B 判定收益",
+        "该换项附文件、调用代码、开关及回退命令"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "按完整队列验证。首批指数采样固定 seed 输出不同，业务只要求采样概率一致；另一首选接口只支持 PA_NZ，模型使用其他缓存布局。后备有无需写缓存的 Norm+RoPE 和独立采样子链。",
+      "files": [],
+      "expected_output": "按概率契约检验随机输出并在通过后计时，记录缓存接口不适配，继续验证已授权的后备项。",
+      "expectations": [
+        "预先确定统计门槛并检查下游采样频率，固定 seed 差异单独记录",
+        "布局失败标为未取得精度结果，仅排除有相同布局依赖的方案",
+        "继续执行后备项并记录每个编号的结果或具体阻塞"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "本轮只验证 C01，业务必须逐样本复现。C01 同 seed 输出不同。C02 是已列出的后备项。",
+      "files": [],
+      "expected_output": "判定 C01 回放失败，列出 C02 待授权。",
+      "expectations": ["不以分布检验覆盖精确回放要求", "不越过明确编号范围运行 C02"]
+    },
+    {
+      "id": 9,
+      "prompt": "请根据阶段二记录写逐项判定表。C01 的 Tensor.exponential_ 换 torch_npu.npu_sim_exponential_，概率检验通过但同种子回放不同，局部 93→243 µs。C02 用 Inductor 编译 div→argmax，索引一致，局部 63→471 µs。C03 的 BF16、无专家 SwiGLU FFN 调用 torch_npu.npu_ffn 返回 161002，该路径要求 FP16。",
+      "files": [],
+      "expected_output": "三个编号各占一行，原计算、目标实现、支持情况、不支持原因、精度、性能和结论分别可查。",
+      "expectations": [
+        "C01 给出两个接口名，区分概率与回放结论，列出原→新局部耗时与保留理由",
+        "C02 写明 Inductor 和 div→argmax 子图，分别填写精度与耗时，不虚构融合接口或整网收益",
+        "C03 原因栏给出 BF16 与 FP16 的冲突及设备诊断；精度、性能栏填横线，结论限定于当前规格"
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "同卡多轮复测确认三个候选性能回退。A 的指数采样从七核变一核，设备合计从 43 到 239 µs。B 的 div 和 argmax 仍分开，生成代码仍写回商张量，设备从 22 到 29 µs，提交从 57 到 469 µs。C 只有总耗时 2 倍的数据，原 NPU 和脚本可用。请完成诊断并出报告。",
+      "files": [],
+      "expected_output": "按编号用表对照预期节省、实际路径和慢点；C 在目标 NPU 补采两条路径，再定因。",
+      "expectations": [
+        "A 说明少启动六次但新核设备时间超过原链总和，核内原因保留待查",
+        "B 点明中间写回未消除，主要差值在提交期间；不将提交与设备时间相加",
+        "C 实际补测或记录具体执行阻塞，不从两倍耗时推断访存、编译或调度瓶颈"
+      ]
+    }
+  ]
+}

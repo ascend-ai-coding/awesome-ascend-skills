@@ -436,6 +436,7 @@
         "./skills/profiling/mindspeed-llm-train-profiler",
         "./skills/profiling/mindspeed-mm-train-profiler",
         "./skills/profiling/pytorch-profiling-collection",
+        "./skills/profiling/fusion-operator-identification-and-replacement",
         "./skills/profiling/training-mfu-calculator"
       ],
       "category": "bundle",
@@ -559,6 +560,17 @@
         "environment-setup",
         "model-serving",
         "pytorch-npu"
+      ]
+    },
+    {
+      "name": "fusion-operator-identification-and-replacement",
+      "description": "从整网 torch_npu.profiler 数据定位小算子链，经确认后验证已有接口或自定义融合算子的精度、性能与接入方案。",
+      "source": "./skills/profiling/fusion-operator-identification-and-replacement",
+      "category": "profiling",
+      "categories": [
+        "profiling",
+        "leaf-skill",
+        "performance-analysis"
       ]
     },
     {

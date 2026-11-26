@@ -1,0 +1,7 @@
+{"traceEvents":[
+  {"ph":"X","name":"aten::silu","pid":1,"tid":7,"ts":10,"dur":4,"args":{"Call stack":"demo_model.py:42"}},
+  {"ph":"s","cat":"async_npu","id":1,"pid":1,"tid":7,"ts":12},
+  {"ph":"f","cat":"async_npu","id":1,"pid":2,"tid":3,"ts":30},
+  {"ph":"X","name":"Silu","pid":2,"tid":3,"ts":30,"dur":4},
+  {"ph":"X","name":"Mul","pid":2,"tid":3,"ts":36,"dur":3}
+]}
