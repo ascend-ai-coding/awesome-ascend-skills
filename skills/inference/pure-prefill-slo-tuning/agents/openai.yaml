@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ascend 纯 P SLO 寻优"
+  short_description: "按用户指定模型、镜像和数据集执行纯 P 容量寻优"
+  default_prompt: "Use $pure-prefill-slo-tuning to plan an Ascend pure-P experiment, show the startup parameter matrix, then execute after I confirm."

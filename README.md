@@ -247,6 +247,8 @@ cp -r awesome-ascend-skills/skills/ops/npu-op-benchmark your-project/.agents/ski
 | [vllm-ascend](skills/inference/vllm-ascend/SKILL.md) | vLLM 推理引擎：离线批推理、OpenAI 兼容 API、量化模型服务、分布式推理 |
 | [vllm-ascend-server](skills/inference/vllm-ascend-server/SKILL.md) | vLLM 推理服务部署：模型发现、量化检测、张量并行、graph/eager 模式、健康检查 |
 | [vllm-bench-serve](skills/inference/vllm-bench-serve/SKILL.md) | vLLM 在线性能压测与自动寻优：单次、批量、SLO 约束下搜索最优并发吞吐 |
+| [pure-prefill-slo-tuning](skills/inference/pure-prefill-slo-tuning/SKILL.md) | 昇腾纯 Prefill SLO 寻优，验证并行拓扑、并发和服务参数 |
+| [pure-decode-slo-tuning](skills/inference/pure-decode-slo-tuning/SKILL.md) | 昇腾纯 Decode SLO 寻优，结合真实接受率和假 KV benchmark 确认容量 |
 | [msmodelslim-quant](skills/inference/msmodelslim/msmodelslim-quant/SKILL.md) | msmodelslim 已验证模型量化流程：环境检查、方案查询、容器部署与量化执行 |
 | [ais-bench](skills/inference/ais-bench/SKILL.md) | AI 模型评估工具：精度评估、性能压测、Function Call |
 | [diffusers-ascend-skills](skills/inference/diffusers-ascend/diffusers-ascend-pipeline/SKILL.md) | Diffusers 环境、权重准备与推理 |
