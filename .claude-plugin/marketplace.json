@@ -258,6 +258,30 @@
       ]
     },
     {
+      "name": "pure-prefill-slo-tuning",
+      "description": "Tune Ascend pure-prefill capacity under an SLO by searching parallel topologies, concurrency and serving parameters, then confirming the selected configuration on the full workload.",
+      "source": "./skills/inference/pure-prefill-slo-tuning",
+      "category": "inference",
+      "categories": [
+        "inference",
+        "leaf-skill",
+        "benchmarking",
+        "performance-analysis"
+      ]
+    },
+    {
+      "name": "pure-decode-slo-tuning",
+      "description": "Tune Ascend pure-decode capacity under an SLO using measured speculative acceptance rates, synthetic KV benchmarks, and concurrency search to confirm compliant throughput.",
+      "source": "./skills/inference/pure-decode-slo-tuning",
+      "category": "inference",
+      "categories": [
+        "inference",
+        "leaf-skill",
+        "benchmarking",
+        "performance-analysis"
+      ]
+    },
+    {
       "name": "inferencex-report",
       "description": "Automatically fetch InferenceX benchmark data and generate daily performance reports for LLM inference on various hardware (NVIDIA, AMD, etc.). Supports email delivery, data change detection, and 8k1k sequence length performance analysis. Use when needing to track LLM inference performance trends, compare hardware configurations, or monitor benchmark updates.",
       "source": "./skills/inference/inferencex-report",

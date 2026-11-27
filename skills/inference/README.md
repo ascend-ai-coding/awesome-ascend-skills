@@ -9,6 +9,8 @@
 - [`vllm-ascend/`](vllm-ascend/)：vLLM-Ascend 推理引擎与部署指南
 - [`vllm-ascend-server/`](vllm-ascend-server/)：vLLM 推理服务启动、配置与健康检查
 - [`vllm-bench-serve/`](vllm-bench-serve/)：vLLM 在线性能压测与自动寻优
+- [`pure-prefill-slo-tuning/`](pure-prefill-slo-tuning/)：纯 Prefill 的并行拓扑、并发和服务参数寻优
+- [`pure-decode-slo-tuning/`](pure-decode-slo-tuning/)：纯 Decode 的真实接受率测量、假 KV 压测与容量确认
 - [`msmodelslim/msmodelslim-quant/`](msmodelslim/msmodelslim-quant/)：msmodelslim 已验证模型量化流程
 - [`ais-bench/`](ais-bench/)：精度与性能评测
 - [`diffusers-ascend/`](diffusers-ascend/)：Diffusers 环境、权重与推理
