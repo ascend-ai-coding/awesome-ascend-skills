@@ -1,0 +1,490 @@
+{
+  "skill_name": "tool-npu-check",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "memcheck-report-interpretation",
+      "prompt": "仅作文本咨询与日志解读，可读取 Skill 及参考文档；不要运行命令、启动外部应用或访问 NPU。\n\nnpu-check memcheck 报告中的 `Invalid GM read of size 32 bytes`，其 `location` 指向包含 `DataCopy(...)` 调用的源码行，应该如何解读？",
+      "expected_output": "先结合未经修改的原始捕获日志和运行上下文判断诊断可信度。若该诊断上下文充分，它表示 `DataCopy(...)` 所在源码位置对应的搬运路径发生了一次访问长度为 32 字节的设备全局内存（GM）越界读；32 字节是本次访问的总长度，不是实际越界量。报告说明该访问没有完整落入工具记录的有效 NPU 内存分配范围，但不提供具体代码修改方案。 本例只需文字回答，不执行检查命令、外部应用或 NPU 操作，也不声称已执行。",
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "32",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        },
+        {
+          "type": "contains",
+          "pattern": "GM",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        }
+      ],
+      "config": {
+        "eval_mode": "text",
+        "timeout": 600
+      }
+    },
+    {
+      "id": 2,
+      "title": "synccheck-report-interpretation",
+      "prompt": "仅作文本咨询与日志解读，可读取 Skill 及参考文档；不要运行命令、启动外部应用或访问 NPU。\n\nnpu-check synccheck 报告 `WAIT_FLAG` 找不到匹配的 `SET_FLAG`，这条诊断说明什么？",
+      "expected_output": "当前核函数下发批次（launch）中的 WAIT_FLAG 没有配对参数相同的 SET_FLAG，表示等待操作缺少对应的事件设置操作。配对参数可包含源/目的流水和事件编号，用于说明本次实际执行中哪组同步操作未配对；报告不提供算子代码修改方案。 本例只需文字回答，不执行检查命令、外部应用或 NPU 操作，也不声称已执行。",
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "WAIT_FLAG",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        },
+        {
+          "type": "contains",
+          "pattern": "SET_FLAG",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        }
+      ],
+      "config": {
+        "eval_mode": "text",
+        "timeout": 600
+      }
+    },
+    {
+      "id": 3,
+      "title": "report-scope-and-data-export",
+      "prompt": "仅作文本咨询与日志解读，可读取 Skill 及参考文档；不要运行命令、启动外部应用或访问 NPU。\n\n应用只下发 NPU 核函数、没有调用流同步接口，或者 memcheck 显示未发现问题且精度通过，能否说明整个算子没有问题？",
+      "expected_output": "不能。未调用 aclrtSynchronizeStream 或 aclrtSynchronizeStreamWithTimeout 时，检测数据可能没有导出，不能把没有诊断解释为通过。完成同步后也要先根据原始捕获日志和运行上下文判断诊断可信度；只有可靠报告才能说明本次输入和执行路径在 memcheck 的受支持检查范围内未发现问题，不能替代其他输入形状、synccheck、精度或性能验证。 本例只需文字回答，不执行检查命令、外部应用或 NPU 操作，也不声称已执行。",
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "同步",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        }
+      ],
+      "config": {
+        "eval_mode": "text",
+        "timeout": 600
+      }
+    },
+    {
+      "id": 4,
+      "title": "supported-runtime-configuration",
+      "prompt": "仅作文本咨询与日志解读，可读取 Skill 及参考文档；不要运行命令、启动外部应用或访问 NPU。\n\nnpu-check 支持哪些运行配置，有哪些能力边界？",
+      "expected_output": "目标设备为 Ascend 950PR/950DT（dav-3510），匹配 CANN 的单进程单线程可执行应用，支持 <<<>>>，aclnn 沿用单算子单次调用范围；PyTorch 暂不支持。memcheck 覆盖受支持的 GM 分配范围、L1/L0 容量、普通 SIMD/SIMD VF 的 UB 分区及 SIMT VF 的逐线程 UB 写入。initcheck 支持普通 SIMD/SIMD VF 的 UB 实际字节初始化；racecheck 以 WARNING 报告其 UB 潜在竞争，仍不跨 launch。synccheck 仍按核内配对及已支持核间模式判读。UB 分区检查限默认 8 KiB 预留；SIMT 四区判定使用本次 launch 的实际 Cache 端点，不检查 SIMT 读取或扩展到 SIMT initcheck/racecheck。FIFO 不取消流同步且不能无限采集；算子超时是全局 Runtime 请求。保留非 inline 子函数、软件同步及高阶 API 内部诊断的既有限制；不检查数值精度、性能、Host 逻辑或构建配置。 本例只需文字回答，不执行检查命令、外部应用或 NPU 操作，也不声称已执行。",
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "SIMD",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        },
+        {
+          "type": "contains",
+          "pattern": "SIMT",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        },
+        {
+          "type": "contains",
+          "pattern": "UB",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        }
+      ],
+      "config": {
+        "eval_mode": "text",
+        "timeout": 600
+      }
+    },
+    {
+      "id": 5,
+      "title": "log-file-output-semantics",
+      "prompt": "仅作文本咨询与日志解读，可读取 Skill 及参考文档；不要运行命令、启动外部应用或访问 NPU。\n\n使用 `npu-check --log-file reports/check.log` 时，检查报告和应用的标准输出、标准错误分别写到哪里？终端和日志文件中的重复内容应如何处理？",
+      "expected_output": "检查报告只写入 `--log-file` 指定文件，不再显示在终端；应用的标准输出和标准错误仍显示在终端，同时写入该文件。因此该文件是检查报告和应用输出组成的混合日志，终端应用输出只是重复副本。应分别保留两者，但不得重新拼接或重复计算应用输出，也不能把它们当作两份独立检查报告。 本例只需文字回答，不执行检查命令、外部应用或 NPU 操作，也不声称已执行。",
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "--log-file",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        }
+      ],
+      "config": {
+        "eval_mode": "text",
+        "timeout": 600
+      }
+    },
+    {
+      "id": 6,
+      "title": "synccheck-mode-switch-completion",
+      "prompt": "仅作文本咨询与日志解读，可读取 Skill 及参考文档；不要运行命令、启动外部应用或访问 NPU。\n\n完整 synccheck 报告中有 FLAG_MODE_SWITCH_BEFORE_COMPLETION participant={group0/AIV0} flagId=0 activeMode=2 newMode=0 pendingSetRounds=1 remainingCount=0。另一轮是 pendingSetRounds=0 remainingCount=1。汇总为 0 deadlocks。两种情况怎么解释？计数为零或没有死锁是否可以忽略？",
+      "expected_output": "两种状态都不能忽略：第一种 SET 聚合轮次尚未完成，第二种聚合已完成但计数未消费；同一 participant/flag 的旧状态要求两项都为零才允许模式切换。核对旧/新模式、参与者、flag 和触发位置，不能只建议补 WAIT 而忽略缺少 SET 聚合。0 deadlocks 不否定次序违规，也不能凭该违规断言整个程序已死锁。 本例只需文字回答，不执行检查命令、外部应用或 NPU 操作，也不声称已执行。",
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "SET",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        },
+        {
+          "type": "contains",
+          "pattern": "消费",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        }
+      ],
+      "config": {
+        "eval_mode": "text",
+        "timeout": 600
+      }
+    },
+    {
+      "id": 7,
+      "title": "synccheck-counter-overflow",
+      "prompt": "仅作文本咨询与日志解读，可读取 Skill 及参考文档；不要运行命令、启动外部应用或访问 NPU。\n\nsynccheck 报 COUNTER_OVERFLOW participant={group0/AIC} flagId=7 mode=2 currentCount=15 attemptedCount=16 maximum=15，这是什么意思？",
+      "expected_output": "应解释：同一次 launch 内，该目标参与核、该有效 flagId 的未消费计数已达上限 15，完成一轮 SET 聚合后试图再增加到 16，因而溢出。说明 participant 和 flagId 共同确定计数器，不同目标核或不同 flagId 的计数不相加；主动给出简短对照例子，例如同一目标核的两个 flag 分别计数 10 和 6，不按合计 16 判溢出，示例数字和表述不限。区分 SET 调用次数与聚合产生且尚未消费的计数，说明匹配的 WAIT 会消费计数，因此及时消费后累计 SET 次数超过 15 也不必然溢出。不能仅凭诊断认定源码中的第 16 条 SET 有错，或将示例中未溢出扩大为整次检查通过。 本例只需文字回答，不执行检查命令、外部应用或 NPU 操作，也不声称已执行。",
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "15",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        },
+        {
+          "type": "contains",
+          "pattern": "16",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        },
+        {
+          "type": "contains",
+          "pattern": "flag",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        },
+        {
+          "type": "contains",
+          "pattern": "WAIT",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        }
+      ],
+      "config": {
+        "eval_mode": "text",
+        "timeout": 600
+      }
+    },
+    {
+      "id": 8,
+      "title": "synccheck-token-identity",
+      "prompt": "仅作文本咨询与日志解读，可读取 Skill 及参考文档；不要运行命令、启动外部应用或访问 NPU。\n\n完整 synccheck 报告出现 wait without sync token；源码里有相同数字 flag 的 SET，是否可以认定误报？另有 remaining counter token，二者含义一样吗？",
+      "expected_output": "不能仅按裸flag编号判误报，应核对规范化pair key、participant、group、bank、mode或WAIT类别及launch。wait without sync token表示等待缺少可消费通知，remaining counter token表示通知已产生但结算时仍未消费；后者不等于SET聚合未完成。不同核回调或日志顺序不等于设备真实执行先后，报告条数不等于剩余token数。 本例只需文字回答，不执行检查命令、外部应用或 NPU 操作，也不声称已执行。",
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "token",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        },
+        {
+          "type": "contains",
+          "pattern": "消费",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        }
+      ],
+      "config": {
+        "eval_mode": "text",
+        "timeout": 600
+      }
+    },
+    {
+      "id": 9,
+      "title": "memcheck-inexact-register-dependency",
+      "prompt": "仅作文本咨询与日志解读，可读取 Skill 及参考文档；不要运行命令、启动外部应用或访问 NPU。\n\n一次正常结束的 npu-check 运行中，memcheck errors=0、inexact_device_operations=1；同时启用的 initcheck 报 Register nddma_loop0_stride was used before initialization，consumer 是 nd_copy_gm_to_ubuf。这些信息矛盾吗？能否认定内存访问通过？",
+      "expected_output": "不矛盾。缺少有效轴所需stride状态会使实际访问范围无法精确恢复，memcheck可能跳过该访问并记录inexact而不报确定越界；initcheck报告对应持久化寄存器依赖未满足。会话正常结束或errors=0不能证明该访问完整通过，不能把未知stride当零或把寄存器诊断解释成GM字节未初始化；核对consumer、有效轴及消费前设置。 本例只需文字回答，不执行检查命令、外部应用或 NPU 操作，也不声称已执行。",
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "stride",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        },
+        {
+          "type": "contains",
+          "pattern": "initcheck",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        }
+      ],
+      "config": {
+        "eval_mode": "text",
+        "timeout": 600
+      }
+    },
+    {
+      "id": 10,
+      "title": "initcheck-partial-read-and-allocation",
+      "prompt": "仅作文本咨询与日志解读，可读取 Skill 及参考文档；不要运行命令、启动外部应用或访问 NPU。\n\ninitcheck 报 Partially uninitialized GM memory read，Read size: 128 bytes; uninitialized: 64 bytes，Access start: 0x1040; first uninitialized byte: 0x1080，Allocation base: 0x1000; initialized bytes: 192。数字是不是互相矛盾？需要把整个 allocation memset 吗？",
+      "expected_output": "不矛盾。读取范围是[0x1040,0x10c0)，其中64字节缺少可见初始化证据；192是所属分配整体的初始化统计，不等于本次读取的已初始化量。未初始化不是越界量，也不代表整个allocation缺失量。核对真实读取集合、写入覆盖与同步可见性，不仅凭标题要求整个分配memset或确认源码根因。 本例只需文字回答，不执行检查命令、外部应用或 NPU 操作，也不声称已执行。",
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "64",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        },
+        {
+          "type": "contains",
+          "pattern": "192",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        }
+      ],
+      "config": {
+        "eval_mode": "text",
+        "timeout": 600
+      }
+    },
+    {
+      "id": 11,
+      "title": "racecheck-atomic-access-pair",
+      "prompt": "仅作文本咨询与日志解读，可读取 Skill 及参考文档；不要运行命令、启动外部应用或访问 NPU。\n\nracecheck 中 ADD 与 MIN 原子写同一地址是否一定安全？如果是原子写和普通写，都会报 ATOMIC_SEMANTIC 吗？报告只给 current/previous access 和 overlap，没有动态指令号，能否据此确定同址复用循环最后一轮的源码先后？",
+      "expected_output": "原子不等于全部无竞争：相同ADD/MIN/MAX模式原子写间兼容，不同模式缺少必要顺序仍可发生原子语义竞争；原子写与普通写可为WAW，与普通读可为RAW/WAR，不一律归ATOMIC_SEMANTIC。核对双方访问、空间、重叠范围、核和流水及同步。current/previous不直接等同源码发射先后；无可区分动态身份且同址复用时不能唯一定位最后一轮，保留原始类型不擅改标题。 本例只需文字回答，不执行检查命令、外部应用或 NPU 操作，也不声称已执行。",
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "WAW",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        },
+        {
+          "type": "contains",
+          "pattern": "RAW",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        }
+      ],
+      "config": {
+        "eval_mode": "text",
+        "timeout": 600
+      }
+    },
+    {
+      "id": 12,
+      "title": "analysis-failure-is-not-device-error",
+      "prompt": "仅作文本咨询与日志解读，可读取 Skill 及参考文档；不要运行命令、启动外部应用或访问 NPU。\n\nracecheck errors=0，但日志有 reason=capacity_or_count_overflow、launch analysis stopped、results incomplete；另一个版本的 initcheck 有 unit_flag_initialization_unsupported。这分别能否说明设备同步计数溢出、没有竞争或真实内存未初始化？",
+      "expected_output": "都不能这样推断。racecheck该reason表示检查器分析容量或计数问题并停止该launch分析，结果不完整，区别于synccheck COUNTER_OVERFLOW，不是设备同步溢出或死锁；零错误不证明没有竞争。initcheck该reason表示该版本unitFlag路径分析受限，不是已确认未初始化，也不代表所有版本永久不支持；核对目标包、所属checker/launch、具体失败阶段及完整性。 本例只需文字回答，不执行检查命令、外部应用或 NPU 操作，也不声称已执行。",
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "不完整",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        }
+      ],
+      "config": {
+        "eval_mode": "text",
+        "timeout": 600
+      }
+    },
+    {
+      "id": 13,
+      "title": "synccheck-missing-set-participant",
+      "prompt": "仅作文本咨询与日志解读，可读取 Skill 及参考文档；不要运行命令、启动外部应用或访问 NPU。\n\nsynccheck 报 expectedSet={group0/AIV0,group0/AIV1} actualSet={group0/AIV0} missingSet={group0/AIV1}。这表示 WAIT 参与者不足，还是某轮 SET 聚合缺少参与者？能否直接确定源码哪个分支有错？",
+      "expected_output": "这表示某轮 SET 聚合预期 AIV0 和 AIV1 都参与，但本次报告只记录到 AIV0，缺少 AIV1 的 SET 贡献；该轮尚未完成聚合，不能据此说是 WAIT 参与者不足。应核对模式、flag、group、轮次、目标核、实际执行路径和采集完整性；仅凭这一条诊断不能确定哪个源码分支有错。 本例只需文字回答，不执行检查命令、外部应用或 NPU 操作，也不声称已执行。",
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "AIV1",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        },
+        {
+          "type": "contains",
+          "pattern": "SET",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        }
+      ],
+      "config": {
+        "eval_mode": "text",
+        "timeout": 600
+      }
+    },
+    {
+      "id": 14,
+      "title": "simd-ub-type2-dynamic-boundary",
+      "prompt": "仅作文本咨询与日志解读，可读取 Skill 及参考文档；不要运行命令、启动外部应用或访问 NPU。\n\ntype 2 的 kernel，编译期 UB 分配量 C=64 KiB，启动动态量 D=0，普通 SIMD 从 UB 偏移 80 KiB 读 32B。这是动态区越界吗？",
+      "expected_output": "默认 8 KiB 预留且元数据和参数合法时，不因 D=0 判越界。type 2 无 SIMT，STATIC 为 [0,56 KiB)，DYNAMIC 为 [56,248 KiB)，RESERVED 为 [248,256 KiB)，普通 SIMD 与 SIMD VF 共用；D 不缩小动态区上界。该读取完整落在动态区，不代表字节已初始化、数值正确或整个检查通过；结合本次实际记录判读。 本例只需文字回答，不执行检查命令、外部应用或 NPU 操作，也不声称已执行。",
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "56",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        },
+        {
+          "type": "contains",
+          "pattern": "248",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        }
+      ],
+      "config": {
+        "eval_mode": "text",
+        "timeout": 600
+      }
+    },
+    {
+      "id": 15,
+      "title": "simd-ub-cross-region-report",
+      "prompt": "仅作文本咨询与日志解读，可读取 Skill 及参考文档；不要运行命令、启动外部应用或访问 NPU。\n\nmemcheck 报 UB access: operand=0x15fe0, fragment=[0x15fe0,0x16020); origin=DYNAMIC，UB violation: boundary 0x16000; first invalid address 0x16000 in RESERVED。这是说预留区不能访问吗？",
+      "expected_output": "不是。该操作数从动态区出发，64B 实际片段有 32B 跨过 0x16000，离开起始区域；同一操作数跨区即违规，完整落在预留区的访问本可合法。源、目标各自判断，不能因源在静态区、目标在动态区就判跨区。访问总长度不是越界量，核对本次 launch 布局及实际片段；memcheck 分区错误不自动替代 initcheck 结论。 本例只需文字回答，不执行检查命令、外部应用或 NPU 操作，也不声称已执行。",
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "32",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        },
+        {
+          "type": "contains",
+          "pattern": "预留",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        }
+      ],
+      "config": {
+        "eval_mode": "text",
+        "timeout": 600
+      }
+    },
+    {
+      "id": 16,
+      "title": "ub-initcheck-independent-byte-policy",
+      "prompt": "仅作文本咨询与日志解读，可读取 Skill 及参考文档；不要运行命令、启动外部应用或访问 NPU。\n\n同一次检查，memcheck 报 UB 跨区，initcheck 却把这条搬运的目标记为已初始化，这是误判吗？",
+      "expected_output": "不一定。普通 SIMD/SIMD VF 的 UB initcheck 独立按实际字节访问跟踪，不按分区、预留或 memcheck 越界结果过滤，也不因此抑制合法 GM 目标写入。源未初始化可报告源读问题，但目标实际写入仍建立初始化证据，不做污点传播；后续读取还需同步可见。布局缺失本身也不令 initcheck 不完整；真正缺失访问、同步或物理不可表示记录仍有限制，不能据初始化状态证明数值正确或地址合法。 本例只需文字回答，不执行检查命令、外部应用或 NPU 操作，也不声称已执行。",
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "初始化",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        }
+      ],
+      "config": {
+        "eval_mode": "text",
+        "timeout": 600
+      }
+    },
+    {
+      "id": 17,
+      "title": "simt-ub-thread-cross-region",
+      "prompt": "仅作文本咨询与日志解读，可读取 Skill 及参考文档；不要运行命令、启动外部应用或访问 NPU。\n\nmemcheck 报 Invalid UB dynamic memory write of size 16 bytes，SIMT thread: 0，Address 0x13078，四区列表中 dynamic=[0x3000,0x13080)、reserved=[0x13080,0x15080)。这条怎么解释？",
+      "expected_output": "线程 0 有效；该线程从动态区写 16B，结束于 0x13088，后 8B 进入预留区，离开起始区域，故为非法写。标题取起始动态区，16B 是完整写入长度。核对本次 launch 的可靠四区与线程记录，每个实际线程的每次非法写可单独报告，条数不等于源码缺陷数；本能力限 SIMT UB 写入，不证明读取、初始化或竞争已检查。 本例只需文字回答，不执行检查命令、外部应用或 NPU 操作，也不声称已执行。",
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "0x13088",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        },
+        {
+          "type": "contains",
+          "pattern": "8",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        }
+      ],
+      "config": {
+        "eval_mode": "text",
+        "timeout": 600
+      }
+    },
+    {
+      "id": 18,
+      "title": "simt-ub-cache-endpoints-unknown",
+      "prompt": "仅作文本咨询与日志解读，可读取 Skill 及参考文档；不要运行命令、启动外部应用或访问 NPU。\n\nSIMT VF 只知道 Data Cache 容量和共享区终点 H，能直接把 [H,256 KiB) 当作 Cache 判定 UB 写入通过吗？",
+      "expected_output": "不能。SIMT 使用本次实际可靠的 Cache 起止端点，容量或 H 不足以证明端点，测试布局也不是硬件事实。应从本次完整报告核对实际端点，同步成功本身不提供端点。不能套用 SIMD 禁止尾部或捏造四区通过结论，应说明当前提供的信息不足以判断完整四区结果，补充实际端点和完整报告，并保留可确认的局部非法写入；完整落在可靠 Cache 区内的 SIMT 写入本可合法。 本例只需文字回答，不执行检查命令、外部应用或 NPU 操作，也不声称已执行。",
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "Cache",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        },
+        {
+          "type": "contains",
+          "pattern": "端点",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        }
+      ],
+      "config": {
+        "eval_mode": "text",
+        "timeout": 600
+      }
+    },
+    {
+      "id": 19,
+      "title": "ub-vf-race-warning-and-order",
+      "prompt": "仅作文本咨询与日志解读，可读取 Skill 及参考文档；不要运行命令、启动外部应用或访问 NPU。\n\nSIMD VF 的 UB 访问报 RAW WARNING，但 VF 队列是串行的，能直接当误报忽略吗？",
+      "expected_output": "不能直接忽略，也不能认定确定硬件冲突。UB racecheck 以 WARNING 报告已建模同步下的潜在 RAW/WAR/WAW，寄存器依赖精确完成顺序未完全建模，可能误报。VF 队列串行不证明内部 vector 分支或与异步搬运有序；共同 Entry/Completion 不替代内部局部 membar 与外部匹配同步，展开回调不表示设备完成。核对实际同一 memoryOwner 的重叠访问、executor、父子动态身份和保护该轮次的同步，不用相同偏移或 current/previous 推断真实先后；不扩展到 SIMT 或跨 launch。 本例只需文字回答，不执行检查命令、外部应用或 NPU 操作，也不声称已执行。",
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "WARNING",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        },
+        {
+          "type": "contains",
+          "pattern": "同步",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        }
+      ],
+      "config": {
+        "eval_mode": "text",
+        "timeout": 600
+      }
+    },
+    {
+      "id": 20,
+      "title": "ub-vf-mask-warning-vs-incomplete",
+      "prompt": "仅作文本咨询与日志解读，可读取 Skill 及参考文档；不要运行命令、启动外部应用或访问 NPU。\n\nUB racecheck 同时出现 MASK_NOT_REFRESHED 和访问记录 EXACT，是不是自相矛盾，说明分析已经 incomplete？",
+      "expected_output": "不矛盾。mask 未知时按全 mask 保守展开，MASK_NOT_REFRESHED 是 warning，本身不使分析 incomplete；EXACT 是转换记录的标记，不证明实际 mask 已知，依赖 mask 的范围可能扩大，核对后解释潜在竞争。缺少 PB、展开失败或实际访问/屏障缺失则是另一类完整性问题，不能因 mask warning 一概拒绝分析，也不能因 EXACT 忽略假设。 本例只需文字回答，不执行检查命令、外部应用或 NPU 操作，也不声称已执行。",
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "MASK_NOT_REFRESHED",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        },
+        {
+          "type": "contains",
+          "pattern": "EXACT",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        }
+      ],
+      "config": {
+        "eval_mode": "text",
+        "timeout": 600
+      }
+    },
+    {
+      "id": 21,
+      "title": "fifo-dropped-is-incomplete",
+      "prompt": "仅作文本咨询与日志解读，可读取 Skill 及参考文档；不要运行命令、启动外部应用或访问 NPU。\n\n启用 FIFO 的 npu-check 正常退出，应用精度通过、errors=0，但报告 trace_fifo_dropped、analysis_complete=false。这次检查算通过吗？",
+      "expected_output": "不算完整通过。FIFO 有界，运行中 Host 搬出仍可能背压丢新记录，零错误和精度通过不能抵消访问缺失；说明整体分析不完整，保留丢失和对应 launch/同步证据。已有上下文充分的局部诊断可保留，但丢失本身不是已确认算子越界或竞争。FIFO 仍需流同步收尾解析，不是无限采集、不是 SIMT FIFO，也没有新增公开开关。 本例只需文字回答，不执行检查命令、外部应用或 NPU 操作，也不声称已执行。",
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "不完整",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        },
+        {
+          "type": "not_contains",
+          "pattern": "--fifo-timeout",
+          "description": "不得编造本场景未提供的控制参数。"
+        }
+      ],
+      "config": {
+        "eval_mode": "text",
+        "timeout": 600
+      }
+    },
+    {
+      "id": 22,
+      "title": "deadlock-timeout-runtime-request",
+      "prompt": "仅作文本咨询与日志解读，可读取 Skill 及参考文档；不要运行命令、启动外部应用或访问 NPU。\n\n运行 npu-check --tool memcheck --deadlock-timeout 5 -- ./app，出现 operator execution timeout setup failed，应用还在运行。不是应该 5 秒就结束吗？",
+      "expected_output": "不保证。该选项为所有 checker 共用的 Runtime 算子执行超时请求，不是进程墙钟期限或强制杀进程，也不证明死锁。设置失败记录日志，原 launch 继续，该分支不直接产生 checker 诊断或 framework error；不能声称 5 秒配置已生效。即使成功也受硬件粒度和 launch 显式超时优先级影响。保留错误码、launch、原始日志和退出/同步状态，按报告完整性判结论，不从仍运行或零错误推出算子通过。 本例只需文字回答，不执行检查命令、外部应用或 NPU 操作，也不声称已执行。",
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "Runtime",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        },
+        {
+          "type": "contains",
+          "pattern": "墙钟",
+          "description": "检查关键术语或数值；结论正确性由 expected_output 语义评分判断。"
+        },
+        {
+          "type": "not_contains",
+          "pattern": "--kill-timeout",
+          "description": "不得编造本场景未提供的控制参数。"
+        }
+      ],
+      "config": {
+        "eval_mode": "text",
+        "timeout": 600
+      }
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+strategy_id: P35
+
+strategy_meta:
+  id: "P35"
+  slug: "P35_tbuf_resident_accumulator"
+  title: "P35: TBuf 常驻中间累加器"
+  bottlenecks: [partial_overlap, ub_memory_pressure]
+  op_families: [reduction, normalization, elementwise]
+  conflicts_with: []
+  synergizes_with: [P8]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p35_tbuf_resident_accumulator.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p35_tbuf_resident_accumulator.md"
+  playbook_slug: "P35_tbuf_resident_accumulator"
+checks:
+  - id: has_tbuf
+    type: grep_count
+    pattern: "TBuf|TPosition::VECCALC|VECCALC| resident"
+    files: [kernel]
+    expected: ">= 0"
+    fail_msg: "已存在 TBuf VECCALC 常驻逻辑 → 可能冗余，优先验证现有策略效果。"
+
+  - id: has_localtensor
+    type: grep_count
+    pattern: "UB|ub|LocalTensor|AllocTensor"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 UB/LocalTensor 使用 → 无 TBuf 优化空间，不适用 P35。"
+
+  - id: has_accumul
+    type: grep_count
+    pattern: "累加|accumul|Add|Sum|累加器|accumulator"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到累加操作 → 无累加器常驻需求，不适用 P35。"

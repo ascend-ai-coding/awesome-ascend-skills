@@ -1,0 +1,33 @@
+strategy_id: P150
+description: topk 引用列表至少 2 个，每 ref 字节小，单 pipe 未饱和 适用性检查。
+
+strategy_meta:
+  id: "P150"
+  slug: "P150_adjacent_ref_batching"
+  title: "P150: 相邻引用合批（slot-pair batching）摊薄 per-ref 固定成本"
+  bottlenecks: [no_overlap, sync_overhead]
+  op_families: [attention, topk]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p150_adjacent_ref_batching.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p150_adjacent_ref_batching.md"
+  playbook_slug: "P150_adjacent_ref_batching"
+checks:
+  - id: has_topk
+    type: grep_count
+    pattern: "topk|ref|DataCopy"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未发现 topk/引用列表数据流 → P150 不适用。"
+  - id: has_gemm
+    type: grep_count
+    pattern: "Mmad|gemm|Matmul"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未发现 QK/PV gemm 路径 → P150 不适用。"

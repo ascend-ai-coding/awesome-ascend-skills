@@ -1,0 +1,40 @@
+strategy_id: P89
+
+strategy_meta:
+  id: "P89"
+  slug: "P89_ub_api_temp_buffer_sharing"
+  title: "P89: UB 高阶 API 临时 Buffer 共享复用 (High-Level API Temp Buffer Sharing)"
+  bottlenecks: [ub_memory_pressure]
+  op_families: [normalization, elementwise]
+  conflicts_with: []
+  synergizes_with: [P85]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p89_ub_api_temp_buffer_sharing.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p89_ub_api_temp_buffer_sharing.md"
+  playbook_slug: "P89_ub_api_temp_buffer_sharing"
+checks:
+  - id: has_softmax
+    type: grep_count
+    pattern: "SoftMax|softmax|soft_max|HighLevelAPI"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 SoftMax 等高阶 API 调用 → 不适用 P89。检查其他 UB 管理策略如 P8、P85。"
+
+  - id: has_initbuffer
+    type: grep_count
+    pattern: "InitBuffer|TBuf|LocalTensor"
+    files: [kernel]
+    expected: ">= 3"
+    fail_msg: "UB Buffer 分配过少 → 无共享复用场景，不适用 P89。"
+
+  - id: has_veccalc
+    type: grep_count
+    pattern: "VECCALC|VECIN|VECOUT"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 VECCALC 空间使用 → 无高阶 API 临时 Buffer 场景，不适用 P89。"

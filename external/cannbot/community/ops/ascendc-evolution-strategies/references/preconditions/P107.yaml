@@ -1,0 +1,55 @@
+strategy_id: P107
+description: Matmul Serpentine 遍历适用性检查 — 必须存在 L2 tile 遍历循环，且尚未使用反向遍历
+
+strategy_meta:
+  id: "P107"
+  slug: "P107_matmul_serpentine_traversal"
+  title: "P107: Matmul Serpentine 反向遍历（Serpentine Traversal）"
+  bottlenecks: [memory_bound, mte2_bound]
+  op_families: [matmul]
+  conflicts_with: []
+  synergizes_with: [P105, P52, P104]
+  requires: [P105]
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p107_matmul_serpentine_traversal.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p107_matmul_serpentine_traversal.md"
+  playbook_slug: "P107_matmul_serpentine_traversal"
+checks:
+  - id: has_l2_tile_counts
+    type: grep_count
+    pattern: 'mTileCntL2|nTileCntL2'
+    files: [kernel, header]
+    expected: '>= 1'
+    fail_msg: '未检测到 Kernel 端 mTileCntL2 / nTileCntL2 → 无 L2 tile 遍历对象。'
+
+  - id: has_l2_tile_loops
+    type: grep_count
+    pattern: 'for\s*\(\s*uint64_t\s+mTile|for\s*\(\s*uint64_t\s+nTile|ProcessL2Tile'
+    files: [kernel, header]
+    expected: '>= 1'
+    fail_msg: '未检测到 L2 tile 双层循环或 ProcessL2Tile → 无 serpentine 改造对象。'
+
+  - id: n_tile_cnt_can_be_gt1
+    type: grep_count
+    pattern: 'nTileCntL2\s*>\s*1|nTileCntL2\s*>=\s*2'
+    files: [kernel, header]
+    expected: '== 0'
+    fail_msg: '已存在 nTileCntL2 > 1 的 serpentine 退化守卫 → 可能已处理。'
+
+  - id: no_existing_serpentine
+    type: grep_count
+    pattern: 'reverse\s*=|serpentine|nTileCntL2\s*-\s*t\s*-\s*1'
+    files: [kernel, header]
+    expected: '== 0'
+    fail_msg: '已存在 reverse 标志或 serpentine 遍历逻辑 → P107 可能已应用。'
+
+  - id: host_has_l2_params
+    type: grep_count
+    pattern: 'mTileCntL2|nTileCntL2|mTileBlock|nTileBlock'
+    files: [host]
+    expected: '>= 1'
+    fail_msg: 'Host 侧未计算 L2 tile 参数 → Kernel 端无法可靠遍历。'

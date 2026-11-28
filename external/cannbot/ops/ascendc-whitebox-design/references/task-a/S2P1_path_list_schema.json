@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "S2P1_path_list.task-a",
+  "title": "S2P1 Path List (Route Evaluator Graph)",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "operator",
+    "source",
+    "tiling_paths",
+    "kernel_branches",
+    "paths",
+    "kernel_orphans",
+    "unsupported",
+    "unresolved",
+    "completeness_checklist"
+  ],
+  "properties": {
+    "schema_version": { "const": "S2P1_path_list.task-a" },
+    "operator": { "type": "string", "minLength": 1 },
+    "source": { "$ref": "#/$defs/source" },
+    "tiling_paths": { "type": "object", "additionalProperties": { "$ref": "#/$defs/tiling_path" } },
+    "kernel_branches": { "type": "object", "additionalProperties": { "$ref": "#/$defs/kernel_branch" } },
+    "paths": { "type": "array", "items": { "$ref": "#/$defs/path_edge" } },
+    "kernel_orphans": { "type": "array", "items": { "$ref": "#/$defs/kernel_orphan" } },
+    "unsupported": { "type": "array", "items": { "$ref": "#/$defs/issue" } },
+    "unresolved": { "type": "array", "items": { "$ref": "#/$defs/issue" } },
+    "completeness_checklist": { "type": "object" }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "source": {
+      "type": "object",
+      "required": ["source_scope", "tiling_p0_files", "kernel_p0_dispatch_files"],
+      "properties": {
+        "source_scope": { "type": "string" },
+        "tiling_p0_files": { "type": "array", "items": { "type": "string" } },
+        "kernel_p0_dispatch_files": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+    "tiling_path": {
+      "type": "object",
+      "required": ["id", "tiling_key", "witness_route_case_ids"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "tiling_key": { "type": "integer" },
+        "route_conditions": { "type": "array", "items": { "type": "string" } },
+        "entry_constraints": { "type": "array", "items": { "type": "string" } },
+        "seed_constraints": { "type": "object" },
+        "key_components": { "type": "object" },
+        "strategy_vars": { "type": "object" },
+        "evidence": { "type": "array", "items": { "type": "string" } },
+        "witness_route_case_ids": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+    "kernel_branch": {
+      "type": "object",
+      "required": ["id", "tiling_key", "witness_route_case_ids"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "tiling_key": { "type": "integer" },
+        "kernel_class": { "type": "string" },
+        "template_args": { "type": "array" },
+        "instance_expr": { "type": "string" },
+        "dispatch_condition": { "type": "string" },
+        "platform_guard": {},
+        "instance_conditions": { "type": "array" },
+        "argument_bindings": { "type": "object" },
+        "evidence": { "type": "array", "items": { "type": "string" } },
+        "witness_route_case_ids": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+    "path_edge": {
+      "type": "object",
+      "required": ["id", "reachability", "tiling_path_id", "kernel_branch_id", "tiling_key", "witness_route_case_ids"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "reachability": { "enum": ["reachable", "tiling_no_kernel", "unsupported", "unresolved"] },
+        "tiling_path_id": { "type": "string", "minLength": 1 },
+        "kernel_branch_id": { "type": ["string", "null"] },
+        "tiling_key": { "type": "integer" },
+        "reason": { "type": "string" },
+        "witness_route_case_ids": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+    "kernel_orphan": {
+      "type": "object",
+      "required": ["id", "reachability", "kernel_branch_id", "tiling_key", "dead_reason"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "reachability": { "const": "dead" },
+        "kernel_branch_id": { "type": "string", "minLength": 1 },
+        "tiling_key": { "type": "integer" },
+        "dead_reason": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    },
+    "issue": {
+      "type": "object",
+      "required": ["id", "side", "reason", "evidence"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "side": { "enum": ["route_case", "tiling", "kernel", "mapping", "coverage"] },
+        "reason": { "type": "string", "minLength": 1 },
+        "evidence": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    }
+  }
+}

@@ -1,0 +1,178 @@
+/**
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
+
+/*!
+ * \file gather_simd_last_gather.h
+ * \brief SIMD 末轴 Gather 参考模板（Reg::Gather，dav-3510 / Ascend950）。
+ *
+ * 参考 ops-nn gather_v2_simd_last_gather.h 模式：innerSize==1（末轴 gather）时，将 x 的一行
+ * （gatherDimSize 个元素）全载入 UB，用 Reg::Gather 一条指令向量化 gather 多个索引，
+ * 替代逐元素 GetValue/SetValue 标量循环。GatherTile 负责校验索引（越界 clamp + 负索引补偿）。
+ *
+ * 适用：innerSize==1 + gatherDimSize 可全载 UB + batchSize==1。
+ */
+
+#ifndef GATHER_SIMD_LAST_GATHER_H
+#define GATHER_SIMD_LAST_GATHER_H
+
+#ifndef K_MAX_SHAPE_DIM
+#define K_MAX_SHAPE_DIM 0
+#endif
+
+#include "kernel_tiling/kernel_tiling.h"
+#include "kernel_operator.h"
+#include "op_kernel/platform_util.h"
+#include "gather_tiling_data.h"
+
+namespace gatherv2 {
+using namespace AscendC;
+
+// Host tiling sizes are bytes. One resident input row and double-buffered output
+// fit within its inputNum/indicesNum budgets; the index cast buffer is reused.
+template <typename X_T, typename INDICES_T, bool NEG_INDICE_SUPPORT>
+class GatherSimdLastGather {
+    using GatherType = std::conditional_t<sizeof(X_T) == 1, uint16_t, X_T>;
+public:
+    __aicore__ inline explicit GatherSimdLastGather(TPipe *pipe) : pipe_(pipe) {}
+    __aicore__ inline void Init(GM_ADDR x, GM_ADDR indices, GM_ADDR y, const GatherLastTilingData *td)
+    {
+        td_ = td;
+        xGm_.SetGlobalBuffer((__gm__ X_T *)x);
+        indicesGm_.SetGlobalBuffer((__gm__ INDICES_T *)indices);
+        yGm_.SetGlobalBuffer((__gm__ X_T *)y);
+        pipe_->InitBuffer(xInQue_, 1, static_cast<uint32_t>(td_->inputUbSize));
+        pipe_->InitBuffer(yOutQue_, 2, static_cast<uint32_t>(td_->outUbSize));
+        pipe_->InitBuffer(indexBuf_, static_cast<uint32_t>(td_->indiceUbSize));
+        pipe_->InitBuffer(indexCastBuf_, static_cast<uint32_t>(td_->indiceCastUbSize));
+    }
+
+    __aicore__ inline void Process()
+    {
+        const int32_t block = static_cast<int32_t>(GetBlockIdx());
+        if (block >= td_->needCoreNum) {
+            return;
+        }
+        const int32_t rowCore = block / td_->coreInCols;
+        const int32_t colCore = block % td_->coreInCols;
+        const int32_t rowCores = td_->needCoreNum / td_->coreInCols;
+        const int64_t rowBegin = rowCore * td_->blockFactor;
+        const int64_t rows = rowCore == rowCores - 1 ? td_->tailBlockFactor : td_->blockFactor;
+        const int64_t colBegin = static_cast<int64_t>(colCore) * td_->gFactor;
+        const int64_t colEnd = (td_->gatherSize < colBegin + td_->gFactor ? td_->gatherSize : colBegin + td_->gFactor);
+        // B32 index normalization uses one register; B8/B16 gather packs its
+        // indices to U16 afterwards. Each output tile begins at an aligned UB base.
+        const int32_t tileCols = (td_->ubCols < static_cast<int32_t>(Ops::Base::GetVRegSize() / sizeof(int32_t)) ?
+            td_->ubCols : static_cast<int32_t>(Ops::Base::GetVRegSize() / sizeof(int32_t)));
+        for (int64_t row = rowBegin; row < rowBegin + rows; ++row) {
+            LocalTensor<X_T> input = xInQue_.AllocTensor<X_T>();
+            DataCopyExtParams inCopy{1, static_cast<uint32_t>(td_->gatherDimSize * sizeof(X_T)), 0, 0, 0};
+            DataCopyPadExtParams<X_T> inPad{false, 0, 0, 0};
+            DataCopyPad(input, xGm_[row * td_->gatherDimSize], inCopy, inPad);
+            xInQue_.EnQue(input);
+            input = xInQue_.DeQue<X_T>();
+            for (int64_t col = colBegin; col < colEnd; col += tileCols) {
+                int32_t count = static_cast<int32_t>((tileCols < colEnd - col ? tileCols : colEnd - col));
+                LocalTensor<INDICES_T> raw = indexBuf_.Get<INDICES_T>();
+                DataCopyExtParams idxCopy{1, static_cast<uint32_t>(count * sizeof(INDICES_T)), 0, 0, 0};
+                DataCopyPadExtParams<INDICES_T> idxPad{false, 0, 0, 0};
+                DataCopyPad(raw, indicesGm_[col], idxCopy, idxPad);
+                auto ready = pipe_->FetchEventID(HardEvent::MTE2_V);
+                SetFlag<HardEvent::MTE2_V>(ready);
+                WaitFlag<HardEvent::MTE2_V>(ready);
+                LocalTensor<int32_t> fixed = indexCastBuf_.Get<int32_t>();
+                if constexpr (sizeof(INDICES_T) < sizeof(int32_t)) {
+                    Cast(fixed, raw, RoundMode::CAST_NONE, count);
+                    PipeBarrier<PIPE_V>();
+                }
+                LocalTensor<X_T> output = yOutQue_.AllocTensor<X_T>();
+                GatherTile((__ubuf__ X_T *)input.GetPhyAddr(),
+                           (__ubuf__ INDICES_T *)raw.GetPhyAddr(),
+                           (__ubuf__ int32_t *)fixed.GetPhyAddr(),
+                           (__ubuf__ X_T *)output.GetPhyAddr(), count);
+                yOutQue_.EnQue(output);
+                output = yOutQue_.DeQue<X_T>();
+                DataCopyExtParams outCopy{1, static_cast<uint32_t>(count * sizeof(X_T)), 0, 0, 0};
+                DataCopyPad(yGm_[row * td_->gatherSize + col], output, outCopy);
+                yOutQue_.FreeTensor(output);
+                // indexBuf_ is a shared scratch buffer, so its next MTE2 write
+                // must wait for the current VF read.
+                auto reusable = pipe_->FetchEventID(HardEvent::V_MTE2);
+                SetFlag<HardEvent::V_MTE2>(reusable);
+                WaitFlag<HardEvent::V_MTE2>(reusable);
+            }
+            xInQue_.FreeTensor(input);
+        }
+    }
+
+private:
+    __aicore__ inline void GatherTile(__ubuf__ X_T *input, __ubuf__ INDICES_T *raw,
+                                     __ubuf__ int32_t *fixed, __ubuf__ X_T *output, uint32_t count)
+    {
+        const int32_t dim = static_cast<int32_t>(td_->gatherDimSize);
+        __VEC_SCOPE__ {
+            Reg::RegTensor<int32_t> indices;
+            uint32_t remaining = count;
+            Reg::MaskReg mask = Reg::UpdateMask<int32_t>(remaining);
+            Reg::MaskReg dataMask = Reg::UpdateMask<GatherType>(count);
+            if constexpr (sizeof(INDICES_T) == sizeof(int64_t)) {
+                Reg::RegTensor<int64_t, Reg::RegTraitNumTwo> wide;
+                Reg::LoadAlign(wide, raw);
+                // A valid UB-resident row index fits I32. Compare the complete
+                // I64 value first so large invalid values cannot alias valid rows.
+                // RegTraitNumTwo represents 64 I64 lanes with a B32 predicate.
+                Reg::MaskReg wideMask = mask;
+                Reg::MaskReg invalidLow, invalidHigh;
+                Reg::Compares<int64_t, CMPMODE::LT>(invalidLow, wide, int64_t(NEG_INDICE_SUPPORT ? -dim : 0), wideMask);
+                Reg::Compares<int64_t, CMPMODE::GE>(invalidHigh, wide, int64_t(dim), wideMask);
+                Reg::Duplicate<int64_t, Reg::MaskMergeMode::MERGING>(wide, int64_t(0), invalidLow);
+                Reg::Duplicate<int64_t, Reg::MaskMergeMode::MERGING>(wide, int64_t(0), invalidHigh);
+                Reg::Pack(reinterpret_cast<Reg::RegTensor<uint32_t> &>(indices), wide);
+            } else if constexpr (sizeof(INDICES_T) == sizeof(int32_t)) {
+                Reg::LoadAlign(indices, raw);
+            } else {
+                Reg::LoadAlign(indices, fixed);
+            }
+            Reg::MaskReg negative, invalid;
+            if constexpr (NEG_INDICE_SUPPORT) {
+                Reg::Compares<int32_t, CMPMODE::LT>(negative, indices, 0, mask);
+                Reg::RegTensor<int32_t> adjusted;
+                Reg::Adds(adjusted, indices, dim, negative);
+                Reg::Move<int32_t, Reg::MaskMergeMode::MERGING>(indices, adjusted, negative);
+            }
+            Reg::Compares<int32_t, CMPMODE::LT>(invalid, indices, 0, mask);
+            Reg::Duplicate<int32_t, Reg::MaskMergeMode::MERGING>(indices, int32_t(0), invalid);
+            Reg::Compares<int32_t, CMPMODE::GE>(invalid, indices, dim, mask);
+            Reg::Duplicate<int32_t, Reg::MaskMergeMode::MERGING>(indices, int32_t(0), invalid);
+            Reg::RegTensor<GatherType> values;
+            if constexpr (sizeof(X_T) <= sizeof(int16_t)) {
+                Reg::RegTensor<uint16_t> packed;
+                Reg::Pack(packed, indices);
+                Reg::Gather(values, input, packed, dataMask);
+            } else {
+                Reg::Gather(values, input, reinterpret_cast<Reg::RegTensor<uint32_t> &>(indices), dataMask);
+            }
+            if constexpr (sizeof(X_T) == 1) {
+                Reg::StoreAlign<uint8_t, Reg::StoreDist::DIST_PACK_B16>(
+                    (__ubuf__ uint8_t *)output, reinterpret_cast<Reg::RegTensor<uint8_t> &>(values), dataMask);
+            } else {
+                Reg::StoreAlign(output, values, dataMask);
+            }
+        }
+    }
+    TPipe *pipe_;
+    const GatherLastTilingData *td_ = nullptr;
+    GlobalTensor<X_T> xGm_, yGm_;
+    GlobalTensor<INDICES_T> indicesGm_;
+    TQue<QuePosition::VECIN, 1> xInQue_;
+    TQue<QuePosition::VECOUT, 2> yOutQue_;
+    TBuf<QuePosition::VECCALC> indexBuf_, indexCastBuf_;
+};
+} // namespace gatherv2
+#endif // GATHER_SIMD_LAST_GATHER_H

@@ -1,0 +1,198 @@
+{
+  "skill_name": "tool-npu-compute",
+  "eval_mode": "skill_trigger",
+  "cases": [
+    {
+      "id": "positive_tool_name",
+      "context": "",
+      "prompt": "用 npu-compute 采集 ./add_custom 的性能指标。",
+      "should_trigger": true,
+      "reason": "明确请求使用 npu-compute 采集指标。",
+      "category": "tool_name"
+    },
+    {
+      "id": "positive_case_variant",
+      "context": "",
+      "prompt": "用 NPU-Compute 看看支持哪些指标集合。",
+      "should_trigger": true,
+      "reason": "工具名大小写变体仍表达指标集合查询需求。",
+      "category": "tool_name"
+    },
+    {
+      "id": "positive_report",
+      "context": "",
+      "prompt": "解包 reports/run.npu-rep，并分析里面的性能数据。",
+      "should_trigger": true,
+      "reason": "请求解包和分析 npu-compute 专有报告。",
+      "category": "artifact"
+    },
+    {
+      "id": "positive_trace",
+      "context": "",
+      "prompt": "PipeTrace.json 里的轨道名称和时间单位是什么意思？",
+      "should_trigger": true,
+      "reason": "请求解释工具时间线产物的轨道和单位。",
+      "category": "artifact"
+    },
+    {
+      "id": "positive_section",
+      "context": "",
+      "prompt": "解释一下 PipeUtilization 的采集结果，怎么看流水线利用率？",
+      "should_trigger": true,
+      "reason": "专有指标组与采集结果解释需求同时出现。",
+      "category": "metric"
+    },
+    {
+      "id": "negative_directory_analysis",
+      "context": "",
+      "prompt": "分析 examples/add_custom 的性能瓶颈。",
+      "should_trigger": false,
+      "reason": "仅提供 Ascend 用例目录并要求性能分析，没有具体工具能力需求。",
+      "category": "directory"
+    },
+    {
+      "id": "negative_memory_analysis",
+      "context": "",
+      "prompt": "这个 AscendC 算子是不是受访存带宽限制？帮我分析一下。",
+      "should_trigger": false,
+      "reason": "仅要求分析 AscendC 访存瓶颈，未明确要求采集或解释已有采集结果。",
+      "category": "domain_intent"
+    },
+    {
+      "id": "positive_cache",
+      "context": "",
+      "prompt": "想看看这个 NPU 算子的缓存命中率，该采集哪些指标？",
+      "should_trigger": true,
+      "reason": "NPU 算子缓存命中率查询需要指标选择能力。",
+      "category": "domain_intent"
+    },
+    {
+      "id": "negative_ascend_context",
+      "context": "用户正在分析 AscendC 向量加法算子的性能，已确认分析对象为该算子。",
+      "prompt": "再看看访存瓶颈。",
+      "should_trigger": false,
+      "reason": "前文仅明确 AscendC 算子性能语境，不足以将泛化分析请求转为工具能力需求。",
+      "category": "context"
+    },
+    {
+      "id": "positive_directory_tool",
+      "context": "",
+      "prompt": "用 npu-compute 分析 examples/add_custom。",
+      "should_trigger": true,
+      "reason": "目录请求明确指定使用 npu-compute。",
+      "category": "directory"
+    },
+    {
+      "id": "positive_memory_collection",
+      "context": "",
+      "prompt": "采集这个 AscendC 算子的访存带宽指标。",
+      "should_trigger": true,
+      "reason": "明确请求 AscendC 性能指标采集。",
+      "category": "domain_intent"
+    },
+    {
+      "id": "negative_performance_only",
+      "context": "",
+      "prompt": "帮我分析一下这个算子的性能。",
+      "should_trigger": false,
+      "reason": "仅要求性能分析，没有具体工具使用、采集或采集结果解释需求。",
+      "category": "intent_boundary"
+    },
+    {
+      "id": "negative_ascend_optimization",
+      "context": "",
+      "prompt": "优化这个 AscendC 算子，让它跑得更快。",
+      "should_trigger": false,
+      "reason": "泛化优化需求不构成本工具的加载条件。",
+      "category": "intent_boundary"
+    },
+    {
+      "id": "positive_existing_csv",
+      "context": "用户刚用 npu-compute 完成指标采集并解包，结果目录中包含 Memory.csv。",
+      "prompt": "分析一下这个 Memory.csv，哪些指标值得关注？",
+      "should_trigger": true,
+      "reason": "前文已确定 CSV 来自 npu-compute，当前请求需要指标解释。",
+      "category": "context"
+    },
+    {
+      "id": "negative_python_set",
+      "context": "",
+      "prompt": "Python 的 set 怎么给列表去重？",
+      "should_trigger": false,
+      "reason": "set 表示 Python 集合，没有 NPU 指标选择语境。",
+      "category": "generic_term"
+    },
+    {
+      "id": "negative_ci_pipeline",
+      "context": "",
+      "prompt": "帮我优化 CI Pipeline，让单元测试和打包并行执行。",
+      "should_trigger": false,
+      "reason": "Pipeline 指持续集成流程，不是 NPU 流水线指标。",
+      "category": "generic_term"
+    },
+    {
+      "id": "negative_network",
+      "context": "",
+      "prompt": "分析一下服务器网络带宽为什么跑不满，iperf 测试只有 2 Gbps。",
+      "should_trigger": false,
+      "reason": "网络传输带宽问题没有 NPU 性能采集或分析需求。",
+      "category": "other_domain"
+    },
+    {
+      "id": "negative_csv",
+      "context": "",
+      "prompt": "解释一下 CSV 文件格式，字段里面有逗号应该怎么写？",
+      "should_trigger": false,
+      "reason": "请求通用 CSV 格式说明，没有工具结果分析语境。",
+      "category": "generic_term"
+    },
+    {
+      "id": "negative_web",
+      "context": "",
+      "prompt": "分析这个网页的性能瓶颈，首页加载要五秒。",
+      "should_trigger": false,
+      "reason": "性能瓶颈属于网页加载领域，没有 Ascend 或 NPU 上下文。",
+      "category": "other_domain"
+    },
+    {
+      "id": "negative_compile",
+      "context": "",
+      "prompt": "AscendC 用例编译报错找不到 kernel_operator.h，帮我修复头文件搜索路径。",
+      "should_trigger": false,
+      "reason": "虽有 AscendC 领域词，但请求仅为编译修复，不需要本工具的采集或分析能力。",
+      "category": "intent_boundary"
+    },
+    {
+      "id": "negative_transcript",
+      "context": "",
+      "prompt": "把下面这段历史记录整理成两条工作日志：上午讨论了 npu-compute 的使用方式；下午更新了项目通讯录。",
+      "should_trigger": false,
+      "reason": "当前任务是文本整理，工具名仅出现在引用的历史记录中。",
+      "category": "incidental_mention"
+    },
+    {
+      "id": "negative_section",
+      "context": "",
+      "prompt": "把 Markdown 标题“## Section 1”改成“## 安装说明”。",
+      "should_trigger": false,
+      "reason": "Section 是待编辑的标题文本，不是采集指标选择需求。",
+      "category": "generic_term"
+    },
+    {
+      "id": "negative_memory",
+      "context": "",
+      "prompt": "Python 读取大文件时出现 MemoryError，是什么意思？",
+      "should_trigger": false,
+      "reason": "请求解释 Python 内存异常，与工具的 Memory 指标无关。",
+      "category": "generic_term"
+    },
+    {
+      "id": "negative_context",
+      "context": "用户正在分析 PostgreSQL 查询性能，讨论的是数据库缓冲区和索引缓存。",
+      "prompt": "再看看缓存瓶颈。",
+      "should_trigger": false,
+      "reason": "省略领域的请求继承数据库上下文，不应转为 NPU 指标分析。",
+      "category": "context"
+    }
+  ]
+}

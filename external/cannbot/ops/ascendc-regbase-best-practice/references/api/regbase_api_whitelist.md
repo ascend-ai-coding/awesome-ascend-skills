@@ -78,10 +78,13 @@ topic_type: api
 | Binary reg compute | `Add`, `Sub`, `Mul`, `Div`, `Max`, `Min`, `And`, `Or`, `Xor`, `MulAddDst`, `Mull` | Yes | `basic_api/reg_compute/` |
 | Scalar reg compute | `Adds`, `Muls`, `Divs`, `Maxs`, `Mins`, `ShiftLefts`, `ShiftRights` | Yes | `basic_api/reg_compute/` |
 | Compare and select | `Compare`, `Compares`, `Select` | Yes | `basic_api/reg_compute/` |
+| Conversion and utility | `Cast`, `Duplicate` | Yes | `basic_api/reg_compute/` |
 | Reg reduction | `Reduce`, `ReduceDataBlock`, `PairReduceElem` | Yes | `basic_api/reg_compute/` |
 | Reg load and store | `LoadAlign`, `StoreAlign`, `LoadUnAlignPre`, `LoadUnAlign`, `StoreUnAlign`, `StoreUnAlignPost`, `Load`, `Store`, `Gather`, `GatherB`, `Scatter` | Yes | `basic_api/reg_compute/` |
 | Mask and copy helpers | `MaskReg`, `CreateMask`, `UpdateMask`, `Pack`, `UnPack`, `Move`, `LocalMemBar` | Yes | `basic_api/reg_compute/` |
 | VF 路径 traits / enums | `LoadDist`, `StoreDist`, `MemType`, `CastTrait`, `CMPMODE`, `RoundMode`, `MaskMergeMode`, `PostLiteral`, `DataCopyMode`, `ReduceType`, `PairReduce` | Yes | `basic_api/reg_compute/` |
+
+> 注：`Reg::Div` 默认 `INTRINSIC` 模式最大 1 ULP 误差（非 IEEE-754 correctly-rounded）。高精度场景传 `DivSpecificMode{precisionMode=true, algo=PRECISION_0ULP_FTZ_FALSE}`（差值补偿算法，0 ULP，仍为 `__simd_callee__` VF-safe）。
 
 ## 高阶任务相关 RegBase API
 
@@ -91,8 +94,8 @@ topic_type: api
 |---|---|---|---|
 | Norm and mean | `LayerNorm`, `RmsNorm`, `GroupNorm`, `Normalize`, `Mean` | No | `adv_api/` |
 | Pad and broadcast | `Pad`, `Broadcast`, `Brcb` | No | `adv_api/` |
-| Structured select | `Select` bytes-mask overload | No | `adv_api/` |
-| Transpose and layout change | `TransData`, `Transpose` confusion-transpose overload | No | `adv_api/` |
+| Structured select | `SelectWithBytesMask` | No | `adv_api/` |
+| Transpose and layout change | `TransData`, `ConfusionTranspose` | No | `adv_api/` |
 | Quantization | `AscendQuant`, `AscendDequant`, `AscendAntiQuant`, `Quantize`, `Dequantize`, `AntiQuantize` | No | `adv_api/` |
 
 ## VF 专项护栏

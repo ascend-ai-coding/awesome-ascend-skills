@@ -1,0 +1,269 @@
+/*!
+ * \file conv2d_tiling.h
+ * \brief Conv2D 运行期 tiling 契约：Conv2DCase 结构体 + ValidateCase 校验 +
+ *        BasicBlock tiling API（Conv2DTilingIn/Out、Conv2DDoTiling）。
+ *        对应说明文档 templates/conv2d_cube.md。
+ *
+ * ── 集成说明（使用前必读）─────────────────────────────────────────────────────
+ *   1. 去掉 .template 后缀落地为 conv2d_tiling.h（host/device 共用，仅依赖 cstdint）。
+ *   2. 实现见 conv2d_tiling_impl.template → conv2d_tiling.cpp（g++）。
+ *   3. kernel（bisheng）只读 Conv2DCase；plugin（g++）编译 tiling_impl。
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+
+#ifndef CONV2D_TILING_H
+#define CONV2D_TILING_H
+
+#include <cstdint>
+
+// ===========================================================================
+// Conv2DCase：运行期 tiling 数据结构（host 填充，device 消费）
+//
+// 一份 __cube__ kernel 编译期仅按 dtype 特化；L1 全载/切分、乒乓、splitM、
+// splitN、split-K（kAccum）、HF32 等全部由本结构体字段驱动。
+//
+// 字段分三组：
+//   1. 问题几何（n..dilationW）—— 原样来自算子入参
+//   2. 多核切分（batchDim..coreM）—— 决定 blockDim 和每核 M 空间
+//   3. L1/L0 tile（mAL1..hf32）  —— 决定单核内数据流
+// ===========================================================================
+
+enum class ConvDType : uint8_t { FP16 = 0, FP32 = 1, BF16 = 2 };
+
+struct Conv2DCase {
+    // --- 问题几何（对应 NCHW 输入 + OIHW 权重 + 属性）---
+    uint32_t n, ci, hi, wi, co, kh, kw;
+    uint32_t strideH, strideW;
+    uint32_t padTop, padBottom, padLeft, padRight;
+    uint32_t dilationH, dilationW;
+
+    // --- 多核切分 ---
+    // batch 优先绑核：batchDim 是唯一不复制 fmap/weight 的切轴，
+    // 因此允许突破 32 核到达 35-36 核（coreM * mDim 覆盖 Ho*Wo）。
+    uint32_t batchDim, mDim, nDim;
+    uint32_t coreM;  // 每核负责的 M（Ho*Wo）行数上界
+
+    // --- L1 tile ---
+    // mAL1/kAL1：AL1 窗口的 M/K 维大小；kAL1 = CinTileA * kh * kw
+    // nBL1/kBL1：BL1 窗口的 N/K 维大小；kBL1 = CinTileB * kh * kw
+    // splitM：mAL1 > mL0 时一个 AL1 窗口喂多个 L0A 子块
+    // splitN：nBL1 > nL0 时一个 BL1 窗口喂多个 L0B 子块（要求 AL1 全载 + 单缓冲）
+    uint32_t mAL1, kAL1, kBL1, nBL1;
+
+    // --- L0 tile ---
+    // mL0*kL0*DTypeBytes <= 32KiB（L0A/B 半缓冲）；mL0*nL0*4 <= 256KiB（L0C）
+    uint32_t mL0, kL0, nL0;
+
+    uint32_t innerBatch;
+
+    // split-K：L0C 分段 flush 到 GM 的 K 段长。0 = 整段 K 在 L0C 一次写完。
+    // 非 0 时用 FP32 atomic add 折叠分段，误差随段数 P 降低 ~sqrt(P)。
+    // 仅 FP32 可用；要求 kAccum % kL0 == 0。
+    uint32_t kAccum;
+
+    uint8_t l1PingPong; // bit0=AL1 双缓冲, bit1=BL1 双缓冲
+    uint8_t l0PingPong; // 约定为 3（L0A/L0B 均双缓冲）
+
+    ConvDType dtype;
+
+    // FP32 专用：将 Cube operand 舍入到 HF32（1-8-10，即 Ascend TF32），
+    // 用 mantissa 位换 Cube 吞吐。仅 dtype==FP32 时有效。
+    uint8_t hf32;
+};
+
+// --- 编译期 helper（host/device 共用，仅依赖 cstdint）---
+
+constexpr uint32_t CeilDivU32(uint32_t a, uint32_t b) { return (a + b - 1) / b; }
+constexpr uint32_t AlignUpU32(uint32_t a, uint32_t b) { return CeilDivU32(a, b) * b; }
+constexpr uint32_t DTypeBytes(ConvDType dtype) { return dtype == ConvDType::FP32 ? 4U : 2U; }
+
+// Cube K0 对齐粒度：FP32=8（K0_8），FP16/BF16=16（K0_16）
+constexpr uint32_t CubeK0(ConvDType dtype) { return dtype == ConvDType::FP32 ? 8U : 16U; }
+
+// 输出空间尺寸（由几何 + 属性推导）
+constexpr uint32_t HOut(const Conv2DCase& c)
+{
+    return (c.hi + c.padTop + c.padBottom - c.dilationH * (c.kh - 1) - 1) / c.strideH + 1;
+}
+constexpr uint32_t WOut(const Conv2DCase& c)
+{
+    return (c.wi + c.padLeft + c.padRight - c.dilationW * (c.kw - 1) - 1) / c.strideW + 1;
+}
+
+// Cin 对齐到 K0，Co 对齐到 N0(16)
+constexpr uint32_t AlignedCi(const Conv2DCase& c) { return AlignUpU32(c.ci, CubeK0(c.dtype)); }
+constexpr uint32_t AlignedCo(const Conv2DCase& c) { return AlignUpU32(c.co, 16); }
+
+// L1 乒乓标志位解析
+constexpr bool Al1PingPong(const Conv2DCase& c) { return (c.l1PingPong & 1U) != 0; }
+constexpr bool Bl1PingPong(const Conv2DCase& c) { return (c.l1PingPong & 2U) != 0; }
+
+// AL1/BL1 的 Cin tile：kAL1/kBL1 除以 kh*kw 得到每窗的通道数
+constexpr uint32_t CinTileA(const Conv2DCase& c) { return c.kAL1 / (c.kh * c.kw); }
+constexpr uint32_t CinTileB(const Conv2DCase& c) { return c.kBL1 / (c.kh * c.kw); }
+
+// AL1 和 BL1 的 K 步长：取两者 Cin tile 的较小值，保证两流嵌套
+constexpr uint32_t CinStep(const Conv2DCase& c)
+{
+    return CinTileA(c) < CinTileB(c) ? CinTileA(c) : CinTileB(c);
+}
+
+// ===========================================================================
+// ValidateCase：Conv2DCase 的完整约束校验
+//
+// host tiling 搜索产出后必须通过此函数；kernel 依赖这些不变量。
+// 约束分五组：
+//   1. 基本合法性（维度 > 0、核切分不超限、对齐）
+//   2. L1/L0 容量上限（硬件预算）
+//   3. splitM 契约（mAL1 > mL0 时要求 AL1 全载 Cin + 单缓冲）
+//   4. splitN 契约（nBL1 > nL0 时同 splitM 前提 + nBL1 整除 nL0）
+//   5. split-K 契约（仅 FP32、kAccum 整除 kL0）
+// ===========================================================================
+constexpr bool ValidateCase(const Conv2DCase& c)
+{
+    const uint32_t k0 = CubeK0(c.dtype);
+    const uint32_t khkw = c.kh * c.kw;
+    return c.n > 0 && c.ci > 0 && c.co > 0 && c.kh > 0 && c.kw > 0 &&
+           // 多核切分不超调用方从目标平台查询的 aicoreNum
+           c.batchDim * c.mDim * c.nDim <= 36 &&
+           // N 维对齐到 16
+           c.nBL1 % 16 == 0 && c.nL0 % 16 == 0 &&
+           // K 维对齐：L1 的 kAL1/kBL1 必须整除 kh*kw
+           c.kAL1 % khkw == 0 && c.kBL1 % khkw == 0 &&
+           // L0 的 kL0 对齐到 K0
+           c.kL0 % k0 == 0 &&
+           // Cin tile 对齐到 K0
+           CinTileA(c) % k0 == 0 && CinTileB(c) % k0 == 0 &&
+           // L1 K tile 整除 L0 K tile（L0 从 L1 子取）
+           c.kAL1 % c.kL0 == 0 && c.kBL1 % c.kL0 == 0 &&
+           // AL1/BL1 的 K 步长嵌套：较小者整除较大者，
+           // 且跨步的流必须整除 Cin 轴（保证步索引映射到块索引）
+           CinTileA(c) % CinStep(c) == 0 && CinTileB(c) % CinStep(c) == 0 &&
+           (CinTileA(c) == CinStep(c) || AlignedCi(c) % CinTileA(c) == 0) &&
+           (CinTileB(c) == CinStep(c) || AlignedCi(c) % CinTileB(c) == 0) &&
+           // HF32 仅影响 FP32 Cube 路径
+           (c.hf32 == 0 || c.dtype == ConvDType::FP32) &&
+           // split-K：分段用 FP32 GM atomic add 折叠
+           (c.kAccum == 0 ||
+            (c.dtype == ConvDType::FP32 && c.kAccum % c.kL0 == 0 &&
+             CinStep(c) * khkw % c.kL0 == 0)) &&
+           // splitM 契约：mAL1 可超过 mL0 仅当 AL1 全载 Cin 且单缓冲。
+           // 此时一个 AL1 窗口喂所有 L0A 子块，L0A 容量不再约束 AL1 窗口。
+           // 允许最后一块不对齐（ragged tail），故 mAL1 不要求整除 mL0。
+           (c.mAL1 == c.mL0 ||
+            (c.mAL1 > c.mL0 && CinTileA(c) == AlignedCi(c) && !Al1PingPong(c))) &&
+           // splitN 契约：nBL1 可超过 nL0 同 splitM 前提（AL1 全载 + 单缓冲）。
+           // 更宽的 BL1 窗只有在一个 AL1 窗喂所有 nL0 子块时才有意义。
+           // nBL1 必须整除 nL0（整块切分）。
+           (c.nBL1 == c.nL0 ||
+            (c.nBL1 > c.nL0 && c.nBL1 % c.nL0 == 0 && CinTileA(c) == AlignedCi(c) &&
+             !Al1PingPong(c))) &&
+           // L0 双缓冲约定
+           c.l0PingPong == 3 &&
+           // Co 对齐到 nDim，coreM * mDim 覆盖全部输出点
+           AlignUpU32(c.co, 16) % c.nDim == 0 && c.coreM * c.mDim >= HOut(c) * WOut(c) &&
+           // L0A/L0B/L0C 容量上限（半缓冲）
+           c.mL0 * c.kL0 * DTypeBytes(c.dtype) <= 32768 &&
+           c.nL0 * c.kL0 * DTypeBytes(c.dtype) <= 32768 &&
+           c.mL0 * c.nL0 * sizeof(float) <= 262144;
+}
+
+// ===========================================================================
+// Host tiling API
+//
+// Conv2DDoTiling：BasicBlock 搜索（核切分 → L0 → L1，含 splitM/kAccum/HF32 约束）
+// 搜索失败时返回 false，plugin 应 TORCH_CHECK 报错。
+// ===========================================================================
+
+struct Conv2DTilingIn {
+    uint32_t n = 0;
+    uint32_t ci = 0;
+    uint32_t hi = 0;
+    uint32_t wi = 0;
+    uint32_t co = 0;
+    uint32_t kh = 0;
+    uint32_t kw = 0;
+    uint32_t strideH = 1;
+    uint32_t strideW = 1;
+    uint32_t padTop = 0;
+    uint32_t padBottom = 0;
+    uint32_t padLeft = 0;
+    uint32_t padRight = 0;
+    uint32_t dilationH = 1;
+    uint32_t dilationW = 1;
+    ConvDType dtype = ConvDType::FP16;
+    uint8_t hf32 = 0;
+    uint32_t aicoreNum = 0; // 调用方须从目标平台查询可用 AIC 核数
+};
+
+struct Conv2DTilingOut {
+    uint32_t batchDim = 1;
+    uint32_t mDim = 1;
+    uint32_t nDim = 1;
+    uint32_t coreM = 0;
+    uint32_t mAL1 = 0;
+    uint32_t kAL1 = 0;
+    uint32_t kBL1 = 0;
+    uint32_t nBL1 = 0;
+    uint32_t mL0 = 0;
+    uint32_t kL0 = 0;
+    uint32_t nL0 = 0;
+    uint32_t innerBatch = 1;
+    uint32_t kAccum = 0;
+    uint8_t l1PingPong = 0; // bit0 AL1, bit1 BL1
+    uint8_t l0PingPong = 3;
+    // HF32 (Ascend TF32) decided by Conv2DDoTiling — not by the caller.
+    uint8_t hf32 = 0;
+    // Decision metadata (not consumed by kernel today).
+    uint32_t mTile = 0;
+    uint32_t nTile = 0;
+    uint8_t boundType = 0; // 0=mem, 1=cube
+    uint8_t kAl1FullLoad = 0;
+    uint8_t kBl1FullLoad = 0;
+};
+
+// 将 host 搜索结果转为 kernel 消费的 Conv2DCase
+inline Conv2DCase ToCaseView(const Conv2DTilingIn& in, const Conv2DTilingOut& out)
+{
+    Conv2DCase c{};
+    c.n = in.n;
+    c.ci = in.ci;
+    c.hi = in.hi;
+    c.wi = in.wi;
+    c.co = in.co;
+    c.kh = in.kh;
+    c.kw = in.kw;
+    c.strideH = in.strideH;
+    c.strideW = in.strideW;
+    c.padTop = in.padTop;
+    c.padBottom = in.padBottom;
+    c.padLeft = in.padLeft;
+    c.padRight = in.padRight;
+    c.dilationH = in.dilationH;
+    c.dilationW = in.dilationW;
+    c.batchDim = out.batchDim;
+    c.mDim = out.mDim;
+    c.nDim = out.nDim;
+    c.coreM = out.coreM;
+    c.mAL1 = out.mAL1;
+    c.kAL1 = out.kAL1;
+    c.kBL1 = out.kBL1;
+    c.nBL1 = out.nBL1;
+    c.mL0 = out.mL0;
+    c.kL0 = out.kL0;
+    c.nL0 = out.nL0;
+    c.innerBatch = out.innerBatch;
+    c.kAccum = out.kAccum;
+    c.l1PingPong = out.l1PingPong;
+    c.l0PingPong = out.l0PingPong;
+    c.dtype = in.dtype;
+    // Prefer tiling decision; allow an explicit in.hf32=1 override only when
+    // dtype is FP32 (ValidateCase still enforces that).
+    c.hf32 = out.hf32 ? out.hf32 : (in.dtype == ConvDType::FP32 ? in.hf32 : 0);
+    return c;
+}
+
+// 运行时 tiling 搜索入口。实现见 conv2d_tiling_impl.template → conv2d_tiling.cpp
+bool Conv2DDoTiling(const Conv2DTilingIn& in, Conv2DTilingOut& out);
+
+#endif

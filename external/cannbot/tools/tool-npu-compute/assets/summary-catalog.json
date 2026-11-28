@@ -1,0 +1,275 @@
+{
+  "schema_version": 1,
+  "output_file": "summary.jsonl",
+  "record_types": {
+    "PipeUtilization": {
+      "description": "PipeUtilization 各指标在有效 Task 级记录上的算术平均值。",
+      "kind": "pmu-section-summary",
+      "data_level": "task-average",
+      "category_field": {
+        "name": "category",
+        "json_types": ["string"],
+        "meaning": "本条汇总记录对应的 Section 名称",
+        "unit": "无",
+        "nullable_when": "不允许为 null",
+        "analysis": "固定为 PipeUtilization"
+      },
+      "metric_fields": {
+        "catalog": "metric-catalog.json",
+        "section": "PipeUtilization",
+        "excluded_fields": ["block_id", "sub_block_id"]
+      }
+    },
+    "Memory": {
+      "description": "Memory 各指标在有效 Task 级记录上的算术平均值。",
+      "kind": "pmu-section-summary",
+      "data_level": "task-average",
+      "category_field": {
+        "name": "category",
+        "json_types": ["string"],
+        "meaning": "本条汇总记录对应的 Section 名称",
+        "unit": "无",
+        "nullable_when": "不允许为 null",
+        "analysis": "固定为 Memory"
+      },
+      "metric_fields": {
+        "catalog": "metric-catalog.json",
+        "section": "Memory",
+        "excluded_fields": ["block_id", "sub_block_id"]
+      }
+    },
+    "MemoryL0": {
+      "description": "MemoryL0 各指标在有效 Task 级记录上的算术平均值。",
+      "kind": "pmu-section-summary",
+      "data_level": "task-average",
+      "category_field": {
+        "name": "category",
+        "json_types": ["string"],
+        "meaning": "本条汇总记录对应的 Section 名称",
+        "unit": "无",
+        "nullable_when": "不允许为 null",
+        "analysis": "固定为 MemoryL0"
+      },
+      "metric_fields": {
+        "catalog": "metric-catalog.json",
+        "section": "MemoryL0",
+        "excluded_fields": ["block_id", "sub_block_id"]
+      }
+    },
+    "MemoryUB": {
+      "description": "MemoryUB 各指标在有效 Task 级记录上的算术平均值。",
+      "kind": "pmu-section-summary",
+      "data_level": "task-average",
+      "category_field": {
+        "name": "category",
+        "json_types": ["string"],
+        "meaning": "本条汇总记录对应的 Section 名称",
+        "unit": "无",
+        "nullable_when": "不允许为 null",
+        "analysis": "固定为 MemoryUB"
+      },
+      "metric_fields": {
+        "catalog": "metric-catalog.json",
+        "section": "MemoryUB",
+        "excluded_fields": ["block_id", "sub_block_id"]
+      }
+    },
+    "L2Cache": {
+      "description": "L2Cache 各指标在有效 Task 级记录上的算术平均值。",
+      "kind": "pmu-section-summary",
+      "data_level": "task-average",
+      "category_field": {
+        "name": "category",
+        "json_types": ["string"],
+        "meaning": "本条汇总记录对应的 Section 名称",
+        "unit": "无",
+        "nullable_when": "不允许为 null",
+        "analysis": "固定为 L2Cache"
+      },
+      "metric_fields": {
+        "catalog": "metric-catalog.json",
+        "section": "L2Cache",
+        "excluded_fields": ["block_id", "sub_block_id"]
+      }
+    },
+    "ArithmeticUtilization": {
+      "description": "ArithmeticUtilization 各指标在有效 Task 级记录上的算术平均值。",
+      "kind": "pmu-section-summary",
+      "data_level": "task-average",
+      "category_field": {
+        "name": "category",
+        "json_types": ["string"],
+        "meaning": "本条汇总记录对应的 Section 名称",
+        "unit": "无",
+        "nullable_when": "不允许为 null",
+        "analysis": "固定为 ArithmeticUtilization"
+      },
+      "metric_fields": {
+        "catalog": "metric-catalog.json",
+        "section": "ArithmeticUtilization",
+        "excluded_fields": ["block_id", "sub_block_id"]
+      }
+    },
+    "ResourceConflictRatio": {
+      "description": "ResourceConflictRatio 各指标在有效 Task 级记录上的算术平均值。",
+      "kind": "pmu-section-summary",
+      "data_level": "task-average",
+      "category_field": {
+        "name": "category",
+        "json_types": ["string"],
+        "meaning": "本条汇总记录对应的 Section 名称",
+        "unit": "无",
+        "nullable_when": "不允许为 null",
+        "analysis": "固定为 ResourceConflictRatio"
+      },
+      "metric_fields": {
+        "catalog": "metric-catalog.json",
+        "section": "ResourceConflictRatio",
+        "excluded_fields": ["block_id", "sub_block_id"]
+      }
+    },
+    "OpInfoSummary": {
+      "description": "当前 Kernel 的标识、执行配置、频率和跨 Block 概览指标。",
+      "kind": "operation-summary",
+      "data_level": "kernel",
+      "fields": [
+        {
+          "name": "category",
+          "json_types": ["string"],
+          "meaning": "记录类别",
+          "unit": "无",
+          "nullable_when": "不允许为 null",
+          "analysis": "固定为 OpInfoSummary"
+        },
+        {
+          "name": "Op Name",
+          "json_types": ["string", "null"],
+          "meaning": "当前 Kernel 的可读名称",
+          "unit": "无",
+          "nullable_when": "未获得 Kernel 名称元数据",
+          "analysis": "用于标识当前汇总对应的 Kernel"
+        },
+        {
+          "name": "Op Type",
+          "json_types": ["string", "null"],
+          "meaning": "由 Task 级 PMU 记录中的 Core 类型判定的算子类型",
+          "unit": "无",
+          "nullable_when": "没有可识别的 AIC 或 AIV Task 级 PMU 记录",
+          "analysis": "cube 表示仅 AIC，vector 表示仅 AIV，mix 表示同时包含 AIC 和 AIV"
+        },
+        {
+          "name": "Task Duration(us)",
+          "json_types": ["number", "null"],
+          "meaning": "当前 Kernel 对应 Task 的执行时长",
+          "unit": "us",
+          "nullable_when": "缺少有效 Task Log 时间区间",
+          "analysis": "用于观察 Kernel 的整体执行时长"
+        },
+        {
+          "name": "Block Dim",
+          "json_types": ["integer", "null"],
+          "meaning": "Kernel 启动时配置的 Block 数量",
+          "unit": "个",
+          "nullable_when": "未获得 Block Dim 元数据",
+          "analysis": "用于理解 Kernel 的启动规模"
+        },
+        {
+          "name": "Mix Block Dim",
+          "json_types": ["integer", "null"],
+          "meaning": "混合 Kernel 的 Block 数量扩展字段",
+          "unit": "个",
+          "nullable_when": "当前结果未提供该值",
+          "analysis": "当前输出为 null，不用于推断混合 Kernel 的实际 Block 数量"
+        },
+        {
+          "name": "Device Id",
+          "json_types": ["integer", "null"],
+          "meaning": "当前 Kernel 所在 Device 的逻辑编号",
+          "unit": "无",
+          "nullable_when": "未获得 Device 元数据",
+          "analysis": "用于区分多 Device 场景中的采集对象"
+        },
+        {
+          "name": "Pid",
+          "json_types": ["integer"],
+          "meaning": "执行当前 Kernel 的目标进程 ID",
+          "unit": "无",
+          "nullable_when": "不允许为 null",
+          "analysis": "用于关联目标进程"
+        },
+        {
+          "name": "Current Freq",
+          "json_types": ["number", "null"],
+          "meaning": "计算指标时使用的当前 Core 频率",
+          "unit": "MHz",
+          "nullable_when": "频率无效，或混合 Kernel 的 AIC 与 AIV 当前频率不一致",
+          "analysis": "用于理解周期到时间的换算条件"
+        },
+        {
+          "name": "Rated Freq",
+          "json_types": ["number", "null"],
+          "meaning": "硬件信息中记录的额定 Core 频率",
+          "unit": "MHz",
+          "nullable_when": "额定频率缺失，或混合 Kernel 的 AIC 与 AIV 额定频率不一致",
+          "analysis": "用于比较当前频率与额定频率"
+        },
+        {
+          "name": "aicore_parallel_utilization",
+          "json_types": ["number", "null"],
+          "meaning": "各 Block 的 AIC Cube 与 AIV Vector 利用率之和的平均值",
+          "unit": "比值",
+          "nullable_when": "未选择 PipeUtilization，或缺少可用的流水线利用率数据",
+          "analysis": "反映参与统计的 Block 的平均计算利用程度"
+        },
+        {
+          "name": "aicore_parallel_balance",
+          "json_types": ["number", "null"],
+          "meaning": "根据各 Block 执行时长离散程度计算的并行均衡度",
+          "unit": "比值",
+          "nullable_when": "缺少有效 Block 执行时长或平均时长为零",
+          "analysis": "值越接近 1 表示参与统计的 Block 时长越均衡"
+        },
+        {
+          "name": "aicore_gm_bw_theoretical(GB/s)",
+          "json_types": ["integer", "null"],
+          "meaning": "计算 GM 带宽使用率时采用的理论带宽",
+          "unit": "GB/s",
+          "nullable_when": "未选择 Memory",
+          "analysis": "当前值为 1600 GB/s"
+        },
+        {
+          "name": "aicore_gm_read_bw(GB/s)",
+          "json_types": ["number", "null"],
+          "meaning": "Memory 汇总中的 AIC 与 AIV 主存读取带宽之和",
+          "unit": "GB/s",
+          "nullable_when": "未选择 Memory，或 AIC 与 AIV 主存读取带宽均不可用",
+          "analysis": "反映当前 Kernel 的汇总 GM 读取带宽"
+        },
+        {
+          "name": "aicore_gm_write_bw(GB/s)",
+          "json_types": ["number", "null"],
+          "meaning": "Memory 汇总中的 AIC 与 AIV 主存写入带宽之和",
+          "unit": "GB/s",
+          "nullable_when": "未选择 Memory，或 AIC 与 AIV 主存写入带宽均不可用",
+          "analysis": "反映当前 Kernel 的汇总 GM 写入带宽"
+        },
+        {
+          "name": "aicore_gm_bw_usage_rate(%)",
+          "json_types": ["number", "null"],
+          "meaning": "GM 读写带宽之和占理论带宽的百分比",
+          "unit": "%",
+          "nullable_when": "GM 读取或写入带宽不可用",
+          "analysis": "按 (读取带宽 + 写入带宽) / 1600 × 100 计算"
+        }
+      ]
+    }
+  },
+  "op_info_selected_fields": [
+    "Op Type",
+    "Block Dim",
+    "Mix Block Dim",
+    "Device Id",
+    "Current Freq",
+    "Rated Freq"
+  ]
+}

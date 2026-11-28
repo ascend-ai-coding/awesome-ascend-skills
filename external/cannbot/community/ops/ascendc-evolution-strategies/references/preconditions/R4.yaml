@@ -1,0 +1,19 @@
+strategy_id: R4
+description: "R4: Hardware Loop 规范化"
+
+strategy_meta:
+  id: "R4"
+  slug: "R4_hw_loop"
+  title: "R4: Hardware Loop 规范化"
+  bottlenecks: []
+  op_families: [datapath]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L1"
+  deprecated: true
+  deprecated_reason: "Minimal content (uint16_t vs uint32_t loop). Overlaps with P67 Counter Mode. Zero references in lookup tables."
+  has_preconditions: false
+  has_playbook: false
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/r4_hw_loop.md"

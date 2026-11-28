@@ -1,0 +1,54 @@
+/*!
+ * \file conv3ddx_ks_kernel.cpp
+ * \brief Conv3DDX kernel split __mix__(1,2) 入口 + launch_conv3ddx_ks。
+ *
+ * ── 集成说明 ──────────────────────────────────────────────────────────────────
+ *   落地为 conv3ddx_ks_kernel.cpp，用 bisheng（-xasc --npu-arch=dav-3510）编译；
+ *   include 目录需能找到 conv3ddx_ks_tiling.h / conv3ddx_ks_kernel.h / conv3ddx_ks_launch.h。
+ *   blockDim = tiling.usedCoreNum（每核 1 AIC + 2 AIV，mix(1,2) 由运行时展开）。
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+
+#include "conv3ddx_ks_tiling.h"
+#include "conv3ddx_ks_kernel.h"
+#include "conv3ddx_ks_launch.h"
+
+using namespace conv3ddx_ks;
+
+// __mix__(1, 2) = KERNEL_TYPE_MIX_AIC_1_2：每 grid entry 1 个 Cube block +
+// 2 个 Vector block。SplitHW（splitMode=1）：AIC 做相位块计算与三段 fixpipe，
+// AIV 凑齐 strideW 个相位块后 Interleave 并隔行直写 GM，两侧通过
+// CrossCoreSetFlag/WaitFlag 握手（tuning guide §9）。SplitH（splitMode=2）：
+// AIC 三段直写 GM，AIV 直接早退——落地也可改用 __cube__ 单核型（§10A.4）。
+// tiling 按值进 kernel 参数缓冲，launch 路径无 H2D copy。
+// blockDim = tiling.usedCoreNum（SplitH 的相位维度已含在 totalCnt×strideH 内）。
+template <typename T>
+__global__ __aicore__ __mix__(1, 2) void conv3ddx_ks_kernel(GM_ADDR filter, GM_ADDR dedy, GM_ADDR dx,
+                                                            GM_ADDR workspace, Conv3ddxKsCase tiling)
+{
+    Conv3ddxKsKernel<T> op;
+    op.Init(filter, dedy, dx, workspace, tiling);
+    op.Process();
+}
+
+template <typename T>
+static void LaunchTyped(GM_ADDR filter, GM_ADDR dedy, GM_ADDR dx, GM_ADDR workspace,
+                        const Conv3ddxKsCase& tiling, void* stream)
+{
+    conv3ddx_ks_kernel<T><<<tiling.usedCoreNum, nullptr, stream>>>(filter, dedy, dx, workspace, tiling);
+}
+
+extern "C" void launch_conv3ddx_ks(GM_ADDR filter, GM_ADDR dedy, GM_ADDR dx, GM_ADDR workspace,
+                                   const Conv3ddxKsCase& tiling, void* stream)
+{
+    switch (tiling.dtype) {
+        case ConvKsDType::FP16:
+            LaunchTyped<half>(filter, dedy, dx, workspace, tiling, stream);
+            break;
+        case ConvKsDType::BF16:
+            LaunchTyped<bfloat16_t>(filter, dedy, dx, workspace, tiling, stream);
+            break;
+        default:
+            break;
+    }
+}

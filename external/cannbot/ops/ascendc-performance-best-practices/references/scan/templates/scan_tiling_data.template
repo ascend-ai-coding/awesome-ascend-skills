@@ -1,0 +1,30 @@
+/**
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * CANN Open Software License Agreement Version 2.0. THIS SOFTWARE IS PROVIDED "AS IS".
+ */
+
+/*!
+ * \file scan_tiling_data.template  (使用时改名为 scan_tiling_data.h)
+ * \brief Scan 族 packed TilingData 定义（<<<>>> 直调时按值传参给 kernel）。
+ *
+ * 融合形状 (M, R, N)：沿 R 轴做前缀扫描。M=R 前维度乘积，N=R 后维度乘积。
+ * 流式模板：work-item = mBlk 行 × nTileLen 列，向量宽 W=mBlk*nTileLen。
+ * 若接入生产 tiling 框架（BEGIN_TILING_DATA_DEF），可扩展 borrow/fold/sklanskyIters 等字段。
+ */
+#ifndef SCAN_TILING_DATA_H
+#define SCAN_TILING_DATA_H
+
+#include <cstdint>
+
+struct ScanTilingData {
+    int64_t M;          // 扫描轴之前维度乘积
+    int64_t R;          // 扫描轴长度
+    int64_t N;          // 扫描轴之后维度乘积
+    int64_t mBlk;       // 每个 work-item 的行数（M 方向）
+    int64_t nTileLen;   // 每个 work-item 的列数（N 方向）
+    int64_t mOuter;     // ceil(M / mBlk)
+    int64_t nOuter;     // ceil(N / nTileLen)
+    int64_t totalWork;  // mOuter * nOuter
+};
+
+#endif  // SCAN_TILING_DATA_H

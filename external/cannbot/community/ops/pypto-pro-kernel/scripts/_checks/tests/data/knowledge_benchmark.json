@@ -1,0 +1,1886 @@
+{
+  "schema": "pypto-knowledge-benchmark/1",
+  "cases": [
+    {
+      "id": "d01-nested-system-function",
+      "split": "development",
+      "category": "existing_contract",
+      "query": {
+        "text": "pl.system.bar_all",
+        "kinds": [
+          "api"
+        ]
+      },
+      "relevant_ids": [
+        "symbol:pl.system.bar_all"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Existing source-bound query contract; native or numerical support is not inferred."
+    },
+    {
+      "id": "d02-dtype-is-a-value",
+      "split": "development",
+      "category": "existing_contract",
+      "query": {
+        "text": "pl.DT_FP16"
+      },
+      "relevant_ids": [
+        "symbol:pl.DT_FP16"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Existing source-bound query contract; native or numerical support is not inferred."
+    },
+    {
+      "id": "d03-public-type",
+      "split": "development",
+      "category": "existing_contract",
+      "query": {
+        "text": "pl.TileType",
+        "kinds": [
+          "type"
+        ]
+      },
+      "relevant_ids": [
+        "symbol:pl.TileType"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Existing source-bound query contract; native or numerical support is not inferred."
+    },
+    {
+      "id": "d04-binding-enum",
+      "split": "development",
+      "category": "existing_contract",
+      "query": {
+        "text": "pl.MemorySpace",
+        "kinds": [
+          "enum"
+        ]
+      },
+      "relevant_ids": [
+        "symbol:pl.MemorySpace"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Existing source-bound query contract; native or numerical support is not inferred."
+    },
+    {
+      "id": "d05-binding-enum-member",
+      "split": "development",
+      "category": "existing_contract",
+      "query": {
+        "text": "pl.MemorySpace.Vec"
+      },
+      "relevant_ids": [
+        "symbol:pl.MemorySpace.Vec"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Existing source-bound query contract; native or numerical support is not inferred."
+    },
+    {
+      "id": "d06-namespace",
+      "split": "development",
+      "category": "existing_contract",
+      "query": {
+        "text": "pl.system",
+        "kinds": [
+          "namespace"
+        ]
+      },
+      "relevant_ids": [
+        "symbol:pl.system"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Existing source-bound query contract; native or numerical support is not inferred."
+    },
+    {
+      "id": "d07-vf-alias",
+      "split": "development",
+      "category": "existing_contract",
+      "query": {
+        "text": "pl.Vf.astype",
+        "kinds": [
+          "api"
+        ]
+      },
+      "relevant_ids": [
+        "symbol:vf.astype"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Existing source-bound query contract; native or numerical support is not inferred."
+    },
+    {
+      "id": "d08-simt-namespace-function",
+      "split": "development",
+      "category": "existing_contract",
+      "query": {
+        "text": "pl.simt.atomic_add",
+        "kinds": [
+          "api"
+        ]
+      },
+      "relevant_ids": [
+        "symbol:pl.simt.atomic_add"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Existing source-bound query contract; native or numerical support is not inferred."
+    },
+    {
+      "id": "d09-english-forward-path",
+      "split": "development",
+      "category": "existing_contract",
+      "query": {
+        "text": "UB to L1",
+        "kinds": [
+          "contract"
+        ]
+      },
+      "relevant_ids": [
+        "contract:ub-l1"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Existing source-bound query contract; native or numerical support is not inferred."
+    },
+    {
+      "id": "d10-chinese-forward-path",
+      "split": "development",
+      "category": "existing_contract",
+      "query": {
+        "text": "从UB向L1搬运",
+        "kinds": [
+          "contract"
+        ]
+      },
+      "relevant_ids": [
+        "contract:ub-l1"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Existing source-bound query contract; native or numerical support is not inferred."
+    },
+    {
+      "id": "d11-unknown-api-name",
+      "split": "development",
+      "category": "existing_contract",
+      "query": {
+        "text": "pl.this_api_is_not_declared"
+      },
+      "relevant_ids": [],
+      "expected_lookup": "retrieval_miss",
+      "rationale": "Existing source-bound query contract; native or numerical support is not inferred."
+    },
+    {
+      "id": "d12-reverse-path",
+      "split": "development",
+      "category": "existing_contract",
+      "query": {
+        "text": "L1 to UB"
+      },
+      "relevant_ids": [],
+      "expected_lookup": "retrieval_miss",
+      "rationale": "Existing source-bound query contract; native or numerical support is not inferred."
+    },
+    {
+      "id": "d13-reverse-space-alias",
+      "split": "development",
+      "category": "existing_contract",
+      "query": {
+        "text": "Mat→Vec"
+      },
+      "relevant_ids": [],
+      "expected_lookup": "retrieval_miss",
+      "rationale": "Existing source-bound query contract; native or numerical support is not inferred."
+    },
+    {
+      "id": "d14-unrelated-question",
+      "split": "development",
+      "category": "existing_contract",
+      "query": {
+        "text": "vector formatting"
+      },
+      "relevant_ids": [],
+      "expected_lookup": "retrieval_miss",
+      "rationale": "Existing source-bound query contract; native or numerical support is not inferred."
+    },
+    {
+      "id": "d15-ambiguous-move",
+      "split": "development",
+      "category": "existing_contract",
+      "query": {
+        "text": "move",
+        "kinds": [
+          "contract"
+        ]
+      },
+      "relevant_ids": [
+        "contract:acc-final-output",
+        "contract:ub-l1",
+        "contract:vf-register-copies"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Existing source-bound query contract; native or numerical support is not inferred.",
+      "no_recipe": true
+    },
+    {
+      "id": "d16-widening-direction",
+      "split": "development",
+      "category": "existing_contract",
+      "query": {
+        "text": "FP16 to FP32",
+        "kinds": [
+          "contract"
+        ]
+      },
+      "relevant_ids": [
+        "contract:vf-fp16-widening"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Existing source-bound query contract; native or numerical support is not inferred.",
+      "no_recipe": true
+    },
+    {
+      "id": "d17-narrowing-alternatives",
+      "split": "development",
+      "category": "existing_contract",
+      "query": {
+        "text": "FP32 to FP16",
+        "kinds": [
+          "contract"
+        ]
+      },
+      "relevant_ids": [
+        "contract:acc-final-output",
+        "contract:vf-fp32-narrowing"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Existing source-bound query contract; native or numerical support is not inferred.",
+      "no_recipe": true
+    },
+    {
+      "id": "d18-memory-filter-discovery",
+      "split": "development",
+      "category": "existing_contract",
+      "query": {
+        "kinds": [
+          "contract"
+        ],
+        "filters": {
+          "source_memory": "UB",
+          "destination_memory": "L1"
+        }
+      },
+      "relevant_ids": [
+        "contract:ub-l1"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Existing source-bound query contract; native or numerical support is not inferred."
+    },
+    {
+      "id": "d19-dtype-filter-discovery",
+      "split": "development",
+      "category": "existing_contract",
+      "query": {
+        "kinds": [
+          "contract"
+        ],
+        "filters": {
+          "source_dtype": "DT_FP16",
+          "destination_dtype": "FP32"
+        }
+      },
+      "relevant_ids": [
+        "contract:vf-fp16-widening"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Existing source-bound query contract; native or numerical support is not inferred."
+    },
+    {
+      "id": "d20-filter-conflict",
+      "split": "development",
+      "category": "existing_contract",
+      "query": {
+        "text": "ub-l1",
+        "kinds": [
+          "contract"
+        ],
+        "filters": {
+          "source_memory": "L1",
+          "destination_memory": "UB"
+        }
+      },
+      "relevant_ids": [],
+      "expected_lookup": "retrieval_miss",
+      "rationale": "Existing source-bound query contract; native or numerical support is not inferred."
+    },
+    {
+      "id": "d21-missing-layout-evidence",
+      "split": "development",
+      "category": "existing_contract",
+      "query": {
+        "text": "pl.insert",
+        "kinds": [
+          "api"
+        ],
+        "filters": {
+          "layout": "NZ"
+        }
+      },
+      "relevant_ids": [
+        "symbol:pl.insert"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Existing source-bound query contract; native or numerical support is not inferred.",
+      "unknown_filters": [
+        "layout"
+      ]
+    },
+    {
+      "id": "d22-unclassified-layout",
+      "split": "development",
+      "category": "existing_contract",
+      "query": {
+        "kinds": [
+          "contract"
+        ],
+        "filters": {
+          "layout": "NZ"
+        }
+      },
+      "relevant_ids": [],
+      "expected_lookup": "evidence_insufficient",
+      "rationale": "Existing source-bound query contract; native or numerical support is not inferred."
+    },
+    {
+      "id": "d23-official-handover-documentation",
+      "split": "development",
+      "category": "existing_contract",
+      "query": {
+        "text": "UB to L1",
+        "kinds": [
+          "document"
+        ]
+      },
+      "relevant_ids": [
+        "docstring:pl.insert",
+        "docstring:pl.move",
+        "document:pro-api/SIMD-API/memory_data_movement/insert.md",
+        "document:pro-api/SIMD-API/memory_data_movement/move.md",
+        "document:skill/api/crosscore-sync.md",
+        "document:skill/api/datamove.md"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Existing source-bound query contract; native or numerical support is not inferred.",
+      "no_recipe": true,
+      "resolve": true
+    },
+    {
+      "id": "d24-complete-batched-transposed-program",
+      "split": "development",
+      "category": "existing_contract",
+      "query": {
+        "text": "batched transposed GEMM with M tails",
+        "kinds": [
+          "example"
+        ]
+      },
+      "relevant_ids": [
+        "example:algorithms/batched_transposed_gemm/kernel.py"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Existing source-bound query contract; native or numerical support is not inferred.",
+      "resolve": true,
+      "required_roles": [
+        "kernel",
+        "reference",
+        "test"
+      ]
+    },
+    {
+      "id": "d25-chinese-complete-batched-program",
+      "split": "development",
+      "category": "existing_contract",
+      "query": {
+        "text": "带M尾块的批量转置GEMM",
+        "kinds": [
+          "example"
+        ]
+      },
+      "relevant_ids": [
+        "example:algorithms/batched_transposed_gemm/kernel.py"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Existing source-bound query contract; native or numerical support is not inferred.",
+      "resolve": true,
+      "required_roles": [
+        "kernel",
+        "reference",
+        "test"
+      ]
+    },
+    {
+      "id": "d26-batched-program-n-tail-conflict",
+      "split": "development",
+      "category": "existing_contract",
+      "query": {
+        "text": "batched transposed GEMM with N tails",
+        "kinds": [
+          "example"
+        ]
+      },
+      "relevant_ids": [],
+      "expected_lookup": "retrieval_miss",
+      "rationale": "Existing source-bound query contract; native or numerical support is not inferred."
+    },
+    {
+      "id": "d27-batched-program-dtype-conflict",
+      "split": "development",
+      "category": "existing_contract",
+      "query": {
+        "text": "batched transposed GEMM with M tails",
+        "kinds": [
+          "example"
+        ],
+        "filters": {
+          "source_dtype": "BF16"
+        }
+      },
+      "relevant_ids": [],
+      "expected_lookup": "retrieval_miss",
+      "rationale": "Existing source-bound query contract; native or numerical support is not inferred."
+    },
+    {
+      "id": "d28-scalar-broadcast-question",
+      "split": "development",
+      "category": "scenario_discovery",
+      "query": {
+        "text": "给寄存器初始化一个标量并参与加法",
+        "kinds": [
+          "contract"
+        ]
+      },
+      "relevant_ids": [
+        "contract:vf-scalar-dtype"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Source owner identifies this operation or example; applicability still requires its original conditions."
+    },
+    {
+      "id": "d29-independent-register-copy",
+      "split": "development",
+      "category": "scenario_discovery",
+      "query": {
+        "text": "需要独立的寄存器副本，修改副本不能污染原值",
+        "kinds": [
+          "contract"
+        ]
+      },
+      "relevant_ids": [
+        "contract:vf-register-copies"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Source owner identifies this operation or example; applicability still requires its original conditions."
+    },
+    {
+      "id": "d30-final-acc-conversion",
+      "split": "development",
+      "category": "scenario_discovery",
+      "query": {
+        "text": "GEMM FP32 累加器直接输出 FP16，能省一次转换 kernel 吗",
+        "kinds": [
+          "contract"
+        ]
+      },
+      "relevant_ids": [
+        "contract:acc-final-output"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Source owner identifies this operation or example; applicability still requires its original conditions."
+    },
+    {
+      "id": "d31-widening-question",
+      "split": "development",
+      "category": "scenario_discovery",
+      "query": {
+        "text": "FP16 register conversion to FP32 with all valid lanes",
+        "kinds": [
+          "contract"
+        ]
+      },
+      "relevant_ids": [
+        "contract:vf-fp16-widening"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Source owner identifies this operation or example; applicability still requires its original conditions."
+    },
+    {
+      "id": "d32-transpose-short-m",
+      "split": "development",
+      "category": "scenario_discovery",
+      "query": {
+        "text": "batched transpose GEMM short M block",
+        "kinds": [
+          "example"
+        ]
+      },
+      "relevant_ids": [
+        "example:algorithms/batched_transposed_gemm/kernel.py"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Source owner identifies this operation or example; applicability still requires its original conditions.",
+      "resolve": true,
+      "required_roles": [
+        "kernel",
+        "reference",
+        "test"
+      ]
+    },
+    {
+      "id": "d33-retain-l0b",
+      "split": "development",
+      "category": "scenario_discovery",
+      "query": {
+        "text": "reuse L0B operand across M blocks",
+        "kinds": [
+          "example"
+        ]
+      },
+      "relevant_ids": [
+        "example:matmul/l0_operand_reuse/kernel.py"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Source owner identifies this operation or example; applicability still requires its original conditions.",
+      "resolve": true,
+      "required_roles": [
+        "kernel",
+        "reference",
+        "test"
+      ]
+    },
+    {
+      "id": "d34-paged-decode-program",
+      "split": "development",
+      "category": "scenario_discovery",
+      "query": {
+        "text": "find independent reference and tests for paged GQA decode",
+        "kinds": [
+          "example"
+        ]
+      },
+      "relevant_ids": [
+        "example:algorithms/paged_gqa_decode/kernel.py"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Source owner identifies this operation or example; applicability still requires its original conditions.",
+      "resolve": true,
+      "required_roles": [
+        "kernel",
+        "reference",
+        "test"
+      ]
+    },
+    {
+      "id": "d35-assert-source-roles",
+      "split": "development",
+      "category": "scenario_discovery",
+      "query": {
+        "text": "pl.pto_assert abort and logging",
+        "kinds": [
+          "document"
+        ]
+      },
+      "relevant_ids": [
+        "docstring:pl.pto_assert",
+        "document:pro-api/Utils-API/debugging/pto_assert.md",
+        "document:skill/api/support.md"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Source owner identifies this operation or example; applicability still requires its original conditions.",
+      "required_ids": [
+        "docstring:pl.pto_assert",
+        "document:pro-api/Utils-API/debugging/pto_assert.md"
+      ],
+      "resolve": true
+    },
+    {
+      "id": "d36-log-without-abort",
+      "split": "development",
+      "category": "scenario_discovery",
+      "query": {
+        "text": "打印日志但不中止",
+        "kinds": [
+          "document"
+        ]
+      },
+      "relevant_ids": [
+        "document:skill/api/support.md",
+        "document:pro-api/Utils-API/debugging/pto_assert.md"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Source owner identifies this operation or example; applicability still requires its original conditions.",
+      "resolve": true
+    },
+    {
+      "id": "d37-addc-usage",
+      "split": "development",
+      "category": "scenario_discovery",
+      "query": {
+        "text": "vf.addc",
+        "kinds": [
+          "document"
+        ]
+      },
+      "relevant_ids": [
+        "document:pro-api/SIMD-API/Reg-API/basic_arithmetic/addc.md",
+        "docstring:vf.addc"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Source owner identifies this operation or example; applicability still requires its original conditions.",
+      "required_ids": [
+        "document:pro-api/SIMD-API/Reg-API/basic_arithmetic/addc.md"
+      ],
+      "resolve": true
+    },
+    {
+      "id": "d38-rank-axis-offset",
+      "split": "development",
+      "category": "scenario_discovery",
+      "query": {
+        "text": "从高阶GM张量搬到2D tile时offsets的坐标怎么对应",
+        "kinds": [
+          "document"
+        ]
+      },
+      "relevant_ids": [
+        "document:skill/api/datamove.md"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Source owner identifies this operation or example; applicability still requires its original conditions.",
+      "resolve": true
+    },
+    {
+      "id": "d39-fillpad-contract",
+      "split": "development",
+      "category": "scenario_discovery",
+      "query": {
+        "text": "fillpad",
+        "kinds": [
+          "document"
+        ]
+      },
+      "relevant_ids": [
+        "document:skill/api/datamove.md"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Source owner identifies this operation or example; applicability still requires its original conditions.",
+      "resolve": true
+    },
+    {
+      "id": "d40-external-evaluator-program",
+      "split": "development",
+      "category": "scenario_discovery",
+      "query": {
+        "text": "example:algorithms/quant_lightning_indexer",
+        "kinds": [
+          "example"
+        ]
+      },
+      "relevant_ids": [
+        "example:algorithms/quant_lightning_indexer/kernel.py"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Source owner identifies this operation or example; applicability still requires its original conditions.",
+      "resolve": true,
+      "required_roles": [
+        "kernel",
+        "reference",
+        "test"
+      ]
+    },
+    {
+      "id": "h01-block-index",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "pl.get_block_idx",
+        "kinds": [
+          "api"
+        ]
+      },
+      "relevant_ids": [
+        "symbol:pl.get_block_idx"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Source owner identifies this operation or example; applicability still requires its original conditions."
+    },
+    {
+      "id": "h02-pipeline-interface",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "pl.pipelined",
+        "kinds": [
+          "api"
+        ]
+      },
+      "relevant_ids": [],
+      "expected_lookup": "retrieval_miss",
+      "rationale": "This spelling is outside the selected public-export object scope. A retrieval miss does not establish absence or lack of support in the whole framework."
+    },
+    {
+      "id": "h03-mx-interface",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "pl.gemm_mx",
+        "kinds": [
+          "api"
+        ]
+      },
+      "relevant_ids": [
+        "symbol:pl.gemm_mx"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Source owner identifies this operation or example; applicability still requires its original conditions."
+    },
+    {
+      "id": "h04-fma-interface",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "vf.mul_add_dst",
+        "kinds": [
+          "api"
+        ]
+      },
+      "relevant_ids": [
+        "symbol:vf.mul_add_dst"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Source owner identifies this operation or example; applicability still requires its original conditions."
+    },
+    {
+      "id": "h05-store-interface",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "pl.store",
+        "kinds": [
+          "api"
+        ]
+      },
+      "relevant_ids": [
+        "symbol:pl.store"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Source owner identifies this operation or example; applicability still requires its original conditions."
+    },
+    {
+      "id": "h06-vf-narrowing",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "VF register narrowing from FP32 to FP16",
+        "kinds": [
+          "contract"
+        ]
+      },
+      "relevant_ids": [
+        "contract:vf-fp32-narrowing"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Source owner identifies this operation or example; applicability still requires its original conditions."
+    },
+    {
+      "id": "h07-acc-bf16",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "从Acc写回GM并转成BF16",
+        "kinds": [
+          "contract"
+        ]
+      },
+      "relevant_ids": [
+        "contract:acc-final-output"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Source owner identifies this operation or example; applicability still requires its original conditions."
+    },
+    {
+      "id": "h08-broadcast-dtype",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "在UB中广播FP16标量时两侧vf.add的dtype不一致",
+        "kinds": [
+          "contract"
+        ]
+      },
+      "relevant_ids": [
+        "contract:vf-scalar-dtype"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Source owner identifies this operation or example; applicability still requires its original conditions."
+    },
+    {
+      "id": "h09-register-alias",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "register alias after masked updates",
+        "kinds": [
+          "contract"
+        ]
+      },
+      "relevant_ids": [
+        "contract:vf-register-copies"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Source owner identifies this operation or example; applicability still requires its original conditions."
+    },
+    {
+      "id": "d41-simt-entry-typing",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "SIMT outer wrapper",
+        "kinds": [
+          "contract"
+        ]
+      },
+      "relevant_ids": [
+        "contract:simt-entry-annotations"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Preserve the outer native entry separately from inner SIMT argument inference; the original owner contains both conditions."
+    },
+    {
+      "id": "h11-addc-example",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "vf.addc 调用示例",
+        "kinds": [
+          "document"
+        ]
+      },
+      "relevant_ids": [
+        "document:pro-api/SIMD-API/Reg-API/basic_arithmetic/addc.md"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Source owner identifies this operation or example; applicability still requires its original conditions.",
+      "resolve": true
+    },
+    {
+      "id": "h12-insert-docstring",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "source docstring for pl.insert",
+        "kinds": [
+          "document"
+        ]
+      },
+      "relevant_ids": [
+        "docstring:pl.insert"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Source owner identifies this operation or example; applicability still requires its original conditions.",
+      "resolve": true
+    },
+    {
+      "id": "h13-guide-fragment",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "document:pro-guide/development/cube_vector_fusion.md#跨核中间数据传递",
+        "kinds": [
+          "document"
+        ]
+      },
+      "relevant_ids": [
+        "document:pro-guide/development/cube_vector_fusion.md"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Source owner identifies this operation or example; applicability still requires its original conditions.",
+      "resolve": true
+    },
+    {
+      "id": "h14-assert-docstring",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "docstring:pl.pto_assert",
+        "kinds": [
+          "document"
+        ]
+      },
+      "relevant_ids": [
+        "docstring:pl.pto_assert"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Source owner identifies this operation or example; applicability still requires its original conditions.",
+      "resolve": true
+    },
+    {
+      "id": "h15-rms-tail-program",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "RMS normalization and GEMM with M tails",
+        "kinds": [
+          "example"
+        ]
+      },
+      "relevant_ids": [
+        "example:algorithms/rmsnorm_gemm_tail/kernel.py"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Source owner identifies this operation or example; applicability still requires its original conditions.",
+      "resolve": true,
+      "required_roles": [
+        "kernel",
+        "reference",
+        "test"
+      ]
+    },
+    {
+      "id": "h16-streaming-segments",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "segmented streaming scan",
+        "kinds": [
+          "example"
+        ]
+      },
+      "relevant_ids": [
+        "example:algorithms/streaming_segmented_scan/kernel.py"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Source owner identifies this operation or example; applicability still requires its original conditions.",
+      "resolve": true,
+      "required_roles": [
+        "kernel",
+        "reference",
+        "test"
+      ]
+    },
+    {
+      "id": "h17-csr-aggregation",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "CSR sparse softmax aggregation",
+        "kinds": [
+          "example"
+        ]
+      },
+      "relevant_ids": [
+        "example:algorithms/csr_softmax_aggregate/kernel.py"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Source owner identifies this operation or example; applicability still requires its original conditions.",
+      "resolve": true,
+      "required_roles": [
+        "kernel",
+        "reference",
+        "test"
+      ]
+    },
+    {
+      "id": "h18-batched-k-tail",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "batched transposed GEMM with K tails",
+        "kinds": [
+          "example"
+        ]
+      },
+      "relevant_ids": [],
+      "expected_lookup": "retrieval_miss",
+      "rationale": "Source owner identifies this operation or example; applicability still requires its original conditions.",
+      "forbidden_ids": [
+        "example:algorithms/batched_transposed_gemm/kernel.py"
+      ]
+    },
+    {
+      "id": "h19-absent-document",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "document:pro-guide/development/does-not-exist.md",
+        "kinds": [
+          "document"
+        ]
+      },
+      "relevant_ids": [],
+      "expected_lookup": "source_unavailable",
+      "rationale": "Source owner identifies this operation or example; applicability still requires its original conditions."
+    },
+    {
+      "id": "h20-deferred-provider",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "bank conflict profiling",
+        "kinds": [
+          "diagnostic"
+        ]
+      },
+      "relevant_ids": [],
+      "expected_lookup": "not_integrated",
+      "rationale": "Source owner identifies this operation or example; applicability still requires its original conditions."
+    },
+    {
+      "id": "n21-native-register-move",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "vf.move",
+        "kinds": [
+          "api"
+        ]
+      },
+      "relevant_ids": [
+        "symbol:vf.move"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Original owner establishes relevance; applicability and execution remain separate."
+    },
+    {
+      "id": "n22-packing-enum-value",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "pl.StoreDist.PACK_B32",
+        "kinds": [
+          "enum_member"
+        ]
+      },
+      "relevant_ids": [
+        "symbol:pl.StoreDist.PACK_B32"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Original owner establishes relevance; applicability and execution remain separate."
+    },
+    {
+      "id": "n23-post-updated-store-source",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "vf.store_align post_update",
+        "kinds": [
+          "document"
+        ]
+      },
+      "relevant_ids": [
+        "document:pro-api/SIMD-API/reg_computation/data_movement/store_align.md"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Original owner establishes relevance; applicability and execution remain separate."
+    },
+    {
+      "id": "n24-index-ramp-source",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "vf.arange uint32 step",
+        "kinds": [
+          "document"
+        ]
+      },
+      "relevant_ids": [
+        "document:pro-api/SIMD-API/reg_computation/sorting_and_indexing/arange.md"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Original owner establishes relevance; applicability and execution remain separate."
+    },
+    {
+      "id": "n25-frequency-without-symbol",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "频率统计",
+        "kinds": [
+          "document"
+        ]
+      },
+      "relevant_ids": [
+        "document:pro-api/SIMD-API/reg_computation/sorting_and_indexing/histograms.md"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Original owner establishes relevance; applicability and execution remain separate.",
+      "resolve": true
+    },
+    {
+      "id": "n26-register-programming-guide",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "document:pro-guide/development/vector_computation/reg_computation.md",
+        "kinds": [
+          "document"
+        ]
+      },
+      "relevant_ids": [
+        "document:pro-guide/development/vector_computation/reg_computation.md"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Original owner establishes relevance; applicability and execution remain separate.",
+      "resolve": true
+    },
+    {
+      "id": "n27-simt-quickstart",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "document:pro-quickstart/softmax_simt.md",
+        "kinds": [
+          "document"
+        ]
+      },
+      "relevant_ids": [
+        "document:pro-quickstart/softmax_simt.md"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Original owner establishes relevance; applicability and execution remain separate.",
+      "resolve": true
+    },
+    {
+      "id": "n28-mask-literal-docstring",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "docstring:vf.create_mask",
+        "kinds": [
+          "document"
+        ]
+      },
+      "relevant_ids": [
+        "docstring:vf.create_mask"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Original owner establishes relevance; applicability and execution remain separate.",
+      "resolve": true
+    },
+    {
+      "id": "n29-vf-memory-order-source",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "vf.mem_bar 调用示例",
+        "kinds": [
+          "document"
+        ]
+      },
+      "relevant_ids": [
+        "document:pro-api/SIMD-API/reg_computation/data_movement/mem_bar.md"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Original owner establishes relevance; applicability and execution remain separate.",
+      "resolve": true
+    },
+    {
+      "id": "n30-mask-data-block-source",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "vf.mask_gen_with_reg_tensor offset",
+        "kinds": [
+          "document"
+        ]
+      },
+      "relevant_ids": [
+        "document:pro-api/SIMD-API/reg_computation/mask_operations/mask_gen_with_reg_tensor.md"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Original owner establishes relevance; applicability and execution remain separate."
+    },
+    {
+      "id": "n31-csr-weighted-sum",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "CSR softmax weighted sum",
+        "kinds": [
+          "example"
+        ]
+      },
+      "relevant_ids": [
+        "example:algorithms/csr_softmax_aggregate/kernel.py"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Original owner establishes relevance; applicability and execution remain separate.",
+      "resolve": true,
+      "required_roles": [
+        "kernel",
+        "reference",
+        "test"
+      ]
+    },
+    {
+      "id": "n32-chinese-rms-tail",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "均方根归一化后矩阵乘，末带不足整块",
+        "kinds": [
+          "example"
+        ]
+      },
+      "relevant_ids": [
+        "example:algorithms/rmsnorm_gemm_tail/kernel.py"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Original owner establishes relevance; applicability and execution remain separate.",
+      "resolve": true,
+      "required_roles": [
+        "kernel",
+        "reference",
+        "test"
+      ]
+    },
+    {
+      "id": "n33-sampling-zero-extension",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "bilinear sampling zero extension",
+        "kinds": [
+          "example"
+        ]
+      },
+      "relevant_ids": [
+        "example:algorithms/bilinear_sampling/kernel.py"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Original owner establishes relevance; applicability and execution remain separate.",
+      "resolve": true,
+      "required_roles": [
+        "kernel",
+        "reference",
+        "test"
+      ]
+    },
+    {
+      "id": "n34-segmented-carry",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "streaming segmented scan dynamic carry",
+        "kinds": [
+          "example"
+        ]
+      },
+      "relevant_ids": [
+        "example:algorithms/streaming_segmented_scan/kernel.py"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Original owner establishes relevance; applicability and execution remain separate."
+    },
+    {
+      "id": "n35-indirect-access-program",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "example:basic_api/vf/vf_gather_scatter",
+        "kinds": [
+          "example"
+        ]
+      },
+      "relevant_ids": [
+        "example:basic_api/vf/vf_gather_scatter/kernel.py"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Original owner establishes relevance; applicability and execution remain separate.",
+      "resolve": true,
+      "required_roles": [
+        "kernel",
+        "reference",
+        "test"
+      ]
+    },
+    {
+      "id": "n36-operand-residency-program",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "example:matmul/l0_operand_reuse",
+        "kinds": [
+          "example"
+        ]
+      },
+      "relevant_ids": [
+        "example:matmul/l0_operand_reuse/kernel.py"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Original owner establishes relevance; applicability and execution remain separate.",
+      "resolve": true,
+      "required_roles": [
+        "kernel",
+        "reference",
+        "test"
+      ]
+    },
+    {
+      "id": "n37-rms-wrong-tail-axis",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "RMS normalization and GEMM with N tails",
+        "kinds": [
+          "example"
+        ]
+      },
+      "relevant_ids": [],
+      "expected_lookup": "retrieval_miss",
+      "rationale": "Original owner establishes relevance; applicability and execution remain separate."
+    },
+    {
+      "id": "n38-csr-incompatible-input",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "CSR sparse softmax aggregation",
+        "kinds": [
+          "example"
+        ],
+        "filters": {
+          "source_dtype": "BF16"
+        }
+      },
+      "relevant_ids": [],
+      "expected_lookup": "retrieval_miss",
+      "rationale": "Original owner establishes relevance; applicability and execution remain separate."
+    },
+    {
+      "id": "n39-unavailable-simd-guide",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "document:pro-quickstart/no-such-simd-guide.md",
+        "kinds": [
+          "document"
+        ]
+      },
+      "relevant_ids": [],
+      "expected_lookup": "source_unavailable",
+      "rationale": "Original owner establishes relevance; applicability and execution remain separate."
+    },
+    {
+      "id": "n40-unconnected-hazard-provider",
+      "split": "development",
+      "category": "source_regression",
+      "query": {
+        "text": "VF register bank hazard investigation",
+        "kinds": [
+          "diagnostic"
+        ]
+      },
+      "relevant_ids": [],
+      "expected_lookup": "not_integrated",
+      "rationale": "Original owner establishes relevance; applicability and execution remain separate."
+    },
+    {
+      "id": "t41-distributed-load-owner",
+      "split": "heldout",
+      "category": "independent_source_holdout",
+      "query": {
+        "text": "vf.load_align dist",
+        "kinds": [
+          "document"
+        ]
+      },
+      "relevant_ids": [
+        "document:pro-api/SIMD-API/reg_computation/data_movement/load_align.md"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Original source ownership and typed scope determine relevance; no native or numerical acceptance is implied."
+    },
+    {
+      "id": "t42-post-cursor-store-owner",
+      "split": "heldout",
+      "category": "independent_source_holdout",
+      "query": {
+        "text": "vf.store_unalign_post cursor",
+        "kinds": [
+          "document"
+        ]
+      },
+      "relevant_ids": [
+        "document:pro-api/SIMD-API/reg_computation/data_movement/store_unalign_post.md"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Original source ownership and typed scope determine relevance; no native or numerical acceptance is implied."
+    },
+    {
+      "id": "t43-interleave-order-owner",
+      "split": "heldout",
+      "category": "independent_source_holdout",
+      "query": {
+        "text": "vf.interleave register order",
+        "kinds": [
+          "document"
+        ]
+      },
+      "relevant_ids": [
+        "document:pro-api/SIMD-API/reg_computation/advanced_computation/interleave.md"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Original source ownership and typed scope determine relevance; no native or numerical acceptance is implied.",
+      "resolve": true
+    },
+    {
+      "id": "t44-histogram-cumulative-owner",
+      "split": "heldout",
+      "category": "independent_source_holdout",
+      "query": {
+        "text": "vf.histograms cumulative",
+        "kinds": [
+          "document"
+        ]
+      },
+      "relevant_ids": [
+        "document:pro-api/SIMD-API/reg_computation/sorting_and_indexing/histograms.md"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Original source ownership and typed scope determine relevance; no native or numerical acceptance is implied.",
+      "resolve": true
+    },
+    {
+      "id": "t45-carry-owner",
+      "split": "heldout",
+      "category": "independent_source_holdout",
+      "query": {
+        "text": "vf.addc carry",
+        "kinds": [
+          "document"
+        ]
+      },
+      "relevant_ids": [
+        "document:pro-api/SIMD-API/Reg-API/basic_arithmetic/addc.md"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Original source ownership and typed scope determine relevance; no native or numerical acceptance is implied."
+    },
+    {
+      "id": "t46-scalar-type-owner",
+      "split": "heldout",
+      "category": "independent_source_holdout",
+      "query": {
+        "text": "vf.full dtype inference",
+        "kinds": [
+          "document"
+        ]
+      },
+      "relevant_ids": [
+        "document:pro-api/SIMD-API/reg_computation/data_movement/full.md"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Original source ownership and typed scope determine relevance; no native or numerical acceptance is implied."
+    },
+    {
+      "id": "t47-buffer-depth-owner",
+      "split": "heldout",
+      "category": "independent_source_holdout",
+      "query": {
+        "text": "pl.make_tile_group depth",
+        "kinds": [
+          "document"
+        ]
+      },
+      "relevant_ids": [
+        "document:pro-api/SIMD-API/resource_management/make_tile_group.md"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Original source ownership and typed scope determine relevance; no native or numerical acceptance is implied."
+    },
+    {
+      "id": "t48-cross-event-owner",
+      "split": "heldout",
+      "category": "independent_source_holdout",
+      "query": {
+        "text": "pl.set_cross_core event",
+        "kinds": [
+          "document"
+        ]
+      },
+      "relevant_ids": [
+        "document:pro-api/SIMD-API/synchronization/set_cross_core.md"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Original source ownership and typed scope determine relevance; no native or numerical acceptance is implied."
+    },
+    {
+      "id": "t49-unpack-enum-member",
+      "split": "heldout",
+      "category": "independent_source_holdout",
+      "query": {
+        "text": "pl.LoadDist.UNPK",
+        "kinds": [
+          "enum_member"
+        ]
+      },
+      "relevant_ids": [
+        "symbol:pl.LoadDist.UNPK"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Original source ownership and typed scope determine relevance; no native or numerical acceptance is implied."
+    },
+    {
+      "id": "t50-member-is-not-constant-kind",
+      "split": "heldout",
+      "category": "independent_source_holdout",
+      "query": {
+        "text": "pl.StoreDist.PACK_B32",
+        "kinds": [
+          "constant"
+        ]
+      },
+      "relevant_ids": [],
+      "expected_lookup": "retrieval_miss",
+      "rationale": "Original source ownership and typed scope determine relevance; no native or numerical acceptance is implied.",
+      "forbidden_ids": [
+        "symbol:pl.StoreDist.PACK_B32"
+      ]
+    },
+    {
+      "id": "t51-literal-consumer-dtype",
+      "split": "heldout",
+      "category": "independent_source_holdout",
+      "query": {
+        "text": "VF host literal FP32 broadcast and matching consumer",
+        "kinds": [
+          "contract"
+        ]
+      },
+      "relevant_ids": [
+        "contract:vf-scalar-dtype"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Original source ownership and typed scope determine relevance; no native or numerical acceptance is implied."
+    },
+    {
+      "id": "t52-ordered-chinese-widening",
+      "split": "heldout",
+      "category": "independent_source_holdout",
+      "query": {
+        "text": "FP16寄存器转为FP32，保留原有效元素的顺序",
+        "kinds": [
+          "contract"
+        ]
+      },
+      "relevant_ids": [
+        "contract:vf-fp16-widening"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Original source ownership and typed scope determine relevance; no native or numerical acceptance is implied."
+    },
+    {
+      "id": "t53-chinese-csr-forward",
+      "split": "heldout",
+      "category": "independent_source_holdout",
+      "query": {
+        "text": "压缩稀疏行softmax加权聚合",
+        "kinds": [
+          "example"
+        ]
+      },
+      "relevant_ids": [
+        "example:algorithms/csr_softmax_aggregate/kernel.py"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Original source ownership and typed scope determine relevance; no native or numerical acceptance is implied.",
+      "resolve": true,
+      "required_roles": [
+        "kernel",
+        "reference",
+        "test"
+      ]
+    },
+    {
+      "id": "t54-mixed-rms-tail",
+      "split": "heldout",
+      "category": "independent_source_holdout",
+      "query": {
+        "text": "RMSNorm GEMM M尾块",
+        "kinds": [
+          "example"
+        ]
+      },
+      "relevant_ids": [
+        "example:algorithms/rmsnorm_gemm_tail/kernel.py"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Original source ownership and typed scope determine relevance; no native or numerical acceptance is implied.",
+      "resolve": true,
+      "required_roles": [
+        "kernel",
+        "reference",
+        "test"
+      ]
+    },
+    {
+      "id": "t55-forward-not-backward",
+      "split": "heldout",
+      "category": "independent_source_holdout",
+      "query": {
+        "text": "CSR softmax aggregation backward",
+        "kinds": [
+          "example"
+        ]
+      },
+      "relevant_ids": [],
+      "expected_lookup": "retrieval_miss",
+      "rationale": "Original source ownership and typed scope determine relevance; no native or numerical acceptance is implied."
+    },
+    {
+      "id": "t56-wrong-reduction-tail",
+      "split": "heldout",
+      "category": "independent_source_holdout",
+      "query": {
+        "text": "RMS normalization GEMM K tails",
+        "kinds": [
+          "example"
+        ]
+      },
+      "relevant_ids": [],
+      "expected_lookup": "retrieval_miss",
+      "rationale": "Original source ownership and typed scope determine relevance; no native or numerical acceptance is implied."
+    },
+    {
+      "id": "t57-handover-original-roles",
+      "split": "heldout",
+      "category": "independent_source_holdout",
+      "query": {
+        "text": "example:basic_api/datamove/ub_l1_handover",
+        "kinds": [
+          "example"
+        ]
+      },
+      "relevant_ids": [
+        "example:basic_api/datamove/ub_l1_handover/kernel.py"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Original source ownership and typed scope determine relevance; no native or numerical acceptance is implied.",
+      "resolve": true,
+      "required_roles": [
+        "kernel",
+        "reference",
+        "test"
+      ]
+    },
+    {
+      "id": "t58-bias-original-roles",
+      "split": "heldout",
+      "category": "independent_source_holdout",
+      "query": {
+        "text": "example:matmul/fundamental_usage/bias_fusion",
+        "kinds": [
+          "example"
+        ]
+      },
+      "relevant_ids": [
+        "example:matmul/fundamental_usage/bias_fusion/kernel.py"
+      ],
+      "expected_lookup": "matched",
+      "rationale": "Original source ownership and typed scope determine relevance; no native or numerical acceptance is implied.",
+      "resolve": true,
+      "required_roles": [
+        "kernel",
+        "reference",
+        "test"
+      ]
+    },
+    {
+      "id": "t59-missing-api-original",
+      "split": "heldout",
+      "category": "independent_source_holdout",
+      "query": {
+        "text": "document:pro-api/SIMD-API/no-current-owner.md",
+        "kinds": [
+          "document"
+        ]
+      },
+      "relevant_ids": [],
+      "expected_lookup": "source_unavailable",
+      "rationale": "Original source ownership and typed scope determine relevance; no native or numerical acceptance is implied."
+    },
+    {
+      "id": "t60-execution-evidence-not-ingested",
+      "split": "heldout",
+      "category": "independent_source_holdout",
+      "query": {
+        "text": "current matched native numerical receipt",
+        "kinds": [
+          "evidence"
+        ]
+      },
+      "relevant_ids": [],
+      "expected_lookup": "not_integrated",
+      "rationale": "Original source ownership and typed scope determine relevance; no native or numerical acceptance is implied."
+    },
+    {
+      "id": "d81-bank-conflict-profile-route",
+      "split": "development",
+      "category": "owner_discovery",
+      "query": {
+        "text": "bank conflict profiling",
+        "kinds": [
+          "contract"
+        ]
+      },
+      "relevant_ids": [
+        "contract:performance-counters"
+      ],
+      "rationale": "An observed complete-corpus miss for existing official collector documentation; only a source route, not installed profiling support."
+    },
+    {
+      "id": "d82-bank-conflict-profile-route-zh",
+      "split": "development",
+      "category": "owner_discovery",
+      "query": {
+        "text": "UB bank 冲突采集",
+        "kinds": [
+          "contract"
+        ]
+      },
+      "relevant_ids": [
+        "contract:performance-counters"
+      ],
+      "rationale": "Chinese discovery of the same conditional owner without inventing a public profiler API."
+    },
+    {
+      "id": "d83-filter-owner-before-related-docs",
+      "split": "development",
+      "category": "conditional_owner_ranking",
+      "query": {
+        "filters": {
+          "source_memory": "UB",
+          "destination_memory": "L1"
+        },
+        "limit": 3
+      },
+      "relevant_ids": [
+        "contract:ub-l1"
+      ],
+      "required_ids": [
+        "contract:ub-l1",
+        "symbol:pl.insert",
+        "symbol:pl.move"
+      ],
+      "rationale": "Observed default-page regression after one valid source link expanded related documents; declared routing conditions must stay discoverable."
+    },
+    {
+      "id": "d84-filter-owner-preserves-unknown-dtype",
+      "split": "development",
+      "category": "conditional_owner_ranking",
+      "query": {
+        "filters": {
+          "source_memory": "Vec",
+          "destination_memory": "Mat",
+          "dtype": "FP16"
+        },
+        "limit": 1
+      },
+      "relevant_ids": [
+        "contract:ub-l1"
+      ],
+      "unknown_filters": [
+        "dtype"
+      ],
+      "rationale": "Prioritizing declared memory direction does not establish an undeclared dtype support condition."
+    },
+    {
+      "id": "d85-conflict-profiler-long-query",
+      "split": "development",
+      "category": "owner_discovery",
+      "query": {
+        "text": "bank conflict profiler UB access stall replay duration kernel selection"
+      },
+      "relevant_ids": [
+        "contract:performance-counters"
+      ],
+      "required_ids": [
+        "contract:performance-counters",
+        "document:pro-guide/debug/performance_optimization.md"
+      ],
+      "rationale": "Discover the existing conditional collector owner and original guide using a declared profile term; metadata does not establish current capability or observations."
+    },
+    {
+      "id": "d86-conflict-collector-long-query",
+      "split": "development",
+      "category": "owner_discovery",
+      "query": {
+        "text": "bank conflict collector metric output file UB replay duration kernel selection"
+      },
+      "relevant_ids": [
+        "contract:performance-counters"
+      ],
+      "required_ids": [
+        "contract:performance-counters",
+        "document:pro-guide/debug/performance_optimization.md"
+      ],
+      "rationale": "Discover the existing conditional collector owner and original guide using a declared profile term; metadata does not establish current capability or observations."
+    },
+    {
+      "id": "d87-bank-group-metric-wording",
+      "split": "development",
+      "category": "owner_discovery",
+      "query": {
+        "text": "bank group conflict metric"
+      },
+      "relevant_ids": [
+        "contract:performance-counters"
+      ],
+      "required_ids": [
+        "contract:performance-counters",
+        "document:pro-guide/debug/performance_optimization.md"
+      ],
+      "rationale": "Discover the existing conditional collector owner and original guide using a declared profile term; metadata does not establish current capability or observations."
+    },
+    {
+      "id": "d88-conflict-metrics-wording",
+      "split": "development",
+      "category": "owner_discovery",
+      "query": {
+        "text": "bank conflict metrics output"
+      },
+      "relevant_ids": [
+        "contract:performance-counters"
+      ],
+      "required_ids": [
+        "contract:performance-counters",
+        "document:pro-guide/debug/performance_optimization.md"
+      ],
+      "rationale": "Discover the existing conditional collector owner and original guide using a declared profile term; metadata does not establish current capability or observations."
+    },
+    {
+      "id": "d89-unrelated-profiler-scope",
+      "split": "development",
+      "category": "owner_discovery_negative",
+      "query": {
+        "text": "network profiler collector metrics",
+        "kinds": [
+          "contract"
+        ]
+      },
+      "relevant_ids": [],
+      "expected_lookup": "retrieval_miss",
+      "rationale": "Collector vocabulary alone does not select a bank-conflict contract or invent a public language API."
+    },
+    {
+      "id": "d90-conflict-metric-is-not-language-api",
+      "split": "development",
+      "category": "owner_discovery_negative",
+      "query": {
+        "text": "ResourceConflictRatio",
+        "kinds": [
+          "api"
+        ]
+      },
+      "relevant_ids": [],
+      "expected_lookup": "retrieval_miss",
+      "rationale": "Collector vocabulary alone does not select a bank-conflict contract or invent a public language API."
+    }
+  ]
+}

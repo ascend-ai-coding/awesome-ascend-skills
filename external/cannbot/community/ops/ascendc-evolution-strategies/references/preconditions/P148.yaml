@@ -1,0 +1,33 @@
+strategy_id: P148
+description: decode/MLA attention，score 上界可静态证明，L0C 可容纳 acc_o+acc_s 适用性检查。
+
+strategy_meta:
+  id: "P148"
+  slug: "P148_fixed_offset_l0c_accumulation"
+  title: "P148: 有界分数下免 running-max，并让 PV 在 L0C 跨 chunk 累加"
+  bottlenecks: [memory_bound, no_overlap]
+  op_families: [attention, flash_attention]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p148_fixed_offset_l0c_accumulation.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p148_fixed_offset_l0c_accumulation.md"
+  playbook_slug: "P148_fixed_offset_l0c_accumulation"
+checks:
+  - id: has_attention
+    type: grep_count
+    pattern: "softmax|Exp|kv|K|V"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未发现 attention/softmax 数据流 → P148 不适用。"
+  - id: has_l0c_accum
+    type: grep_count
+    pattern: "L0C|C0|acc_o|Mmad"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未发现 L0C 累加路径 → P148 不适用。"

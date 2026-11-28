@@ -1,0 +1,40 @@
+strategy_id: P88
+
+strategy_meta:
+  id: "P88"
+  slug: "P88_multiphase_compute_phase_decomposit"
+  title: "P88: Multi-Phase Compute Phase Decomposition (多阶段计算拆分与资源重分配)"
+  bottlenecks: [ub_memory_pressure]
+  op_families: [cv_fusion, moe, special]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p88_multiphase_compute_phase_decomposit.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p88_multiphase_compute_phase_decomposit.md"
+  playbook_slug: "P88_multiphase_compute_phase_decomposit"
+checks:
+  - id: has_initbuffer
+    type: grep_count
+    pattern: "InitBuffer|TBuf|TPipe|pipe|workspace"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 Buffer/pipe 分配 → 无阶段拆分优化空间，不适用 P88。"
+
+  - id: has_stage
+    type: grep_count
+    pattern: "stage|Stage|阶段|phase|Phase|preprocess|postprocess"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到多阶段结构 → 无阶段拆分场景，不适用 P88。"
+
+  - id: has_syncall
+    type: grep_count
+    pattern: "SyncAll.*Reset|pipe-.*Reset|多阶段|phase.*decom"
+    files: [kernel]
+    expected: ">= 0"
+    fail_msg: "已存在阶段拆分逻辑 → 可能冗余，优先验证现有策略效果。"

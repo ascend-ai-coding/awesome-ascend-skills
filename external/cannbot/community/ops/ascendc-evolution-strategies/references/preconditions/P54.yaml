@@ -1,0 +1,40 @@
+strategy_id: P54
+
+strategy_meta:
+  id: "P54"
+  slug: "P54_launch_overhead_optimization"
+  title: "P54: 头开销优化策略 (Launch Overhead Optimization)"
+  bottlenecks: [scalar_loading]
+  op_families: [datapath]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p54_launch_overhead_optimization.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p54_launch_overhead_optimization.md"
+  playbook_slug: "P54_launch_overhead_optimization"
+checks:
+  - id: has_scalar
+    type: grep_count
+    pattern: "Scalar|scalar|标量|Init|初始化|head|overhead"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到标量初始化逻辑 → 无头开销优化空间，不适用 P54。"
+
+  - id: has_struct
+    type: grep_count
+    pattern: "struct.*LocalVars|栈变量|stack|local.*var"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到栈变量/局部变量 → 无栈访问优化空间，不适用 P54。"
+
+  - id: has_member
+    type: grep_count
+    pattern: "成员变量|member|class.*var|寄存器|register"
+    files: [kernel]
+    expected: ">= 0"
+    fail_msg: "已存在成员变量/寄存器优化 → 可能冗余，优先验证现有策略效果。"

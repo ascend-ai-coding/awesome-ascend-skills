@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 class AscendContentFetcher:
     """Ascend文档内容获取器"""
 
-    def __init__(self, base_url="https://www.hiascend.com"):
+    def __init__(self, base_url="https://www.hiascend.com/"):
         self.base_url = base_url
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",

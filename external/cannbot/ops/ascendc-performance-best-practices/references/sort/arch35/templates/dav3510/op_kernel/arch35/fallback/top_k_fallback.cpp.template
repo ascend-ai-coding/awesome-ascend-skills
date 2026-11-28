@@ -1,0 +1,1506 @@
+/*!
+ * \file top_k_kernel.cpp
+ * \brief TopK kernel (bisheng + -xasc 编译) + host 侧 tiling 计算 + launch 分发。
+ *
+ * 计算核心：AscendC 高阶 TopK API（RADIX_SELECT 算法，Ascend 950，O(n)）；
+ * int64 走 AscendC::Sort(RADIX_SORT) 全排序 + 截断（见下方「vendor 缺陷规避」）。
+ * 设计文档：operators/top_k/docs/DESIGN.md；修复记录见 PLAN.md「已知问题和决策记录」。
+ *
+ * 实现要点（与 DESIGN 对齐，偏离处见 PLAN.md）：
+ *  - 两分支：L（inner==1 连续行）/ S（inner>1 跨步行，2D Compact 搬入 + Gather 装配）。
+ *  - 性能轮（round_002，perf/round_001 瓶颈分析 P0/P1/P2）：
+ *    P0 分支 S：dChunk<=256 时输入单次大 Gather 完成 [dChunk,G]->[G,dChunk] 转置装配
+ *      （全矢量化偏移表，stage pad 行预填极值保证 b64 Sort 安全）；输出 UB 内分块转置
+ *      [G,k]->[k,G]（瓦片复用 mergeVal/mergeIdx）后批量 DataCopyPad 写出，替代逐行
+ *      单元素 scatter；gRows<8/容量不足/8|16-bit Gather 偏移越限时回退原 scatter 路径。
+ *    P1 host (dChunk, G) 成本模型：min totalChunks*ceil(rowsPerCore/G)，摊薄 RADIX_SELECT
+ *      每调用循环/同步开销（替代原 dChunk0 首适配）。
+ *  - UB 内行 stride 铁律：TopK 输入/候选/归并 buffer 行 stride 一律为 32B 对齐长度
+ *    （dChunk / kPad / kIdxPad / mergePad），洞区先 Duplicate 预填极值再使用。
+ *  - RADIX_SELECT 不消费 TopkTiling 内容（impl 证据），kernel 侧默认构造直接传入。
+ *  - RADIX_SELECT 选择阶段以 topKInfo.n 为界，[n, inner) padding 不参与选择。
+ *  - 归并轮需要逐行索引，而 RADIX 的 srcIndex 全行共享（impl 证据），
+ *    故归并 TopK 以 outter=1 逐行调用。
+ *  - 排序输出：TopK 以 sorted=false 选择候选，最终由 AscendC::Sort(RADIX_SORT) 完成
+ *    值+索引排序（规避 sorted=true 在本 CANN 版本上运行时 topKInfo 触发的设备异常）。
+ *
+ *  1. TopK RADIX_SELECT 的 16-bit（half/bfloat16）索引收集路径输出错误索引
+ *     （impl GatherGreaterAndEqualKIndex uint16 重载）→ fp16/bf16 升 fp32 域完成
+ *     TopK 选择与排序（Cast 精确转换，选择结果等价），值输出再精确 Cast 回原 dtype。
+ *  2. TopK RADIX_SELECT 的 b64（int64/uint64）路径设备崩溃（aivec error 271，
+ *     "The MPU address access is invalid"，最小用例 [1,32] int64 k=1 复现，
+ *     与 isInitIndex、tmpSize、outter、k 均无关）→ int64 改用 AscendC::Sort
+ *     （RADIX_SORT 支持 int64 值 + int32 索引，稳定排序）全排序 + 前 k 截断。
+ *     chunk 选择、跨 chunk 归并均以 Sort 完成，输出天然有序（无需最终 SortRun）。
+ *
+ * 同步策略（逐项依赖分析，REVIEW B4）：
+ *  - TopK/Sort 高阶 API 内部可能经非 V pipe 写出（实测 fp32 也出现 32B 块粒度 idx 竞态），
+ *    故每次 TopK/Sort 调用后立即 PipeBarrier<PIPE_ALL>，再消费其输出
+ *    （Copy / Cast / DataCopyPad / 作为下一次 TopK|Sort 的 srcIndex 输入）。
+ *  - CopyIn DMA 覆写 srcVal/srcRaw/stage 前 PipeBarrier<PIPE_ALL>（前次 TopK/Sort 可能
+ *    经任意 pipe 读取这些 buffer）。
+ *  - DMA(MTE2)→计算(V) 用 MTE2_V 事件；计算(V)→写出(MTE3) 用 V_MTE3 事件；
+ *    写出(MTE3)→下一组覆写(V) 用 MTE3_V 事件；同 buffer 先 V 写后 MTE2 写用 V_MTE2 事件。
+ */
+
+#include <algorithm>
+#include <cstdint>
+#include <type_traits>
+#include "include/adv_api/sort/sort_tiling_intf.h"
+#include "kernel_operator.h"
+#include "platform/platform_ascendc.h"
+#include "lib/sort/topk.h"        // AscendC::TopK 高阶 API（adv_api，RADIX_SELECT）
+#include "lib/sort/sort.h"        // AscendC::Sort 高阶 API（RADIX_SORT，最终排序 + b64 选择）
+#include "lib/sort/topk_tiling.h" // AscendC::GetTopKMaxMinTmpSize（host 侧）
+#include "top_k_launch.h"
+
+namespace {
+
+// RADIX_SELECT 选择配置：order=UNSET（按 isLargest 实参），sorted=false（选择阶段不排序，
+// 最终排序由 AscendC::Sort 完成，见文件头注释）
+constexpr AscendC::TopKConfig TOPK_RADIX_CFG = {AscendC::TopKAlgo::RADIX_SELECT, AscendC::TopKOrder::UNSET, false};
+
+constexpr int64_t TOPK_UB_RESERVE = 8 * 1024; // 给框架和对齐保留的空间
+constexpr int64_t TOPK_DCHUNK_MAX = 4000;      // 分支 S：DataCopyPad blockCount<=4095
+constexpr int64_t TOPK_CONTIG_DCHUNK_MAX = 4096; // 分支 L：TopK/Sort 支持完整 4096 tile
+constexpr int64_t TOPK_K_MAX = 2048;           // 保证 mergePad=pad32(2*kPad) <= 4096
+constexpr int64_t TOPK_G_MAX = 128;            // 行组上限（收益递减，限制求解范围）
+constexpr int64_t TOPK_TRIN_DCHUNK_MAX = 128;  // 分支 S 输入单次 Gather 转置的 dChunk 上限（小 dChunk 时逐行 Gather 调用开销才占主导）
+
+// 分支 S 输入转置（性能轮 P0）：dChunk<=256 且 dChunk/32 ∈ {1,2,3,4,6,8}（偏移表生成用
+// 移位/magic 除法，仅覆盖这些除数）且归并 buffer 容量足以容纳生成期暂存时，
+// 用单次大 Gather 完成 [dChunk, gRows] -> [gRows, dChunk] 装配，替代逐行小 Gather。
+static inline bool TopKUseTrIn(int64_t dChunk, int64_t mergePad, int64_t stC)
+{
+    if (dChunk > TOPK_TRIN_DCHUNK_MAX || dChunk < 32 || (dChunk & 31) != 0) {
+        return false;
+    }
+    const int64_t c = dChunk >> 5;
+    if (!(c == 1 || c == 2 || c == 3 || c == 4 || c == 6 || c == 8)) {
+        return false;
+    }
+    // 生成期暂存复用 mergeVal/mergeIdx：需 g*mergePad*stC >= g*dChunk*4 且 g*mergePad*4 >= g*dChunk*4
+    return mergePad * stC >= 4 * dChunk && mergePad >= dChunk;
+}
+
+__aicore__ inline int64_t Min64(int64_t a, int64_t b)
+{
+    return a < b ? a : b;
+}
+
+// padding 极值：largest 填 dtype 最小值，smallest 填 dtype 最大值（浮点用 ∓inf，DESIGN §2.3 R4 防御）
+template <typename T>
+__aicore__ inline T GetPadVal(bool isLargest)
+{
+    if constexpr (std::is_same<T, float>::value || std::is_same<T, half>::value ||
+                  std::is_same<T, bfloat16_t>::value) {
+        float inf = __builtin_inff();
+        return static_cast<T>(isLargest ? -inf : inf);
+    } else if constexpr (std::is_same<T, int8_t>::value) {
+        return isLargest ? (T)INT8_MIN : (T)INT8_MAX;
+    } else if constexpr (std::is_same<T, uint8_t>::value) {
+        return isLargest ? (T)0 : (T)UINT8_MAX;
+    } else if constexpr (std::is_same<T, int32_t>::value) {
+        return isLargest ? (T)INT32_MIN : (T)INT32_MAX;
+    } else {
+        return isLargest ? (T)INT64_MIN : (T)INT64_MAX;
+    }
+}
+
+} // namespace
+
+template <typename T>
+class KernelTopK {
+    // 16-bit dtype（half/bfloat16）在 fp32 域内完成 TopK 选择与排序（规避 vendor 16-bit
+    // 索引收集路径缺陷，见文件头注释）。fp16/bf16 -> fp32 Cast 为精确转换，选择结果等价。
+    using Tc = std::conditional_t<std::is_same<T, half>::value || std::is_same<T, bfloat16_t>::value, float, T>;
+    static constexpr bool IS_16BIT = !std::is_same<Tc, T>::value;
+    static constexpr bool IS_64BIT = sizeof(Tc) == 8;
+
+public:
+    __aicore__ inline KernelTopK() {}
+
+    __aicore__ inline void Init(GM_ADDR x, GM_ADDR y, GM_ADDR idx, const TopKLaunchParams& p)
+    {
+        outer_ = p.outer;
+        D_ = p.dimLen;
+        inner_ = p.inner;
+        rows_ = p.rows;
+        k_ = (int32_t)p.k;
+        isLargest_ = (p.isLargest != 0);
+        branch_ = p.branch;
+        rowsPerCore_ = p.rowsPerCore;
+        g_ = (int32_t)p.g;
+        dChunk_ = (int32_t)p.dChunk;
+        kPad_ = (int32_t)p.kPad;
+        kIdxPad_ = (int32_t)p.kIdxPad;
+        mergePad_ = (int32_t)p.mergePad;
+        blockIdx_ = (int64_t)AscendC::GetBlockIdx();
+        padValue_ = GetPadVal<T>(isLargest_);
+        padValueC_ = GetPadVal<Tc>(isLargest_);
+        // T 域输出值行 stride（32B 对齐铁律在原始 dtype 字节域也必须成立：DataCopyPad 的 UB 源
+        // 地址需 32B 对齐。16-bit 时计算域 kPad=align8(k)（匹配 TopK impl 内部 GetKPad<float>），
+        // 而 T 域需 align16(k)，两者不同，故单独计算）
+        const int32_t alignT = 32 / (int32_t)sizeof(T);
+        kPadT_ = (k_ + alignT - 1) / alignT * alignT;
+        useSortSmall_ = (k_ <= 32);
+
+        xGm_.SetGlobalBuffer((__gm__ T*)x);
+        yGm_.SetGlobalBuffer((__gm__ T*)y);
+        idxGm_.SetGlobalBuffer((__gm__ int64_t*)idx);
+
+        // Buffer 规划（DESIGN §1.5 + 修复轮扩展）：行 stride 全部为 32B 对齐长度
+        pipe_.InitBuffer(srcValBuf_, (int64_t)g_ * dChunk_ * sizeof(Tc));      // TopK 输入 [G, dChunk]（计算域）
+        if constexpr (IS_16BIT) {
+            pipe_.InitBuffer(srcRawBuf_, (int64_t)g_ * dChunk_ * sizeof(T));   // GM 原始 dtype DMA 暂存
+            pipe_.InitBuffer(outValBuf_, (int64_t)g_ * kPadT_ * sizeof(T));    // 值输出 Cast 回原 dtype 暂存（T 域 32B 对齐行 stride）
+        }
+        pipe_.InitBuffer(srcIdxBuf_, dChunk_ * sizeof(int32_t));               // 索引基序列 [dChunk]
+        pipe_.InitBuffer(dstValBuf_, (int64_t)g_ * kPad_ * sizeof(Tc));        // TopK 输出值 [G, kPad]
+        pipe_.InitBuffer(dstIdxBuf_, (int64_t)g_ * kIdxPad_ * sizeof(int32_t));
+        pipe_.InitBuffer(runValBuf_, (int64_t)g_ * kPad_ * sizeof(Tc));        // running 候选值
+        pipe_.InitBuffer(runIdxBuf_, (int64_t)g_ * kIdxPad_ * sizeof(int32_t));
+        if constexpr (IS_64BIT) {
+            if (branch_ == TOPK_BRANCH_S) {
+                pipe_.InitBuffer(mergeValBuf_, (int64_t)g_ * mergePad_ * sizeof(Tc));
+                pipe_.InitBuffer(mergeIdxBuf_, (int64_t)g_ * mergePad_ * sizeof(int32_t));
+            }
+        } else {
+            pipe_.InitBuffer(mergeValBuf_, (int64_t)g_ * mergePad_ * sizeof(Tc));
+            pipe_.InitBuffer(mergeIdxBuf_, (int64_t)g_ * mergePad_ * sizeof(int32_t));
+        }
+        pipe_.InitBuffer(tmpBuf_, p.tmpSize);                                  // TopK/Sort API 临时空间
+        pipe_.InitBuffer(outIdx64Buf_, (int64_t)g_ * kIdxPad_ * sizeof(int64_t));
+        // 输出转置基表 + 小 k 批量排序（SortRunSmall）偏移表/掩码（1536B，slot 布局见 EnsureSortTables）
+        if constexpr (!IS_64BIT) {
+            pipe_.InitBuffer(offOutBuf_, 8 * TOPK_G_MAX * sizeof(uint32_t));
+        } else if (branch_ == TOPK_BRANCH_S) {
+            pipe_.InitBuffer(offOutBuf_, 8 * TOPK_G_MAX * sizeof(uint32_t));
+        }
+        if constexpr (IS_64BIT) {
+            // b64 Sort 选择的全排序暂存（chunk: dChunk 元素；merge: 2*kPad 元素）
+            int64_t scratch = dChunk_ > mergePad_ ? (int64_t)dChunk_ : (int64_t)mergePad_;
+            pipe_.InitBuffer(scratchValBuf_, scratch * sizeof(Tc));
+            pipe_.InitBuffer(scratchIdxBuf_, scratch * sizeof(int32_t));
+        }
+        if (branch_ == TOPK_BRANCH_S) {
+            pipe_.InitBuffer(stageBuf_, (int64_t)g_ * dChunk_ * sizeof(T));    // GM 2D 搬入暂存 [n_c, G]
+            pipe_.InitBuffer(offBuf_, dChunk_ * sizeof(uint32_t));             // Gather 偏移表（逐行装配路径）
+            // 输入单次 Gather 转置条件（与 host 侧 TopKUseTrIn / UB 预算记账严格一致；
+            // __aicore__ 上下文无法调用 host 静态函数，此处展开同一谓词）
+            const int64_t cTr = dChunk_ >> 5;
+            useTrIn_ = (dChunk_ <= TOPK_TRIN_DCHUNK_MAX && dChunk_ >= 32 && (dChunk_ & 31) == 0 &&
+                        (cTr == 1 || cTr == 2 || cTr == 3 || cTr == 4 || cTr == 6 || cTr == 8) &&
+                        (int64_t)mergePad_ * (int64_t)sizeof(Tc) >= 4 * (int64_t)dChunk_ &&
+                        mergePad_ >= dChunk_);
+            if (useTrIn_) {
+                pipe_.InitBuffer(tblBuf_, (int64_t)g_ * dChunk_ * sizeof(uint32_t)); // 输入转置全量偏移表
+            }
+            // 输出转置 Gather 偏移范围（8/16-bit 操作数 srcOffset 上限，超出回退 scatter）
+            const int64_t stB = (int64_t)sizeof(T);
+            if (stB == 1 || stB == 2) {
+                int64_t maxOff = (int64_t)(g_ - 1) * ValStrideT() * stB + (int64_t)(k_ - 1) * stB;
+                outOffOk_ = (maxOff <= (stB == 1 ? 65535 : 131071));
+            }
+        }
+        srcVal_ = srcValBuf_.Get<Tc>();
+        if constexpr (IS_16BIT) {
+            srcRaw_ = srcRawBuf_.Get<T>();
+            outValT_ = outValBuf_.Get<T>();
+        } else {
+            srcRaw_ = srcVal_.template ReinterpretCast<T>();   // Tc==T，同址别名
+            outValT_ = srcVal_.template ReinterpretCast<T>();  // 非 16-bit 不使用（占位）
+        }
+        srcIdx_ = srcIdxBuf_.Get<int32_t>();
+        if constexpr (!IS_64BIT) {
+            offOutU32_ = offOutBuf_.Get<uint32_t>();
+        } else if (branch_ == TOPK_BRANCH_S) {
+            offOutU32_ = offOutBuf_.Get<uint32_t>();
+        }
+        dstVal_ = dstValBuf_.Get<Tc>();
+        dstIdx_ = dstIdxBuf_.Get<int32_t>();
+        runVal_ = runValBuf_.Get<Tc>();
+        runIdx_ = runIdxBuf_.Get<int32_t>();
+        if constexpr (IS_64BIT) {
+            if (branch_ == TOPK_BRANCH_L) {
+                // Chunk input/index are dead while merging.  Their capacities
+                // are at least mergePad in the selected contiguous tiling, so
+                // reuse them instead of reserving another pair of UB buffers.
+                mergeVal_ = srcVal_;
+                mergeIdx_ = srcIdx_;
+            } else {
+                mergeVal_ = mergeValBuf_.Get<Tc>();
+                mergeIdx_ = mergeIdxBuf_.Get<int32_t>();
+            }
+        } else {
+            mergeVal_ = mergeValBuf_.Get<Tc>();
+            mergeIdx_ = mergeIdxBuf_.Get<int32_t>();
+        }
+        tmpLocal_ = tmpBuf_.Get<uint8_t>();
+        outIdx64_ = outIdx64Buf_.Get<int64_t>();
+        if constexpr (IS_64BIT) {
+            scratchVal_ = scratchValBuf_.Get<Tc>();
+            scratchIdx_ = scratchIdxBuf_.Get<int32_t>();
+        }
+        if (branch_ == TOPK_BRANCH_S) {
+            stage_ = stageBuf_.Get<T>();
+            offU32_ = offBuf_.Get<uint32_t>();
+            if (useTrIn_) {
+                inTblU32_ = tblBuf_.Get<uint32_t>();
+            }
+        }
+
+        evMte2V_ = GetTPipePtr()->FetchEventID(AscendC::HardEvent::MTE2_V);
+        evVMte2_ = GetTPipePtr()->FetchEventID(AscendC::HardEvent::V_MTE2);
+        evVMte3_ = GetTPipePtr()->FetchEventID(AscendC::HardEvent::V_MTE3);
+        evMte3V_ = GetTPipePtr()->FetchEventID(AscendC::HardEvent::MTE3_V);
+        if constexpr (IS_64BIT) {
+            evVS_ = GetTPipePtr()->FetchEventID(AscendC::HardEvent::V_S);
+        }
+
+        // 原始 dtype 域洞区一次性预填极值（[n_c, dChunk) 不参与 RADIX 选择；16-bit 在 Cast 时
+        // 转为计算域极值。DESIGN §1.2.1 推论 c）
+        AscendC::Duplicate<T>(srcRaw_, padValue_, (int64_t)g_ * dChunk_);
+        if constexpr (sizeof(T) == 8) {
+            // b64 DMA 补齐值不能代替完整极值；分支 L 在搬入后恢复块内洞区。
+            AscendC::SetPadValue<T>(padValue_);
+        }
+        SyncVMte2();
+    }
+
+    __aicore__ inline void Process()
+    {
+        int64_t rowStart = blockIdx_ * rowsPerCore_;
+        int64_t rowEnd = Min64(rows_, rowStart + rowsPerCore_);
+        int64_t r = rowStart;
+        while (r < rowEnd) {
+            int32_t gRows = (int32_t)Min64((int64_t)g_, rowEnd - r);
+            if (branch_ == TOPK_BRANCH_S) {
+                int64_t o = r / inner_;
+                int64_t s0 = r % inner_;
+                gRows = (int32_t)Min64((int64_t)gRows, inner_ - s0); // 行组不跨 outer 边界
+                ProcessGroupS(o, s0, gRows);
+            } else {
+                DoChunksL(r, gRows, 0, D_);
+                FinalizeContig(r, gRows);
+            }
+            r += gRows;
+        }
+    }
+
+private:
+    // ---------------- 流水线同步 ----------------
+    __aicore__ inline void SyncMte2V()
+    {
+        AscendC::SetFlag<AscendC::HardEvent::MTE2_V>(evMte2V_);
+        AscendC::WaitFlag<AscendC::HardEvent::MTE2_V>(evMte2V_);
+    }
+    __aicore__ inline void SyncVMte2()
+    {
+        AscendC::SetFlag<AscendC::HardEvent::V_MTE2>(evVMte2_);
+        AscendC::WaitFlag<AscendC::HardEvent::V_MTE2>(evVMte2_);
+    }
+    __aicore__ inline void SyncVMte3()
+    {
+        AscendC::SetFlag<AscendC::HardEvent::V_MTE3>(evVMte3_);
+        AscendC::WaitFlag<AscendC::HardEvent::V_MTE3>(evVMte3_);
+    }
+    __aicore__ inline void SyncMte3V()
+    {
+        AscendC::SetFlag<AscendC::HardEvent::MTE3_V>(evMte3V_);
+        AscendC::WaitFlag<AscendC::HardEvent::MTE3_V>(evMte3V_);
+    }
+    __aicore__ inline void SyncVS()
+    {
+        AscendC::SetFlag<AscendC::HardEvent::V_S>(evVS_);
+        AscendC::WaitFlag<AscendC::HardEvent::V_S>(evVS_);
+    }
+    // 高阶 TopK/Sort 输出消费前的跨 pipe 屏障（REVIEW B4：高阶 API 内部可能经非 V pipe 写出）
+    __aicore__ inline void BarrierAfterAdvApi()
+    {
+        AscendC::PipeBarrier<PIPE_ALL>();
+    }
+    // 高阶 TopK/Sort 输入就绪屏障：输入由 Copy/Duplicate/Cast（V）写入，
+    // 高阶 API 内部可能经非 V pipe 读取，屏障确保写入全局可见
+    __aicore__ inline void BarrierBeforeAdvApi()
+    {
+        AscendC::PipeBarrier<PIPE_ALL>();
+    }
+
+    // 显式设置块内 32B 补齐长度。b64 的临时 DMA 填充值需在搬入后恢复为完整极值，
+    // 其余 dtype 直接使用 paddingValue；块外洞区由 ChunkPreamble 预填。
+    __aicore__ inline AscendC::DataCopyPadExtParams<T> MakePadParams(int32_t nElems)
+    {
+        AscendC::DataCopyPadExtParams<T> pad{};
+        uint32_t tailBytes = ((uint32_t)(nElems * (int32_t)sizeof(T))) % 32u;
+        pad.rightPadding = (uint8_t)(tailBytes == 0 ? 0 : (32u - tailBytes) / sizeof(T));
+        if constexpr (sizeof(T) == 8) {
+            pad.isPad = false; // b64 paddingValue 只能为 0；搬入后修复块内洞区
+        } else {
+            pad.isPad = true;
+            pad.paddingValue = padValue_;
+        }
+        return pad;
+    }
+
+    // ---------------- 公共计算片段 ----------------
+    // 每 chunk 前置：TopK 输出洞区预填（API 不写 [k_c, kPad)，内容=预填的极值/0），生成全局索引
+    __aicore__ inline void ChunkPreamble(int32_t gRows, int32_t nC, int64_t d0)
+    {
+        if constexpr (IS_64BIT) {
+            // b64 走 Sort 全排序（消费整个 dChunk 行，无 topKInfo.n 边界保护），
+            // 仅尾 chunk 的洞区 [n_c, dChunk) 需要预填极值。完整 chunk 会被 DMA
+            // 全量覆盖；先清空整行只会增加 UB 写带宽。填充起点按 32B 向下
+            // 对齐，随后 DMA 覆写其中的有效元素。
+            if (nC < dChunk_) {
+                constexpr int32_t alignElems = 32 / (int32_t)sizeof(Tc);
+                const int32_t fillStart = nC / alignElems * alignElems;
+                for (int32_t g = 0; g < gRows; g++) {
+                    AscendC::Duplicate<Tc>(srcVal_[g * dChunk_ + fillStart], padValueC_, dChunk_ - fillStart);
+                }
+            }
+        } else {
+            // TopK API may leave aligned output holes untouched.  The b64 Sort
+            // path writes a complete sorted row and does not need this setup.
+            AscendC::Duplicate<Tc>(dstVal_, padValueC_, (int64_t)gRows * kPad_);
+            AscendC::Duplicate<int32_t>(dstIdx_, 0, (int64_t)gRows * kIdxPad_);
+        }
+        AscendC::CreateVecIndex<int32_t>(srcIdx_, (int32_t)d0, dChunk_);
+    }
+
+    // 16-bit：原始 dtype -> fp32 计算域（精确转换）；其他 dtype 为同址别名无操作
+    __aicore__ inline void CastToCompute(int32_t gRows)
+    {
+        if constexpr (IS_16BIT) {
+            AscendC::Cast<Tc, T>(srcVal_, srcRaw_, AscendC::RoundMode::CAST_NONE, (int64_t)gRows * dChunk_);
+        }
+    }
+
+    // b64（vendor TopK b64 路径崩溃规避）：Sort 全排序 + 前 kPad 截断作为 chunk 选择。
+    // 排序后洞区（极值）排在末尾，前 k_c 即 top-k_c；dst 行内 [k_c, kPad) 为更靠后的真实候选，
+    // 作为归并输入合法（配对正确、索引为全局索引）。
+    __aicore__ inline void SortSelectChunk(int32_t gRows)
+    {
+        static constexpr AscendC::SortConfig sortDesc = {AscendC::SortType::RADIX_SORT, true};
+        static constexpr AscendC::SortConfig sortAsc = {AscendC::SortType::RADIX_SORT, false};
+        for (int32_t g = 0; g < gRows; g++) {
+            AscendC::LocalTensor<Tc> dstV = scratchVal_;
+            AscendC::LocalTensor<int32_t> dstI = scratchIdx_;
+            BarrierBeforeAdvApi();
+            if (isLargest_) {
+                AscendC::Sort<Tc, int32_t, false, sortDesc>(dstV, dstI, srcVal_[g * dChunk_], srcIdx_, tmpLocal_,
+                                                            (uint32_t)dChunk_);
+            } else {
+                AscendC::Sort<Tc, int32_t, false, sortAsc>(dstV, dstI, srcVal_[g * dChunk_], srcIdx_, tmpLocal_,
+                                                           (uint32_t)dChunk_);
+            }
+            BarrierAfterAdvApi();
+            AscendC::Copy<Tc>(dstVal_[g * kPad_], scratchVal_, kPad_);
+            AscendC::Copy<int32_t>(dstIdx_[g * kIdxPad_], scratchIdx_, kIdxPad_);
+        }
+    }
+
+    // int64 RADIX_SELECT 在当前 CANN 上会触发设备异常。先用 b64 树形归约确认
+    // 整个 chunk 可无损表示为 int32；命中后复用现有 UB 分配作为 int32 输入/输出，
+    // 以 int32 RADIX_SELECT 代替 int64 全排序。任一行越界则整组回落原 b64 Sort 路径。
+    __aicore__ inline bool Int64ChunkFitsInt32(int32_t gRows, int32_t nC)
+    {
+        if constexpr (!IS_64BIT) {
+            return false;
+        }
+        AscendC::LocalTensor<int64_t> range = scratchVal_;
+        AscendC::LocalTensor<int64_t> work = tmpLocal_.template ReinterpretCast<int64_t>();
+        if (nC == dChunk_) {
+            // 完整 chunk 的 G 行在 UB 连续，可合并为一对归约并只做两次标量读取。
+            AscendC::ReduceMax<int64_t>(range, srcVal_, work, gRows * dChunk_, false);
+            AscendC::ReduceMin<int64_t>(range[1], srcVal_, work, gRows * dChunk_, false);
+            SyncVS();
+            return range.GetValue(0) <= (int64_t)INT32_MAX && range.GetValue(1) >= (int64_t)INT32_MIN;
+        }
+        for (int32_t g = 0; g < gRows; g++) {
+            AscendC::ReduceMax<int64_t>(range[2 * g], srcVal_[g * dChunk_], work, nC, false);
+            AscendC::ReduceMin<int64_t>(range[2 * g + 1], srcVal_[g * dChunk_], work, nC, false);
+        }
+        SyncVS();
+        bool fits = true;
+        for (int32_t g = 0; g < gRows; g++) {
+            const int64_t maxV = range.GetValue(2 * g);
+            const int64_t minV = range.GetValue(2 * g + 1);
+            fits = fits && maxV <= (int64_t)INT32_MAX && minV >= (int64_t)INT32_MIN;
+        }
+        return fits;
+    }
+
+    __aicore__ inline AscendC::LocalTensor<int32_t> Int64NarrowChunkValues()
+    {
+        // Branch S can reuse its merge-value allocation while the current
+        // chunk is selected; branch L has no dedicated merge allocation.
+        return branch_ == TOPK_BRANCH_S ? mergeVal_.template ReinterpretCast<int32_t>() : scratchIdx_;
+    }
+
+    __aicore__ inline AscendC::LocalTensor<int32_t> Int64NarrowInputValues()
+    {
+        // The strided input has already been assembled in srcVal_, so stage_
+        // is dead until the next chunk and provides enough storage for the
+        // narrowed G-row tile without increasing UB usage.
+        return branch_ == TOPK_BRANCH_S ? stage_.template ReinterpretCast<int32_t>() :
+                                         scratchVal_.template ReinterpretCast<int32_t>();
+    }
+
+    __aicore__ inline AscendC::LocalTensor<int32_t> Int64NarrowMergeIndices()
+    {
+        return branch_ == TOPK_BRANCH_S ? mergeIdx_ : srcIdx_;
+    }
+
+    __aicore__ inline void SelectInt64ChunkAsInt32(int32_t gRows, int32_t nC, int32_t kC)
+    {
+        AscendC::LocalTensor<int32_t> src32 = Int64NarrowInputValues();
+        AscendC::LocalTensor<int32_t> dst32 = Int64NarrowChunkValues();
+        AscendC::Cast<int32_t, int64_t>(src32, srcVal_, AscendC::RoundMode::CAST_NONE,
+                                       (int64_t)gRows * dChunk_);
+        AscendC::Duplicate<int32_t>(dst32, GetPadVal<int32_t>(isLargest_), (int64_t)gRows * kPad_);
+        AscendC::Duplicate<int32_t>(dstIdx_, 0, (int64_t)gRows * kIdxPad_);
+        BarrierBeforeAdvApi();
+        if (kC == k_ || gRows == 1) {
+            AscendC::TopKInfo info{gRows, dChunk_, nC};
+            AscendC::TopK<int32_t, true, false, false, AscendC::TopKMode::TOPK_NORMAL, TOPK_RADIX_CFG>(
+                dst32, dstIdx_, src32, srcIdx_, finishLocal_, tmpLocal_, kC, topkTiling_, info, isLargest_);
+            BarrierAfterAdvApi();
+        } else {
+            AscendC::TopKInfo info{1, dChunk_, nC};
+            for (int32_t g = 0; g < gRows; g++) {
+                AscendC::TopK<int32_t, true, false, false, AscendC::TopKMode::TOPK_NORMAL, TOPK_RADIX_CFG>(
+                    dst32[g * kPad_], dstIdx_[g * kIdxPad_], src32[g * dChunk_], srcIdx_, finishLocal_, tmpLocal_,
+                    kC, topkTiling_, info, isLargest_);
+                BarrierAfterAdvApi();
+            }
+        }
+    }
+
+    __aicore__ inline void WidenInt64NarrowChunk(AscendC::LocalTensor<int64_t> dst, int32_t gRows)
+    {
+        AscendC::Cast<int64_t, int32_t>(dst, Int64NarrowChunkValues(), AscendC::RoundMode::CAST_NONE,
+                                       (int64_t)gRows * kPad_);
+    }
+
+    // running/current 均来自无损 int32 chunk 时，候选也必在 int32 范围。将 running 临时窄化，
+    // 在复用的 srcVal/srcIdx buffer 中拼接候选并用 int32 TopK 归并，结果再精确扩回 int64。
+    __aicore__ inline void MergeInt64Narrow(int32_t gRows)
+    {
+        AscendC::LocalTensor<int32_t> mergeV = srcVal_.template ReinterpretCast<int32_t>();
+        AscendC::LocalTensor<int32_t> mergeI = Int64NarrowMergeIndices();
+        AscendC::LocalTensor<int32_t> outV = dstVal_.template ReinterpretCast<int32_t>();
+        AscendC::Duplicate<int32_t>(mergeI, 0, (int64_t)gRows * mergePad_);
+        for (int32_t g = 0; g < gRows; g++) {
+            AscendC::Cast<int32_t, int64_t>(mergeV[g * mergePad_], runVal_[g * kPad_],
+                                           AscendC::RoundMode::CAST_NONE, kPad_);
+            AscendC::Copy<int32_t>(mergeI[g * mergePad_], runIdx_[g * kIdxPad_], kIdxPad_);
+            AscendC::Copy<int32_t>(mergeV[g * mergePad_ + kPad_], Int64NarrowChunkValues()[g * kPad_], kPad_);
+            AscendC::Copy<int32_t>(mergeI[g * mergePad_ + kPad_], dstIdx_[g * kIdxPad_], kIdxPad_);
+        }
+        AscendC::Duplicate<int32_t>(outV, GetPadVal<int32_t>(isLargest_), (int64_t)gRows * kPad_);
+        AscendC::Duplicate<int32_t>(dstIdx_, 0, (int64_t)gRows * kIdxPad_);
+        AscendC::TopKInfo info{1, mergePad_, 2 * kPad_};
+        for (int32_t g = 0; g < gRows; g++) {
+            BarrierBeforeAdvApi();
+            AscendC::TopK<int32_t, true, false, false, AscendC::TopKMode::TOPK_NORMAL, TOPK_RADIX_CFG>(
+                outV[g * kPad_], dstIdx_[g * kIdxPad_], mergeV[g * mergePad_], mergeI[g * mergePad_],
+                finishLocal_, tmpLocal_, k_, topkTiling_, info, isLargest_);
+            BarrierAfterAdvApi();
+        }
+        AscendC::Cast<int64_t, int32_t>(runVal_, outV, AscendC::RoundMode::CAST_NONE,
+                                       (int64_t)gRows * kPad_);
+        AscendC::Copy<int32_t>(runIdx_, dstIdx_, (int64_t)gRows * kIdxPad_);
+    }
+
+    // 单次 chunk TopK + 跨 chunk 候选归并。first=true 时直接将 dst 设为 running 候选
+    __aicore__ inline void RunTopK(int32_t gRows, int32_t nC, int32_t kC, bool& first, bool& runNarrow)
+    {
+        if constexpr (IS_64BIT) {
+            const int64_t scratchElems = dChunk_ > mergePad_ ? (int64_t)dChunk_ : (int64_t)mergePad_;
+            // Branch L aliases int32 values and indices onto its scratch buffers,
+            // so every capacity must be gated explicitly. Branch S reuses its
+            // dead staging and dedicated merge buffers, which are already sized
+            // for the full G-row tile by the host UB model.
+            const int64_t indexElems = D_ > dChunk_ ? (int64_t)gRows * mergePad_ :
+                                                     (int64_t)gRows * kIdxPad_;
+            const bool narrowCapacityOk = branch_ == TOPK_BRANCH_S ||
+                ((int64_t)gRows * dChunk_ <= 2 * scratchElems &&
+                 (int64_t)gRows * kPad_ <= scratchElems && indexElems <= dChunk_);
+            if (narrowCapacityOk && Int64ChunkFitsInt32(gRows, nC)) {
+                SelectInt64ChunkAsInt32(gRows, nC, kC);
+                if (first) {
+                    WidenInt64NarrowChunk(runVal_, gRows);
+                    AscendC::Copy<int32_t>(runIdx_, dstIdx_, (int64_t)gRows * kIdxPad_);
+                    first = false;
+                    runNarrow = true;
+                } else if (runNarrow) {
+                    MergeInt64Narrow(gRows);
+                } else {
+                    WidenInt64NarrowChunk(dstVal_, gRows);
+                    Merge(gRows);
+                }
+                return;
+            }
+            SortSelectChunk(gRows);
+            runNarrow = false;
+        } else {
+            if (kC == k_ || gRows == 1) {
+                // 满 k 的 chunk：outter=gRows 单次调用（impl 输出行 stride GetKPad<T>(k)==kPad_ 一致）
+                AscendC::TopKInfo info{gRows, dChunk_, nC};
+                AscendC::TopK<Tc, true, false, false, AscendC::TopKMode::TOPK_NORMAL, TOPK_RADIX_CFG>(
+                    dstVal_, dstIdx_, srcVal_, srcIdx_, finishLocal_, tmpLocal_, kC, topkTiling_, info,
+                    isLargest_);
+                BarrierAfterAdvApi();
+            } else {
+                // 尾 chunk kC<k：impl 输出行 stride 为 GetKPad<T>(kC)!=kPad_，多行会错位，
+                // 改逐行 outter=1 调用（每行输出写在行首偏移 0，与 buffer 行 stride 无关）
+                AscendC::TopKInfo info{1, dChunk_, nC};
+                for (int32_t g = 0; g < gRows; g++) {
+                    AscendC::TopK<Tc, true, false, false, AscendC::TopKMode::TOPK_NORMAL, TOPK_RADIX_CFG>(
+                        dstVal_[g * kPad_], dstIdx_[g * kIdxPad_], srcVal_[g * dChunk_], srcIdx_, finishLocal_,
+                        tmpLocal_, kC, topkTiling_, info, isLargest_);
+                    BarrierAfterAdvApi();
+                }
+            }
+        }
+        if (first) {
+            SwapRun();
+            first = false;
+        } else {
+            Merge(gRows);
+        }
+    }
+
+    __aicore__ inline void SwapRun()
+    {
+        AscendC::LocalTensor<Tc> tmpV = runVal_;
+        runVal_ = dstVal_;
+        dstVal_ = tmpV;
+        AscendC::LocalTensor<int32_t> tmpI = runIdx_;
+        runIdx_ = dstIdx_;
+        dstIdx_ = tmpI;
+    }
+
+    // 跨 chunk 归并：merge 行布局 [run kPad 块 | dst kPad 块]，n=2*kPad，洞区 value=极值、idx=0
+    __aicore__ inline void Merge(int32_t gRows)
+    {
+        AscendC::Duplicate<int32_t>(mergeIdx_, 0, (int64_t)gRows * mergePad_);
+        for (int32_t g = 0; g < gRows; g++) {
+            AscendC::Copy<Tc>(mergeVal_[g * mergePad_], runVal_[g * kPad_], kPad_);
+            AscendC::Copy<int32_t>(mergeIdx_[g * mergePad_], runIdx_[g * kIdxPad_], kIdxPad_);
+            AscendC::Copy<Tc>(mergeVal_[g * mergePad_ + kPad_], dstVal_[g * kPad_], kPad_);
+            AscendC::Copy<int32_t>(mergeIdx_[g * mergePad_ + kPad_], dstIdx_[g * kIdxPad_], kIdxPad_);
+        }
+        if constexpr (IS_64BIT) {
+            // b64：Sort 全排序归并（配对排序，输出天然有序）
+            static constexpr AscendC::SortConfig sortDesc = {AscendC::SortType::RADIX_SORT, true};
+            static constexpr AscendC::SortConfig sortAsc = {AscendC::SortType::RADIX_SORT, false};
+            for (int32_t g = 0; g < gRows; g++) {
+                AscendC::LocalTensor<Tc> dstV = scratchVal_;
+                AscendC::LocalTensor<int32_t> dstI = scratchIdx_;
+                BarrierBeforeAdvApi();
+                if (isLargest_) {
+                    AscendC::Sort<Tc, int32_t, false, sortDesc>(dstV, dstI, mergeVal_[g * mergePad_],
+                                                                mergeIdx_[g * mergePad_], tmpLocal_,
+                                                                (uint32_t)(2 * kPad_));
+                } else {
+                    AscendC::Sort<Tc, int32_t, false, sortAsc>(dstV, dstI, mergeVal_[g * mergePad_],
+                                                               mergeIdx_[g * mergePad_], tmpLocal_,
+                                                               (uint32_t)(2 * kPad_));
+                }
+                BarrierAfterAdvApi();
+                AscendC::Copy<Tc>(runVal_[g * kPad_], scratchVal_, kPad_);
+                AscendC::Copy<int32_t>(runIdx_[g * kIdxPad_], scratchIdx_, kIdxPad_);
+            }
+        } else {
+            // RADIX 的 srcIndex 全行共享（impl: TopKNormal 每行传入同一 realIndexSrc），
+            // 归并需要逐行全局索引 → outter=1 逐行调用
+            AscendC::TopKInfo info{1, mergePad_, 2 * kPad_};
+            for (int32_t g = 0; g < gRows; g++) {
+                AscendC::TopK<Tc, true, false, false, AscendC::TopKMode::TOPK_NORMAL, TOPK_RADIX_CFG>(
+                    runVal_[g * kPad_], runIdx_[g * kIdxPad_], mergeVal_[g * mergePad_], mergeIdx_[g * mergePad_],
+                    finishLocal_, tmpLocal_, k_, topkTiling_, info, isLargest_);
+                BarrierAfterAdvApi();
+            }
+        }
+    }
+
+    // 最终排序：running 候选（前 k 个，无序）→ dst（有序），Sort dst/src 不可重叠故先排入 dst 再交换。
+    // b64 候选经 Sort 归并已天然有序，跳过。
+    __aicore__ inline void SortRun(int32_t gRows)
+    {
+        if constexpr (IS_64BIT) {
+            if (!runNarrow_) {
+                return;
+            }
+            // int32 RADIX_SELECT 输出无序。最终在 int32 域排序 k 个候选，避免重新引入 b64 Sort。
+            static constexpr AscendC::SortConfig sortDesc = {AscendC::SortType::RADIX_SORT, true};
+            static constexpr AscendC::SortConfig sortAsc = {AscendC::SortType::RADIX_SORT, false};
+            AscendC::LocalTensor<int32_t> src32 = dstVal_.template ReinterpretCast<int32_t>();
+            AscendC::LocalTensor<int32_t> dst32 = srcVal_.template ReinterpretCast<int32_t>();
+            AscendC::LocalTensor<int32_t> dstI = Int64NarrowMergeIndices();
+            AscendC::Cast<int32_t, int64_t>(src32, runVal_, AscendC::RoundMode::CAST_NONE,
+                                           (int64_t)gRows * kPad_);
+            for (int32_t g = 0; g < gRows; g++) {
+                AscendC::LocalTensor<int32_t> dstV = dst32[g * kPad_];
+                AscendC::LocalTensor<int32_t> dstIndex = dstI[g * kIdxPad_];
+                BarrierBeforeAdvApi();
+                if (isLargest_) {
+                    AscendC::Sort<int32_t, int32_t, false, sortDesc>(dstV, dstIndex, src32[g * kPad_],
+                                                                    runIdx_[g * kIdxPad_], tmpLocal_,
+                                                                    (uint32_t)k_);
+                } else {
+                    AscendC::Sort<int32_t, int32_t, false, sortAsc>(dstV, dstIndex, src32[g * kPad_],
+                                                                   runIdx_[g * kIdxPad_], tmpLocal_,
+                                                                   (uint32_t)k_);
+                }
+                BarrierAfterAdvApi();
+            }
+            AscendC::Cast<int64_t, int32_t>(runVal_, dst32, AscendC::RoundMode::CAST_NONE,
+                                           (int64_t)gRows * kPad_);
+            AscendC::Copy<int32_t>(runIdx_, dstI, (int64_t)gRows * kIdxPad_);
+            runNarrow_ = false;
+            return;
+        }
+        // 小 k 批量排序（性能轮 P0 追加）：逐行 Sort 单调用固定开销在小 k 下占绝对主导
+        if (useSortSmall_ && gRows > 1) {
+            const int32_t alignC = 32 / (int32_t)sizeof(Tc);
+            const int32_t GP = (gRows + alignC - 1) / alignC * alignC;
+            // 瓦片/暂存容量检查（mergeVal/mergeIdx 作 [k,GP] 排序瓦片，dstVal/dstIdx 作 CE 暂存行）
+            if ((int64_t)k_ * GP <= (int64_t)g_ * mergePad_ && 2 * GP <= (int64_t)g_ * kPad_ &&
+                2 * GP <= (int64_t)g_ * kIdxPad_) {
+                SortRunSmall(gRows, GP);
+                return;
+            }
+        }
+        // 最终排序配置：RADIX_SORT，isDescend 为编译期参数（largest 降序 / smallest 升序）。
+        // SortConfig 仅在 device 编译可见（__NPU_ARCH__ 守卫），故定义为函数局部 static constexpr
+        // （与 vendor impl TopKRaidxSelect 内用法一致）
+        static constexpr AscendC::SortConfig sortDesc = {AscendC::SortType::RADIX_SORT, true};
+        static constexpr AscendC::SortConfig sortAsc = {AscendC::SortType::RADIX_SORT, false};
+        for (int32_t g = 0; g < gRows; g++) {
+            // Sort 带 tmp 重载的 dst 参数为非常量左值引用，先取局部句柄
+            AscendC::LocalTensor<Tc> dstV = dstVal_[g * kPad_];
+            AscendC::LocalTensor<int32_t> dstI = dstIdx_[g * kIdxPad_];
+            if (isLargest_) {
+                AscendC::Sort<Tc, int32_t, false, sortDesc>(dstV, dstI, runVal_[g * kPad_],
+                                                            runIdx_[g * kIdxPad_], tmpLocal_, (uint32_t)k_);
+            } else {
+                AscendC::Sort<Tc, int32_t, false, sortAsc>(dstV, dstI, runVal_[g * kPad_],
+                                                           runIdx_[g * kIdxPad_], tmpLocal_, (uint32_t)k_);
+            }
+            BarrierAfterAdvApi();
+        }
+        SwapRun();
+    }
+
+    // SortRunSmall 偏移表/掩码 slot 布局（offOutBuf_，uint32 视角，槽宽=TOPK_G_MAX 项）：
+    //   [0,G)      FinalizeStrided 输出转置 offV   [G,2G)    输出转置 offI
+    //   [2G,3G)    排序正向转置 offV2（b*kPad*stC） [3G,4G)   排序正向转置 offI2（b*kIdxPad*4）
+    //   [4G,4G+32) 排序反向转置 offR（j*GP*stC）    [4G+32,4G+64) 排序反向转置 offRI（j*GP*4）
+    //   [4G+64,.+68) Compare/Select 掩码（16B）     [4G+72,.+76) nan 处理第二掩码（16B）
+    //   掩码 slot 地址均为 32B 对齐（(4G+64)*4=1040(G=64)→ 不满足! 见下方对齐注释）
+    __aicore__ inline void EnsureSortTables(int32_t gRows, int32_t GP)
+    {
+        if (gRows == sortTblGRows_) {
+            return;
+        }
+        const int32_t stC = (int32_t)sizeof(Tc);
+        AscendC::LocalTensor<int32_t> offV2 = offOutU32_[2 * TOPK_G_MAX].ReinterpretCast<int32_t>();
+        AscendC::LocalTensor<int32_t> offI2 = offOutU32_[3 * TOPK_G_MAX].ReinterpretCast<int32_t>();
+        AscendC::LocalTensor<int32_t> offR = offOutU32_[4 * TOPK_G_MAX].ReinterpretCast<int32_t>();
+        AscendC::LocalTensor<int32_t> offRI = offOutU32_[4 * TOPK_G_MAX + 32].ReinterpretCast<int32_t>();
+        AscendC::CreateVecIndex<int32_t>(offI2, 0, gRows); // b 序列暂存于 offI2 区
+        AscendC::Muls<int32_t>(offV2, offI2, kPad_ * stC, gRows);
+        AscendC::Muls<int32_t>(offI2, offI2, kIdxPad_ * (int32_t)sizeof(int32_t), gRows);
+        AscendC::CreateVecIndex<int32_t>(offRI, 0, 32); // j 序列暂存于 offRI 区（k<=32）
+        AscendC::Muls<int32_t>(offR, offRI, GP * stC, 32);
+        AscendC::Muls<int32_t>(offRI, offRI, GP * (int32_t)sizeof(int32_t), 32);
+        sortTblGRows_ = gRows;
+    }
+
+    template <bool SameAsFinalOrder>
+    __aicore__ inline void CompareExchangeSmall(AscendC::LocalTensor<Tc> srtVal,
+                                                 AscendC::LocalTensor<int32_t> srtIdx,
+                                                 AscendC::LocalTensor<Tc> scrV,
+                                                 AscendC::LocalTensor<int32_t> scrI,
+                                                 AscendC::LocalTensor<uint8_t> mask,
+                                                 AscendC::LocalTensor<uint8_t> mask2,
+                                                 int32_t gRows, int32_t GP, int32_t left, int32_t right)
+    {
+        AscendC::LocalTensor<Tc> a = srtVal[left * GP];
+        AscendC::LocalTensor<Tc> b = srtVal[right * GP];
+        AscendC::LocalTensor<int32_t> ia = srtIdx[left * GP];
+        AscendC::LocalTensor<int32_t> ib = srtIdx[right * GP];
+        const bool descending = SameAsFinalOrder ? isLargest_ : !isLargest_;
+        const AscendC::CMPMODE cmp = descending ? AscendC::CMPMODE::GT : AscendC::CMPMODE::LT;
+        AscendC::Compare(mask, a, b, cmp, (uint32_t)gRows);
+        if constexpr (std::is_same<Tc, float>::value) {
+            if (descending) {
+                AscendC::Compare(mask2, a, a, AscendC::CMPMODE::NE, (uint32_t)gRows);
+            } else {
+                AscendC::Compare(mask2, b, b, AscendC::CMPMODE::NE, (uint32_t)gRows);
+            }
+            AscendC::Or(mask, mask, mask2, 32);
+        }
+        AscendC::Select(scrV, mask, a, b, AscendC::SELMODE::VSEL_TENSOR_TENSOR_MODE, (uint32_t)gRows);
+        AscendC::Select(scrV[GP], mask, b, a, AscendC::SELMODE::VSEL_TENSOR_TENSOR_MODE, (uint32_t)gRows);
+        AscendC::Select(scrI, mask, ia, ib, AscendC::SELMODE::VSEL_TENSOR_TENSOR_MODE, (uint32_t)gRows);
+        AscendC::Select(scrI[GP], mask, ib, ia, AscendC::SELMODE::VSEL_TENSOR_TENSOR_MODE, (uint32_t)gRows);
+        AscendC::Copy<Tc>(a, scrV, GP);
+        AscendC::Copy<Tc>(b, scrV[GP], GP);
+        AscendC::Copy<int32_t>(ia, scrI, GP);
+        AscendC::Copy<int32_t>(ib, scrI[GP], GP);
+    }
+
+    template <int N>
+    __aicore__ static constexpr int BitonicStride()
+    {
+        int stride = 1;
+        while ((stride << 1) < N) {
+            stride <<= 1;
+        }
+        return stride;
+    }
+
+    template <int Lo, int N, bool SameAsFinalOrder>
+    __aicore__ inline void BitonicMergeSmall(AscendC::LocalTensor<Tc> srtVal,
+                                             AscendC::LocalTensor<int32_t> srtIdx,
+                                             AscendC::LocalTensor<Tc> scrV,
+                                             AscendC::LocalTensor<int32_t> scrI,
+                                             AscendC::LocalTensor<uint8_t> mask,
+                                             AscendC::LocalTensor<uint8_t> mask2,
+                                             int32_t gRows, int32_t GP)
+    {
+        if constexpr (N > 1) {
+            constexpr int stride = BitonicStride<N>();
+            for (int32_t i = Lo; i < Lo + N - stride; ++i) {
+                CompareExchangeSmall<SameAsFinalOrder>(srtVal, srtIdx, scrV, scrI, mask, mask2,
+                                                       gRows, GP, i, i + stride);
+            }
+            BitonicMergeSmall<Lo, stride, SameAsFinalOrder>(srtVal, srtIdx, scrV, scrI, mask, mask2, gRows, GP);
+            BitonicMergeSmall<Lo + stride, N - stride, SameAsFinalOrder>(
+                srtVal, srtIdx, scrV, scrI, mask, mask2, gRows, GP);
+        }
+    }
+
+    template <int Lo, int N, bool SameAsFinalOrder>
+    __aicore__ inline void BitonicSortSmall(AscendC::LocalTensor<Tc> srtVal,
+                                            AscendC::LocalTensor<int32_t> srtIdx,
+                                            AscendC::LocalTensor<Tc> scrV,
+                                            AscendC::LocalTensor<int32_t> scrI,
+                                            AscendC::LocalTensor<uint8_t> mask,
+                                            AscendC::LocalTensor<uint8_t> mask2,
+                                            int32_t gRows, int32_t GP)
+    {
+        if constexpr (N > 1) {
+            constexpr int left = N / 2;
+            BitonicSortSmall<Lo, left, !SameAsFinalOrder>(srtVal, srtIdx, scrV, scrI, mask, mask2, gRows, GP);
+            BitonicSortSmall<Lo + left, N - left, SameAsFinalOrder>(
+                srtVal, srtIdx, scrV, scrI, mask, mask2, gRows, GP);
+            BitonicMergeSmall<Lo, N, SameAsFinalOrder>(srtVal, srtIdx, scrV, scrI, mask, mask2, gRows, GP);
+        }
+    }
+
+    // 小 k 批量最终排序：转置 [G,kPad]->[k,GP] 后执行排序网络。int32/k=20 使用任意长度
+    // bitonic 网络，其余组合保留奇偶转置网络；每次 compare-exchange 跨 G 车道全并行，最后
+    // 转置回 [G,kPad]。ties 顺序任意（gather 校验 ties 无关）；仅前 k 行参与，无 padding 行。
+    // nan 处理（torch 语义 nan 视为最大）：值原样携带不替换；CE 比较时 largest 额外令
+    // nan(a) 胜出（排最前），smallest 令 nan(b) 落败（排最后），与 DESIGN R3 口径一致。
+    __aicore__ inline void SortRunSmall(int32_t gRows, int32_t GP)
+    {
+        const int32_t stC = (int32_t)sizeof(Tc);
+        EnsureSortTables(gRows, GP);
+        AscendC::LocalTensor<Tc> srtVal = mergeVal_;                             // [k, GP] 排序瓦片
+        AscendC::LocalTensor<int32_t> srtIdx = mergeIdx_;
+        AscendC::LocalTensor<Tc> scrV = dstVal_;                                 // CE 暂存 2 行
+        AscendC::LocalTensor<int32_t> scrI = dstIdx_;
+        AscendC::LocalTensor<uint32_t> offV2 = offOutU32_[2 * TOPK_G_MAX];
+        AscendC::LocalTensor<uint32_t> offI2 = offOutU32_[3 * TOPK_G_MAX];
+        AscendC::LocalTensor<uint32_t> offR = offOutU32_[4 * TOPK_G_MAX];
+        AscendC::LocalTensor<uint32_t> offRI = offOutU32_[4 * TOPK_G_MAX + 32];
+        AscendC::LocalTensor<uint8_t> mask = offOutU32_[4 * TOPK_G_MAX + 64].ReinterpretCast<uint8_t>();
+        AscendC::LocalTensor<uint8_t> mask2 = offOutU32_[4 * TOPK_G_MAX + 72].ReinterpretCast<uint8_t>();
+        // 正向转置 [G, kPad] -> [k, GP]（逐 j Gather，基表 + srcBaseAddr 标量偏移）
+        for (int32_t j = 0; j < k_; j++) {
+            AscendC::Gather<Tc>(srtVal[j * GP], runVal_, offV2, (uint32_t)(j * stC), (uint32_t)gRows);
+            AscendC::Gather<int32_t>(srtIdx[j * GP], runIdx_, offI2, (uint32_t)(j * (int32_t)sizeof(int32_t)),
+                                     (uint32_t)gRows);
+        }
+        if constexpr (std::is_same<Tc, int32_t>::value) {
+            if (k_ == 20) {
+                // 任意长度 bitonic 网络仅需 106 次 CE；原奇偶网络需要 190 次。
+                BitonicSortSmall<0, 20, true>(srtVal, srtIdx, scrV, scrI, mask, mask2, gRows, GP);
+            } else {
+                for (int32_t ph = 0; ph < k_; ph++) {
+                    for (int32_t i = ph & 1; i + 1 < k_; i += 2) {
+                        CompareExchangeSmall<true>(srtVal, srtIdx, scrV, scrI, mask, mask2, gRows, GP, i, i + 1);
+                    }
+                }
+            }
+        } else {
+            for (int32_t ph = 0; ph < k_; ph++) {
+                for (int32_t i = ph & 1; i + 1 < k_; i += 2) {
+                    CompareExchangeSmall<true>(srtVal, srtIdx, scrV, scrI, mask, mask2, gRows, GP, i, i + 1);
+                }
+            }
+        }
+        // 反向转置 [k, GP] -> [G, kPad]，结果写回 runVal_/runIdx_（无需 SwapRun）
+        for (int32_t g = 0; g < gRows; g++) {
+            AscendC::Gather<Tc>(runVal_[g * kPad_], srtVal, offR, (uint32_t)(g * stC), (uint32_t)k_);
+            AscendC::Gather<int32_t>(runIdx_[g * kIdxPad_], srtIdx, offRI,
+                                     (uint32_t)(g * (int32_t)sizeof(int32_t)), (uint32_t)k_);
+        }
+    }
+
+    // 值输出：计算域 -> 原始 dtype（16-bit 精确 Cast 回，T 域行 stride=kPadT_；其他 dtype 同址直通）
+    __aicore__ inline AscendC::LocalTensor<T> ValuesAsT(int32_t gRows)
+    {
+        if constexpr (IS_16BIT) {
+            for (int32_t g = 0; g < gRows; g++) {
+                AscendC::Cast<T, Tc>(outValT_[g * kPadT_], runVal_[g * kPad_], AscendC::RoundMode::CAST_RINT,
+                                     kPad_);
+            }
+            return outValT_;
+        } else {
+            return runVal_.template ReinterpretCast<T>();
+        }
+    }
+
+    // 输出值 T 域行 stride（16-bit 为 kPadT_，其余等于 kPad_）
+    __aicore__ inline int32_t ValStrideT() const
+    {
+        if constexpr (IS_16BIT) {
+            return kPadT_;
+        } else {
+            return kPad_;
+        }
+    }
+
+    // 连续行输出（分支 L / L2）：排序后 Cast idx 到 int64，逐行整块写回
+    __aicore__ inline void FinalizeContig(int64_t row0, int32_t gRows)
+    {
+        SortRun(gRows);
+        AscendC::LocalTensor<T> valT = ValuesAsT(gRows);
+        AscendC::Cast<int64_t, int32_t>(outIdx64_, runIdx_, AscendC::RoundMode::CAST_NONE,
+                                        (int64_t)gRows * kIdxPad_);
+        SyncVMte3();
+        const int32_t vStride = ValStrideT();
+        for (int32_t g = 0; g < gRows; g++) {
+            AscendC::DataCopyExtParams cpV{1, (uint32_t)(k_ * (int32_t)sizeof(T)), 0, 0, 0};
+            AscendC::DataCopyPad(yGm_[(row0 + g) * k_], valT[g * vStride], cpV);
+            AscendC::DataCopyExtParams cpI{1, (uint32_t)(k_ * (int32_t)sizeof(int64_t)), 0, 0, 0};
+            AscendC::DataCopyPad(idxGm_[(row0 + g) * k_], outIdx64_[g * kIdxPad_], cpI);
+        }
+        SyncMte3V();
+    }
+
+    // ---------------- 分支 L：连续行（inner==1）----------------
+    // 处理 [row0, row0+gRows) 行的 [dStart, dEnd) 区间，结果留在 runVal_/runIdx_
+    __aicore__ inline void DoChunksL(int64_t row0, int32_t gRows, int64_t dStart, int64_t dEnd)
+    {
+        bool first = true;
+        bool runNarrow = false;
+        for (int64_t d0 = dStart; d0 < dEnd; d0 += dChunk_) {
+            int32_t nC = (int32_t)Min64((int64_t)dChunk_, dEnd - d0);
+            int32_t kC = (int32_t)Min64((int64_t)k_, (int64_t)nC);
+            ChunkPreamble(gRows, nC, d0);
+            AscendC::PipeBarrier<PIPE_ALL>(); // 上一 chunk TopK/Sort 读完 srcVal 后再 DMA
+            for (int32_t g = 0; g < gRows; g++) {
+                AscendC::DataCopyExtParams cp{1, (uint32_t)(nC * (int32_t)sizeof(T)), 0, 0, 0};
+                AscendC::DataCopyPad(srcRaw_[g * dChunk_], xGm_[(row0 + g) * D_ + d0], cp, MakePadParams(nC));
+            }
+            SyncMte2V();
+            if constexpr (IS_64BIT) {
+                // DMA 的块内补齐按 32 位 pad 值重复，不能表示任意 64 位极值。
+                // 排序会消费整个 dChunk，须在 DMA 完成后恢复最后一个 32B 块的洞区。
+                const int32_t paddedEnd = (nC + 3) / 4 * 4;
+                if (paddedEnd > nC) {
+                    const auto event = GetTPipePtr()->FetchEventID(AscendC::HardEvent::MTE2_S);
+                    AscendC::SetFlag<AscendC::HardEvent::MTE2_S>(event);
+                    AscendC::WaitFlag<AscendC::HardEvent::MTE2_S>(event);
+                    for (int32_t g = 0; g < gRows; g++) {
+                        for (int32_t i = nC; i < paddedEnd; i++) {
+                            srcRaw_.SetValue(g * dChunk_ + i, padValue_);
+                        }
+                    }
+                    const auto eventSV = GetTPipePtr()->FetchEventID(AscendC::HardEvent::S_V);
+                    AscendC::SetFlag<AscendC::HardEvent::S_V>(eventSV);
+                    AscendC::WaitFlag<AscendC::HardEvent::S_V>(eventSV);
+                }
+            }
+            CastToCompute(gRows);
+            RunTopK(gRows, nC, kC, first, runNarrow);
+        }
+        runNarrow_ = runNarrow;
+    }
+
+    // ---------------- 分支 S：跨步行（inner>1）----------------
+    // 输入转置偏移表（性能轮 P0）：tbl[b*dChunk + d] = (d*gRows + b)*sizeof(T)，
+    // 单次 Gather 完成 [dChunk, gRows] -> [gRows, dChunk] 装配，替代逐行小 Gather（dChunk=7/17 时
+    // 每调用仅装配个位数元素，指令开销主导）。生成全矢量化（无除法：i/32 用移位，/(c) 用移位或
+    // 2^16/3 magic，t<=512 范围内精确）；暂存复用 mergeVal/mergeIdx（生成于本组首个 chunk 之前，
+    // 此后仅读 tblBuf_；上一组的归并/输出瓦片消费已由 PipeBarrier/SyncMte3V 分隔）。
+    __aicore__ inline void EnsureInTransposeTbl(int32_t gRows)
+    {
+        if (gRows == inTblGRows_) {
+            return;
+        }
+        const int32_t N = gRows * dChunk_;
+        const int32_t st = (int32_t)sizeof(T);
+        AscendC::LocalTensor<int32_t> tbl = inTblU32_.ReinterpretCast<int32_t>();
+        AscendC::LocalTensor<int32_t> scr = mergeVal_.template ReinterpretCast<int32_t>();
+        AscendC::LocalTensor<int32_t> scr2 = mergeIdx_.ReinterpretCast<int32_t>();
+        AscendC::CreateVecIndex<int32_t>(scr, 0, N);       // i
+        AscendC::ShiftRight<int32_t>(tbl, scr, (int32_t)5, N); // i/32
+        const int32_t c = dChunk_ >> 5;                    // dChunk/32 ∈ {1,2,3,4,6,8}
+        if (c == 3 || c == 6) {
+            AscendC::Muls<int32_t>(tbl, tbl, 21846, N);    // ceil(2^16/3)，t<=512 时 floor(t/3) 精确
+            AscendC::ShiftRight<int32_t>(tbl, tbl, (int32_t)16, N);
+            if (c == 6) {
+                AscendC::ShiftRight<int32_t>(tbl, tbl, (int32_t)1, N); // /6 = /3/2
+            }
+        } else if (c == 2) {
+            AscendC::ShiftRight<int32_t>(tbl, tbl, (int32_t)1, N);
+        } else if (c == 4) {
+            AscendC::ShiftRight<int32_t>(tbl, tbl, (int32_t)2, N);
+        } else if (c == 8) {
+            AscendC::ShiftRight<int32_t>(tbl, tbl, (int32_t)3, N);
+        }
+        // tbl = b = i/dChunk
+        AscendC::Muls<int32_t>(scr2, tbl, dChunk_, N);     // b*dChunk
+        AscendC::Sub<int32_t>(scr2, scr, scr2, N);         // d = i - b*dChunk
+        AscendC::Muls<int32_t>(scr2, scr2, gRows * st, N); // d*gRows*st
+        AscendC::Muls<int32_t>(tbl, tbl, st, N);           // b*st
+        AscendC::Add<int32_t>(tbl, tbl, scr2, N);
+        inTblGRows_ = gRows;
+    }
+
+    // 输出转置基表（性能轮 P0）：offV[b] = b*vStride*sizeof(T)，offI[b] = b*kIdxPad*8；
+    // 逐 j Gather 时以 srcBaseAddr = j*sizeof(T)（或 j*8）标量偏移寻址，基表全组共享。
+    __aicore__ inline void EnsureOutTables(int32_t gRows, int32_t vStride)
+    {
+        if (gRows == outTblGRows_) {
+            return;
+        }
+        const int32_t st = (int32_t)sizeof(T);
+        AscendC::LocalTensor<int32_t> offV = offOutU32_.ReinterpretCast<int32_t>();
+        AscendC::LocalTensor<int32_t> offI = offOutU32_[TOPK_G_MAX].ReinterpretCast<int32_t>();
+        AscendC::CreateVecIndex<int32_t>(offI, 0, gRows);  // 索引序列暂存于 offI 区
+        AscendC::Muls<int32_t>(offV, offI, vStride * st, gRows);
+        AscendC::Muls<int32_t>(offI, offI, kIdxPad_ * (int32_t)sizeof(int64_t), gRows);
+        outTblGRows_ = gRows;
+    }
+
+    __aicore__ inline void ProcessGroupS(int64_t o, int64_t s0, int32_t gRows)
+    {
+        if (useTrIn_) {
+            EnsureInTransposeTbl(gRows);
+        } else {
+            // 逐行装配路径：偏移表 off[d] = d * gRows * sizeof(T)（srcIdx_ 作临时源，chunk 循环内会被重写）
+            AscendC::CreateVecIndex<int32_t>(srcIdx_, 0, dChunk_);
+            AscendC::LocalTensor<int32_t> offI32 = offU32_.ReinterpretCast<int32_t>();
+            AscendC::Muls<int32_t>(offI32, srcIdx_, (int32_t)(gRows * (int32_t)sizeof(T)), dChunk_);
+        }
+
+        int64_t gmBase = o * D_ * inner_ + s0;
+        bool first = true;
+        bool runNarrow = false;
+        for (int64_t d0 = 0; d0 < D_; d0 += dChunk_) {
+            int32_t nC = (int32_t)Min64((int64_t)dChunk_, D_ - d0);
+            int32_t kC = (int32_t)Min64((int64_t)k_, (int64_t)nC);
+            ChunkPreamble(gRows, nC, d0);
+            AscendC::PipeBarrier<PIPE_ALL>(); // 上一 chunk Gather/TopK 读完 stage_ 后再 DMA
+            if (useTrIn_ && nC < dChunk_) {
+                // 整 stage 预填极值（先填后搬，DMA 覆写 [0, nC) 行，[nC, dChunk) 行保留极值）：
+                // 转置 Gather 的 padding 位置读到极值（b64 Sort 全行消费安全；RADIX 以
+                // topKInfo.n 为界本就不选 padding，此为防御一致）。注意不能按 pad 行区间填充——
+                // 起始偏移 nC*gRows*sizeof(T) 在尾组（gRows 非对齐）不保证 32B 对齐（error 340 实锤）
+                AscendC::Duplicate<T>(stage_, padValue_, (int64_t)gRows * dChunk_);
+                SyncVMte2(); // V 写 stage 先于 MTE2 覆写
+            }
+            // 2D 搬入 [n_c, gRows] 列块，Compact 模式 UB 内 packed（与偏移表 d*gRows 步长匹配）
+            AscendC::DataCopyExtParams cp{(uint16_t)nC, (uint32_t)(gRows * (int32_t)sizeof(T)),
+                                          (inner_ - gRows) * (int64_t)sizeof(T), 0, 0};
+            AscendC::DataCopyPadExtParams<T> pad{};
+            AscendC::DataCopyPad<T, AscendC::PaddingMode::Compact>(stage_, xGm_[gmBase + d0 * inner_], cp, pad);
+            SyncMte2V();
+            if (useTrIn_) {
+                // 单次大 Gather 完成 [dChunk, gRows] -> [gRows, dChunk] 转置装配
+                AscendC::Gather<T>(srcRaw_, stage_, inTblU32_, 0, (uint32_t)(gRows * dChunk_));
+            } else {
+                // 逐行 Gather 装配 [n_c, gRows] -> [gRows, dChunk]（洞区保留 Init 预填极值）
+                for (int32_t g = 0; g < gRows; g++) {
+                    AscendC::Gather<T>(srcRaw_[g * dChunk_], stage_, offU32_, (uint32_t)(g * (int32_t)sizeof(T)),
+                                       (uint32_t)nC);
+                }
+            }
+            CastToCompute(gRows);
+            RunTopK(gRows, nC, kC, first, runNarrow);
+        }
+        runNarrow_ = runNarrow;
+        FinalizeStrided(o, s0, gRows);
+    }
+
+    // 跨步行输出（性能轮 P0 重写）：UB 内分块转置 [gRows, k] -> [k, gRows] 后批量 DataCopyPad 写回，
+    // 替代逐行单元素 scatter（k 个单元素块 × gRows 行 × 2 张量，DMA 小块开销主导）。
+    // 转置瓦片 [jbMax, bPad] 复用 mergeVal/mergeIdx（归并已完成、SortRun 屏障后无读者）；
+    // gRows 满足 32B 对齐时整块 2D 写出（单发 DMA），否则逐 j 单块写出。
+    // 回退条件：gRows 过小（转置收益不抵 Gather 调用开销）、瓦片容量不足、8/16-bit Gather 偏移越限。
+    __aicore__ inline void FinalizeStrided(int64_t o, int64_t s0, int32_t gRows)
+    {
+        SortRun(gRows);
+        AscendC::LocalTensor<T> valT = ValuesAsT(gRows);
+        AscendC::Cast<int64_t, int32_t>(outIdx64_, runIdx_, AscendC::RoundMode::CAST_NONE,
+                                        (int64_t)gRows * kIdxPad_);
+        const int32_t vStride = ValStrideT();
+        const int32_t st = (int32_t)sizeof(T);
+        const int32_t alignT = 32 / st;
+        const int32_t bPad = (gRows + alignT - 1) / alignT * alignT;
+        const int64_t valCap = (int64_t)g_ * mergePad_ * (int64_t)sizeof(Tc);
+        const int64_t idxCap = (int64_t)g_ * mergePad_ * (int64_t)sizeof(int32_t);
+        const int32_t jbMax = (int32_t)Min64((int64_t)k_, Min64(valCap / ((int64_t)bPad * st),
+                                                                 idxCap / ((int64_t)bPad * (int64_t)sizeof(int64_t))));
+        if (!outOffOk_ || gRows < 8 || jbMax < 1) {
+            // 回退：逐行单元素 scatter（原路径）。Compact 模式块间距=blockLen（packed），
+            // GM 侧 dstStride=(inner-1)*sizeof(T)
+            SyncVMte3();
+            for (int32_t g = 0; g < gRows; g++) {
+                int64_t col0 = o * k_ * inner_ + s0 + g;
+                AscendC::DataCopyExtParams cpV{(uint16_t)k_, (uint32_t)sizeof(T), 0,
+                                               (inner_ - 1) * (int64_t)sizeof(T), 0};
+                AscendC::DataCopyPad<T, AscendC::PaddingMode::Compact>(yGm_[col0], valT[g * vStride], cpV);
+                AscendC::DataCopyExtParams cpI{(uint16_t)k_, (uint32_t)sizeof(int64_t), 0,
+                                               (inner_ - 1) * (int64_t)sizeof(int64_t), 0};
+                AscendC::DataCopyPad<int64_t, AscendC::PaddingMode::Compact>(idxGm_[col0], outIdx64_[g * kIdxPad_],
+                                                                             cpI);
+            }
+            SyncMte3V();
+            return;
+        }
+        EnsureOutTables(gRows, vStride);
+        AscendC::LocalTensor<T> valTile = mergeVal_.template ReinterpretCast<T>();
+        AscendC::LocalTensor<int64_t> idxTile = mergeIdx_.template ReinterpretCast<int64_t>();
+        AscendC::LocalTensor<uint32_t> offV = offOutU32_;
+        AscendC::LocalTensor<uint32_t> offI = offOutU32_[TOPK_G_MAX];
+        const bool aligned = (gRows * st) % 32 == 0;
+        const int64_t gmBase = o * k_ * inner_ + s0;
+        for (int32_t j0 = 0; j0 < k_; j0 += jbMax) {
+            const int32_t jc = (int32_t)Min64((int64_t)jbMax, (int64_t)k_ - j0);
+            for (int32_t j = 0; j < jc; j++) {
+                AscendC::Gather<T>(valTile[j * bPad], valT, offV, (uint32_t)((j0 + j) * st), (uint32_t)gRows);
+                AscendC::Gather<int64_t>(idxTile[j * bPad], outIdx64_, offI, (uint32_t)((j0 + j) * (int32_t)sizeof(int64_t)),
+                                         (uint32_t)gRows);
+            }
+            SyncVMte3();
+            if (aligned) {
+                AscendC::DataCopyExtParams cpV{(uint16_t)jc, (uint32_t)(gRows * st), 0,
+                                               (inner_ - gRows) * (int64_t)st, 0};
+                AscendC::DataCopyPad(yGm_[gmBase + (int64_t)j0 * inner_], valTile, cpV);
+                AscendC::DataCopyExtParams cpI{(uint16_t)jc, (uint32_t)(gRows * (int32_t)sizeof(int64_t)), 0,
+                                               (inner_ - gRows) * (int64_t)sizeof(int64_t), 0};
+                AscendC::DataCopyPad(idxGm_[gmBase + (int64_t)j0 * inner_], idxTile, cpI);
+            } else {
+                for (int32_t j = 0; j < jc; j++) {
+                    AscendC::DataCopyExtParams cpV{1, (uint32_t)(gRows * st), 0, 0, 0};
+                    AscendC::DataCopyPad(yGm_[gmBase + (int64_t)(j0 + j) * inner_], valTile[j * bPad], cpV);
+                    AscendC::DataCopyExtParams cpI{1, (uint32_t)(gRows * (int32_t)sizeof(int64_t)), 0, 0, 0};
+                    AscendC::DataCopyPad(idxGm_[gmBase + (int64_t)(j0 + j) * inner_], idxTile[j * bPad], cpI);
+                }
+            }
+            SyncMte3V(); // 下一块 Gather 覆写瓦片前等待本次写出完成
+        }
+    }
+
+private:
+    AscendC::TPipe pipe_;
+    AscendC::GlobalTensor<T> xGm_, yGm_;
+    AscendC::GlobalTensor<int64_t> idxGm_;
+    AscendC::TBuf<AscendC::TPosition::VECCALC> srcValBuf_, srcRawBuf_, srcIdxBuf_, dstValBuf_, dstIdxBuf_;
+    AscendC::TBuf<AscendC::TPosition::VECCALC> runValBuf_, runIdxBuf_, mergeValBuf_, mergeIdxBuf_;
+    AscendC::TBuf<AscendC::TPosition::VECCALC> tmpBuf_, outIdx64Buf_, outValBuf_;
+    AscendC::TBuf<AscendC::TPosition::VECCALC> scratchValBuf_, scratchIdxBuf_;
+    AscendC::TBuf<AscendC::TPosition::VECIN> stageBuf_;
+    AscendC::TBuf<AscendC::TPosition::VECCALC> offBuf_, offOutBuf_, tblBuf_;
+
+    AscendC::LocalTensor<Tc> srcVal_, dstVal_, runVal_, mergeVal_, scratchVal_;
+    AscendC::LocalTensor<T> srcRaw_, outValT_;
+    AscendC::LocalTensor<int32_t> srcIdx_, dstIdx_, runIdx_, mergeIdx_, scratchIdx_;
+    AscendC::LocalTensor<uint8_t> tmpLocal_;
+    AscendC::LocalTensor<int64_t> outIdx64_;
+    AscendC::LocalTensor<T> stage_;
+    AscendC::LocalTensor<uint32_t> offU32_, offOutU32_, inTblU32_;
+    AscendC::LocalTensor<bool> finishLocal_; // 950 预留参数，仅定义不赋值
+    TopkTiling topkTiling_{};                // RADIX_SELECT 不消费 tiling 字段，默认构造即可（全局命名空间类型）
+
+    bool useTrIn_ = false;    // 分支 S 输入单次 Gather 转置（TopKUseTrIn，与 host 记账一致）
+    bool outOffOk_ = true;    // 输出转置 Gather 偏移是否在 8/16-bit srcOffset 上限内
+    bool useSortSmall_ = false; // k<=32 时启用奇偶转置排序网络替代逐行 Sort（SortRun）
+    bool runNarrow_ = false; // 当前行组的 int64 running 候选是否来自 int32 RADIX_SELECT
+    int32_t inTblGRows_ = -1; // 输入转置表缓存对应的 gRows（-1 未生成）
+    int32_t outTblGRows_ = -1; // 输出转置基表缓存对应的 gRows
+    int32_t sortTblGRows_ = -1; // 排序转置表缓存对应的 gRows
+
+    int64_t outer_ = 0, D_ = 0, inner_ = 0, rows_ = 0;
+    int32_t k_ = 0;
+    bool isLargest_ = true;
+    int64_t branch_ = 0, rowsPerCore_ = 0;
+    int32_t g_ = 1, dChunk_ = 0, kPad_ = 0, kIdxPad_ = 0, mergePad_ = 0;
+    int32_t kPadT_ = 0;
+    int64_t blockIdx_ = 0;
+    T padValue_{};
+    Tc padValueC_{};
+
+    AscendC::TEventID evMte2V_, evVMte2_, evVMte3_, evMte3V_, evVS_;
+};
+
+template <typename T>
+__global__ __vector__ void topk_kernel(GM_ADDR x, GM_ADDR y, GM_ADDR idx, TopKLaunchParams params)
+{
+    KernelTopK<T> op;
+    op.Init(x, y, idx, params);
+    op.Process();
+}
+
+// ============================== Host 侧 tiling 计算 ==============================
+
+static inline int64_t TopKPad32(int64_t v)
+{
+    return (v + 31) / 32 * 32;
+}
+
+// k 按计算 dtype 向上 32B 对齐（TopK NORMAL 输出行长 k_pad；impl 内部以 GetKPad<Tc> 定行 stride，
+// 必须与计算类型一致）
+static inline int64_t TopKKPad(int64_t k, int64_t dtypeSize)
+{
+    int64_t alignElems = 32 / dtypeSize;
+    return (k + alignElems - 1) / alignElems * alignElems;
+}
+
+static inline int64_t TopKDtypeSize(int64_t dtypeId)
+{
+    switch (dtypeId) {
+        case TOPK_DTYPE_INT8:
+        case TOPK_DTYPE_UINT8: return 1;
+        case TOPK_DTYPE_FP16:
+        case TOPK_DTYPE_BF16: return 2;
+        case TOPK_DTYPE_INT32:
+        case TOPK_DTYPE_FP32: return 4;
+        case TOPK_DTYPE_INT64: return 8;
+        default: return 0;
+    }
+}
+
+// 计算域 dtype：16-bit 升 fp32（vendor 16-bit 索引路径缺陷），其余同原始 dtype
+static inline int64_t TopKComputeDtypeSize(int64_t dtypeId)
+{
+    int64_t st = TopKDtypeSize(dtypeId);
+    return st == 2 ? 4 : st;
+}
+
+static inline ge::DataType TopKGeDtype(int64_t dtypeId, bool compute)
+{
+    if (compute && (dtypeId == TOPK_DTYPE_FP16 || dtypeId == TOPK_DTYPE_BF16)) {
+        return ge::DT_FLOAT;
+    }
+    switch (dtypeId) {
+        case TOPK_DTYPE_INT8: return ge::DT_INT8;
+        case TOPK_DTYPE_UINT8: return ge::DT_UINT8;
+        case TOPK_DTYPE_INT32: return ge::DT_INT32;
+        case TOPK_DTYPE_INT64: return ge::DT_INT64;
+        case TOPK_DTYPE_FP16: return ge::DT_FLOAT16;
+        case TOPK_DTYPE_FP32: return ge::DT_FLOAT;
+        case TOPK_DTYPE_BF16: return ge::DT_BF16;
+        default: return ge::DT_UNDEFINED;
+    }
+}
+
+// RADIX_SELECT TopK tmpLocal 需求下限（依据 CANN impl topk_c310_impl.h InitializeTempBuffer /
+// CollectGivenPosByte / CompareHighBytesBeforePos / GenerateAccumulateData 的实际读写范围）。
+// GetTopKMaxMinTmpSize 返回值与该校验取 max 兜底。
+static inline int64_t TopKRadixTmpFloor(int64_t inner, int64_t dtypeSize)
+{
+    const int64_t ac = TopKPad32(inner);
+    if (dtypeSize == 8) {
+        const int64_t gran = 512; // b64 整轮读取粒度（8*VL 字节）上界兜底
+        return 8 * std::max(ac, gran) + std::max(4 * ac, (int64_t)2048) + 8 * std::max(ac, gran);
+    }
+    return dtypeSize * ac + std::max(4 * ac, (int64_t)1024) + dtypeSize * ac;
+}
+
+// AscendC::Sort(RADIX_SORT) 临时空间（依据 impl ArrangeCommonTmpBuffer 布局：
+// 512B 桶 + (1+2+4+4+sizeof(T)) * alignUp(count,32)，U=int32_t），加 1KB 余量
+static inline int64_t TopKSortTmpSize(int64_t count, int64_t dtypeSize)
+{
+    return 512 + (11 + dtypeSize) * TopKPad32(count) + 1024;
+}
+
+// UB 总占用估算（calc_topk_params 候选评估用，与 kernel InitBuffer 逐项对应）
+static inline int64_t TopKUbtotal(int64_t g, int64_t dChunk, int64_t st, int64_t stC, int64_t k,
+                                  int64_t tmpSize, const TopKLaunchParams& p, bool is16, bool is64, bool trIn)
+{
+    int64_t total = g * dChunk * stC + dChunk * 4 + g * p.kPad * stC + g * p.kIdxPad * 4 +
+                    g * p.kPad * stC + g * p.kIdxPad * 4 + tmpSize + g * p.kIdxPad * 8;
+    if (!(is64 && p.branch == TOPK_BRANCH_L)) {
+        total += g * p.mergePad * stC + g * p.mergePad * 4;
+        total += 8 * TOPK_G_MAX * (int64_t)sizeof(uint32_t); // offOutBuf
+    }
+    if (is16) {
+        total += g * dChunk * st + g * TopKKPad(k, st) * st; // srcRaw + outVal（T 域 32B 对齐行 stride）
+    }
+    if (is64) {
+        total += std::max(dChunk, p.mergePad) * (stC + 4); // Sort 全排序暂存 scratchVal/scratchIdx
+    }
+    if (p.branch == TOPK_BRANCH_S) {
+        total += g * dChunk * st + dChunk * 4;                 // stageBuf + gatherOffBuf
+        if (trIn) {
+            total += g * dChunk * (int64_t)sizeof(uint32_t);   // tblBuf（输入转置全量偏移表）
+        }
+    }
+    return total;
+}
+
+// GetTopKMaxMinTmpSize 单次调用开销大（实测 ~0.4us，host 侧），成本模型每候选每 g 2 次调用会使
+// 小负载用例的 launch host 开销膨胀数百 us → 环形缓存：
+// 同 (inner,outter,k,dtype,largest) 查询直接命中，重复 launch（评测/训练常态）零开销。
+struct TopKTmpSizeCache {
+    static constexpr int64_t N = 32;
+    int64_t inner[N] = {};
+    int64_t outter[N] = {};
+    int64_t k[N] = {};
+    int64_t dt[N] = {};
+    int64_t largest[N] = {};
+    int64_t val[N] = {};
+    int64_t valid[N] = {};
+    int64_t next = 0;
+};
+static TopKTmpSizeCache g_topkTmpCache;
+
+static inline bool TopKGetTmpSizeCached(int32_t inner, int32_t outter, int32_t k, bool largest,
+                                        ge::DataType dt, const AscendC::TopKConfig& cfg, int64_t& out)
+{
+    TopKTmpSizeCache& c = g_topkTmpCache;
+    for (int64_t i = 0; i < TopKTmpSizeCache::N; i++) {
+        if (c.valid[i] != 0 && c.inner[i] == inner && c.outter[i] == outter && c.k[i] == k &&
+            c.dt[i] == (int64_t)dt && c.largest[i] == (largest ? 1 : 0)) {
+            out = c.val[i];
+            return true;
+        }
+    }
+    uint32_t tmpMax = 0, tmpMin = 0;
+    bool ok = AscendC::GetTopKMaxMinTmpSize(inner, outter, k, false, true, AscendC::TopKMode::TOPK_NORMAL,
+                                            largest, dt, cfg, tmpMax, tmpMin);
+    if (!ok) {
+        return false;
+    }
+    const int64_t i = c.next;
+    c.next = (c.next + 1) % TopKTmpSizeCache::N;
+    c.inner[i] = inner;
+    c.outter[i] = outter;
+    c.k[i] = k;
+    c.dt[i] = (int64_t)dt;
+    c.largest[i] = largest ? 1 : 0;
+    c.val[i] = (int64_t)tmpMax;
+    c.valid[i] = 1;
+    out = (int64_t)tmpMax;
+    return true;
+}
+
+extern "C" int32_t calc_topk_params(int64_t outer, int64_t dimLen, int64_t inner, int64_t k, int64_t isLargest,
+                                    int64_t dtypeId, int64_t coreNumArg, TopKLaunchParams* out)
+{
+    if (out == nullptr || outer <= 0 || dimLen <= 0 || inner <= 0 || k <= 0 || k > dimLen || k > TOPK_K_MAX) {
+        return -1;
+    }
+    const int64_t st = TopKDtypeSize(dtypeId);
+    const int64_t stC = TopKComputeDtypeSize(dtypeId);
+    const ge::DataType geDtC = TopKGeDtype(dtypeId, true);
+    const bool is16 = (stC != st);
+    const bool is64 = (stC == 8);
+    if (st == 0 || geDtC == ge::DT_UNDEFINED) {
+        return -2;
+    }
+    auto platform = platform_ascendc::PlatformAscendCManager::GetInstance();
+    if (platform == nullptr) {
+        return -2;
+    }
+    uint64_t ubBytes = 0;
+    platform->GetCoreMemSize(platform_ascendc::CoreMemType::UB, ubBytes);
+    if (ubBytes <= static_cast<uint64_t>(TOPK_UB_RESERVE)) {
+        return -2;
+    }
+    const int64_t ubBudget = static_cast<int64_t>(ubBytes) - TOPK_UB_RESERVE;
+    const int64_t availableCores = platform->GetCoreNumAiv();
+    if (coreNumArg <= 0 || availableCores <= 0) {
+        return -2;
+    }
+    const int64_t coreNum = std::min(coreNumArg, availableCores);
+
+    TopKLaunchParams p;
+    p.outer = outer;
+    p.dimLen = dimLen;
+    p.inner = inner;
+    p.rows = outer * inner;
+    p.k = k;
+    p.isLargest = isLargest ? 1 : 0;
+    p.kPad = TopKKPad(k, stC);
+    if (stC == 8) {
+        // b64 不走 vendor TopK（无 impl 行 stride 约束），kPad 取 align8 使归并 index 段
+        // 偏移 kPad*4B 也满足 32B 对齐（align4 时 kPad*4 不保证 32B 倍数，实测 error 340）
+        p.kPad = TopKKPad(k, (int64_t)sizeof(int32_t));
+    }
+    p.kIdxPad = TopKKPad(k, (int64_t)sizeof(int32_t));
+    p.mergePad = TopKPad32(2 * p.kPad);
+    if (p.mergePad > 4096) {
+        return -3; // TopK NORMAL inner 上限 4096（k<=2048 时理论不超，防御）
+    }
+
+    // 连续轴走 L，非末轴走 S。连续行没有二维 DMA 的 blockCount
+    // 限制，可以使用排序 API 支持的完整 4096 tile。
+    p.branch = inner == 1 ? TOPK_BRANCH_L : TOPK_BRANCH_S;
+    const int64_t dChunkMax = p.branch == TOPK_BRANCH_L ? TOPK_CONTIG_DCHUNK_MAX : TOPK_DCHUNK_MAX;
+    const int64_t dChunk0 = std::min(dChunkMax, TopKPad32(dimLen));
+
+    // UB 预算求解（性能轮 P1：成本模型替代首适配）：对每个候选 dChunk 求最大可行 G，
+    // 选 cost = totalChunks * ceil(rowsPerCore/G) 最小者（摊薄 RADIX_SELECT 每调用循环/同步开销；
+    // 候选从大到小遍历，cost 相同优先大 dChunk——chunk 数更少、每 chunk 固定开销更少）。
+    const AscendC::TopKConfig cfg{AscendC::TopKAlgo::RADIX_SELECT, AscendC::TopKOrder::UNSET, false};
+    const bool largest = (isLargest != 0);
+    const int64_t usedEst = std::min(p.rows, coreNum);
+    const int64_t rpc = (p.rows + usedEst - 1) / usedEst;
+    const int64_t candList[8] = {dChunk0, 2048, 1024, 512, 256, 128, 64, 32};
+    int64_t bestCost = -1;
+    bool found = false;
+    for (int ci = 0; ci < 8; ci++) {
+        const int64_t dChunk = candList[ci];
+        if (dChunk > dChunk0 || dChunk < 32) {
+            continue;
+        }
+        int64_t maxG = TOPK_G_MAX;
+        if (is64 && p.branch == TOPK_BRANCH_L) {
+            // mergeIdx reuses the single shared srcIdx allocation.
+            if (dChunk < p.mergePad) {
+                continue;
+            }
+            maxG = std::min(maxG, dChunk / p.mergePad);
+        }
+        if (p.branch == TOPK_BRANCH_S) {
+            // Gather srcOffset 取值上限（950：8-bit 2^16-1 字节，16-bit 2^17-1 字节，DESIGN §2.2）
+            if (st == 1) {
+                maxG = std::min(maxG, 65535 / dChunk);
+            } else if (st == 2) {
+                maxG = std::min(maxG, 131071 / (dChunk * 2));
+            }
+            if (maxG < 1) {
+                continue;
+            }
+        }
+        // 输入转置表条件（与 kernel useTrIn_ 严格一致），满足时记账 tblBuf
+        const bool trIn = (p.branch == TOPK_BRANCH_S) && TopKUseTrIn(dChunk, p.mergePad, stC);
+        // b64：Sort 全排序 + 截断（Sort 作用于整 chunk / 归并段），tmp 需求远大于 TopK 场景
+        const int64_t sortCnt = is64 ? std::max(dChunk, p.mergePad) : p.kPad;
+        const int64_t sortTmp = TopKSortTmpSize(sortCnt, stC);
+        // 候选 dChunk<k 时 chunk 侧按 kC=min(k,dChunk) 估算（kernel 尾 chunk kC<k 同理），
+        // k>inner 会导致 API 估算返回失败
+        const int64_t kC = std::min(k, dChunk);
+        // tmpSize 下界估算（不含 API 值）：g 粗筛使用，避免 g 循环内逐个调用 API
+        // （GetTopKMaxMinTmpSize ~0.4us/次 × 8 候选 × 64 g ≈ 200us/launch，round_002 回退实锤）
+        const int64_t tmpFloor = TopKPad32(std::max(
+            sortTmp, std::max(TopKRadixTmpFloor(dChunk, stC), TopKRadixTmpFloor(p.mergePad, stC))));
+        int64_t g = -1;
+        int64_t tmpSize = tmpFloor;
+        for (int64_t gTry = maxG; gTry >= 1; gTry--) {
+            const int64_t total = TopKUbtotal(gTry, dChunk, st, stC, k, tmpFloor, p, is16, is64, trIn);
+            if (total <= ubBudget) {
+                g = gTry;
+                break;
+            }
+        }
+        if (g < 1) {
+            continue;
+        }
+        if (!is64) {
+            // b64 不调用 TopK（vendor b64 路径崩溃），跳过 API 估算（其对 b64 可能返回失败）。
+            // API 真实值代入复核（缓存命中后零开销）：outter 越大 tmp 需求越大，故以粗筛 g 的
+            // 查询值作为更小 g 的保守上界，超预算时仅降 g 不再新增查询
+            int64_t tmpMax1 = 0, tmpMax2 = 0;
+            bool ok1 = TopKGetTmpSizeCached((int32_t)dChunk, (int32_t)g, (int32_t)kC, largest, geDtC, cfg,
+                                            tmpMax1);
+            bool ok2 = TopKGetTmpSizeCached((int32_t)p.mergePad, 1, (int32_t)k, largest, geDtC, cfg, tmpMax2);
+            if (!ok1 || !ok2) {
+                // CANN 9.1 may reject the legacy isInitIndex=true query even though
+                // the corresponding RADIX_SELECT kernel remains supported.  The
+                // implementation-derived floor above covers every temporary region.
+                tmpMax1 = tmpFloor;
+                tmpMax2 = tmpFloor;
+            }
+            tmpSize = TopKPad32(std::max(std::max(tmpMax1, tmpMax2), tmpFloor));
+            while (g > 1 && TopKUbtotal(g, dChunk, st, stC, k, tmpSize, p, is16, is64, trIn) > ubBudget) {
+                g--;
+            }
+            if (TopKUbtotal(g, dChunk, st, stC, k, tmpSize, p, is16, is64, trIn) > ubBudget) {
+                continue;
+            }
+        }
+        const int64_t chunks = (dimLen + dChunk - 1) / dChunk;
+        const int64_t groups = (rpc + g - 1) / g;
+        // b64 规避 vendor TopK 缺陷而逐行调用 Sort，G 无法摊薄排序
+        // API 的固定开销。其主要调用数为 chunks 次局部排序加
+        // chunks-1 次候选归并，应优先扩大 tile、尽早截断候选。
+        const int64_t cost = is64 ? (2 * chunks - 1) : chunks * groups;
+        if (bestCost < 0 || cost < bestCost) {
+            bestCost = cost;
+            p.dChunk = dChunk;
+            p.g = g;
+            p.tmpSize = tmpSize;
+            found = true;
+        }
+    }
+    if (!found) {
+        return -4;
+    }
+
+    p.usedCores = std::min(p.rows, coreNum);
+    p.rowsPerCore = (p.rows + p.usedCores - 1) / p.usedCores;
+    *out = p;
+    return 0;
+}
+
+// ============================== Launch 分发 ==============================
+
+template <typename T>
+static inline void LaunchTopKT(GM_ADDR x, GM_ADDR y, GM_ADDR idx, const TopKLaunchParams& p, void* stream)
+{
+    topk_kernel<T><<<p.usedCores, nullptr, stream>>>(x, y, idx, p);
+}
+
+extern "C" void launch_topk(GM_ADDR x, GM_ADDR y, GM_ADDR idx, int64_t dtypeId,
+                            const TopKLaunchParams& params, void* stream)
+{
+    switch (dtypeId) {
+        case TOPK_DTYPE_INT8:
+            LaunchTopKT<int8_t>(x, y, idx, params, stream);
+            break;
+        case TOPK_DTYPE_UINT8:
+            LaunchTopKT<uint8_t>(x, y, idx, params, stream);
+            break;
+        case TOPK_DTYPE_INT32:
+            LaunchTopKT<int32_t>(x, y, idx, params, stream);
+            break;
+        case TOPK_DTYPE_INT64:
+            LaunchTopKT<int64_t>(x, y, idx, params, stream);
+            break;
+        case TOPK_DTYPE_FP16:
+            LaunchTopKT<half>(x, y, idx, params, stream);
+            break;
+        case TOPK_DTYPE_FP32:
+            LaunchTopKT<float>(x, y, idx, params, stream);
+            break;
+        case TOPK_DTYPE_BF16:
+            LaunchTopKT<bfloat16_t>(x, y, idx, params, stream);
+            break;
+        default:
+            break;
+    }
+}

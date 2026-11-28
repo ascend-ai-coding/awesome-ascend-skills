@@ -1,0 +1,42 @@
+strategy_id: P135
+description: delta-rule 矩阵求逆分治适用性检查 — 算子含 delta rule（corr/β 修正）的 C×C 矩阵求逆（如 (I+KKT·attn)^{-1}），且当前是整块串行求逆。
+
+strategy_meta:
+  id: "P135"
+  slug: "P135_delta_rule_inverse_divide_conquer"
+  title: "P135: delta-rule 矩阵求逆分治（对角向量前代 + 非对角 cube MM）"
+  bottlenecks: [compute_bound, scalar_compute]
+  op_families: [ssm, linear_attention, recurrent, matmul, reduction]
+  conflicts_with: []
+  synergizes_with: [P132, P133]
+  requires: [P132]
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p135_delta_rule_inverse_divide_conquer.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p135_delta_rule_inverse_divide_conquer.md"
+  playbook_slug: "P135_delta_rule_inverse_divide_conquer"
+
+checks:
+  - id: is_delta_rule
+    type: grep_count
+    pattern: "beta|corr|修正|delta|kkt|solve_triangular|I-A|inverse"
+    files: [kernel, header, model]
+    expected: ">= 1"
+    fail_msg: "未检测到 delta rule / 求逆证据 → 可能是 GLA（cumprod 衰减无求逆），P135 不适用，跳过。"
+
+  - id: has_triangular_inverse
+    type: grep_count
+    pattern: "solve_triangular|Inverse|inverse|triangular|tril|前代|substitution"
+    files: [kernel, header, model]
+    expected: ">= 1"
+    fail_msg: "未检测到矩阵求逆证据 → 确认是否为 delta rule 类算子后再应用 P135。"
+
+  - id: no_divide_conquer
+    type: grep_count
+    pattern: "INVERSE_SHAPE|AttnInverseMMCompute|X10.*X11|off.diag"
+    files: [kernel, header]
+    expected: "== 0"
+    fail_msg: "已检测到分治求逆证据 → 可能已应用 P135，跳过或检查完整性。"

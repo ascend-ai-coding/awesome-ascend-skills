@@ -1,0 +1,830 @@
+/*!
+ * \file conv2d_kernel.h
+ * \brief 标准 Conv2D Cube 内核模板 Conv2DKernel<T>。对应 templates/conv2d_cube.md。
+ *
+ * ── 集成说明（使用前必读）─────────────────────────────────────────────────────
+ *   1. 去掉 .template 后缀落地为 dav310/conv2d_kernel.h（或项目 op_kernel/conv2d_kernel.h）。
+ *   2. 依赖 conv2d_tiling.h（Conv2DCase 结构体 + ValidateCase）；入口见 conv2d_kernel_entry.template。
+ *   3. 编译期仅按 dtype 特化；L1 全载/切分/乒乓、splitM、splitN、kAccum 由 runtime Conv2DCase 驱动。
+ *   4. 架构目标 dav-3510 / Ascend950（Cube）。
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+
+#ifndef CONV2D_KERNEL_H
+#define CONV2D_KERNEL_H
+
+#include "kernel_operator.h"
+#include "conv2d_tiling.h"
+
+using namespace AscendC;
+
+namespace conv2d_cases {
+
+constexpr uint32_t kL1Bytes = 512 * 1024;
+constexpr uint32_t kL0ABytes = 64 * 1024;
+constexpr uint32_t kL0BBytes = 64 * 1024;
+constexpr uint32_t kL0CBytes = 256 * 1024;
+constexpr uint32_t kM0 = 16;
+constexpr uint32_t kN0 = 16;
+constexpr uint32_t kAl0BufferBytes = kL0ABytes / 2;
+constexpr uint32_t kBl0BufferBytes = kL0BBytes / 2;
+
+constexpr uint8_t kMstepOffset = 16;
+constexpr uint8_t kPosMOffset = 48;
+constexpr uint8_t kPosKOffset = 32;
+constexpr uint8_t kStrideHOffset = 6;
+constexpr uint8_t kKernelWOffset = 12;
+constexpr uint8_t kKernelHOffset = 20;
+constexpr uint8_t kKernelWHighOffset = 36;
+constexpr uint8_t kKernelHHighOffset = 37;
+constexpr uint8_t kDilationWOffset = 28;
+constexpr uint8_t kDilationHOffset = 36;
+constexpr uint8_t kCinOffset = 48;
+constexpr uint64_t kMask16 = 0xffff;
+constexpr uint64_t kMask8 = 0xff;
+constexpr uint64_t kMask6 = 0x3f;
+constexpr uint64_t kNinthBitMask = 0x100;
+constexpr uint8_t kUnitFlagDisable = 0;
+
+// MTE2_MTE1 / MTE1_MTE2 ids: AL1 and BL1 own disjoint pairs so the two L1
+// streams can run at different K rates without aliasing each other's flags.
+static constexpr event_t kEvtAl1[2] = {static_cast<event_t>(0), static_cast<event_t>(1)};
+static constexpr event_t kEvtBl1[2] = {static_cast<event_t>(2), static_cast<event_t>(3)};
+static constexpr event_t kEvtBias = static_cast<event_t>(4);
+static constexpr event_t kEvtL0[2] = {static_cast<event_t>(0), static_cast<event_t>(1)};
+static constexpr event_t kEvtCubeFix = static_cast<event_t>(2);
+static constexpr event_t kEvtFixCube = static_cast<event_t>(3);
+
+template <typename T> struct DTypeTag;
+template <> struct DTypeTag<half> {
+    static constexpr ConvDType value = ConvDType::FP16;
+    static constexpr QuantMode_t quant = QuantMode_t::F322F16;
+};
+template <> struct DTypeTag<float> {
+    static constexpr ConvDType value = ConvDType::FP32;
+    static constexpr QuantMode_t quant = QuantMode_t::NoQuant;
+};
+template <> struct DTypeTag<bfloat16_t> {
+    static constexpr ConvDType value = ConvDType::BF16;
+    static constexpr QuantMode_t quant = QuantMode_t::F322BF16;
+};
+
+__aicore__ inline uint32_t GMin(uint32_t a, uint32_t b) { return a < b ? a : b; }
+__aicore__ inline uint32_t GCeilDiv(uint32_t a, uint32_t b) { return (a + b - 1) / b; }
+__aicore__ inline uint32_t GAlignUp(uint32_t a, uint32_t b) { return GCeilDiv(a, b) * b; }
+
+// Device-side mirrors of host helpers in conv2d_tiling.h (bisheng forbids
+// calling host constexpr from __aicore__).
+__aicore__ inline uint32_t DevCubeK0(ConvDType dtype) { return dtype == ConvDType::FP32 ? 8U : 16U; }
+__aicore__ inline uint32_t DevHOut(const Conv2DCase& c)
+{
+    return (c.hi + c.padTop + c.padBottom - c.dilationH * (c.kh - 1) - 1) / c.strideH + 1;
+}
+__aicore__ inline uint32_t DevWOut(const Conv2DCase& c)
+{
+    return (c.wi + c.padLeft + c.padRight - c.dilationW * (c.kw - 1) - 1) / c.strideW + 1;
+}
+__aicore__ inline uint32_t DevCinTileA(const Conv2DCase& c) { return c.kAL1 / (c.kh * c.kw); }
+__aicore__ inline uint32_t DevCinTileB(const Conv2DCase& c) { return c.kBL1 / (c.kh * c.kw); }
+__aicore__ inline uint32_t DevCinStep(const Conv2DCase& c)
+{
+    const uint32_t a = DevCinTileA(c);
+    const uint32_t b = DevCinTileB(c);
+    return a < b ? a : b;
+}
+__aicore__ inline bool DevAl1PP(const Conv2DCase& c) { return (c.l1PingPong & 1U) != 0; }
+__aicore__ inline bool DevBl1PP(const Conv2DCase& c) { return (c.l1PingPong & 2U) != 0; }
+
+__aicore__ inline uint32_t ValidInputRowsRuntime(const Conv2DCase& c, uint32_t mStart, uint32_t mCount)
+{
+    const uint32_t wo = DevWOut(c);
+    const uint32_t hoStart = mStart / wo;
+    const uint32_t hoEnd = (mStart + mCount - 1) / wo;
+    const int32_t hiStart = static_cast<int32_t>(hoStart * c.strideH) - static_cast<int32_t>(c.padTop);
+    const int32_t hiEnd = static_cast<int32_t>(hoEnd * c.strideH + c.dilationH * (c.kh - 1)) -
+                          static_cast<int32_t>(c.padTop);
+    const int32_t validStart = hiStart < 0 ? 0 : hiStart;
+    const int32_t validEnd = hiEnd >= static_cast<int32_t>(c.hi) ? static_cast<int32_t>(c.hi) - 1 : hiEnd;
+    return validEnd >= validStart ? static_cast<uint32_t>(validEnd - validStart + 1) : 1;
+}
+
+// Tight AL1 row bound for the tiling's mAL1 windows (port of MaxInputRows).
+__aicore__ inline uint32_t MaxInputRowsRuntime(const Conv2DCase& c)
+{
+    const uint32_t totalM = DevHOut(c) * DevWOut(c);
+    uint32_t maxRows = 1;
+    for (uint32_t core = 0; core < c.mDim; ++core) {
+        const uint32_t coreStart = core * c.coreM;
+        if (coreStart >= totalM) {
+            continue;
+        }
+        const uint32_t coreCount = GMin(c.coreM, totalM - coreStart);
+        for (uint32_t off = 0; off < coreCount; off += c.mAL1) {
+            const uint32_t count = GMin(c.mAL1, coreCount - off);
+            const uint32_t rows = ValidInputRowsRuntime(c, coreStart + off, count);
+            if (rows > maxRows) {
+                maxRows = rows;
+            }
+        }
+    }
+    return maxRows;
+}
+
+// Runtime Conv2D Cube kernel. Tiling arrives as Conv2DCase (no CaseIdx).
+// L1 is a fixed 512 KiB arena; AL1/BL1/bias offsets are computed in Init.
+template <typename T>
+class Conv2DKernel {
+public:
+    static constexpr uint32_t al0Elems = kAl0BufferBytes / sizeof(T);
+    static constexpr uint32_t bl0Elems = kBl0BufferBytes / sizeof(T);
+    static constexpr uint32_t l0cElems = kL0CBytes / sizeof(float);
+
+    __aicore__ inline void Init(GM_ADDR x, GM_ADDR weight, GM_ADDR bias, GM_ADDR y,
+                                const Conv2DCase& tiling)
+    {
+        x_ = x;
+        weight_ = weight;
+        bias_ = bias;
+        y_ = y;
+        c_ = tiling;
+
+        k0_ = DevCubeK0(c_.dtype);
+        khkw_ = c_.kh * c_.kw;
+        cinAligned_ = GAlignUp(c_.ci, k0_);
+        wout_ = DevWOut(c_);
+        totalM_ = DevHOut(c_) * wout_;
+        totalNAligned_ = GAlignUp(c_.co, kN0);
+
+        al1PP_ = DevAl1PP(c_);
+        bl1PP_ = DevBl1PP(c_);
+        cinTileA_ = DevCinTileA(c_);
+        cinTileB_ = DevCinTileB(c_);
+        cinStep_ = DevCinStep(c_);
+        numABlocks_ = GCeilDiv(cinAligned_, cinTileA_);
+        numBBlocks_ = GCeilDiv(cinAligned_, cinTileB_);
+        totalSteps_ = GCeilDiv(cinAligned_, cinStep_);
+        stepsPerA_ = cinTileA_ / cinStep_;
+        stepsPerB_ = cinTileB_ / cinStep_;
+        al1Bufs_ = al1PP_ ? 2U : 1U;
+        bl1Bufs_ = bl1PP_ ? 2U : 1U;
+        // Single-buffered weight covering all of K is hoisted out of the M loop.
+        hoistWeight_ = !bl1PP_ && numBBlocks_ == 1;
+        splitM_ = c_.mAL1 != c_.mL0;
+        splitN_ = c_.nBL1 != c_.nL0;
+        // Both splits reuse one AL1 window across several Cube tiles, so they
+        // share the window path and its full-K single-buffer AL1 precondition.
+        useWindow_ = splitM_ || splitN_;
+        splitK_ = c_.kAccum != 0;
+        flushK_ = splitK_ ? c_.kAccum : 0xffffffffU;
+        hf32_ = c_.hf32 != 0;
+
+        // L1Layout at runtime: place AL1 / BL1 / bias inside the 512 KiB arena.
+        const uint32_t maxRows = MaxInputRowsRuntime(c_);
+        const uint32_t al1BufferBytes = maxRows * c_.wi * cinTileA_ * sizeof(T);
+        al1BufferStride_ = GAlignUp(al1BufferBytes, 32);
+        const uint32_t bl1BufferBytes = c_.kBL1 * c_.nBL1 * sizeof(T);
+        bl1BufferStride_ = GAlignUp(bl1BufferBytes, 32);
+        bl1Offset_ = al1Bufs_ * al1BufferStride_;
+        biasOffset_ = bl1Offset_ + bl1Bufs_ * bl1BufferStride_;
+        (void)kL1Bytes; // capacity contract for host ValidateCase / tiling
+
+        const uint32_t block = GetBlockIdx();
+        const uint32_t nm = c_.nDim * c_.mDim;
+        batchCore_ = block / nm;
+        const uint32_t rem = block % nm;
+        mCore_ = rem / c_.nDim;
+        nCore_ = rem % c_.nDim;
+        active_ = (c_.dtype == DTypeTag<T>::value) && batchCore_ < c_.batchDim &&
+                  mCore_ * c_.coreM < totalM_ &&
+                  nCore_ * (totalNAligned_ / c_.nDim) < c_.co;
+    }
+
+    __aicore__ inline void Process()
+    {
+        if (!active_) {
+            return;
+        }
+        if constexpr (AscendC::IsSameType<T, float>::value) {
+            SetHF32Mode(hf32_ ? 1 : 0);
+            SetHF32TransMode(0);
+        }
+
+        const uint32_t batchesPerCore = GCeilDiv(c_.n, c_.batchDim);
+        const uint32_t batchStart = batchCore_ * batchesPerCore;
+        const uint32_t batchEnd = GMin(c_.n, batchStart + batchesPerCore);
+        const uint32_t coreN = totalNAligned_ / c_.nDim;
+        const uint32_t coreNStart = nCore_ * coreN;
+        const uint32_t coreNCount = GMin(coreN, c_.co - coreNStart);
+        const uint32_t coreMStart = mCore_ * c_.coreM;
+        const uint32_t coreMCount = GMin(c_.coreM, totalM_ - coreMStart);
+
+        for (uint32_t batch = batchStart; batch < batchEnd; ++batch) {
+            for (uint32_t nOff = 0; nOff < coreNCount; nOff += c_.nBL1) {
+                const uint32_t actualN = GMin(c_.nBL1, coreNCount - nOff);
+                const uint32_t nStart = coreNStart + nOff;
+                LoadBias(nStart, actualN);
+                SetFlag<HardEvent::MTE2_MTE1>(kEvtBias);
+                WaitFlag<HardEvent::MTE2_MTE1>(kEvtBias);
+                // splitN reloads BT per nL0 sub-block from this same L1 copy.
+                if (!splitN_) {
+                    LoadBiasToBt(0, actualN);
+                }
+
+                if (hoistWeight_) {
+                    LoadWeight(0, 0, nStart, actualN, cinAligned_, c_.ci);
+                    SetFlag<HardEvent::MTE2_MTE1>(kEvtBl1[0]);
+                    WaitFlag<HardEvent::MTE2_MTE1>(kEvtBl1[0]);
+                }
+
+                for (uint32_t mOff = 0; mOff < coreMCount; mOff += c_.mAL1) {
+                    const uint32_t curM = GMin(c_.mAL1, coreMCount - mOff);
+                    if (useWindow_) {
+                        ComputeWindow(batch, coreMStart + mOff, curM, nStart, actualN);
+                    } else {
+                        ComputeOutputTile(batch, coreMStart + mOff, curM, nStart, actualN);
+                    }
+                }
+            }
+        }
+        if (fixPending_) {
+            WaitFlag<HardEvent::FIX_M>(kEvtFixCube);
+            fixPending_ = false;
+        }
+        // Rounding mode is core state: leave it off for the next kernel.
+        if constexpr (AscendC::IsSameType<T, float>::value) {
+            if (hf32_) {
+                SetHF32Mode(0);
+                SetHF32TransMode(0);
+            }
+        }
+    }
+
+private:
+    __aicore__ inline void CalcFmapRange(uint32_t mStart, uint32_t curM, uint32_t& validHiStart,
+                                         uint32_t& validRows, uint32_t& localPadTop)
+    {
+        const uint32_t wo = wout_;
+        const uint32_t hoStart = mStart / wo;
+        const uint32_t hoEnd = (mStart + curM - 1) / wo;
+        const int32_t nominalStart = static_cast<int32_t>(hoStart * c_.strideH) -
+                                     static_cast<int32_t>(c_.padTop);
+        const int32_t nominalEnd =
+            static_cast<int32_t>(hoEnd * c_.strideH + c_.dilationH * (c_.kh - 1)) -
+            static_cast<int32_t>(c_.padTop);
+        validHiStart = nominalStart < 0 ? 0 : static_cast<uint32_t>(nominalStart);
+        const int32_t validEnd =
+            nominalEnd >= static_cast<int32_t>(c_.hi) ? static_cast<int32_t>(c_.hi) - 1 : nominalEnd;
+        validRows = validEnd >= static_cast<int32_t>(validHiStart) ?
+                        static_cast<uint32_t>(validEnd - static_cast<int32_t>(validHiStart) + 1) :
+                        1;
+        localPadTop = nominalStart < 0 ? static_cast<uint32_t>(-nominalStart) : 0;
+    }
+
+    __aicore__ inline void LoadFmapBlock(uint32_t blk, uint32_t buf, uint32_t batch,
+                                         uint32_t validHiStart, uint32_t validRows)
+    {
+        const uint32_t cinStart = blk * cinTileA_;
+        const uint32_t curCinAligned = GMin(cinTileA_, cinAligned_ - cinStart);
+        const uint32_t actualCin = GMin(curCinAligned, c_.ci - cinStart);
+        LocalTensor<T> al1(TPosition::A1, buf * al1BufferStride_,
+                           validRows * c_.wi * curCinAligned);
+        GlobalTensor<T> xGm;
+        const uint64_t batchOffset = static_cast<uint64_t>(batch) * c_.ci * c_.hi * c_.wi;
+        const uint64_t cinOffset = static_cast<uint64_t>(cinStart) * c_.hi * c_.wi;
+        const uint64_t rowOffset = static_cast<uint64_t>(validHiStart) * c_.wi;
+        xGm.SetGlobalBuffer(reinterpret_cast<__gm__ T*>(x_) + batchOffset + cinOffset + rowOffset);
+
+        Dn2NzParams p;
+        p.dnNum = 1;
+        p.nValue = validRows * c_.wi;
+        p.dValue = actualCin;
+        p.srcDnMatrixStride = 0;
+        p.srcDValue = c_.hi * c_.wi;
+        p.dstNzC0Stride = validRows * c_.wi;
+        p.dstNzNStride = 1;
+        p.dstNzMatrixStride = 0;
+        DataCopy(al1, xGm, p);
+    }
+
+    __aicore__ inline void LoadWeightBlock(uint32_t blk, uint32_t buf, uint32_t nStart, uint32_t actualN)
+    {
+        const uint32_t cinStart = blk * cinTileB_;
+        const uint32_t curCinAligned = GMin(cinTileB_, cinAligned_ - cinStart);
+        const uint32_t actualCin = GMin(curCinAligned, c_.ci - cinStart);
+        LoadWeight(buf, cinStart, nStart, actualN, curCinAligned, actualCin);
+    }
+
+    __aicore__ inline void LoadWeight(uint32_t buf, uint32_t cinStart, uint32_t nStart,
+                                      uint32_t actualN, uint32_t curCinAligned, uint32_t actualCin)
+    {
+        LocalTensor<T> bl1(TPosition::B1, bl1Offset_ + buf * bl1BufferStride_,
+                           curCinAligned * khkw_ * c_.nBL1);
+        GlobalTensor<T> weightGm;
+        const uint64_t gmOffset = static_cast<uint64_t>(nStart) * c_.ci * khkw_ +
+                                  static_cast<uint64_t>(cinStart) * khkw_;
+        weightGm.SetGlobalBuffer(reinterpret_cast<__gm__ T*>(weight_) + gmOffset);
+
+        if (khkw_ == 1) {
+            Nd2NzParams p;
+            p.ndNum = 1;
+            p.nValue = actualN;
+            p.dValue = actualCin;
+            p.srcNdMatrixStride = 0;
+            p.srcDValue = c_.ci;
+            p.dstNzC0Stride = c_.nBL1;
+            p.dstNzNStride = 1;
+            p.dstNzMatrixStride = 0;
+            DataCopy(bl1, weightGm, p);
+        } else {
+            Dn2NzParams p;
+            p.dnNum = actualN;
+            p.nValue = khkw_;
+            p.dValue = actualCin;
+            p.srcDnMatrixStride = c_.ci * khkw_;
+            p.srcDValue = khkw_;
+            p.dstNzC0Stride = khkw_ * c_.nBL1;
+            p.dstNzNStride = c_.nBL1;
+            p.dstNzMatrixStride = k0_;
+            DataCopy(bl1, weightGm, p);
+        }
+    }
+
+    __aicore__ inline void LoadBias(uint32_t nStart, uint32_t actualN)
+    {
+        GlobalTensor<T> biasGm;
+        biasGm.SetGlobalBuffer(reinterpret_cast<__gm__ T*>(bias_) + nStart);
+        LocalTensor<T> biasL1(TPosition::A1, biasOffset_, c_.nBL1);
+        DataCopyParams cp(1, actualN * sizeof(T), 0, 0);
+        const uint8_t rightPad =
+            static_cast<uint8_t>(GAlignUp(actualN * sizeof(T), 32) / sizeof(T) - actualN);
+        DataCopyPadParams pp(true, 0, rightPad, 0);
+        DataCopyPad(biasL1, biasGm, cp, pp);
+    }
+
+    // nOffset selects the nL0 slice of the BL1 window that the next Cube tile
+    // consumes. BT only ever has to hold one L0 tile of bias, so it is sized by
+    // nL0 even when the L1 copy spans a wider nBL1 window.
+    __aicore__ inline void LoadBiasToBt(uint32_t nOffset, uint32_t actualN)
+    {
+        const uint32_t btElems = GAlignUp(c_.nL0 * sizeof(float), 64) / sizeof(float);
+        LocalTensor<float> biasBt(TPosition::C2, 0, btElems);
+        LocalTensor<T> biasL1(TPosition::A1, biasOffset_ + nOffset * sizeof(T),
+                              c_.nBL1 - nOffset);
+        const uint32_t blockCount = GAlignUp(actualN * sizeof(T), 64) / 32;
+        DataCopyParams cp(1, static_cast<uint16_t>(blockCount), 0, 0);
+        DataCopy(biasBt, biasL1, cp);
+    }
+
+    __aicore__ inline void SetupFmatrix(uint32_t validRows, uint32_t localPadTop, uint32_t mStart,
+                                        uint32_t curM, uint64_t& xmBase)
+    {
+        uint8_t pads[4] = {static_cast<uint8_t>(c_.padLeft), static_cast<uint8_t>(c_.padRight),
+                           static_cast<uint8_t>(localPadTop), static_cast<uint8_t>(255)};
+        Load3DSetFMatrixCal(validRows, c_.wi, pads);
+        Load3DSetPaddingCal(0);
+        const uint32_t mAlign = GAlignUp(curM, kM0);
+        const uint32_t posM = mStart % wout_;
+        xmBase = ((static_cast<uint64_t>(mAlign) & kMask16) << kMstepOffset) |
+                 ((static_cast<uint64_t>(posM) & kMask16) << kPosMOffset);
+        SetLoadDataRepeatWithStride(
+            LoadDataRepeatParamWithStride(0, 1, 0, static_cast<uint16_t>(mAlign / kM0)));
+    }
+
+    __aicore__ inline uint64_t MakeXt(uint32_t curCinAligned)
+    {
+        return ((static_cast<uint64_t>(c_.strideW) & kMask6) << 0) |
+               ((static_cast<uint64_t>(c_.kw) & kMask8) << kKernelWOffset) |
+               ((static_cast<uint64_t>(c_.kh) & kMask8) << kKernelHOffset) |
+               ((static_cast<uint64_t>(c_.strideH) & kMask6) << kStrideHOffset) |
+               ((static_cast<uint64_t>(c_.kw) & kNinthBitMask) << kKernelWHighOffset) |
+               ((static_cast<uint64_t>(c_.kh) & kNinthBitMask) << kKernelHHighOffset) |
+               ((static_cast<uint64_t>(c_.dilationW) & kMask8) << kDilationWOffset) |
+               ((static_cast<uint64_t>(c_.dilationH) & kMask8) << kDilationHOffset) |
+               ((static_cast<uint64_t>(curCinAligned) & kMask16) << kCinOffset);
+    }
+
+    __aicore__ inline void LoadAl0(LocalTensor<T>& al0, LocalTensor<T>& al1, uint32_t localK,
+                                   uint32_t curK, uint64_t xmBase, uint64_t xtBase)
+    {
+        const uint64_t xm =
+            static_cast<uint64_t>(curK) | (static_cast<uint64_t>(localK) << kPosKOffset) | xmBase;
+        Load3DBitModeParam p;
+        p.SetConfig0(xm);
+        p.SetConfig1(xtBase);
+        LoadData<TPosition::A2, TPosition::A1, T>(al0, al1, p);
+    }
+
+    // BL1 holds nBL1 columns as rows of nBL1/kN0 fractals, so the source stride
+    // stays the window pitch while nOffset picks the fractal the L0 tile starts
+    // at. L0B is packed to the tile's own width, which is what Mmad reads.
+    __aicore__ inline void LoadBl0(LocalTensor<T>& bl0, LocalTensor<T>& bl1, uint32_t localK,
+                                   uint32_t curK, uint32_t nOffset, uint32_t curN)
+    {
+        const uint16_t nFrac = static_cast<uint16_t>(GCeilDiv(curN, kN0));
+        Load2DBitModeParam p;
+        p.SetMStartPosition(static_cast<uint16_t>(nOffset / kN0));
+        p.SetKStartPosition(localK / k0_);
+        p.SetMStep(nFrac);
+        p.SetKStep(static_cast<uint16_t>(GCeilDiv(curK, k0_)));
+        p.SetSrcStride(static_cast<int32_t>(c_.nBL1 / kN0));
+        p.SetDstStride(nFrac);
+        p.SetIfTranspose(false);
+        LoadData<TPosition::B2, TPosition::B1, T>(bl0, bl1, p);
+    }
+
+    __aicore__ inline void CopyOut(LocalTensor<float>& cl0, uint32_t batch, uint32_t mStart,
+                                   uint32_t curM, uint32_t nStart, uint32_t actualN, bool accumulate)
+    {
+        GlobalTensor<T> yGm;
+        const uint64_t hw = totalM_;
+        const uint64_t outOffset = static_cast<uint64_t>(batch) * c_.co * hw +
+                                   static_cast<uint64_t>(nStart) * hw + mStart;
+        yGm.SetGlobalBuffer(reinterpret_cast<__gm__ T*>(y_) + outOffset);
+        FixpipeParamsC310<CO2Layout::COLUMN_MAJOR> fp;
+        fp.nSize = actualN;
+        fp.mSize = curM;
+        fp.srcStride = GAlignUp(curM, kM0);
+        fp.dstStride = static_cast<uint32_t>(hw);
+        fp.quantPre = DTypeTag<T>::quant;
+        fp.deqScalar = 1065353216UL;
+        fp.reluEn = false;
+        fp.unitFlag = kUnitFlagDisable;
+        fp.params.dnNum = 1;
+        fp.params.srcNzMatrixStride = 0;
+        fp.params.dstDnMatrixStride = 0;
+        fp.params.srcNzC0Stride = 1;
+        if (splitK_) {
+            if (accumulate) {
+                SetAtomicAdd<T>();
+            }
+            Fixpipe<T, float, CFG_COLUMN_MAJOR>(yGm, cl0, fp);
+            if (accumulate) {
+                SetAtomicNone();
+            }
+        } else {
+            Fixpipe<T, float, CFG_COLUMN_MAJOR>(yGm, cl0, fp);
+        }
+    }
+
+    __aicore__ inline void ComputeOutputTile(uint32_t batch, uint32_t mStart, uint32_t curM,
+                                             uint32_t nStart, uint32_t actualN)
+    {
+        LocalTensor<float> cl0(TPosition::CO1, 0, l0cElems);
+        MmadParams mp;
+        mp.m = GAlignUp(curM, kM0);
+        mp.n = GAlignUp(actualN, kN0);
+        mp.unitFlag = kUnitFlagDisable;
+
+        uint32_t validRows, localPadTop, validHiStart;
+        CalcFmapRange(mStart, curM, validHiStart, validRows, localPadTop);
+        uint64_t xmBase;
+        SetupFmatrix(validRows, localPadTop, mStart, curM, xmBase);
+
+        SetFlag<HardEvent::M_MTE1>(kEvtL0[0]);
+        SetFlag<HardEvent::M_MTE1>(kEvtL0[1]);
+
+        for (uint32_t i = 0; i < al1Bufs_; ++i) {
+            SetFlag<HardEvent::MTE1_MTE2>(kEvtAl1[i]);
+        }
+        WaitFlag<HardEvent::MTE1_MTE2>(kEvtAl1[0]);
+        LoadFmapBlock(0, 0, batch, validHiStart, validRows);
+        SetFlag<HardEvent::MTE2_MTE1>(kEvtAl1[0]);
+
+        if (!hoistWeight_) {
+            for (uint32_t i = 0; i < bl1Bufs_; ++i) {
+                SetFlag<HardEvent::MTE1_MTE2>(kEvtBl1[i]);
+            }
+            WaitFlag<HardEvent::MTE1_MTE2>(kEvtBl1[0]);
+            LoadWeightBlock(0, 0, nStart, actualN);
+            SetFlag<HardEvent::MTE2_MTE1>(kEvtBl1[0]);
+        }
+
+        bool firstOfSegment = true;
+        bool firstSegment = true;
+        uint32_t accumK = 0;
+
+        for (uint32_t s = 0; s < totalSteps_; ++s) {
+            const uint32_t aBlk = s / stepsPerA_;
+            const uint32_t bBlk = s / stepsPerB_;
+            const bool aOpen = (s % stepsPerA_) == 0;
+            const bool bOpen = (s % stepsPerB_) == 0;
+            const bool aClose = (s + 1 == totalSteps_) || ((s + 1) % stepsPerA_ == 0);
+            const bool bClose = (s + 1 == totalSteps_) || ((s + 1) % stepsPerB_ == 0);
+
+            if (aOpen) {
+                WaitFlag<HardEvent::MTE2_MTE1>(kEvtAl1[aBlk % al1Bufs_]);
+                if (al1PP_) {
+                    if (aBlk + 1 < numABlocks_) {
+                        const uint32_t nb = (aBlk + 1) % 2;
+                        WaitFlag<HardEvent::MTE1_MTE2>(kEvtAl1[nb]);
+                        LoadFmapBlock(aBlk + 1, nb, batch, validHiStart, validRows);
+                        SetFlag<HardEvent::MTE2_MTE1>(kEvtAl1[nb]);
+                    }
+                }
+            }
+            if (!hoistWeight_) {
+                if (bOpen) {
+                    WaitFlag<HardEvent::MTE2_MTE1>(kEvtBl1[bBlk % bl1Bufs_]);
+                    if (bl1PP_) {
+                        if (bBlk + 1 < numBBlocks_) {
+                            const uint32_t nb = (bBlk + 1) % 2;
+                            WaitFlag<HardEvent::MTE1_MTE2>(kEvtBl1[nb]);
+                            LoadWeightBlock(bBlk + 1, nb, nStart, actualN);
+                            SetFlag<HardEvent::MTE2_MTE1>(kEvtBl1[nb]);
+                        }
+                    }
+                }
+            }
+
+            ComputeStep(cl0, mp, s, aBlk, bBlk, validRows, xmBase, firstOfSegment, firstSegment,
+                        accumK, batch, mStart, curM, nStart, actualN, 0);
+
+            if (aClose) {
+                SetFlag<HardEvent::MTE1_MTE2>(kEvtAl1[aBlk % al1Bufs_]);
+                if (!al1PP_) {
+                    if (aBlk + 1 < numABlocks_) {
+                        WaitFlag<HardEvent::MTE1_MTE2>(kEvtAl1[0]);
+                        LoadFmapBlock(aBlk + 1, 0, batch, validHiStart, validRows);
+                        SetFlag<HardEvent::MTE2_MTE1>(kEvtAl1[0]);
+                    }
+                }
+            }
+            if (!hoistWeight_) {
+                if (bClose) {
+                    SetFlag<HardEvent::MTE1_MTE2>(kEvtBl1[bBlk % bl1Bufs_]);
+                    if (!bl1PP_) {
+                        if (bBlk + 1 < numBBlocks_) {
+                            WaitFlag<HardEvent::MTE1_MTE2>(kEvtBl1[0]);
+                            LoadWeightBlock(bBlk + 1, 0, nStart, actualN);
+                            SetFlag<HardEvent::MTE2_MTE1>(kEvtBl1[0]);
+                        }
+                    }
+                }
+            }
+        }
+
+        for (uint32_t i = 0; i < al1Bufs_; ++i) {
+            WaitFlag<HardEvent::MTE1_MTE2>(kEvtAl1[i]);
+        }
+        if (!hoistWeight_) {
+            for (uint32_t i = 0; i < bl1Bufs_; ++i) {
+                WaitFlag<HardEvent::MTE1_MTE2>(kEvtBl1[i]);
+            }
+        }
+        WaitFlag<HardEvent::M_MTE1>(kEvtL0[0]);
+        WaitFlag<HardEvent::M_MTE1>(kEvtL0[1]);
+
+        FlushTile(cl0, batch, mStart, curM, nStart, actualN, firstSegment);
+    }
+
+    // splitM / splitN path. AL1 holds the fmap window for the whole mAL1 tile
+    // and all of K, so it is loaded once here and the L0 tiles below only read
+    // from it. Widening the BL1 window past nL0 is what makes that reuse worth
+    // paying for: the fmap is re-read from GM once per BL1 window, so a window
+    // covering four nL0 tiles cuts the fmap traffic of this core fourfold.
+    __aicore__ inline void ComputeWindow(uint32_t batch, uint32_t mStart, uint32_t curM,
+                                         uint32_t nStart, uint32_t actualN)
+    {
+        uint32_t validRows, localPadTop, validHiStart;
+        CalcFmapRange(mStart, curM, validHiStart, validRows, localPadTop);
+
+        SetFlag<HardEvent::MTE1_MTE2>(kEvtAl1[0]);
+        WaitFlag<HardEvent::MTE1_MTE2>(kEvtAl1[0]);
+        LoadFmapBlock(0, 0, batch, validHiStart, validRows);
+        SetFlag<HardEvent::MTE2_MTE1>(kEvtAl1[0]);
+        WaitFlag<HardEvent::MTE2_MTE1>(kEvtAl1[0]);
+
+        uint8_t pads[4] = {static_cast<uint8_t>(c_.padLeft), static_cast<uint8_t>(c_.padRight),
+                           static_cast<uint8_t>(localPadTop), static_cast<uint8_t>(255)};
+        Load3DSetFMatrixCal(validRows, c_.wi, pads);
+        Load3DSetPaddingCal(0);
+
+        const uint32_t posMBase = mStart % wout_;
+        for (uint32_t nSub = 0; nSub < actualN; nSub += c_.nL0) {
+            const uint32_t curN = GMin(c_.nL0, actualN - nSub);
+            if (splitN_) {
+                LoadBiasToBt(nSub, curN);
+            }
+            for (uint32_t sub = 0; sub < curM; sub += c_.mL0) {
+                const uint32_t curSub = GMin(c_.mL0, curM - sub);
+                ComputeSubTile(batch, mStart + sub, curSub, posMBase + sub, validRows, nStart,
+                               actualN, nSub, curN);
+            }
+        }
+
+        SetFlag<HardEvent::MTE1_MTE2>(kEvtAl1[0]);
+        WaitFlag<HardEvent::MTE1_MTE2>(kEvtAl1[0]);
+    }
+
+    // nWinStart / nWinCount describe the BL1 window (what the weight loads
+    // cover); nOffset / curN describe the nL0 slice of it this Cube tile owns.
+    __aicore__ inline void ComputeSubTile(uint32_t batch, uint32_t mStart, uint32_t curM,
+                                          uint32_t posM, uint32_t validRows, uint32_t nWinStart,
+                                          uint32_t nWinCount, uint32_t nOffset, uint32_t curN)
+    {
+        const uint32_t nStart = nWinStart + nOffset;
+        LocalTensor<float> cl0(TPosition::CO1, 0, l0cElems);
+        MmadParams mp;
+        mp.m = GAlignUp(curM, kM0);
+        mp.n = GAlignUp(curN, kN0);
+        mp.unitFlag = kUnitFlagDisable;
+
+        const uint32_t mAlign = GAlignUp(curM, kM0);
+        const uint64_t xmBase = ((static_cast<uint64_t>(mAlign) & kMask16) << kMstepOffset) |
+                                ((static_cast<uint64_t>(posM) & kMask16) << kPosMOffset);
+        SetLoadDataRepeatWithStride(
+            LoadDataRepeatParamWithStride(0, 1, 0, static_cast<uint16_t>(mAlign / kM0)));
+
+        SetFlag<HardEvent::M_MTE1>(kEvtL0[0]);
+        SetFlag<HardEvent::M_MTE1>(kEvtL0[1]);
+
+        if (!hoistWeight_) {
+            for (uint32_t i = 0; i < bl1Bufs_; ++i) {
+                SetFlag<HardEvent::MTE1_MTE2>(kEvtBl1[i]);
+            }
+            WaitFlag<HardEvent::MTE1_MTE2>(kEvtBl1[0]);
+            LoadWeightBlock(0, 0, nWinStart, nWinCount);
+            SetFlag<HardEvent::MTE2_MTE1>(kEvtBl1[0]);
+        }
+
+        bool firstOfSegment = true;
+        bool firstSegment = true;
+        uint32_t accumK = 0;
+
+        for (uint32_t s = 0; s < totalSteps_; ++s) {
+            const uint32_t bBlk = s / stepsPerB_;
+            const bool bOpen = (s % stepsPerB_) == 0;
+            const bool bClose = (s + 1 == totalSteps_) || ((s + 1) % stepsPerB_ == 0);
+
+            if (!hoistWeight_) {
+                if (bOpen) {
+                    WaitFlag<HardEvent::MTE2_MTE1>(kEvtBl1[bBlk % bl1Bufs_]);
+                    if (bl1PP_) {
+                        if (bBlk + 1 < numBBlocks_) {
+                            const uint32_t nb = (bBlk + 1) % 2;
+                            WaitFlag<HardEvent::MTE1_MTE2>(kEvtBl1[nb]);
+                            LoadWeightBlock(bBlk + 1, nb, nWinStart, nWinCount);
+                            SetFlag<HardEvent::MTE2_MTE1>(kEvtBl1[nb]);
+                        }
+                    }
+                }
+            }
+
+            ComputeStep(cl0, mp, s, 0, bBlk, validRows, xmBase, firstOfSegment, firstSegment,
+                        accumK, batch, mStart, curM, nStart, curN, nOffset);
+
+            if (!hoistWeight_) {
+                if (bClose) {
+                    SetFlag<HardEvent::MTE1_MTE2>(kEvtBl1[bBlk % bl1Bufs_]);
+                    if (!bl1PP_) {
+                        if (bBlk + 1 < numBBlocks_) {
+                            WaitFlag<HardEvent::MTE1_MTE2>(kEvtBl1[0]);
+                            LoadWeightBlock(bBlk + 1, 0, nWinStart, nWinCount);
+                            SetFlag<HardEvent::MTE2_MTE1>(kEvtBl1[0]);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!hoistWeight_) {
+            for (uint32_t i = 0; i < bl1Bufs_; ++i) {
+                WaitFlag<HardEvent::MTE1_MTE2>(kEvtBl1[i]);
+            }
+        }
+        WaitFlag<HardEvent::M_MTE1>(kEvtL0[0]);
+        WaitFlag<HardEvent::M_MTE1>(kEvtL0[1]);
+
+        FlushTile(cl0, batch, mStart, curM, nStart, curN, firstSegment);
+    }
+
+    __aicore__ inline void ComputeStep(LocalTensor<float>& cl0, MmadParams& mp, uint32_t s,
+                                       uint32_t aBlk, uint32_t bBlk, uint32_t validRows,
+                                       uint64_t xmBase, bool& firstOfSegment, bool& firstSegment,
+                                       uint32_t& accumK, uint32_t batch, uint32_t mStart,
+                                       uint32_t curM, uint32_t nStart, uint32_t actualN,
+                                       uint32_t nOffset)
+    {
+        const uint32_t cin = s * cinStep_;
+        const uint32_t curCin = GMin(cinStep_, cinAligned_ - cin);
+        const uint32_t aCinStart = aBlk * cinTileA_;
+        const uint32_t bCinStart = bBlk * cinTileB_;
+        const uint32_t aCinCount = GMin(cinTileA_, cinAligned_ - aCinStart);
+        const uint32_t bCinCount = GMin(cinTileB_, cinAligned_ - bCinStart);
+
+        LocalTensor<T> al1(TPosition::A1, (aBlk % al1Bufs_) * al1BufferStride_,
+                           validRows * c_.wi * aCinCount);
+        LocalTensor<T> bl1(TPosition::B1,
+                           bl1Offset_ + (hoistWeight_ ? 0 : (bBlk % bl1Bufs_)) * bl1BufferStride_,
+                           bCinCount * khkw_ * c_.nBL1);
+        const uint64_t xtBase = MakeXt(aCinCount);
+
+        const uint32_t kBase = (cin - aCinStart) * khkw_;
+        const uint32_t kBaseB = (cin - bCinStart) * khkw_;
+        const uint32_t kCount = curCin * khkw_;
+
+        for (uint32_t off = 0; off < kCount; off += c_.kL0) {
+            const uint32_t curK = GMin(c_.kL0, kCount - off);
+            const uint32_t l0Buffer = l0Toggle_;
+            l0Toggle_ ^= 1U;
+            const event_t l0Event = kEvtL0[l0Buffer];
+            LocalTensor<T> al0(TPosition::A2, l0Buffer * kAl0BufferBytes, al0Elems);
+            LocalTensor<T> bl0(TPosition::B2, l0Buffer * kBl0BufferBytes, bl0Elems);
+            WaitFlag<HardEvent::M_MTE1>(l0Event);
+            LoadAl0(al0, al1, kBase + off, curK, xmBase, xtBase);
+            LoadBl0(bl0, bl1, kBaseB + off, curK, nOffset, actualN);
+            SetFlag<HardEvent::MTE1_M>(l0Event);
+            WaitFlag<HardEvent::MTE1_M>(l0Event);
+
+            mp.k = curK;
+            if (firstOfSegment) {
+                if (fixPending_) {
+                    WaitFlag<HardEvent::FIX_M>(kEvtFixCube);
+                    fixPending_ = false;
+                }
+                // Fresh L0C segment: bias once per output tile; later split-K
+                // segments start from zero and fold via atomic add in CopyOut.
+                mp.cmatrixInitVal = !firstSegment;
+                mp.cmatrixSource = firstSegment;
+                firstOfSegment = false;
+            } else {
+                mp.cmatrixInitVal = false;
+                mp.cmatrixSource = false;
+            }
+            Mmad(cl0, al0, bl0, mp);
+            SetFlag<HardEvent::M_MTE1>(l0Event);
+
+            accumK += curK;
+            if (splitK_) {
+                const bool lastK = (s + 1 == totalSteps_) && (off + curK >= kCount);
+                if (accumK >= flushK_ && !lastK) {
+                    FlushTile(cl0, batch, mStart, curM, nStart, actualN, firstSegment);
+                    firstSegment = false;
+                    firstOfSegment = true;
+                    accumK = 0;
+                }
+            }
+        }
+    }
+
+    __aicore__ inline void FlushTile(LocalTensor<float>& cl0, uint32_t batch, uint32_t mStart,
+                                     uint32_t curM, uint32_t nStart, uint32_t actualN,
+                                     bool firstSegment)
+    {
+        SetFlag<HardEvent::M_FIX>(kEvtCubeFix);
+        WaitFlag<HardEvent::M_FIX>(kEvtCubeFix);
+        CopyOut(cl0, batch, mStart, curM, nStart, actualN, !firstSegment);
+        SetFlag<HardEvent::FIX_M>(kEvtFixCube);
+        fixPending_ = true;
+    }
+
+    Conv2DCase c_{};
+    GM_ADDR x_ = nullptr;
+    GM_ADDR weight_ = nullptr;
+    GM_ADDR bias_ = nullptr;
+    GM_ADDR y_ = nullptr;
+
+    uint32_t k0_ = 0;
+    uint32_t khkw_ = 0;
+    uint32_t cinAligned_ = 0;
+    uint32_t wout_ = 0;
+    uint32_t totalM_ = 0;
+    uint32_t totalNAligned_ = 0;
+
+    uint32_t cinTileA_ = 0;
+    uint32_t cinTileB_ = 0;
+    uint32_t cinStep_ = 0;
+    uint32_t numABlocks_ = 0;
+    uint32_t numBBlocks_ = 0;
+    uint32_t totalSteps_ = 0;
+    uint32_t stepsPerA_ = 0;
+    uint32_t stepsPerB_ = 0;
+    uint32_t al1Bufs_ = 1;
+    uint32_t bl1Bufs_ = 1;
+    uint32_t flushK_ = 0xffffffffU;
+
+    uint32_t al1BufferStride_ = 0;
+    uint32_t bl1BufferStride_ = 0;
+    uint32_t bl1Offset_ = 0;
+    uint32_t biasOffset_ = 0;
+
+    bool al1PP_ = false;
+    bool bl1PP_ = false;
+    bool hoistWeight_ = false;
+    bool splitM_ = false;
+    bool splitN_ = false;
+    bool useWindow_ = false;
+    bool splitK_ = false;
+    bool hf32_ = false;
+
+    uint32_t batchCore_ = 0;
+    uint32_t mCore_ = 0;
+    uint32_t nCore_ = 0;
+    bool active_ = false;
+    bool fixPending_ = false;
+    uint32_t l0Toggle_ = 0;
+};
+
+} // namespace conv2d_cases
+
+#endif

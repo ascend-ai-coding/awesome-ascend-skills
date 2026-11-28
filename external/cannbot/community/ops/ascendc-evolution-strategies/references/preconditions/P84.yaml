@@ -1,0 +1,40 @@
+strategy_id: P84
+
+strategy_meta:
+  id: "P84"
+  slug: "P84_vector_compute_efficiency_patterns"
+  title: "P84: Vector Compute Efficiency Patterns (UB 内 Vector 计算效率优化模式)"
+  bottlenecks: [compute_bound, scalar_compute]
+  op_families: [elementwise, normalization, optimizer]
+  conflicts_with: [P67, P68, P69]
+  synergizes_with: []
+  requires: []
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p84_vector_compute_efficiency_patterns.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p84_vector_compute_efficiency_patterns.md"
+  playbook_slug: "P84_vector_compute_efficiency_patterns"
+checks:
+  - id: has_vector
+    type: grep_count
+    pattern: "Vector|vector|VEC|Add|Mul|Exp|计算"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 Vector 计算逻辑 → 无 Vector 效率优化空间，不适用 P84。"
+
+  - id: has_repeat
+    type: grep_count
+    pattern: "repeat|mask|Mask|CalcMask|CalcRepeat"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 repeat/mask 计算逻辑 → 无 Counter 模式优化空间，不适用 P84。"
+
+  - id: has_setmaskcount
+    type: grep_count
+    pattern: "SetMaskCount|Counter|COUNTER|reduce"
+    files: [kernel]
+    expected: ">= 0"
+    fail_msg: "已存在 Counter 模式或低延迟归约优化 → 可能冗余，优先验证现有策略效果。"

@@ -1,0 +1,429 @@
+/*!
+ * \file conv3ddx_ks_tiling.h
+ * \brief Conv3DDX kernel split 运行期 tiling 契约：Conv3ddxKsCase 结构体 +
+ *        ValidateCase 校验 + Host tiling API（Conv3ddxKsTilingIn/Out、Conv3ddxKsDoTiling）。
+ *        对应说明文档 templates/conv3ddx_kernel_split.md。
+ *
+ * ── 集成说明（使用前必读）─────────────────────────────────────────────────────
+ *   1. 去掉 .template 后缀落地为 conv3ddx_ks_tiling.h（host/device 共用，仅依赖 cstdint）。
+ *   2. 实现见 conv3ddx_ks_tiling_impl.template → conv3ddx_ks_tiling.cpp（g++）。
+ *   3. kernel（bisheng，__mix__(1,2)）只读 Conv3ddxKsCase；plugin（g++）编译 tiling_impl。
+ *   4. 适用域（两种拆分模式，选型见 conv3ddx_kernel_split.md §2.5/§10）：
+ *      - SplitHW：strideH==strideW==2、kh/kw∈[1,4]、dilation H/W=1、groups=1、
+ *        dedy/dx=NCDHW、filter=NCDHW、无 bias。
+ *      - SplitH：strideH≥2 且 kh≥strideH 且 kh≤16、cin/cout≥16、wi≥32、
+ *        dilation H/W=1、groups=1、pad 对称（其余同上）。
+ *   5. kernel 拆分理论见 conv3ddx_kernel_split.md §2；模板代码与 ops-nn 源码的
+ *      对照索引见 conv3ddx_kernel_split_tuning_guide.md §15。
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+
+// ── ops-nn 源码对照（完整索引见 tuning guide §15）───────────────────────────
+//   Conv3ddxKsCase            ← Conv3DBackpropInputArch35TilingData（tiling_data_arch35.h）
+//                                 + KernelSplitPara（kernel_split_tiling.h）
+//   ValidateCase              ← CheckKernelSplitEnable/HW/H11/H（kernel_split_tiling.cpp）
+//   KsFillSubPadList          ← CalcSubKernelPadListForKernelSplit（conv3d_bp_kernel_split_func.h）
+//   KsFillSubPadListH         ← CalcSubKernelBackPadUp（conv3d_dx_kernel_split_block.h）
+//   KsCalcBackpropPads        ← SetBackpropPadInfo / CalcBlockOffsetC bpPad 推导
+// ─────────────────────────────────────────────────────────────────────────────
+
+#ifndef CONV3DDX_KS_TILING_H
+#define CONV3DDX_KS_TILING_H
+
+#include <cstdint>
+
+// ===========================================================================
+// Conv3ddxKsCase：运行期 tiling 数据结构（host 填充，device 消费）
+//
+// 一份 __mix__(1,2) kernel 编译期仅按 dtype 特化；子核描述、B1 全载、
+// workspace 中转、多核切分全部由本结构体字段驱动。
+//
+// 字段分四组：
+//   1. 问题几何（n..groups）—— 原样来自算子入参
+//   2. 子核描述（splitHi..subPadUp）—— kernel 拆分派生量（host 冻结，device 直接消费）
+//   3. 多核切分（usedCoreNum..singleCoreN）
+//   4. L1/L0 tile 与重排开关（baseM..useWorkspace）
+// ===========================================================================
+
+enum class ConvKsDType : uint8_t { FP16 = 0, BF16 = 1, FP32 = 2 };
+
+// 拆分模式（ops-nn KERNEL_SPLIT_HW=1 / KERNEL_SPLIT_H=2，kernel_split_tiling.cpp:32）
+enum class ConvKsSplitMode : uint8_t { HW = 1, H = 2 };
+
+// SplitHW：固定 stride=2，4 个子核按 (sh,sw) 十字切
+constexpr uint32_t kKsSubKernelNum = 4;
+// SplitH：相位数 = strideH（≤ Kh ≤ 16），数组按上限开
+constexpr uint32_t kKsMaxPhases = 16;
+
+struct Conv3ddxKsCase {
+    // --- 问题几何（dedy/dx NCDHW，filter NCDHW = [Cout, Cin, Kd, Kh, Kw]）---
+    uint32_t n, cin, cout;
+    uint32_t di, hi, wi;      // dx
+    uint32_t dout, ho, wo;    // dedy（host 推导后冻结）
+    uint32_t kd, kh, kw;
+    uint32_t strideD, strideH, strideW;   // HW：sH==sW==2；H：sH≥2（sW 不限）
+    uint32_t dilationD, dilationH, dilationW; // H/W 方向必须为 1（准入）
+    uint32_t padFront, padBack, padUp, padDown, padLeft, padRight;
+    uint32_t groups;          // 必须为 1（准入）
+
+    // --- 拆分模式（ConvKsSplitMode；决定 kernel 侧相位归属与输出路径）---
+    uint8_t splitMode;
+
+    // --- 子核描述（kernel 拆分派生量）---
+    // SplitHW：splitHi×splitWi = ceil(Hi/sH)×ceil(Wi/sW)：相位面尺寸，即新的 M 轴
+    // SplitH ：splitHi×Wi（W 不压缩，splitWi 字段无效，行宽直接用 wi）
+    uint32_t splitHi, splitWi;
+    // 子核尺寸十字切：splitIndex = splitHIndex*strideW + splitWIndex
+    //   idx0=(0,0) ceil/ceil  idx1=(0,1) ceil/floor
+    //   idx2=(1,0) floor/ceil idx3=(1,1) floor/floor
+    uint32_t splitHk0, splitHk1;   // ceil(Kh/sH), Kh/sH
+    uint32_t splitWk0, splitWk1;   // ceil(Kw/sW), Kw/sW
+    // 每子核 backprop pad（dx 侧反向 pad 按相位重算，可为负；HW 模式使用）
+    int32_t subPadLeft[kKsSubKernelNum];
+    int32_t subPadRight[kKsSubKernelNum];
+    int32_t subPadUp[kKsSubKernelNum];
+
+    // --- SplitH 专属（splitMode==H 时有效；ops-nn KernelSplitPara H 分支）---
+    // 相位组尺寸（§2.3 尺寸公式的 baseIter 机制）：
+    //   baseHkIter 个长组 splitHkBase=ceil(Kh/sH)，其余短组 splitHkTail=Kh/sH
+    uint32_t splitHkBase, splitHkTail, baseHkIter;
+    uint32_t kernelStartIdx;         // 相位恢复起点：padUp%sH（≠0 时取 sH−padUp%sH）
+    uint32_t kSTailIdx;              // Hi%strideH，≠0 时存在尾相位（行数少 1）
+    uint32_t kSTailM;                // 尾相位 M 总长 = (Hi/sH)×Wi
+    uint32_t kSTailMCnt;             // 尾相位 mCnt = ceil(kSTailM/singleCoreM)
+    int32_t subPadUpH[kKsMaxPhases]; // 每相位 backprop pad（下标 = kSCoreIdx 原始相位序号）
+
+    // --- 多核切分（M 轴 = 相位面 splitHi×splitWi，N 轴 = Cin）---
+    uint32_t usedCoreNum, calRound, tailCnt;
+    uint32_t singleCoreM;   // 每核相位面 M 空间（对齐 splitWi 行）
+    uint32_t singleCoreN;   // 每核 Cin 空间（对齐 16）
+
+    // --- L1/L0 tile ---
+    // baseM×baseN×baseK 一次 Mmad 的形状；K = Cout1×subHkWk×K0
+    uint32_t baseM, baseN, baseK;
+    uint32_t stepKa, stepKb;  // L1 驻留的 baseK 基本块数（A/B 两流）
+    uint8_t a1Db, b1Db, c0Db; // L1/L0 乒乓（1=单缓冲, 2=双缓冲）
+    uint8_t b1FullLoad;       // filter 单次进 L1 驻留，子核切换用 Load2d 起点选相位
+
+    // --- 输出重排 ---
+    uint8_t useWorkspace;     // UB 放不下 2×(相位块) 时 L0C→GM(ws)→UB 中转
+    uint32_t workspaceBytes;  // 重排 workspace 总量（不含框架预留）
+
+    ConvKsDType dtype;
+};
+
+// --- 编译期 helper（host/device 共用，仅依赖 cstdint）---
+
+constexpr uint32_t KsCeilDiv(uint32_t a, uint32_t b) { return (a + b - 1) / b; }
+constexpr uint32_t KsAlignUp(uint32_t a, uint32_t b) { return KsCeilDiv(a, b) * b; }
+constexpr uint32_t KsDTypeBytes(ConvKsDType t) { return t == ConvKsDType::FP32 ? 4U : 2U; }
+// Cube K0 对齐粒度：FP32=8，FP16/BF16=16
+constexpr uint32_t KsCubeK0(ConvKsDType t) { return t == ConvKsDType::FP32 ? 8U : 16U; }
+
+// L1/L0 是该 dav-3510 样例的预算；接入其他目标前须核对目标设备。
+constexpr uint32_t kKsL1Bytes = 512 * 1024;
+constexpr uint32_t kKsL0ABBytes = 64 * 1024;
+constexpr uint32_t kKsL0CBytes = 256 * 1024;
+constexpr uint32_t kKsM0 = 16;
+constexpr uint32_t kKsN0 = 16;
+
+// 子核尺寸/分形派生（device 侧镜像这些 constexpr 时按同公式重算）
+constexpr uint32_t KsSplitHk(const Conv3ddxKsCase& c, uint32_t idx)
+{
+    // idx bit0 = sw 相位，bit1 = sh 相位
+    return (idx & 2U) ? c.splitHk1 : c.splitHk0;
+}
+constexpr uint32_t KsSplitWk(const Conv3ddxKsCase& c, uint32_t idx)
+{
+    return (idx & 1U) ? c.splitWk1 : c.splitWk0;
+}
+// 子核 HkWk 分形长度（元素）：subHk × subWk × K0
+constexpr uint32_t KsSplitHkWkC0(const Conv3ddxKsCase& c, uint32_t idx)
+{
+    return KsSplitHk(c, idx) * KsSplitWk(c, idx) * KsCubeK0(c.dtype);
+}
+// 相位面 M 总长（H 模式行宽 = Wi，W 不压缩）
+constexpr uint32_t KsMTotal(const Conv3ddxKsCase& c)
+{
+    return c.splitMode == static_cast<uint8_t>(ConvKsSplitMode::H) ? c.splitHi * c.wi
+                                                                   : c.splitHi * c.splitWi;
+}
+// N 总长（对齐 16）
+constexpr uint32_t KsNAligned(const Conv3ddxKsCase& c) { return KsAlignUp(c.cin, kKsN0); }
+// 最大子核 HkWk（H 模式 Wk 不拆 = kw）
+constexpr uint32_t KsSubHkWkMax(const Conv3ddxKsCase& c)
+{
+    return c.splitMode == static_cast<uint8_t>(ConvKsSplitMode::H) ? c.splitHk0 * c.kw
+                                                                   : c.splitHk0 * c.splitWk0;
+}
+// 单子核 K 总长（单层 kd）：Cout1 × maxSubHkWk × K0
+constexpr uint32_t KsKValue(const Conv3ddxKsCase& c)
+{
+    return KsCeilDiv(c.cout, kKsN0) * KsSubHkWkMax(c) * KsCubeK0(c.dtype);
+}
+// M 轴行宽（核间切分/输出寻址用；H 模式 = Wi）
+constexpr uint32_t KsMRowWidth(const Conv3ddxKsCase& c)
+{
+    return c.splitMode == static_cast<uint8_t>(ConvKsSplitMode::H) ? c.wi : c.splitWi;
+}
+
+// ===========================================================================
+// ValidateCase：Conv3ddxKsCase 的完整约束校验
+//
+// host tiling 搜索产出后必须通过此函数；kernel 依赖这些不变量。
+// 约束分五组：准入域 / 对齐 / 多核覆盖 / 容量 / 全载契约。
+// ===========================================================================
+constexpr uint32_t KsMaxU32(uint32_t a, uint32_t b) { return a > b ? a : b; }
+
+constexpr bool ValidateCase(const Conv3ddxKsCase& c)
+{
+    const uint32_t k0 = KsCubeK0(c.dtype);
+    // ---- 公共准入（两种模式共享）----
+    const bool common = c.n > 0 && c.cin > 0 && c.cout > 0 && c.groups == 1U &&
+                        c.dilationH == 1U && c.dilationW == 1U &&
+                        c.padUp == c.padDown && c.padLeft == c.padRight &&   // pad 对称
+                        c.splitHi == KsCeilDiv(c.hi, c.strideH) &&
+                        c.baseN % kKsN0 == 0 && c.baseK % k0 == 0 &&
+                        c.singleCoreN % kKsN0 == 0 &&
+                        c.usedCoreNum > 0 && c.calRound > 0 &&
+                        // L0A/L0B/L0C 容量（乒乓后）
+                        c.baseM * c.baseK * KsDTypeBytes(c.dtype) * c.a1Db <= kKsL0ABBytes &&
+                        c.baseN * c.baseK * KsDTypeBytes(c.dtype) * c.b1Db <= kKsL0ABBytes &&
+                        c.baseM * c.baseN * sizeof(float) * c.c0Db <= kKsL0CBytes;
+    if (!common) {
+        return false;
+    }
+    if (c.splitMode == static_cast<uint8_t>(ConvKsSplitMode::H)) {
+        // ---- SplitH 契约（§10）----
+        const uint32_t tail = c.kh / c.strideH;
+        return c.strideH >= 2U && c.strideH <= kKsMaxPhases &&
+               c.kh >= c.strideH && c.kh <= kKsMaxPhases &&          // kernel 维 ≥ stride
+               c.cin >= 16U && c.cout >= 16U && c.wi >= 32U &&       // shape 下限
+               // 相位组尺寸自洽（baseIter 机制，§2.3）
+               c.splitHkBase == KsCeilDiv(c.kh, c.strideH) &&
+               c.splitHkTail == tail &&
+               c.baseHkIter == (tail == c.splitHkBase ? c.strideH
+                                                     : c.kh - tail * c.strideH) &&
+               // 尾相位字段自洽（kSTailIdx/kSTailM，§10.4）
+               c.kSTailIdx == c.hi % c.strideH &&
+               c.kSTailM == (c.hi / c.strideH) * c.wi &&
+               c.kSTailMCnt == KsCeilDiv(c.kSTailM == 0U ? 1U : c.kSTailM, c.singleCoreM) &&
+               // singleCoreM 允许不对齐 Wi：非整行偏移由目的地址的
+               // (mOffset/wi)×wi×(sH−1) 整除补偿处理（ops-nn CalcBlockOffsetC H 分支）
+               // baseK 契约（H 模式，ops-nn ShrinkBaseKForKernelSplit）：baseK 整除
+               // 最大/最小子核的 K 段（cout1×subHkWk×K0），保证 K 段整块装载
+               //（与 SplitHW 的"倍数"契约方向相反，见 tuning guide §15 对照注记）
+               (static_cast<uint64_t>(KsCeilDiv(c.cout, kKsN0)) * c.splitHkBase * c.kw * k0) %
+                   c.baseK == 0 &&
+               (static_cast<uint64_t>(KsCeilDiv(c.cout, kKsN0)) * KsMaxU32(tail, 1U) * c.kw * k0) %
+                   c.baseK == 0 &&
+               // 直写输出：无 workspace / 无 AIV 重排
+               c.useWorkspace == 0U;
+    }
+    // ---- SplitHW 契约 ----
+    const bool strideOk = c.strideH == 2U && c.strideW == 2U;
+    const bool kernelOk = c.kh >= 1U && c.kh <= 4U && c.kw >= 1U && c.kw <= 4U;
+    return strideOk && kernelOk &&
+           // 子核派生量自洽（k < stride 时 floor 回退为 ceil）
+           c.splitWi == KsCeilDiv(c.wi, c.strideW) &&
+           c.splitHk0 == KsCeilDiv(c.kh, c.strideH) &&
+           c.splitHk1 == ((c.kh / c.strideH) == 0U ? c.splitHk0 : c.kh / c.strideH) &&
+           c.splitWk0 == KsCeilDiv(c.kw, c.strideW) &&
+           c.splitWk1 == ((c.kw / c.strideW) == 0U ? c.splitWk0 : c.kw / c.strideW) &&
+           // baseK 必须整除最大与最小子核分形（任一子核完整进 L0B，tuning guide §5）
+           c.baseK % KsSplitHkWkC0(c, 0) == 0 && c.baseK % KsSplitHkWkC0(c, 3) == 0 &&
+           // 多核覆盖：M 按相位面行 splitWi 对齐
+           c.singleCoreM % c.splitWi == 0 &&
+           // baseN 覆盖 Cin 才允许 B1 全载
+           (c.b1FullLoad == 0 || (c.baseN >= KsNAligned(c) && c.stepKb * c.baseK >= KsKValue(c)));
+}
+
+
+
+// ===========================================================================
+// Host tiling API
+//
+// Conv3ddxKsDoTiling：准入判定 → KernelSplitPara 派生 → 基本块/stepK 搜索 →
+// B1 全载与 workspace 判定 → 核间切分。失败返回 false，plugin 应 TORCH_CHECK 报错。
+// ===========================================================================
+
+struct Conv3ddxKsTilingIn {
+    uint32_t n = 0, cin = 0, cout = 0;
+    uint32_t di = 0, hi = 0, wi = 0;
+    uint32_t kd = 0, kh = 0, kw = 0;
+    uint32_t strideD = 1, strideH = 2, strideW = 2;
+    uint32_t dilationD = 1, dilationH = 1, dilationW = 1;
+    uint32_t padFront = 0, padBack = 0;
+    uint32_t padUp = 0, padDown = 0, padLeft = 0, padRight = 0;
+    uint32_t groups = 1;
+    ConvKsDType dtype = ConvKsDType::FP16;
+    uint32_t aicoreNum = 0; // 调用方须从目标平台查询可用 AIC 核数
+    uint64_t ubBytes = 0;   // 调用方须从目标平台查询单核 UB 字节数
+};
+
+struct Conv3ddxKsTilingOut {
+    uint8_t splitMode = 1;   // ConvKsSplitMode：1=HW（核内轮转），2=H（相位进核间）
+    uint32_t usedCoreNum = 0;
+    uint32_t calRound = 0;
+    uint32_t tailCnt = 0;
+    uint32_t singleCoreM = 0;
+    uint32_t singleCoreN = 0;
+    uint32_t baseM = 0, baseN = 0, baseK = 0;
+    uint32_t stepKa = 0, stepKb = 0;
+    uint8_t a1Db = 1, b1Db = 1, c0Db = 1;
+    uint8_t b1FullLoad = 0;
+    uint8_t useWorkspace = 0;
+    uint32_t workspaceBytes = 0;
+    // --- SplitH 专属 ---
+    uint32_t kSTailIdx = 0;
+    uint32_t kSTailM = 0;
+    uint32_t kSTailMCnt = 0;
+};
+
+// --- 子核 backprop pad（tuning guide §3；s=2 特化公式，host/device 共用）---
+
+// dx 侧反向 pad（outBackprop 视角补零），由 forward pad 对称性推导
+inline void KsCalcBackpropPads(const Conv3ddxKsTilingIn& in, int32_t& bpUp, int32_t& bpLeft)
+{
+    const int32_t sH = static_cast<int32_t>(in.strideH);
+    const int32_t sW = static_cast<int32_t>(in.strideW);
+    const int32_t ho = static_cast<int32_t>((in.hi + in.padUp + in.padDown - (in.dilationH * (in.kh - 1) + 1)) / in.strideH + 1);
+    const int32_t wo = static_cast<int32_t>((in.wi + in.padLeft + in.padRight - (in.dilationW * (in.kw - 1) + 1)) / in.strideW + 1);
+    bpUp = static_cast<int32_t>(in.hi) - ((ho - 1) * sH + 1) + static_cast<int32_t>(in.kh - 1) -
+           static_cast<int32_t>(in.padUp);
+    bpLeft = static_cast<int32_t>(in.wi) - ((wo - 1) * sW + 1) + static_cast<int32_t>(in.kw - 1) -
+             static_cast<int32_t>(in.padLeft);
+}
+
+inline int32_t KsSubBackpadBegin(uint32_t k, uint32_t s, int32_t bpPad, uint32_t idx)
+{
+    const int32_t subSize = static_cast<int32_t>((k + s - idx - 1) / s);
+    const int32_t miss = (static_cast<int32_t>(k) - static_cast<int32_t>(idx) - bpPad) >> 1;
+    return (subSize - 1) - miss;
+}
+
+inline int32_t KsSubBackpadEnd(uint32_t k, uint32_t s, int32_t bpPad, uint32_t idx)
+{
+    const int32_t subSize = static_cast<int32_t>((k + s - idx - 1) / s);
+    const int32_t idxRev = static_cast<int32_t>(k) - ((subSize - 1) * static_cast<int32_t>(s) + 1 + idx);
+    const int32_t miss = (static_cast<int32_t>(k) - idxRev - bpPad) >> 1;
+    return (subSize - 1) - miss;
+}
+
+// 填充 4 个子核的 pad 表（奇数 Wi 修正含在内）
+inline void KsFillSubPadList(const Conv3ddxKsTilingIn& in, Conv3ddxKsCase& c)
+{
+    int32_t bpUp = 0;
+    int32_t bpLeft = 0;
+    KsCalcBackpropPads(in, bpUp, bpLeft);
+    // 奇数 Wi 修正：特定 pad/kernel 组合下右侧 pad +1（对齐相位面右边界）
+    uint32_t pad02Right = 0;
+    uint32_t pad13Right = 0;
+    const bool swapGroup = (bpLeft == 0 || bpLeft == 2) && (in.kw == 4 || in.kw == 2);
+    if (swapGroup ? ((in.wi & 1U) == 1U) : false) {
+        pad02Right = 1U;
+    } else if ((in.wi & 1U) == 1U) {
+        pad13Right = 1U;
+    }
+    c.subPadLeft[0] = KsSubBackpadBegin(in.kw, in.strideW, bpLeft, 0);
+    c.subPadLeft[1] = KsSubBackpadBegin(in.kw, in.strideW, bpLeft, 1);
+    c.subPadLeft[2] = c.subPadLeft[0];
+    c.subPadLeft[3] = c.subPadLeft[1];
+    c.subPadRight[0] = KsSubBackpadEnd(in.kw, in.strideW, bpLeft, 0) + static_cast<int32_t>(pad02Right);
+    c.subPadRight[1] = KsSubBackpadEnd(in.kw, in.strideW, bpLeft, 1) + static_cast<int32_t>(pad13Right);
+    c.subPadRight[2] = c.subPadRight[0];
+    c.subPadRight[3] = c.subPadRight[1];
+    c.subPadUp[0] = KsSubBackpadBegin(in.kh, in.strideH, bpUp, 0);
+    c.subPadUp[1] = c.subPadUp[0];
+    c.subPadUp[2] = KsSubBackpadBegin(in.kh, in.strideH, bpUp, 1);
+    c.subPadUp[3] = c.subPadUp[2];
+}
+
+// --- SplitH 每相位 backprop pad（ops-nn CalcSubKernelBackPadUp，块级调度侧公式）---
+inline int32_t KsSubBackpadUpH(uint32_t k, uint32_t s, int32_t bpPad, uint32_t idx)
+{
+    const int32_t subSize = static_cast<int32_t>((k + s - idx - 1) / s);
+    const int32_t curIdx = static_cast<int32_t>(k) - static_cast<int32_t>(idx) - bpPad - 1;
+    const int32_t miss = (curIdx > 0) ? ((curIdx - 1) / static_cast<int32_t>(s) + 1) : 0;
+    return (subSize - 1) - miss;
+}
+
+// 填充 SplitH 每相位 pad 表（下标 = kSCoreIdx 原始相位序号）
+inline void KsFillSubPadListH(const Conv3ddxKsTilingIn& in, Conv3ddxKsCase& c)
+{
+    int32_t bpUp = 0;
+    int32_t bpLeft = 0;
+    KsCalcBackpropPads(in, bpUp, bpLeft);
+    (void)bpLeft;
+    for (uint32_t a = 0; a < in.strideH && a < kKsMaxPhases; ++a) {
+        c.subPadUpH[a] = KsSubBackpadUpH(in.kh, in.strideH, bpUp, a);
+    }
+}
+
+// 将 host 搜索结果转为 kernel 消费的 Conv3ddxKsCase
+inline Conv3ddxKsCase ToCaseView(const Conv3ddxKsTilingIn& in, const Conv3ddxKsTilingOut& out)
+{
+    Conv3ddxKsCase c{};
+    c.n = in.n; c.cin = in.cin; c.cout = in.cout;
+    c.di = in.di; c.hi = in.hi; c.wi = in.wi;
+    c.kd = in.kd; c.kh = in.kh; c.kw = in.kw;
+    c.strideD = in.strideD; c.strideH = in.strideH; c.strideW = in.strideW;
+    c.padFront = in.padFront; c.padBack = in.padBack;
+    c.padUp = in.padUp; c.padDown = in.padDown;
+    c.padLeft = in.padLeft; c.padRight = in.padRight;
+    c.dilationD = in.dilationD; c.dilationH = in.dilationH; c.dilationW = in.dilationW;
+    c.groups = in.groups;
+
+    // dedy shape
+    const uint32_t eD = in.dilationD * (in.kd - 1) + 1;
+    const uint32_t eH = in.dilationH * (in.kh - 1) + 1;
+    const uint32_t eW = in.dilationW * (in.kw - 1) + 1;
+    c.dout = (in.di + in.padFront + in.padBack - eD) / in.strideD + 1;
+    c.ho = (in.hi + in.padUp + in.padDown - eH) / in.strideH + 1;
+    c.wo = (in.wi + in.padLeft + in.padRight - eW) / in.strideW + 1;
+
+    c.splitMode = out.splitMode;
+    // 子核派生量（k < stride 时 floor 为 0，回退为 ceil 值：子核尺寸至少 1）
+    c.splitHi = KsCeilDiv(in.hi, in.strideH);
+    c.splitWi = KsCeilDiv(in.wi, in.strideW);
+    c.splitHk0 = KsCeilDiv(in.kh, in.strideH);
+    c.splitHk1 = (in.kh / in.strideH) == 0U ? c.splitHk0 : in.kh / in.strideH;
+    c.splitWk0 = KsCeilDiv(in.kw, in.strideW);
+    c.splitWk1 = (in.kw / in.strideW) == 0U ? c.splitWk0 : in.kw / in.strideW;
+    if (out.splitMode == static_cast<uint8_t>(ConvKsSplitMode::H)) {
+        // SplitH 派生量（§10.2/§10.4）：相位组尺寸 baseIter 机制 + 相位恢复 + 尾相位
+        const uint32_t tail = c.splitHk1;
+        c.splitHkBase = c.splitHk0;
+        c.splitHkTail = tail;
+        c.baseHkIter = (tail == c.splitHkBase) ? in.strideH : in.kh - tail * in.strideH;
+        uint32_t ks = in.padUp % in.strideH;
+        c.kernelStartIdx = (ks == 0U) ? 0U : in.strideH - ks;
+        c.kSTailIdx = in.hi % in.strideH;
+        c.kSTailM = (in.hi / in.strideH) * in.wi;
+        KsFillSubPadListH(in, c);   // 每相位 backprop pad（tuning guide §10A.2）
+    } else {
+        KsFillSubPadList(in, c);    // 4 子核 backprop pad 表（tuning guide §3）
+    }
+
+    c.usedCoreNum = out.usedCoreNum;
+    c.calRound = out.calRound;
+    c.tailCnt = out.tailCnt;
+    c.singleCoreM = out.singleCoreM;
+    c.singleCoreN = out.singleCoreN;
+    c.baseM = out.baseM; c.baseN = out.baseN; c.baseK = out.baseK;
+    c.stepKa = out.stepKa; c.stepKb = out.stepKb;
+    c.a1Db = out.a1Db; c.b1Db = out.b1Db; c.c0Db = out.c0Db;
+    c.b1FullLoad = out.b1FullLoad;
+    c.useWorkspace = out.useWorkspace;
+    c.workspaceBytes = out.workspaceBytes;
+    c.dtype = in.dtype;
+    c.kSTailIdx = out.kSTailIdx;
+    c.kSTailM = out.kSTailM;
+    c.kSTailMCnt = out.kSTailMCnt;
+    return c;
+}
+
+// 运行时 tiling 搜索入口。实现见 conv3ddx_ks_tiling_impl.template → conv3ddx_ks_tiling.cpp
+bool Conv3ddxKsDoTiling(const Conv3ddxKsTilingIn& in, Conv3ddxKsTilingOut& out);
+
+#endif
