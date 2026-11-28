@@ -1,0 +1,156 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "ops-spec-gen 技能的主要功能与两种模式",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "ops-spec-gen 技能的主要功能是什么？它有哪两种运行模式？请简要说明校验阶段状态如何确定，以及 SKIP 是否代表该阶段实际执行通过。可以加载技能，不需要执行其他外部工具调用。",
+      "expected_output": "回复应说明 ops-spec-gen 的两个主要模式：生成模式用于创建 spec.yaml 脚手架文件，校验模式用于执行完整的 12 阶段（12-stage）L0 验证，以检查算子规格定义的正确性和完整性。具体阶段根据适用条件和可选依赖返回 PASS、FAIL 或 SKIP；SKIP 不代表该阶段已实际执行通过。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "spec.yaml 的 12 阶段 L0 验证",
+      "config": {
+        "max_tokens": 100000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 120000,
+          "glm-5": 110000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "ops-spec-gen 的 12 阶段 L0 验证具体包含哪些检查项？可以加载技能，不需要执行其他外部工具调用。",
+      "expected_output": "回复应按当前 SKILL.md 说明完整的 12 阶段 L0 验证及各阶段作用：1 schema_static，2 category_paradigm_consistency，3 shape_closure，4 dtype_closure，5 broadcast_legality，6 boundary_min_set，7 tolerance_coverage，8 formula_smoke_eval，9 oracle_reachable，10 formula_oracle_equiv，11 invariant_exec，12 extreme_check。阶段 2 包含支持与排除声明的一致性检查；阶段 10–12 分别检查公式与 oracle 的输出等价性、数学不变量、极端输入声明与实际结果的一致性。完整流程应覆盖上述全部阶段，不得将 SKIP 当作实际执行通过。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "category 单选与 paradigms 多选的职责边界",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "给一个同时包含广播和计算的算子生成 spec 时，op.category 和 op.paradigms 应如何选择？能不能只看 cheatsheet 的启发式规则决定 category？",
+      "expected_output": "回复应说明 category 是按算子主要数学目的选择的 26 类单选，paradigms 是能力标签多选并包含 category 的必含范式；不得仅凭 cheatsheet 启发式选 category，应依据数学语义区分例如 Broadcast 与 LayoutTransform。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "生成器骨架中的必填 TODO",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "generate_spec.py 已经生成 spec.yaml，是否可以不修改直接交给下游？哪些核心字段必须由算子 owner 手工补全？",
+      "expected_output": "回复应说明生成器只产骨架，不能直接视为真值；至少要手填输出 shape_rule 或 data_dependent 描述、dtype_rule、可执行 formula、真实 reference oracle API、supported_combinations，以及覆盖所有输出 dtype 的 per_dtype tolerance，并结合需求校核边界和极端输入。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "无归约轴接口时禁止误注入 dim",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "一个 Reduction 算子的 REG_OP、ACLNN 参数和需求描述里都没有归约轴参数。非交互生成 spec 时应该让工具自动注入 dim/keep_dims 吗？",
+      "expected_output": "回复应说明自动注入只是启发式，不能凭空增加接口字段；当接口无归约轴参数时，应按真实语义显式指定 --axis-source fixed 或 --axis-source implicit_all，避免错误注入 dim/keep_dims。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "可选依赖缺失时的 12-stage 降级语义",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "环境只有 pyyaml 和 jsonschema，没有 numpy、torch 等 reference framework。当前 12-stage L0 校验中哪些部分会降级？能否宣称已经真实执行 oracle？",
+      "expected_output": "回复应说明当前流程为 12-stage：stage 8 因无 numpy 而 SKIP；stage 9 因缺少声明的 framework 而跳过真实导入和 callable 可达性检查，但占位符检查仍执行；依赖 numpy 执行公式的 stage 10–12 也因缺失依赖或不满足适用条件而 SKIP。stage 9 只验证 oracle 可达性，不调用 oracle；stage 10 及 stage 12 的相关路径在依赖齐全且条件满足时才可能实际调用 oracle。本场景不能宣称已真实执行 oracle，也不能把 SKIP 当作已执行通过，应记录跳过原因并在依赖齐全后重跑。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "spec 字段所有权阻止下游重新推导",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "下游测试设计发现 REQUIREMENTS.md 的文字似乎与 spec.yaml 的 dtype、shape、容差不一致，能否自行按需求正文重写这些字段？测试生成参数又应该放在哪里？",
+      "expected_output": "回复应说明 spec.yaml 是 dtype、shape、数学语义、边界和容差等 L0 字段的唯一真值源，下游不得从 REQUIREMENTS.md 重新推导或覆盖，应先走 spec 修订流程；测试生成参数独立放在 operators/{op}/tests/st/design/02_测试配置.yaml，而非放回 spec 的 test_matrix。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 8,
+      "title": "明确声明不支持的 dtype 和物理 format",
+      "config": {
+        "eval_mode": "text",
+        "ascend_platforms": [
+          "A2"
+        ]
+      },
+      "prompt": "为 neg 生成 spec：x 输入、y 输出，同 shape 同 dtype，支持 float16/float32 和 ND，明确不支持 int8/int32/complex64 及 NZ/FRACTAL_NZ/FRACTAL_Z。说明如何把支持和不支持范围写入规格，给出生成参数。整数拒绝的错误码未知。",
+      "expected_output": "先确认 float16/float32 和 ND 为完整支持集合，再生成带 support_universe 的新契约；输入和输出分别写完整 dtype_set、supported_layouts，并按官方全集生成完整 unsupported_dtypes、unsupported_layouts。NZ 归一化为 FRACTAL_NZ，只计一次。指定 --supported-formats，原排除参数可作为断言。不得凭空声明运行时错误码。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 9,
+      "title": "完整支持集合按官方全集生成补集",
+      "config": {
+        "eval_mode": "text",
+        "ascend_platforms": [
+          "A2"
+        ]
+      },
+      "prompt": "需求确认完整支持范围仅为 float32 和 ND，未单独提供排除清单。用官方 DataType/Format 全集生成新 spec 时，如何保证支持和不支持合起来就是全量？旧 spec 又如何处理？",
+      "expected_output": "新 spec 固定 support_universe，输入输出的支持列表分别为 float32 和 ND，自动计算官方全集的完整补集；dtype 共 42 项、format 共 57 项，正反互斥且无遗漏。标记值固定排除。旧 spec 无 support_universe 时保持部分排除语义。若支持范围尚未确认为完整，需先核实，不能把示例当穷尽支持集合。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 10,
+      "title": "支持与排除范围冲突",
+      "config": {
+        "eval_mode": "text",
+        "ascend_platforms": [
+          "A2"
+        ]
+      },
+      "prompt": "spec 的 input.x.dtype_set 包含 float32，但 unsupported_dtypes 也含 float32；output.y 的 supported_combinations 输出 float16，但其 unsupported_dtypes 含 float16；input.x 的 format_variants 支持 NHWC，unsupported_layouts 也含 NHWC。校验器应怎样处理？",
+      "expected_output": "stage 2 对正反声明冲突报 FAIL；dtype 冲突使用 support_exclusions.dtype_conflict，format 冲突使用 support_exclusions.layout_conflict。应按可信需求修正规格，不选择性忽略任一声明。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "ops-spec-gen"
+}

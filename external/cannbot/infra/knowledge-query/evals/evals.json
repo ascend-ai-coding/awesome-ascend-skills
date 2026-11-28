@@ -1,0 +1,45 @@
+{
+  "skill_name": "knowledge-query",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "首次安装与检索",
+      "prompt": "这台机器还没有知识库，我需要查 A2 上 DataCopyPad 在 GM 和 UB 之间搬运的资料。请完成首次准备，给我一次完整的字面检索结果，以及从这次结果选出的卡片路径和理由。后续用法我会按这些卡片核对。",
+      "expected_output": "从空环境用原生入口克隆官方知识仓、检查依赖、构建并完整校验索引。在同一仓运行 discover 和 DataCopyPad 的 A2 字面检索。保留工具结果和完整检索 JSON，从全库命中中选出 GM 与 UB 搬运所需卡片，给出路径和理由。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "已有知识仓离线复用",
+      "config": {
+        "knowledge_input": {
+          "repository": "cann/cannbot-knowledge",
+          "revision": "86ef0e41467e29c0fd33445e744eb636a64b0e5b",
+          "profile": "offline-query"
+        }
+      },
+      "prompt": "这台机器已配置知识仓，依赖和索引都有效，当前网络不可用。请检索 A2 的同步排障经验。对用来支持结论的每张卡片，请先读完全文，核对适用条件，再引用。",
+      "expected_output": "复用已配置知识仓，不覆盖仓库，不执行 pull，也不强制联网。按目标平台检索后阅读并核对相关卡片全文。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "零命中与失败",
+      "prompt": "同事的两次查询都被转述为“没有候选”。原始记录在本轮插件目录的 evals/fixtures/query-diagnostics-input.md。请写给使用方完整的排查路径，说明分别怎么反馈、下一步怎么查、证据如何标记，以及能否据此判断芯片不支持这个 API。",
+      "expected_output": "区分错误和成功零命中，明确报告安装或索引错误。检查平台和标识，必要时独立查未定位草稿并标明未验证，不把零命中视为不支持。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 4,
+      "title": "核对 DataCopyPad 卡片证据",
+      "prompt": "我准备用 DataCopyPad 在 A2 上做 GM 和 UB 之间的数据搬运。固定样本从本轮 Skills 源码根的 infra/knowledge-ingest/evals/fixtures/prepare_ingest_fixture.py --data-copy-pad 获取。请用样本查一下，按搬运方向说明使用约束和卡片依据。",
+      "expected_output": "用原生工具从固定样本字面检索 A2 DataCopyPad。读完所用卡的 Frontmatter 和正文，按 GM 到 UB、UB 到 GM 分别说明适用约束，逐项引用原卡依据。",
+      "files": [],
+      "expectations": []
+    }
+  ]
+}

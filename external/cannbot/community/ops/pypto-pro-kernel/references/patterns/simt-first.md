@@ -1,0 +1,88 @@
+# SIMT: start with ownership and a direct-GM slice
+
+API contract: [SIMT findings](../api/simt.md), especially the two launch levels, optional inner annotations and grid coverage. For an independent direct-GM kernel, this page supplies the first runnable slice: write and run it before opening more example groups or an entire API listing. Look up another document only for a named operation or unresolved failure.
+
+1. Name the independent work unit and its input/output region. Estimate both per-thread and total work for that choice; an element-per-thread decomposition can repeat input work. For runtime segments, also estimate the busiest worker's work and compare the [direct-owner and split-reduction choices](multi-output-reductions.md#partition-unequal-runtime-reductions). Compare alternatives before adding shared storage or synchronization. This is an algorithm check, not a hardware speed claim.
+2. If threads only access their own outputs, pass GM tensors directly. SIMT Tensor arguments need a static physical shape: use fixed dimensions or `pl.STATIC` for per-call specialization, not `pl.DYNAMIC` ([shape contract](../api/simt.md#11-argument-physical-shapes-must-be-static-input-sizes-can-be-specialized-per-call)). For noncontiguous inputs, derive physical offsets from the real strides; a multidimensional view does not establish the scalar-subscript behavior ([current lowering and portable addressing](../api/simt.md#13-scalar-indices-and-custom-physical-strides)). Keep the external contract on `@pl.jit`; let the inner SIMT function infer its types. For a factory annotation failure, see [the exact closure boundary](../api/simt.md#9-inner-tensor-annotations-and-factory-closures).
+3. Keep the two launch levels explicit: `body[T](...)` selects threads per block, host `kernel[None, B](...)` selects worker blocks within the Stream budget. A ceil-div data-block count can exceed that budget. Use the grid-stride slice below for large work sets; reducing the host grid alone drops work. `kernel(...)` uses the automatic budget and is safe for this coverage scheme ([launch and coverage contract](../api/simt.md#10-first-determine-thread-ownership-and-total-work)).
+
+This **copy** slice verifies entry, factory, shapes, indexing and launch; it does not prescribe a reduction or recurrence algorithm. It was checked on behavior version `872df763f` with small and automatic grids, including workloads larger than the grid. The annotation boundary is explained in the owner above.
+
+When runtime coordinates, weights or addresses are shared across a continuous element axis, the element-per-thread slice is only the starting ownership. Use the [record/lane mapping and metadata lifetime](simt-payload.md) to derive another candidate: keep per-record work outside each lane's element loop, prove unique coverage, then compare complete calls at fixed worker counts. Merely increasing threads per block leaves the repeated metadata work in place.
+
+```python
+import pypto_pro.language as pl
+I32 = pl.DT_INT32
+THREADS = 64
+
+def make_copy(rows, cols):
+    @pl.vector_function(mode="simt", max_threads=THREADS)
+    def body(x, out):
+        start = pl.simt.block_idx().x * THREADS + pl.simt.linear_thread_idx()
+        stride = pl.simt.grid_dim().x * pl.simt.block_dim().x
+        for linear in pl.range(start, x.shape[0] * x.shape[1], stride):
+            row = linear // x.shape[1]
+            col = linear % x.shape[1]
+            out[row, col] = x[row, col]
+
+    @pl.jit()
+    def kernel(x: pl.Tensor[[rows, cols], I32],
+               out: pl.Tensor[[rows, cols], I32]):
+        with pl.section_vector():
+            body[THREADS](x, out)
+    return kernel
+```
+
+Host: initialize `torch_npu`, create `k = make_copy(rows, cols)`, first run `k[None, 1](x_npu, out_npu)`, then test a permitted multi-block count and `k(x_npu, out_npu)` for the automatic budget. Synchronize before exact comparison. Include work sets larger than the grid, plus output sentinels. A file named `kernel.py` uses a first-line module docstring such as `写法：原始。`.
+
+<!-- kernel-query: {"id":"simt-experiments","aliases":["SIMT optimization","SIMT tuning","SIMT 优化"],"term_groups":[["simt"],["optimization","optimize","tuning","优化"]],"when":"Select one implementation experiment for a correct native SIMT kernel.","missing_facts":["Identify the dominant repeated work, actual launch dimensions and complete-call baseline; the source pattern does not establish a bottleneck or speedup."]} -->
+## Choose a SIMT experiment
+
+Choose the owner matching the unresolved mechanism below. Read that section and, when native composition is missing, its linked complete example. A correct supplied kernel already supplies basic syntax; it does not need another API tour. `suggest` covers only its declared source-pattern families, so an empty result does not reject these comparisons.
+
+| Observed work | Focused comparison and native composition |
+| --- | --- |
+| Indirect records repeat metadata or neighboring threads traverse strided payloads | [Flat versus cooperative ownership](simt-payload.md#compare-flat-and-grouped-mappings); preserve both read and write address maps |
+| Transpose, rotation or another axis permutation makes one GM side strided | [Lane addresses and shared-UB pitch](simt-payload.md#analyze-one-memory-instruction-across-lanes); the [tiled transpose kernel](../../examples/algorithms/simt_tiled_transpose/kernel.py) supplies aligned storage, tail handling and unconditional barriers |
+| Many scalar updates target few counters | [Thread-local combining and block-local aggregation](multi-output-reductions.md#local-aggregation-and-atomic-instruction-choices); the [histogram kernel](../../examples/algorithms/simt_histogram/kernel.py) keeps direct GM, run combining and shared-UB controls. First determine whether the atomic old value is consumed |
+| Repeated div/mod or address products dominate scalar work | [Index ranges and quotient/remainder construction](#index-arithmetic-and-control-flow); distinguish a bounded input from its wider address intermediates |
+| A fixed condition is tested in each iteration, or lanes execute different loop lengths | [Branch placement, predication and grouped updates](#branch-placement-predication-and-unrolling); preserve skipped work and recurrence order |
+| More live state, wider indices or a large thread bound raises resource pressure | [Launch/resource diagnosis](../diagnostics/performance.md#simt-launch-bounds-and-register-pressure) and [intermediate-range proofs](#index-arithmetic-and-control-flow) |
+
+Within a small request budget, select one discriminating implementation and reserve validation for it before expanding configurations. Timings unavailable on the execution host leave performance unknown; preserve the distinction between a numerically verified experiment and a measured winner. Complete-call acceptance remains in the [optimization workflow](../workflows/optimization.md#exit-criteria).
+
+## Launch variants
+
+The anchor's `THREADS=64` is illustrative, not a tuned default or VF register-width requirement. Keep the compile-time upper bound `max_threads`, actual `body[T]` dimensions and Host worker count separate. The actual positive compile-time dimension product must not exceed the bound or the installed limit; equality with the bound is not required. Offsets and grid strides use the actual dimensions. Make both bound and actual dimensions explicit factory/cache parameters rather than mutating a global while retaining an old specialization. After a work-unit or phase change, compare at least two legal block sizes at fixed workers on the new mapping. Worker sweeps do not test this choice; grouped payloads use the [coupled T/G experiment](simt-payload.md#compare-flat-and-grouped-mappings).
+
+The bound is also a compiler resource decision: current CCE code generation emits it as `__launch_bounds__`. Reducing only the actual thread count can leave that compiled budget unchanged. Compare a tighter bound at the same actual dimensions when resource evidence warrants it; use [SIMT resource diagnosis](../diagnostics/performance.md#simt-launch-bounds-and-register-pressure) to inspect registers, stack/spill and full-call cost. A legal unequal bound/launch is not an error, and a tighter bound or fewer threads is not automatically faster. Ascend C recipes allowing runtime `Dim3` contraction do not establish runtime thread dimensions in Pro; the [Pro launch contract](../api/simt.md#compile-time-launch-contract-and-mechanism-availability) requires constants.
+
+Reduction chunk size and thread-block width can be coupled. Count the active thread work created by the live chunks and their payload ownership, then compare it with the worker/thread budget. A wider block may pack several chunks into one worker; too few chunks can leave other workers idle. Smaller chunks expose more independent work but add partial/merge costs. Compare paired chunk/thread configurations at fixed workers on both high-reuse and dispersed-address workloads. Payload width alone, or a launch copied from the correctness anchor, does not identify the fastest configuration.
+
+Inside SIMT, ordinary scalar `if`/`while` and `pl.range(start, stop, step)` express control flow. Fix running-state dtype before a branch or loop and preserve it in every update. Tensor reads retain their dtype while integer literals and shape arithmetic can widen it; inconsistent branch types may misleadingly report a variable as “potentially undefined” ([diagnosis and repair](../api/simt.md#12-when-an-existing-variable-reports-potentially-undefined-check-branch-types)). Use `pl.simt.cast` according to the required value range. These basics do not require another example lookup.
+
+<!-- kernel-query: {"id":"simt-index-arithmetic","aliases":["SIMT index width","SIMT 32-bit indices","SIMT 64-bit indices","SIMT fast division","SIMT unsigned divmod","SIMT 索引位宽","SIMT 索引溢出","SIMT 快速除法"],"term_groups":[["simt"],["index width","index overflow","fast division","unsigned divmod","索引位宽","索引溢出","快速除法"]],"when":"Choose scalar index width or reduce repeated div/mod while preserving physical address ranges.","missing_facts":["Bound every intermediate product, sum and grid stride, including the real physical tensor span; identify signedness and the installed integer lowering before narrowing or using magic division."]} -->
+## Index arithmetic and control flow
+
+Prove the range of every intermediate address expression, not only the final element count. Include physical strides, grid products and increments. A cast after an overflowing narrow multiplication cannot recover the product: widen the operands before that operation. When all relevant intermediates fit, a 32-bit candidate may reduce live state and address work; compare it with the verified wide control instead of prescribing one width for every shape.
+
+Hoist invariant coordinates and reuse a computed quotient for the remainder. The native `pl.simt.mul_hi` supports same-dtype signed/unsigned 32/64-bit high products in the current Python and C++ declarations. It can support a separately proven fast-division implementation; it is not itself `UintDiv`. A magic-division recipe must establish the positive divisor, signedness, supported numerator domain and overflow/correction behavior. Verify `i=q*d+r` and `0<=r<d` at divisor 1, powers and non-powers of two, quotient transitions and the largest supported numerator. Inspect existing constant-division lowering before adding arithmetic. See the [upstream indexing guide](https://gitcode.com/cann/cannbot-skills/blob/7b6237f8543b59abde85bb7baf5f31bd2e8a6982/ops/ascendc-simt-best-practices/references/index-calculation.md) for the optimization motivation; its C++ helper and formula are not a Pro API or a universally valid replacement.
+
+Compare native division and remainder at a proven width and signedness before introducing handwritten division. For a numerator in `0<=n<2**32`, UINT32 preserves the entire domain while INT32 does not. A nonnegative intermediate that must remain 64-bit can make UINT64 a legal alternative to INT64 without truncating the product. Keep divisors and constants at the chosen Scalar dtype so a wider literal does not widen the operation again. Prove every operand, intermediate and output conversion. For an INT64 output, extend UINT32 results directly rather than passing through INT32; a UINT64 result must fit the signed INT64 range before conversion. A narrower input does not make its multiplied address fit 32 bits. Compare any explicit reciprocal with the simpler native operation at the same proven type: a speedup over a wide signed control does not establish a benefit from the handwritten formula itself.
+
+<!-- kernel-query: {"id":"simt-control-flow","aliases":["SIMT branch hoisting","SIMT predication","SIMT loop unrolling","SIMT loop phase splitting","SIMT 分支外提","SIMT 谓词化","SIMT 循环展开","SIMT 分段循环"],"term_groups":[["simt"],["branch hoisting","predication","unroll","unrolling","phase splitting","分支外提","谓词化","循环展开","分段循环"]],"when":"Hoist invariant conditions, partition proven iteration phases, or compare branch and expanded-loop implementations without changing executed work or recurrence semantics.","missing_facts":["Determine whether the condition varies by iteration, thread or invocation; prove both predicated paths are valid, retain update order and tails, and compare homogeneous and mixed lane workloads with resource evidence."]} -->
+## Branch placement, predication and unrolling
+
+An invocation-uniform mode branch does not create warp divergence. A data-dependent branch or unequal per-lane loop length can. Compare finite specialization or a different ownership mapping before adding unconditional work. Predicating both paths must preserve address validity and avoid newly executed division by zero or other invalid operations. Static expansion and common-expression reuse can lengthen live ranges and introduce stack traffic; compare them with the [resource control](../diagnostics/performance.md#simt-launch-bounds-and-register-pressure), preserving the original arithmetic and precision contract.
+
+An invariant per-thread flag can still differ between neighboring lanes. When a loop repeatedly tests that flag and no update can change it, compare moving the branch outside the loop: the inactive path can publish the unchanged state without traversing the recurrence. Preserve initialization, final stores and all side effects. The compiler may already hoist a load or unswitch a loop, so source-level branch counts alone do not establish saved work. Invocation-uniform dispatch, per-thread dispatch and per-iteration conditions are separate cases.
+
+A condition that changes at proven iteration boundaries needs a different comparison: partition the ordered domain into homogeneous loops. For example, a contractual transition at `cut` can use `[0, cut)` followed by `[cut, end)` when `0 <= cut <= end` is established. Preserve every chain's original update order, branch-specific addresses, empty phases and tails; do not regroup interleaved updates or evaluate both branches. Repeated fixed-size groups may require the same ordered phases within each group. This can expose group-invariant metadata and remove repeated control/address work even when all lanes make the same decision; that uniform condition is not warp divergence. Hold launch geometry and arithmetic fixed, compare grouping and phase splitting separately, and inspect emitted code plus complete-call timing. Compiler simplification, extra loop overhead and live state can erase or reverse the benefit.
+
+Before replacing a branch with arithmetic selection that computes both candidate values, prove every newly executed load, divisor, conversion and intermediate range, even for lanes whose final result is discarded. For a cheap, fully defined expression it is a valid comparison; a costly recurrence on an inactive lane can lose the skipped-work benefit. Test all-active, all-inactive, alternating and dispersed decisions, including changed inputs. Do not multiply an invalid computation by zero and call it guarded.
+
+On the current source, `pl.range` has positional `(start, stop=None, step=1)` arguments; an `unroll=` keyword is not part of that contract. An explicit grouped body is an implementation experiment: for factor K, retain the original update order and guard every residual step or item that can exceed its bound. An order-dependent recurrence cannot be split into independent accumulators without a separate equivalence proof. For per-thread lengths, expanding the maximum trip count can replace a short loop with many predicates and extra live state. Compare a small factor with the rolled control at fixed launch geometry, count the final partial group, and inspect emitted code/register/stack growth. Extend the factor only after complete-call timing supports it; do not turn one winning trip count or data distribution into a default expansion rule.
+
+If threads must exchange values, use the shared-UB route in [simt_launch](../../examples/basic_api/simt/simt_launch/). Read its synchronization example only for that need. `syncthreads` must be reached uniformly; the local checker rejects runtime control-flow placements. Atomic operations and fences have different contracts, so select their finding instead of treating them as interchangeable barriers.
+
+For an operation with initialization followed by conflicting updates, [simt_scatter_add](../../examples/algorithms/simt_scatter_add/) demonstrates two native kernels ordered on one Stream, empty-input dispatch and repeated-call tests. Atomicity of each update is not a global initialization barrier.

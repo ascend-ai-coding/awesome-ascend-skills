@@ -1,0 +1,48 @@
+strategy_id: P111
+description: Sort 两级归并 Tiling 适用性检查 — 算子含 Sort/TopK 语义且数据量 N 可能超过 tileSize×coreNum。
+
+strategy_meta:
+  id: "P111"
+  slug: "P111_sort_two_level_merge_tiling"
+  title: "P111: Sort 两级归并 Tiling 系统化设计"
+  bottlenecks: [ub_overflow, sync_overhead, scalar_compute]
+  op_families: [sort, topk]
+  conflicts_with: []
+  synergizes_with: [P96, P1, P7]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p111_sort_two_level_merge_tiling.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p111_sort_two_level_merge_tiling.md"
+  playbook_slug: "P111_sort_two_level_merge_tiling"
+checks:
+  - id: has_sort_semantics
+    type: grep_count
+    pattern: 'Sort\\s*<|MrgSort|TopK|Argsort'
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 Sort/MrgSort/TopK 语义 → P111 不适用。"
+
+  - id: has_large_n
+    type: grep_count
+    pattern: "totalElements|N|numElements|totalLen"
+    files: [header]
+    expected: ">= 1"
+    fail_msg: "未检测到总元素数参数 → 无法判断 Pattern C。"
+
+  - id: no_two_level_merge
+    type: grep_count
+    pattern: "Phase2|IntraCoreMerge|InterCoreMerge|truncationFlag|workSpaceFlag"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已实现两级归并 → P111 主要价值已发挥。"
+
+  - id: has_sync_all
+    type: grep_count
+    pattern: "SyncAll"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 SyncAll → 可能非多核 Sort，P111 不适用。"

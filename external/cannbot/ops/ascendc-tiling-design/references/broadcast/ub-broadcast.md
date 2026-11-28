@@ -282,12 +282,12 @@ __aicore__ inline void Process()
         // 1. 搬入普通输入
         int64_t gmOffset0 = BroadcastGetGmOffset(axesIndices, input0Strides, ...);
         DataCopyPad(input0Local, input0Gm[gmOffset0],
-            {1, inputLength0 * sizeof(T), 0, 0});
+            {1, inputLength0 * sizeof(T), 0, 0, 0});
 
         // 2. 搬入广播输入（原始 shape）
         int64_t gmOffset1 = BroadcastGetGmOffset(axesIndices, input1Strides, ...);
         DataCopyPad(srcBrcLocal, input1Gm[gmOffset1],
-            {1, srcBrcLength * sizeof(T), 0, 0});
+            {1, srcBrcLength * sizeof(T), 0, 0, 0});
 
         // 3. UB 内广播
         uint32_t dstShape[] = {ubSplitSize, innerDim};
@@ -300,7 +300,7 @@ __aicore__ inline void Process()
         // 5. 搬出
         int64_t outOffset = BroadcastGetGmOffset(axesIndices, outputStrides, ...);
         DataCopyPad(outputGm[outOffset], outputLocal,
-            {1, ubSplitSize * innerDim * sizeof(T), 0, 0});
+            {1, ubSplitSize * innerDim * sizeof(T), 0, 0, 0});
     }
 }
 ```

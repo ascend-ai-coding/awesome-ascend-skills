@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "S2P1_route_cases.task-a",
+  "title": "S2P1 Route Cases",
+  "type": "object",
+  "required": ["schema_version", "operator", "cases"],
+  "properties": {
+    "schema_version": { "const": "S2P1_route_cases.task-a" },
+    "operator": { "type": "string", "minLength": 1 },
+    "generated_by": { "type": "string" },
+    "cases": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/route_case" }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "route_case": {
+      "type": "object",
+      "required": ["id", "case_values"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "case_values": { "type": "object" },
+        "seed_constraints": { "type": "object" },
+        "purpose": { "type": "string" },
+        "evidence": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    }
+  }
+}

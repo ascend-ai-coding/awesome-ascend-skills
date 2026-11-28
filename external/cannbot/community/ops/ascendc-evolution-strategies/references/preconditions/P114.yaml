@@ -1,0 +1,48 @@
+strategy_id: P114
+description: Transpose 多维对齐 Tiling 适用性检查 — 算子为 small-channel transpose（C≤16），且未按 [C,N]→[N,C] 模型设计。
+
+strategy_meta:
+  id: "P114"
+  slug: "P114_transpose_nd_tiling_with_alignment"
+  title: "P114: Transpose 多维对齐 Tiling 设计"
+  bottlenecks: [mte2_stall, vec_underutilization, tail_block]
+  op_families: [conversion, transpose]
+  conflicts_with: []
+  synergizes_with: [P26, P7, P1]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p114_transpose_nd_tiling_with_alignment.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p114_transpose_nd_tiling_with_alignment.md"
+  playbook_slug: "P114_transpose_nd_tiling_with_alignment"
+checks:
+  - id: has_transpose_semantics
+    type: grep_count
+    pattern: "transpose|permute|TransDataTo5HD|vnchwconv|NCHW|NHWC"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "未检测到 transpose 语义 → P114 不适用。"
+
+  - id: small_channel
+    type: grep_count
+    pattern: 'channel|C\\s*=|smallChannel|channelDim'
+    files: [header]
+    expected: ">= 1"
+    fail_msg: "未检测到通道维参数 → 无法判断 small-channel transpose。"
+
+  - id: no_cn_model
+    type: grep_count
+    pattern: 'tileNA|repeats|offsetBuff|SetValue.*p \\* C \\+ c'
+    files: [kernel, header]
+    expected: "== 0"
+    fail_msg: "算子已实现 [C,N]→[N,C] 对齐模型 → P114 主要价值已发挥。"
+
+  - id: has_vector_unit
+    type: grep_count
+    pattern: "AI_VECTOR_CORE|TaskType::AI_VECTOR|aiv"
+    files: [all]
+    expected: ">= 1"
+    fail_msg: "未检测到 AIV kernel → P114 面向 Vector transpose 路径。"

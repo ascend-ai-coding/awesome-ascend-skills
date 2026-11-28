@@ -1,0 +1,48 @@
+# 芯片标识 → 产品型号映射配置
+# 修改本文件后无需重新编译，重新运行即可生效
+
+# 芯片标识映射（代码中 AddConfig / SocVersion 使用的标识）
+# 带 * 号表示前缀匹配：只要代码标识以该前缀开头即可匹配
+# 精确匹配优先于前缀匹配
+chip_mapping:
+  - chip: Ascend 910D
+    product: Ascend 950PR&950DT系列产品
+  - chip: Ascend 910_95
+    product: Ascend 950PR&950DT系列产品
+  - chip: Ascend 950
+    product: Ascend 950PR&950DT系列产品
+  - chip: Ascend 910C
+    product: Atlas A3系列产品
+  - chip: Ascend 910_93
+    product: Atlas A3系列产品
+  - chip: Ascend 910B*
+    product: Atlas A2系列产品
+  - chip: Ascend 310B*
+    product: Atlas 200I/500 A2推理产品
+  - chip: Ascend 310P AIC
+    product: Atlas推理系列产品AI Core
+  - chip: Ascend 310P AIV
+    product: Atlas推理系列产品Vector Core
+  - chip: Ascend 310P*
+    product: Atlas推理系列产品
+  - chip: Ascend 910
+    product: Atlas训练系列产品
+  - chip: Ascend035
+    product: IPV350
+
+# __NPU_ARCH__ 值映射（用于编译期架构分支 #if (__NPU_ARCH__ == xxx)）
+npu_arch_mapping:
+  - arch: "3510"
+    product: Ascend 950PR&950DT系列产品
+  - arch: "2201"
+    product: Atlas A3系列产品
+  - arch: "2201"
+    product: Atlas A2系列产品
+  - arch: "3002"
+    product: Atlas 200I/500 A2推理产品
+  - arch: "2002"
+    product: Atlas推理系列产品AI Core、Atlas推理系列产品Vector Core
+  - arch: "1001"
+    product: Atlas训练系列产品
+  - arch: "3505"
+    product: IPV350

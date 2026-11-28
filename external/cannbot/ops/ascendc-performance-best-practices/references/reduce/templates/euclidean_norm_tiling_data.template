@@ -1,0 +1,96 @@
+/**
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
+
+/*!
+ * \file euclidean_norm_tiling_data.h
+ * \brief EuclideanNorm 算子 TilingData 定义（host 与 device 共用）。
+ *
+ * 直接套用 Reduce 通用 pattern 布局，无 EuclideanNorm 专属字段（sqrt 是 in-register、不需要传系数；
+ * 与 mean 需要 invRTotal 不同）。本文件对两个"多轴交错归约"模板
+ * （euclidean_norm_interleaved_contiguous_tailr / euclidean_norm_interleaved_contiguous_tail_a）
+ * 提供 pattern 描述（axisShape/axisStride）与 fast/rara 专属切分字段。
+ *
+ * 说明：normal/group 系（aLoop* / UB 切分 / rGroupCnt）字段一并保留，供同族普通归约模板复用；
+ * 交错模板仅读取 pattern 字段 + fast* / rara* 字段，其余可置 0（host 门控 memset(td,0) 后按需填充）。
+ *
+ * 字段分组：
+ *   - pattern 描述：axisNum / axisShape[MAX_PATTERN_RANK] / axisStride[MAX_PATTERN_RANK]
+ *                   （去 1 / 合轴 / 补 leading A / 补 R 增广后的 pattern；A 起头 + 严格交替）
+ *   - normal 多核切分（fused aLoop）：aLoopCntTotal / aSplitChunkCnt / aBigCoreLoopCnt /
+ *              aSmallCoreLoopCnt / aBigCoreCnt / usedCoreNum
+ *   - normal UB 切分：aSplitAxisIdx / rSplitAxisIdx / aUbFactor / aUbFactorAlign /
+ *              rUbFactor / innerAProd[Align] / innerRProd[Align] / rLoopCntTotal
+ *   - normal UB buffer 字节数：preReduceUbSize / postReduceUbSize / tmpBufUbSize / cacheBufUbSize
+ *   - group 模板：rGroupCnt
+ *   - fast（路径 A，交错 tail-R）：fast*
+ *   - fast-RARA（路径 B，交错 tail-A）：rara*
+ */
+#ifndef OPS_NORM_EUCLIDEAN_NORM_TILING_DATA_H_
+#define OPS_NORM_EUCLIDEAN_NORM_TILING_DATA_H_
+
+#include <cstdint>
+
+constexpr int32_t MAX_PATTERN_RANK = 9;
+
+struct EuclideanNormTilingData {
+    // ─── pattern 描述（去 1 / 合轴 / 补 leading A / 补 R 增广之后）───
+    int32_t axisNum = 0;                        // 2~MAX_PATTERN_RANK
+    int64_t axisShape[MAX_PATTERN_RANK] = {0};  // 合轴后每根轴的 size，未用位置填 1
+    int64_t axisStride[MAX_PATTERN_RANK] = {0}; // 每根轴的 GM stride（按 element）
+    // axisType[i] 由位置 i 的奇偶决定：i 偶→A，i 奇→R（A 起头 + 严格交替），不入 tilingdata
+
+    // ─── normal 多核切分（外层 A loop 全部 fuse 成线性计数，按 coreNum 均衡分核） ───
+    int64_t aLoopCntTotal = 0;  // ∏(outer A 整根) × aSplitChunkCnt
+    int64_t aSplitChunkCnt = 0; // CeilDiv(axisShape[aSplitAxisIdx], aUbFactor)
+    int64_t aBigCoreLoopCnt = 0; // 前 aBigCoreCnt 个核处理的 aLoop 数
+    int64_t aSmallCoreLoopCnt = 0; // 其余核处理的 aLoop 数
+    int32_t aBigCoreCnt = 0;       // 大核个数
+    int32_t usedCoreNum = 0;       // 实际使用核数（所有模板共用）
+
+    // ─── normal UB 切分 ───
+    int32_t aSplitAxisIdx = 0;
+    int32_t rSplitAxisIdx = 0;
+    int64_t aUbFactor = 0;
+    int64_t aUbFactorAlign = 0;
+    int64_t rUbFactor = 0;       // actual valid R count
+    int64_t rUbFactorAlign = 0;  // padded R count
+    int64_t innerAProd = 0;
+    int64_t innerAProdAlign = 0;
+    int64_t innerRProd = 0;
+    int64_t innerRProdAlign = 0;
+
+    // ─── 外层 R loop 扁平化 ───
+    int64_t rLoopCntTotal = 0;
+
+    // ─── normal UB buffer 字节数 ───
+    int64_t preReduceUbSize = 0;
+    int64_t postReduceUbSize = 0;
+    int64_t tmpBufUbSize = 0;
+    int64_t cacheBufUbSize = 0; // 固定 16 KB
+
+    // ─── group 模板 ───
+    int64_t rGroupCnt = 0; // Phase 1 分组数 = Phase 2 workspace R 维大小
+
+    // ─── fast 模板（路径 A：交错 tail-R，连续大 burst 载入 + UB 内两步 AR 规约）───
+    // 仅在 host 门控命中（fp32/fp16/bf16 + 偶数轴≥6 ARAR...AR + 内块可连续载入且无需分块）时填充，否则全 0。
+    int64_t fastInnerStart = 0;    // 内块起始轴下标（内块 = 轴[fastInnerStart .. axisNum-1]，连续）= axisNum-4
+    int64_t fastGroupCnt = 0;      // 分组数 = ∏(外层 A 轴 size)
+    int64_t fastCoresPerGroup = 0; // 每组核数（切最内外层 R 轴 = 轴 fastRowsAxisIdx）
+    int64_t fastRowsAxisIdx = 0;   // 被多核切分 & 连续载入的轴下标（= fastInnerStart-1，须为 R 且 stride==innerElems）
+    int64_t fastRowsPerLoad = 0;   // 每次 DataCopy 连续载入的 row 数（row = rowsAxis 的一格 = innerElems 元素）
+    int64_t fastInnerChunkA0 = 0;  // 内块最外 A 轴(A0)的分块大小；命中门控时 = szA0（不分块，见门控注释）
+
+    // ─── fast-RARA 模板（路径 B：交错 tail-A，奇数轴，内块 [R,A,R,A]，无 workspace）───
+    // 命中：fp32/fp16/bf16 + 奇数轴≥7 ARAR...A(tail-A)；内块=末 4 轴 RARA，保留(A0,A1)规约(R0,R1)。
+    int64_t raraSlabCnt = 0;       // slab 数 = ∏(内块外的 A 轴 size)
+    int64_t raraChunkR0 = 0;       // 内块最外 R 轴(R0=轴3)分块大小（沿 R0 分块，累加）
+};
+
+#endif // OPS_NORM_EUCLIDEAN_NORM_TILING_DATA_H_

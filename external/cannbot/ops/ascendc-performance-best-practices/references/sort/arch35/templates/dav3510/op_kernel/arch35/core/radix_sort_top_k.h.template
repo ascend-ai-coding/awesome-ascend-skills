@@ -1,0 +1,1097 @@
+/*!
+ * \file radix_sort_top_k.h
+ * \brief radix_sort_top_k impl
+ */
+
+#ifndef RADIX_SORT_TOP_K_H
+#define RADIX_SORT_TOP_K_H
+
+#include "kernel_operator.h"
+#include "radix_sort_topk_b8.h"
+#include "radix_sort_topk_b16.h"
+#include "radix_sort_topk_b32.h"
+#include "radix_sort_topk_b64.h"
+#include "top_k_radix_block_sort_b8.h"
+#include "top_k_radix_block_sort_b16.h"
+#include "top_k_radix_block_sort_b32.h"
+#include "top_k_radix_block_sort_b64.h"
+#include "top_k_util_type_simd.h"
+#include "radix_topk_util.h"
+#include "sort_with_index_entry.h"
+#include "simt_api/asc_simt.h"
+
+using namespace AscendC;
+using namespace topk;
+template <typename T, typename UNSIGNED_TYPE, int32_t NUM_PASS, bool IS_LARGEST, bool IS_SORT, typename T_INDEX,
+          typename T_INDEX_TO>
+struct RadixSortTopK {
+    __aicore__ inline RadixSortTopK() {}
+    __aicore__ inline void Init(GM_ADDR inputValue, GM_ADDR k, GM_ADDR value, GM_ADDR indices, GM_ADDR workSpace,
+                                const TopKTilingDataSimd* tilingData);
+    __aicore__ inline void InitPara(GM_ADDR inputValue, GM_ADDR k, GM_ADDR value, GM_ADDR indices, GM_ADDR workSpace,
+                                    const TopKTilingDataSimd* tilingData);
+    __aicore__ inline void ProcessTopK();
+    __aicore__ inline void ProcessMultiBlockTopK(GlobalTensor<T> inputX);
+
+private:
+    __aicore__ inline void FindBoundary(T_INDEX& boundaryBin, T_INDEX& boundaryBinPrev, T_INDEX& boundaryBinCuSum,
+                                        T_INDEX& boundaryBinPrevCuSum, uint32_t cumSumBinOffset);
+    __aicore__ inline int32_t BinarySearch(LocalTensor<T_INDEX> cumSumLocal);
+    __aicore__ inline void CopyDataIn(GlobalTensor<T> inputX, uint64_t tileOffset, uint32_t currTileSize);
+    __aicore__ inline void CopyDataInWithReuseBuffer(GlobalTensor<T> inputX, LocalTensor<T> xLocal, uint64_t tileOffset,
+                                                     uint32_t currTileSize);
+    __aicore__ inline T_INDEX GetTileTopkValueOffset(GlobalTensor<uint32_t> inputBufferGm, uint32_t tileId,
+                                                     uint32_t tileCount, uint64_t oneRowGmOffset);
+    __aicore__ inline void UpdateTileTopkValue(LocalTensor<int32_t> tileCusumBuffer, T_INDEX tileTopkCumSum,
+                                               T_INDEX boundaryBin, T_INDEX tileBoundaryBinPrevCuSum, uint32_t tileId,
+                                               uint64_t oneRowGmOffset);
+    __aicore__ inline void StoreBigSizeData2Gm(GlobalTensor<T> inputX, LocalTensor<T> xLocal,
+                                               LocalTensor<int32_t> tileCusumBuffer, T_INDEX boundaryBin);
+    __aicore__ inline void StoreAnswer2Gm(LocalTensor<T> inputLocalTensor, LocalTensor<int32_t> tileCusumBuffer,
+                                          T_INDEX boundaryBin, uint32_t tileCount, uint32_t tileId, uint64_t gmOffset);
+    __aicore__ inline void SortTopKRes(LocalTensor<T> xLocal);
+    __aicore__ inline void StoreFinalAnswer2Gm(LocalTensor<T> inputLocalTensor, uint32_t tileId, uint32_t tileCount,
+                                               uint64_t oneRowGmOffset);
+    __aicore__ inline void UpdateTileRealTopK(uint32_t startTileId, int tileCount, LocalTensor<int32_t> tileCusumBuffer,
+                                              T_INDEX boundaryBin, uint64_t oneRowGmOffset);
+    __aicore__ inline void CopyDataToUb(GlobalTensor<T> inputX, LocalTensor<T> localTensorBuffer, uint64_t gmOffset,
+                                        uint32_t currTileSize);
+    __aicore__ inline void CopyTopkValue2Gm(uint64_t gmOffset, uint64_t tileOffset, uint32_t topKValue);
+    __aicore__ inline void CopyDataToGm(GlobalTensor<uint32_t> inputX, LocalTensor<uint32_t> localTensorBuffer,
+                                        uint64_t gmOffset, uint32_t currTileSize);
+    __aicore__ inline LocalTensor<UNSIGNED_TYPE> PreProcess(LocalTensor<T> inputX, uint32_t numTileData);
+    __aicore__ inline void GetTileExcusive(LocalTensor<UNSIGNED_TYPE> inputX, LocalTensor<int32_t> cumSumHist,
+                                           UNSIGNED_TYPE andDataMask, UNSIGNED_TYPE involveDataMask, int32_t round,
+                                           uint32_t numTileData);
+    __aicore__ inline void ReverseInputData(LocalTensor<UNSIGNED_TYPE> inputX, LocalTensor<UNSIGNED_TYPE> reverseInputX,
+                                            uint32_t numTileData);
+    __aicore__ inline void CopyUb2Ub(LocalTensor<uint32_t> outputUb, LocalTensor<uint32_t> inputUb, T_INDEX offset);
+    __aicore__ inline void StoreKToGm(LocalTensor<uint32_t> reuseBuffer2Copy, T_INDEX tileTopkValueIndex,
+                                      uint64_t oneRowGmOffset, uint32_t tileId);
+
+public:
+    TPipe pipe;
+    TQue<QuePosition::VECIN, 1> inQueueX_;
+    TQue<QuePosition::VECOUT, 1> topkValueQueue_;
+    TQue<QuePosition::VECOUT, 1> topkValueIndexQueue_;
+    TBuf<TPosition::VECCALC> topkValueIndexTbuf_;
+    TBuf<TPosition::VECCALC> blockCumSumTbuf_;
+    TBuf<TPosition::VECCALC> inputXCopyTbuf_;
+    TBuf<TPosition::VECCALC> tileTopkValueTbuf_;
+    TBuf<TPosition::VECCALC> remainTileTopkValueTbuf_;
+    TBuf<TPosition::VECCALC> dataSetCumSumTbuf_;
+    TBuf<TPosition::VECCALC> topkSrcIndexTbuf_;
+    TBuf<TPosition::VECCALC> topkSrcIndexCopyTbuf_;
+    TBuf<TPosition::VECCALC> sortedShareMemTbuf_;
+    // input value
+    GlobalTensor<T> inputValueGm_;
+    // output value
+    GlobalTensor<T> topkValueGm_;
+    // output index
+    GlobalTensor<T_INDEX_TO> topkValueIndexGm_;
+    // workspace gm buffer
+    GlobalTensor<T_INDEX> cumSumBinsGm_;
+    GlobalTensor<uint32_t> tileTopkValueGm_;
+    GlobalTensor<uint32_t> tileTopkRemainValueGm_;
+    // TopK output value
+    GlobalTensor<T> topkValuesGm_;
+    // TopK output index
+    GlobalTensor<T_INDEX_TO> topkIndicesGm_;
+
+    // sortWithindex相关字段
+    GM_ADDR workspace_;
+    GM_ADDR sortWithIndexWorkspace_;
+    GM_ADDR topkValuesGmAddr_;
+    GM_ADDR topkIndicesGmAddr_;
+    GM_ADDR valueAddr_;
+    GM_ADDR indicesAddr_;
+    const TopKTilingDataSimd* tilingDataPtr_;
+
+    LocalTensor<UNSIGNED_TYPE> inputXCopy_;
+    LocalTensor<uint32_t> tileTopkValue_;
+    LocalTensor<uint32_t> remainTileTopkValue_;
+    T_INDEX lastDimTileNum_ = 0;
+    T_INDEX lastDimTileNumTimes_ = 0;
+    T_INDEX totalDataNum_ = 0;
+    uint32_t numTileData_ = 0;
+    uint32_t sortLoopRound_ = 0;
+    uint32_t unsortedDimNum_ = 0;
+    uint32_t unsortedDimParallel_ = 0;
+    uint32_t sortLoopTimes_ = 0;
+    uint32_t lastDimRealCore_ = 0;
+    uint32_t platformCoreNum_ = 0;
+    T_INDEX topkValueInput_ = 0;
+    T_INDEX topkValueInitInput_ = 0;
+    uint32_t topkAcApiTmpBufferSize_ = 0;
+    UNSIGNED_TYPE histDataMask = 0;
+    UNSIGNED_TYPE highBitMask = 0;
+    bool needSortWithIndex_ = false;
+    bool inBlockDimRange_ = true;
+    uint64_t oneBlock_ = Ops::Base::GetUbBlockSize();
+};
+
+template <typename T, typename UNSIGNED_TYPE, int32_t NUM_PASS, bool IS_LARGEST, bool IS_SORT, typename T_INDEX,
+          typename T_INDEX_TO>
+__aicore__ inline void RadixSortTopK<T, UNSIGNED_TYPE, NUM_PASS, IS_LARGEST, IS_SORT, T_INDEX, T_INDEX_TO>::Init(
+    GM_ADDR inputValue, GM_ADDR k, GM_ADDR value, GM_ADDR indices, GM_ADDR workSpace,
+    const TopKTilingDataSimd* tilingData)
+{
+    // init para
+    InitPara(inputValue, k, value, indices, workSpace, tilingData);
+    // cumsum gm
+    uint32_t workSpaceOffset = 0;
+    cumSumBinsGm_.SetGlobalBuffer((__gm__ T_INDEX*)(workspace_ + workSpaceOffset),
+                                  topk::RADIX_SORT_BIN_NUM * unsortedDimParallel_);
+    workSpaceOffset += topk::RADIX_SORT_BIN_NUM * unsortedDimParallel_ * sizeof(T_INDEX);
+
+    uint32_t tileTopkValueGmOffset = lastDimTileNum_ * unsortedDimParallel_;
+    if constexpr (sizeof(T_INDEX) == sizeof(int64_t)) {
+        tileTopkValueGmOffset = tileTopkValueGmOffset * topk::CONST_TWO;
+    }
+    tileTopkValueGmOffset = CeilDivMul(tileTopkValueGmOffset * sizeof(uint32_t), int64_t(oneBlock_)) / sizeof(uint32_t);
+    tileTopkValueGm_.SetGlobalBuffer((__gm__ uint32_t*)(workspace_ + workSpaceOffset), tileTopkValueGmOffset);
+    workSpaceOffset += tileTopkValueGmOffset * sizeof(uint32_t);
+
+    uint32_t tileTopkRemainValueGmOffset = lastDimTileNum_ * unsortedDimParallel_;
+    if constexpr (sizeof(T_INDEX) == sizeof(int64_t)) {
+        tileTopkRemainValueGmOffset = tileTopkRemainValueGmOffset * topk::CONST_TWO;
+    }
+    tileTopkRemainValueGmOffset = CeilDivMul(tileTopkRemainValueGmOffset * sizeof(uint32_t), int64_t(oneBlock_)) /
+                                  sizeof(uint32_t);
+    tileTopkRemainValueGm_.SetGlobalBuffer((__gm__ uint32_t*)(workspace_ + workSpaceOffset),
+                                           tileTopkRemainValueGmOffset);
+    workSpaceOffset += tileTopkRemainValueGmOffset * sizeof(uint32_t);
+
+    if (IS_SORT) {
+        if (topkValueInput_ <= SUPPORT_SORT_MAX_SIZE) {
+            needSortWithIndex_ = false;
+        } else {
+            needSortWithIndex_ = true;
+        }
+    }
+    if (needSortWithIndex_) {
+        // sortWithIndex 尾轴的大小
+        uint32_t lastAxisNumForSort = tilingData->lastAxisNumForSort;
+        // sortWithIndex 外轴的大小
+        uint32_t unsortedDimNumForSort = tilingData->unsortedDimNumForSort;
+        uint64_t topkIndicesGmOffset = lastAxisNumForSort * unsortedDimNumForSort;
+        topkIndicesGmOffset = CeilAlignDivMul<uint64_t>(int64_t(topkIndicesGmOffset * sizeof(T_INDEX_TO)),
+                                                        int64_t(oneBlock_)) /
+                              sizeof(T_INDEX_TO);
+        topkIndicesGm_.SetGlobalBuffer((__gm__ T_INDEX_TO*)(workspace_ + workSpaceOffset), topkIndicesGmOffset);
+        topkIndicesGmAddr_ = workspace_ + workSpaceOffset;
+        workSpaceOffset += topkIndicesGmOffset * sizeof(T_INDEX_TO);
+
+        uint64_t topkValuesGmOffset = lastAxisNumForSort * unsortedDimNumForSort;
+        topkValuesGmOffset = CeilAlignDivMul<uint64_t>(int64_t(topkValuesGmOffset * sizeof(T)), int64_t(oneBlock_)) /
+                             sizeof(T);
+        topkValuesGm_.SetGlobalBuffer((__gm__ T*)(workspace_ + workSpaceOffset), topkValuesGmOffset);
+        topkValuesGmAddr_ = workspace_ + workSpaceOffset;
+        workSpaceOffset += topkValuesGmOffset * sizeof(T);
+
+        sortWithIndexWorkspace_ = workspace_ + workSpaceOffset;
+        valueAddr_ = value;
+        indicesAddr_ = indices;
+        tilingDataPtr_ = tilingData;
+    }
+
+    // vec calc buffer
+    pipe.InitBuffer(blockCumSumTbuf_,
+                    ROUND_UP_AGLIN(topk::RADIX_SORT_BIN_NUM * sizeof(T_INDEX) * lastDimTileNumTimes_));
+    pipe.InitBuffer(inputXCopyTbuf_, ROUND_UP_AGLIN(numTileData_ * sizeof(UNSIGNED_TYPE)));
+    pipe.InitBuffer(tileTopkValueTbuf_, ROUND_UP_AGLIN(lastDimTileNumTimes_ * sizeof(uint32_t)));
+    pipe.InitBuffer(remainTileTopkValueTbuf_, ROUND_UP_AGLIN(lastDimTileNumTimes_ * sizeof(uint32_t)));
+    pipe.InitBuffer(dataSetCumSumTbuf_, ROUND_UP_AGLIN(topk::RADIX_SORT_BIN_NUM * sizeof(T_INDEX)));
+    pipe.InitBuffer(topkSrcIndexTbuf_, ROUND_UP_AGLIN(numTileData_) * sizeof(T_INDEX));
+    pipe.InitBuffer(topkSrcIndexCopyTbuf_, ROUND_UP_AGLIN(numTileData_) * sizeof(T_INDEX_TO));
+    pipe.InitBuffer(sortedShareMemTbuf_, ROUND_UP_AGLIN(topkAcApiTmpBufferSize_));
+    inputXCopy_ = inputXCopyTbuf_.Get<UNSIGNED_TYPE>();
+    tileTopkValue_ = tileTopkValueTbuf_.Get<uint32_t>();
+    remainTileTopkValue_ = remainTileTopkValueTbuf_.Get<uint32_t>();
+    // clear ub buffer
+    Duplicate(tileTopkValue_, topk::CLEAR_UB_VALUE, lastDimTileNumTimes_);
+    Duplicate(remainTileTopkValue_, topk::CLEAR_UB_VALUE, lastDimTileNumTimes_);
+    // init queue
+    pipe.InitBuffer(inQueueX_, 1, ROUND_UP_AGLIN(numTileData_) * sizeof(T));
+    uint32_t outQueueNum = TopkGetMin<uint32_t>(numTileData_, topkValueInitInput_);
+    pipe.InitBuffer(topkValueIndexTbuf_, ROUND_UP_AGLIN(outQueueNum * sizeof(int32_t)));
+    pipe.InitBuffer(topkValueQueue_, 1, ROUND_UP_AGLIN(outQueueNum * sizeof(T)));
+    pipe.InitBuffer(topkValueIndexQueue_, 1, ROUND_UP_AGLIN(outQueueNum * sizeof(T_INDEX_TO)));
+}
+
+template <typename T, typename UNSIGNED_TYPE, int32_t NUM_PASS, bool IS_LARGEST, bool IS_SORT, typename T_INDEX,
+          typename T_INDEX_TO>
+__aicore__ inline void RadixSortTopK<T, UNSIGNED_TYPE, NUM_PASS, IS_LARGEST, IS_SORT, T_INDEX, T_INDEX_TO>::InitPara(
+    GM_ADDR inputValue, GM_ADDR k, GM_ADDR value, GM_ADDR indices, GM_ADDR workSpace,
+    const TopKTilingDataSimd* tilingData)
+{
+    workspace_ = workSpace;
+    numTileData_ = tilingData->numTileDataSize;
+    lastDimRealCore_ = tilingData->lastDimNeedCore;
+    totalDataNum_ = tilingData->lastAxisNum;
+    unsortedDimNum_ = tilingData->unsortedDimNum;
+    sortLoopTimes_ = tilingData->sortLoopTimes;
+    lastDimTileNum_ = tilingData->lastDimTileNum;
+    unsortedDimParallel_ = tilingData->unsortedDimParallel;
+    lastDimTileNumTimes_ = tilingData->lastDimTileNumTimes;
+    platformCoreNum_ = tilingData->platformCoreNum;
+    topkAcApiTmpBufferSize_ = tilingData->topkAcApiTmpBufferSize;
+    topkValueInput_ = tilingData->topKRealValue;
+    topkValueInitInput_ = tilingData->topKRealValue;
+    inBlockDimRange_ = GetBlockIdx() < lastDimTileNum_ * unsortedDimParallel_;
+    inputValueGm_.SetGlobalBuffer((__gm__ T*)(inputValue));
+    topkValueGm_.SetGlobalBuffer((__gm__ T*)(value));
+    topkValueIndexGm_.SetGlobalBuffer((__gm__ T_INDEX_TO*)(indices));
+}
+
+template <typename T, typename UNSIGNED_TYPE, int32_t NUM_PASS, bool IS_LARGEST, bool IS_SORT, typename T_INDEX,
+          typename T_INDEX_TO>
+__aicore__ inline void
+RadixSortTopK<T, UNSIGNED_TYPE, NUM_PASS, IS_LARGEST, IS_SORT, T_INDEX, T_INDEX_TO>::ProcessTopK()
+{
+    for (int32_t i = 0; i < sortLoopTimes_; i++) {
+        topkValueInput_ = topkValueInitInput_;
+        sortLoopRound_ = i;
+        uint64_t loopOffset = i * unsortedDimParallel_ * totalDataNum_;
+        ProcessMultiBlockTopK(inputValueGm_[loopOffset]);
+    }
+    if (needSortWithIndex_) {
+        pipe.Reset();
+        sortwithindexForTopK<T_INDEX_TO>(topkValuesGmAddr_, topkIndicesGmAddr_, valueAddr_, indicesAddr_,
+                                         sortWithIndexWorkspace_, tilingDataPtr_, &pipe);
+    }
+}
+
+template <typename T, typename UNSIGNED_TYPE, int32_t NUM_PASS, bool IS_LARGEST, bool IS_SORT, typename T_INDEX,
+          typename T_INDEX_TO>
+__aicore__ inline T_INDEX RadixSortTopK<T, UNSIGNED_TYPE, NUM_PASS, IS_LARGEST, IS_SORT, T_INDEX,
+                                        T_INDEX_TO>::GetTileTopkValueOffset(GlobalTensor<uint32_t> inputBufferGm,
+                                                                            uint32_t tileId, uint32_t tileCount,
+                                                                            uint64_t oneRowGmOffset)
+{
+    T_INDEX cumSumValue = 0;
+    // reuse buffer
+    LocalTensor<uint32_t> lastDimTileTopKInfo = sortedShareMemTbuf_.Get<uint32_t>();
+    // load gm data
+    uint32_t currTileSizeAlign = ROUND_UP_AGLIN(tileCount * sizeof(uint32_t)) / sizeof(uint32_t);
+    DataCopyPadExtParams<uint32_t> padParams;
+    padParams.isPad = true;
+    padParams.rightPadding = currTileSizeAlign - tileCount;
+    padParams.paddingValue = static_cast<uint32_t>(0);
+    DataCopyExtParams dataCopyParam;
+    dataCopyParam.blockCount = 1;
+    dataCopyParam.blockLen = tileCount * sizeof(uint32_t);
+    dataCopyParam.srcStride = 0;
+    dataCopyParam.dstStride = 0;
+    DataCopyPad(lastDimTileTopKInfo, inputBufferGm[oneRowGmOffset], dataCopyParam, padParams);
+    // wait id
+    event_t eventIdMte = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::MTE2_V));
+    SetFlag<HardEvent::MTE2_V>(eventIdMte);
+    WaitFlag<HardEvent::MTE2_V>(eventIdMte);
+    // reduce sum
+    uint32_t inputElementNum = (tileId + 1);
+    uint16_t repateTime = (inputElementNum + topk::ONE_TIMES_B32_NUM - 1) / topk::ONE_TIMES_B32_NUM;
+    __ubuf__ uint32_t* lastDimTileTopKPtr = (__ubuf__ uint32_t*)lastDimTileTopKInfo.GetPhyAddr();
+    __ubuf__ uint32_t* lastDimTileTopKCopyPtr = lastDimTileTopKPtr;
+    __VEC_SCOPE__
+    {
+        Reg::RegTensor<uint32_t> addTensor;
+        Reg::RegTensor<uint32_t> inputVectorOne;
+        Reg::MaskReg predicateDefault = Reg::CreateMask<uint32_t>();
+        Reg::Duplicate(addTensor, 0, predicateDefault);
+        for (uint16_t i = 0; i < repateTime; i++) {
+            // mask value
+            Reg::MaskReg dataMask = Reg::UpdateMask<uint32_t>(inputElementNum);
+            // load input
+            Reg::LoadAlign<uint32_t, Reg::PostLiteral::POST_MODE_UPDATE>(inputVectorOne, lastDimTileTopKPtr,
+                                                                        topk::ONE_TIMES_B32_NUM);
+            // reduce sum
+            Reg::RegTensor<uint32_t> reduceSumTensor;
+            Reg::Reduce<Reg::ReduceType::SUM>(reduceSumTensor, inputVectorOne, dataMask);
+            // vadd
+            Reg::Add(addTensor, addTensor, reduceSumTensor, dataMask);
+        }
+        Reg::StoreAlign<uint32_t, Reg::PostLiteral::POST_MODE_UPDATE, Reg::StoreDist::DIST_FIRST_ELEMENT_B32>(
+            lastDimTileTopKCopyPtr, addTensor, REDUCE_CUMSUM_OUT_LEN, predicateDefault);
+    }
+    event_t eventId = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::V_S));
+    SetFlag<HardEvent::V_S>(eventId);
+    WaitFlag<HardEvent::V_S>(eventId);
+    cumSumValue = lastDimTileTopKInfo.GetValue(0);
+    return cumSumValue;
+}
+
+template <typename T, typename UNSIGNED_TYPE, int32_t NUM_PASS, bool IS_LARGEST, bool IS_SORT, typename T_INDEX,
+          typename T_INDEX_TO>
+__aicore__ inline void RadixSortTopK<T, UNSIGNED_TYPE, NUM_PASS, IS_LARGEST, IS_SORT, T_INDEX,
+                                     T_INDEX_TO>::UpdateTileTopkValue(LocalTensor<int32_t> tileCusumBuffer,
+                                                                      T_INDEX tileTopkCumSum, T_INDEX boundaryBin,
+                                                                      T_INDEX tileBoundaryBinPrevCuSum, uint32_t tileId,
+                                                                      uint64_t oneRowGmOffset)
+{
+    T_INDEX tileTopkValueIndex = (tileId / platformCoreNum_);
+    // boundary hist value
+    T_INDEX nowTileBoundaryHistValue = tileCusumBuffer(boundaryBin) - tileBoundaryBinPrevCuSum;
+    // tile topk cum sum before tile id
+    T_INDEX prevTileTopkCumSum = tileTopkCumSum - nowTileBoundaryHistValue;
+    LocalTensor<uint32_t> reuseBuffer2Copy = topkSrcIndexTbuf_.Get<uint32_t>();
+    if (topkValueInput_ >= tileTopkCumSum) {
+        tileTopkValue_(tileTopkValueIndex) += nowTileBoundaryHistValue;
+        StoreKToGm(reuseBuffer2Copy, tileTopkValueIndex, oneRowGmOffset, tileId);
+    } else {
+        if (topkValueInput_ > prevTileTopkCumSum) {
+            T_INDEX stillNeedTopkValue = topkValueInput_ - prevTileTopkCumSum;
+            tileTopkValue_(tileTopkValueIndex) += TopkGetMax<T_INDEX>(stillNeedTopkValue, 0);
+            StoreKToGm(reuseBuffer2Copy, tileTopkValueIndex, oneRowGmOffset, tileId);
+        }
+    }
+    event_t eventMteVId = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::MTE3_V));
+    SetFlag<HardEvent::MTE3_V>(eventMteVId);
+    WaitFlag<HardEvent::MTE3_V>(eventMteVId);
+}
+
+template <typename T, typename UNSIGNED_TYPE, int32_t NUM_PASS, bool IS_LARGEST, bool IS_SORT, typename T_INDEX,
+          typename T_INDEX_TO>
+__aicore__ inline void RadixSortTopK<T, UNSIGNED_TYPE, NUM_PASS, IS_LARGEST, IS_SORT, T_INDEX,
+                                     T_INDEX_TO>::StoreAnswer2Gm(LocalTensor<T> inputLocalTensor,
+                                                                 LocalTensor<int32_t> tileCusumBuffer,
+                                                                 T_INDEX boundaryBin, uint32_t tileCount,
+                                                                 uint32_t tileId, uint64_t oneRowGmOffset)
+{
+    // unsorted dim id
+    uint32_t unsortedAxisId = GetBlockIdx() / lastDimRealCore_;
+    uint32_t tileTopkValueIndex = (tileId / platformCoreNum_);
+    T_INDEX tilePrevCusumValue = ((boundaryBin >= 1) ? tileCusumBuffer(boundaryBin - 1) : 0);
+    if (inBlockDimRange_) {
+        CopyDataToGm(tileTopkValueGm_[oneRowGmOffset], tileTopkValue_[tileTopkValueIndex], tileId, 1);
+        if (topkValueInput_ > 0) {
+            remainTileTopkValue_(tileTopkValueIndex) = tileCusumBuffer(boundaryBin) - tilePrevCusumValue;
+            CopyDataToGm(tileTopkRemainValueGm_[oneRowGmOffset], remainTileTopkValue_[tileTopkValueIndex], tileId, 1);
+        }
+    }
+    // core sync
+    PipeBarrier<PIPE_ALL>();
+    SyncAll();
+    if (inBlockDimRange_ && topkValueInput_ > 0) {
+        // get tile offset
+        // get cusum and store to tileTopkRemainValueGm_
+        uint32_t cumSumValue = GetTileTopkValueOffset(tileTopkRemainValueGm_, tileId, tileCount, oneRowGmOffset);
+        // update tileTopkValue
+        UpdateTileTopkValue(tileCusumBuffer, cumSumValue, boundaryBin, tilePrevCusumValue, tileId, oneRowGmOffset);
+    }
+    // core sync
+    PipeBarrier<PIPE_ALL>();
+    SyncAll();
+    if (inBlockDimRange_) {
+        StoreFinalAnswer2Gm(inputLocalTensor, tileId, tileCount, oneRowGmOffset);
+    }
+}
+
+template <typename T_INDEX, typename T_INDEX_TO>
+__simt_vf__ LAUNCH_BOUND(topk::RADIX_SORT_BIN_NUM) __aicore__
+    inline void CopyCumSumToGmB64(__gm__ T_INDEX* cumSumBinsGm_, __ubuf__ int32_t* tileCusumBuffer,
+                                  uint32_t cumSumBinOffset, uint64_t tileTopkOffsetInUb)
+{
+    for (int i = threadIdx.x; i < topk::RADIX_SORT_BIN_NUM / 2; i += topk::RADIX_SORT_BIN_NUM) {
+#pragma unroll
+        for (int j = 0; j < 2; j++) {
+            uint32_t offset = i + j * topk::RADIX_SORT_BIN_NUM / 2;
+            T_INDEX srcData = static_cast<T_INDEX>(tileCusumBuffer[tileTopkOffsetInUb + offset]);
+            asc_atomic_add(cumSumBinsGm_ + cumSumBinOffset + offset, srcData);
+        }
+    }
+}
+
+template <typename T_INDEX, typename T_INDEX_TO>
+__simt_vf__ LAUNCH_BOUND(topk::RADIX_SORT_BIN_NUM) __aicore__
+    inline void CopyCumSumToGmB8B16B32(__gm__ T_INDEX* cumSumBinsGm_, __ubuf__ int32_t* tileCusumBuffer,
+                                       uint32_t cumSumBinOffset, uint64_t tileTopkOffsetInUb)
+{
+    for (int i = threadIdx.x; i < topk::RADIX_SORT_BIN_NUM; i += topk::RADIX_SORT_BIN_NUM) {
+        uint32_t offset = i;
+        T_INDEX srcData = static_cast<T_INDEX>(tileCusumBuffer[tileTopkOffsetInUb + offset]);
+        asc_atomic_add(cumSumBinsGm_ + cumSumBinOffset + offset, srcData);
+    }
+}
+
+template <typename T, typename UNSIGNED_TYPE, int32_t NUM_PASS, bool IS_LARGEST, bool IS_SORT, typename T_INDEX,
+          typename T_INDEX_TO>
+__aicore__ inline void RadixSortTopK<T, UNSIGNED_TYPE, NUM_PASS, IS_LARGEST, IS_SORT, T_INDEX,
+                                     T_INDEX_TO>::ProcessMultiBlockTopK(GlobalTensor<T> inputX)
+{
+    int tileCount = (totalDataNum_ + numTileData_ - 1) / numTileData_;
+    // unsorted dim id
+    uint32_t unsortedAxisId = GetBlockIdx() / lastDimRealCore_;
+    uint32_t unsortedDimIndex = unsortedAxisId + sortLoopRound_ * unsortedDimParallel_;
+    if (unsortedDimIndex >= unsortedDimNum_) {
+        topkValueInput_ = 0;
+    }
+    // tile id
+    uint32_t startTileId = GetBlockIdx() % lastDimRealCore_;
+    uint32_t cumSumBinOffset = unsortedAxisId * topk::RADIX_SORT_BIN_NUM;
+    uint32_t inputXUnsortedAxisOffset = unsortedAxisId * totalDataNum_;
+    // local buffer
+    LocalTensor<int32_t> tileCusumBuffer = blockCumSumTbuf_.Get<int32_t>();
+    LocalTensor<T> xLocal;
+    LocalTensor<UNSIGNED_TYPE> unsingedInputXData;
+    // data mask
+    UNSIGNED_TYPE andDataMask = 0;
+    UNSIGNED_TYPE involvedDataMask = 0;
+    // find bucket boundary
+    T_INDEX boundaryBin = -1;
+    T_INDEX boundaryBinPrev = -1;
+    T_INDEX boundaryBinPrevCuSum = -1;
+    T_INDEX boundaryBinCuSum = -1;
+    // clear ub
+    Duplicate(tileTopkValue_, topk::CLEAR_UB_VALUE, lastDimTileNumTimes_);
+    // get global hist
+    for (int32_t round = (NUM_PASS - 1); round >= 0; round--) {
+        if (inBlockDimRange_ && topkValueInput_ > 0) {
+            // clear ub buffer
+            Duplicate(tileCusumBuffer, static_cast<int32_t>(topk::CLEAR_UB_VALUE),
+                      topk::RADIX_SORT_BIN_NUM * lastDimTileNumTimes_);
+            // clear gm buffer
+            if (startTileId == 0) {
+                LocalTensor<T_INDEX> reuseBuf2InitCumsumTemp = dataSetCumSumTbuf_.Get<T_INDEX>();
+                Duplicate(reuseBuf2InitCumsumTemp, static_cast<T_INDEX>(topk::CLEAR_UB_VALUE),
+                          topk::RADIX_SORT_BIN_NUM);
+                event_t eventIdMte3 = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::V_MTE3));
+                SetFlag<HardEvent::V_MTE3>(eventIdMte3);
+                WaitFlag<HardEvent::V_MTE3>(eventIdMte3);
+                DataCopyExtParams copyParams{1, 1, 0, 0, 0};
+                copyParams.blockLen = topk::RADIX_SORT_BIN_NUM * sizeof(T_INDEX);
+                DataCopyPad(cumSumBinsGm_[cumSumBinOffset], reuseBuf2InitCumsumTemp, copyParams);
+                dataSetCumSumTbuf_.FreeTensor(reuseBuf2InitCumsumTemp);
+            }
+        }
+        PipeBarrier<PIPE_ALL>();
+        SyncAll();
+        if (inBlockDimRange_ && topkValueInput_ > 0) {
+            for (uint32_t tileId = startTileId; tileId < tileCount; tileId += lastDimRealCore_) {
+                T_INDEX tileTopkValueIndex = (tileId / platformCoreNum_);
+                // tile top ub offset
+                uint64_t tileTopkOffsetInUb = tileTopkValueIndex * topk::RADIX_SORT_BIN_NUM;
+                // offset
+                uint64_t tileOffset = tileId * numTileData_;
+                int32_t tileDataStart = tileId * numTileData_;
+                int32_t remainTileDataNum = totalDataNum_ - tileDataStart;
+                if (remainTileDataNum < 0) {
+                    break;
+                }
+                int32_t currTileNum = TopkGetMin<int32_t>(remainTileDataNum, static_cast<int32_t>(numTileData_));
+                event_t eventIdScalar = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::S_V));
+                SetFlag<HardEvent::S_V>(eventIdScalar);
+                WaitFlag<HardEvent::S_V>(eventIdScalar);
+                if (tileCount > platformCoreNum_) {
+                    if (round == (NUM_PASS - 1) && tileId < platformCoreNum_) {
+                        // first time allocate
+                        CopyDataIn(inputX[inputXUnsortedAxisOffset], tileOffset, currTileNum);
+                    } else {
+                        // reuse buffer
+                        CopyDataInWithReuseBuffer(inputX[inputXUnsortedAxisOffset], xLocal, tileOffset, currTileNum);
+                    }
+                    xLocal = inQueueX_.DeQue<T>();
+                    // convert singed data to unsinged
+                    unsingedInputXData = PreProcess(xLocal, currTileNum);
+                } else {
+                    if (round == (NUM_PASS - 1)) {
+                        CopyDataIn(inputX[inputXUnsortedAxisOffset], tileOffset, currTileNum);
+                        xLocal = inQueueX_.DeQue<T>();
+                        // convert singed data to unsinged
+                        unsingedInputXData = PreProcess(xLocal, currTileNum);
+                    }
+                }
+                // get tile excusive
+                GetTileExcusive(unsingedInputXData, tileCusumBuffer[tileTopkOffsetInUb], andDataMask, involvedDataMask,
+                                static_cast<uint16_t>(round), currTileNum);
+                // add tile excusive to gm
+                event_t eventId = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::V_MTE3));
+                SetFlag<HardEvent::V_MTE3>(eventId);
+                WaitFlag<HardEvent::V_MTE3>(eventId);
+                if constexpr (IsSameType<T_INDEX, int64_t>::value) {
+                    if constexpr (NUM_PASS == topk::B64_BITE_SIZE) {
+                        asc_vf_call<CopyCumSumToGmB64<T_INDEX, T_INDEX_TO>>(
+                            dim3(topk::RADIX_SORT_BIN_NUM), (__gm__ T_INDEX*)(cumSumBinsGm_.GetPhyAddr()),
+                            (__ubuf__ int32_t*)(tileCusumBuffer.GetPhyAddr()), cumSumBinOffset, tileTopkOffsetInUb);
+                    } else {
+                        asc_vf_call<CopyCumSumToGmB8B16B32<T_INDEX, T_INDEX_TO>>(
+                            dim3(topk::RADIX_SORT_BIN_NUM), (__gm__ T_INDEX*)(cumSumBinsGm_.GetPhyAddr()),
+                            (__ubuf__ int32_t*)(tileCusumBuffer.GetPhyAddr()), cumSumBinOffset, tileTopkOffsetInUb);
+                    }
+                } else {
+                    SetAtomicAdd<int32_t>();
+                    // copy ub to gm
+                    DataCopyExtParams dataCopyParam;
+                    dataCopyParam.blockCount = 1;
+                    dataCopyParam.blockLen = topk::RADIX_SORT_BIN_NUM * sizeof(int32_t);
+                    dataCopyParam.srcStride = 0;
+                    dataCopyParam.dstStride = 0;
+                    DataCopyPad(cumSumBinsGm_[cumSumBinOffset], tileCusumBuffer[tileTopkOffsetInUb], dataCopyParam);
+                    SetAtomicNone();
+                }
+                event_t eventIdWaitS = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::MTE3_S));
+                SetFlag<HardEvent::MTE3_S>(eventIdWaitS);
+                WaitFlag<HardEvent::MTE3_S>(eventIdWaitS);
+            }
+        }
+        PipeBarrier<PIPE_ALL>();
+        SyncAll();
+        if (inBlockDimRange_ && topkValueInput_ > 0) {
+            // find bucket boundary
+            // scalar calc
+            FindBoundary(boundaryBin, boundaryBinPrev, boundaryBinCuSum, boundaryBinPrevCuSum, cumSumBinOffset);
+            UNSIGNED_TYPE oneRoundMask = static_cast<UNSIGNED_TYPE>(boundaryBin) << (round * topk::SHIFT_BIT_NUM);
+            involvedDataMask += oneRoundMask;
+            // update and mask
+            UNSIGNED_TYPE shiftMask = static_cast<UNSIGNED_TYPE>(0xFF) << (round * topk::SHIFT_BIT_NUM);
+            andDataMask += shiftMask;
+            // update topk value
+            topkValueInput_ -= boundaryBinPrevCuSum;
+            // for last tile num greate 64
+            for (uint32_t tileId = startTileId; tileId < tileCount; tileId += lastDimRealCore_) {
+                T_INDEX tileTopkValueIndex = (tileId / platformCoreNum_);
+                // update tile topk and topk
+                if (boundaryBinPrev >= 0) {
+                    tileTopkValue_(tileTopkValueIndex) += tileCusumBuffer[tileTopkValueIndex *
+                                                                          topk::RADIX_SORT_BIN_NUM](boundaryBinPrev);
+                }
+            }
+        }
+        PipeBarrier<PIPE_ALL>();
+        SyncAll();
+    }
+    uint32_t oneRowTopKValueOffset = unsortedAxisId * tileCount;
+    if (lastDimTileNum_ <= platformCoreNum_) {
+        // medium mode
+        for (uint32_t tileId = startTileId; tileId < tileCount; tileId += lastDimRealCore_) {
+            T_INDEX tileTopkValueIndex = (tileId / platformCoreNum_);
+            uint64_t tileTopkOffsetInUb = tileTopkValueIndex * topk::RADIX_SORT_BIN_NUM;
+            StoreAnswer2Gm(xLocal, tileCusumBuffer[tileTopkOffsetInUb], boundaryBin, tileCount, tileId,
+                           oneRowTopKValueOffset);
+        }
+    } else {
+        // big data mode
+        StoreBigSizeData2Gm(inputX, xLocal, tileCusumBuffer, boundaryBin);
+    }
+    PipeBarrier<PIPE_ALL>();
+    SyncAll();
+    if (inBlockDimRange_ && unsortedDimIndex < unsortedDimNum_) {
+        if (IS_SORT && (startTileId == 0) && !needSortWithIndex_) {
+            if (NUM_PASS != topk::B64_BITE_SIZE) {
+                SortTopKRes(xLocal);
+            } else if (NUM_PASS == topk::B64_BITE_SIZE && topkValueInitInput_ <= (SUPPORT_SORT_MAX_SIZE / 2)) {
+                SortTopKRes(xLocal);
+            }
+        }
+        inQueueX_.FreeTensor(xLocal);
+    }
+}
+
+template <typename T, typename UNSIGNED_TYPE, int32_t NUM_PASS, bool IS_LARGEST, bool IS_SORT, typename T_INDEX,
+          typename T_INDEX_TO>
+__aicore__ inline void RadixSortTopK<T, UNSIGNED_TYPE, NUM_PASS, IS_LARGEST, IS_SORT, T_INDEX,
+                                     T_INDEX_TO>::FindBoundary(T_INDEX& boundaryBin, T_INDEX& boundaryBinPrev,
+                                                               T_INDEX& boundaryBinCuSum, T_INDEX& boundaryBinPrevCuSum,
+                                                               uint32_t cumSumBinOffset)
+{
+    // load cumsum
+    LocalTensor<T_INDEX> cumSumLocal = dataSetCumSumTbuf_.Get<T_INDEX>();
+    uint32_t currTileSizeAlign = ROUND_UP_AGLIN(topk::RADIX_SORT_BIN_NUM * sizeof(T_INDEX)) / sizeof(T_INDEX);
+    DataCopyPadExtParams<T_INDEX> padParams;
+    padParams.isPad = true;
+    padParams.rightPadding = currTileSizeAlign - topk::RADIX_SORT_BIN_NUM;
+    padParams.paddingValue = static_cast<T_INDEX>(0);
+    DataCopyExtParams dataCopyParam;
+    dataCopyParam.blockCount = 1;
+    dataCopyParam.blockLen = topk::RADIX_SORT_BIN_NUM * sizeof(T_INDEX);
+    dataCopyParam.srcStride = 0;
+    dataCopyParam.dstStride = 0;
+    DataCopyPad(cumSumLocal, cumSumBinsGm_[cumSumBinOffset], dataCopyParam, padParams);
+    event_t eventId = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::MTE2_S));
+    SetFlag<HardEvent::MTE2_S>(eventId);
+    WaitFlag<HardEvent::MTE2_S>(eventId);
+    if (cumSumLocal(topk::RADIX_SORT_BIN_NUM - 1) <= topkValueInput_) {
+        boundaryBin = -1;
+        boundaryBinPrev = topk::RADIX_SORT_BIN_NUM - 1;
+        boundaryBinCuSum = -1;
+        boundaryBinPrevCuSum = cumSumLocal(boundaryBinPrev);
+        return;
+    }
+    if (cumSumLocal(0) > topkValueInput_) {
+        boundaryBin = 0;
+        boundaryBinPrev = -1;
+        boundaryBinCuSum = cumSumLocal(boundaryBin);
+        boundaryBinPrevCuSum = 0;
+        return;
+    }
+    // binary search
+    boundaryBinPrev = BinarySearch(cumSumLocal);
+    boundaryBin = boundaryBinPrev + 1;
+    boundaryBinCuSum = cumSumLocal(boundaryBin);
+    boundaryBinPrevCuSum = cumSumLocal(boundaryBinPrev);
+}
+
+template <typename T, typename UNSIGNED_TYPE, int32_t NUM_PASS, bool IS_LARGEST, bool IS_SORT, typename T_INDEX,
+          typename T_INDEX_TO>
+__aicore__ inline int32_t RadixSortTopK<T, UNSIGNED_TYPE, NUM_PASS, IS_LARGEST, IS_SORT, T_INDEX,
+                                        T_INDEX_TO>::BinarySearch(LocalTensor<T_INDEX> cumSumLocal)
+{
+    int32_t left = 0;
+    int32_t right = topk::RADIX_SORT_BIN_NUM - 1;
+    while (left <= right) {
+        int mid = (right + left) / 2;
+        if (cumSumLocal(mid) == topkValueInput_) {
+            if ((mid + 1) < topk::RADIX_SORT_BIN_NUM && cumSumLocal(mid + 1) > topkValueInput_) {
+                return mid;
+            } else {
+                left = mid + 1;
+            }
+        } else if ((mid + 1) < topk::RADIX_SORT_BIN_NUM && cumSumLocal(mid + 1) > topkValueInput_ &&
+                   cumSumLocal(mid) < topkValueInput_) {
+            return mid;
+        } else if (cumSumLocal(mid) < topkValueInput_) {
+            left = mid + 1;
+        } else if (cumSumLocal(mid) > topkValueInput_) {
+            right = mid - 1;
+        }
+    }
+    return -1;
+}
+
+template <typename T, typename UNSIGNED_TYPE, int32_t NUM_PASS, bool IS_LARGEST, bool IS_SORT, typename T_INDEX,
+          typename T_INDEX_TO>
+__aicore__ inline void RadixSortTopK<T, UNSIGNED_TYPE, NUM_PASS, IS_LARGEST, IS_SORT, T_INDEX,
+                                     T_INDEX_TO>::StoreBigSizeData2Gm(GlobalTensor<T> inputX, LocalTensor<T> xLocal,
+                                                                      LocalTensor<int32_t> tileCusumBuffer,
+                                                                      T_INDEX boundaryBin)
+{
+    int tileCount = (totalDataNum_ + numTileData_ - 1) / numTileData_;
+    // unsorted dim id
+    uint32_t unsortedAxisId = GetBlockIdx() / lastDimRealCore_;
+    uint32_t unsortedDimIndex = unsortedAxisId + sortLoopRound_ * unsortedDimParallel_;
+    if (unsortedDimIndex >= unsortedDimNum_) {
+        topkValueInput_ = 0;
+    }
+    // tile id
+    uint32_t startTileId = GetBlockIdx() % lastDimRealCore_;
+    uint32_t cumSumBinOffset = unsortedAxisId * topk::RADIX_SORT_BIN_NUM;
+    uint32_t inputXUnsortedAxisOffset = unsortedAxisId * totalDataNum_;
+    uint32_t oneRowTopKValueOffset = unsortedAxisId * tileCount;
+    UpdateTileRealTopK(startTileId, tileCount, tileCusumBuffer, boundaryBin, oneRowTopKValueOffset);
+    if (inBlockDimRange_) {
+        // copy data
+        for (uint32_t tileId = startTileId; tileId < tileCount; tileId += lastDimRealCore_) {
+            uint32_t tileTopkValueIndex = (tileId / platformCoreNum_);
+            uint64_t tileTopkOffsetInUb = tileTopkValueIndex * topk::RADIX_SORT_BIN_NUM;
+            // offset
+            uint64_t tileOffset = tileId * numTileData_;
+            int32_t tileDataStart = tileId * numTileData_;
+            int32_t remainTileDataNum = totalDataNum_ - tileDataStart;
+            if (remainTileDataNum < 0) {
+                break;
+            }
+            int32_t currTileNum = TopkGetMin<int32_t>(remainTileDataNum, static_cast<int32_t>(numTileData_));
+            // copy gm to ub
+            CopyDataInWithReuseBuffer(inputX[inputXUnsortedAxisOffset], xLocal, tileOffset, currTileNum);
+            xLocal = inQueueX_.DeQue<T>();
+            StoreFinalAnswer2Gm(xLocal, tileId, tileCount, oneRowTopKValueOffset);
+        }
+    }
+}
+
+template <typename T, typename UNSIGNED_TYPE, int32_t NUM_PASS, bool IS_LARGEST, bool IS_SORT, typename T_INDEX,
+          typename T_INDEX_TO>
+__aicore__ inline void RadixSortTopK<T, UNSIGNED_TYPE, NUM_PASS, IS_LARGEST, IS_SORT, T_INDEX,
+                                     T_INDEX_TO>::UpdateTileRealTopK(uint32_t startTileId, int tileCount,
+                                                                     LocalTensor<int32_t> tileCusumBuffer,
+                                                                     T_INDEX boundaryBin, uint64_t oneRowGmOffset)
+{
+    if (inBlockDimRange_) {
+        LocalTensor<uint32_t> reuseBuffer2Copy = topkSrcIndexTbuf_.Get<uint32_t>();
+        for (uint32_t tileId = startTileId; tileId < tileCount; tileId += lastDimRealCore_) {
+            T_INDEX tileTopkValueIndex = (tileId / platformCoreNum_);
+            uint64_t tileTopkOffsetInUb = tileTopkValueIndex * topk::RADIX_SORT_BIN_NUM;
+            uint32_t tilePrevCusumValue = ((boundaryBin >= 1) ? tileCusumBuffer[tileTopkOffsetInUb](boundaryBin - 1) :
+                                                                0);
+            CopyUb2Ub(reuseBuffer2Copy, tileTopkValue_, tileTopkValueIndex);
+            event_t eventId = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::V_MTE3));
+            SetFlag<HardEvent::V_MTE3>(eventId);
+            WaitFlag<HardEvent::V_MTE3>(eventId);
+            CopyDataToGm(tileTopkValueGm_[oneRowGmOffset], reuseBuffer2Copy, tileId, 1);
+            if (topkValueInput_ > 0) {
+                event_t eventMet3VecId = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::MTE3_V));
+                SetFlag<HardEvent::MTE3_V>(eventMet3VecId);
+                WaitFlag<HardEvent::MTE3_V>(eventMet3VecId);
+                remainTileTopkValue_(tileTopkValueIndex) = tileCusumBuffer[tileTopkOffsetInUb](boundaryBin) -
+                                                           tilePrevCusumValue;
+                CopyUb2Ub(reuseBuffer2Copy, remainTileTopkValue_, tileTopkValueIndex);
+                event_t eventIdWaitV = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::V_MTE3));
+                SetFlag<HardEvent::V_MTE3>(eventIdWaitV);
+                WaitFlag<HardEvent::V_MTE3>(eventIdWaitV);
+                CopyDataToGm(tileTopkRemainValueGm_[oneRowGmOffset], reuseBuffer2Copy, tileId, 1);
+            }
+            event_t eventIdWaitMte3 = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::MTE3_V));
+            SetFlag<HardEvent::MTE3_V>(eventIdWaitMte3);
+            WaitFlag<HardEvent::MTE3_V>(eventIdWaitMte3);
+        }
+    }
+    PipeBarrier<PIPE_ALL>();
+    SyncAll();
+    if (inBlockDimRange_) {
+        for (uint32_t tileId = startTileId; tileId < tileCount; tileId += lastDimRealCore_) {
+            uint32_t tileTopkValueIndex = (tileId / platformCoreNum_);
+            uint64_t tileTopkOffsetInUb = tileTopkValueIndex * topk::RADIX_SORT_BIN_NUM;
+            T_INDEX tilePrevCusumValue = ((boundaryBin >= 1) ? tileCusumBuffer[tileTopkOffsetInUb](boundaryBin - 1) :
+                                                               0);
+            if (topkValueInput_ > 0) {
+                // get tile offset
+                // get cusum and store to tileTopkRemainValueGm_
+                T_INDEX cumSumValue = GetTileTopkValueOffset(tileTopkRemainValueGm_, tileId, tileCount, oneRowGmOffset);
+                // update tileTopkValue
+                UpdateTileTopkValue(tileCusumBuffer[tileTopkOffsetInUb], cumSumValue, boundaryBin, tilePrevCusumValue,
+                                    tileId, oneRowGmOffset);
+            }
+        }
+    }
+    PipeBarrier<PIPE_ALL>();
+    SyncAll();
+}
+
+template <typename T, typename UNSIGNED_TYPE, int32_t NUM_PASS, bool IS_LARGEST, bool IS_SORT, typename T_INDEX,
+          typename T_INDEX_TO>
+__aicore__ inline void RadixSortTopK<T, UNSIGNED_TYPE, NUM_PASS, IS_LARGEST, IS_SORT, T_INDEX,
+                                     T_INDEX_TO>::StoreFinalAnswer2Gm(LocalTensor<T> inputLocalTensor, uint32_t tileId,
+                                                                      uint32_t tileCount, uint64_t oneRowGmOffset)
+{
+    T_INDEX tileTopkValueIndex = (tileId / platformCoreNum_);
+    uint32_t unsortedAxisId = GetBlockIdx() / lastDimRealCore_;
+    T_INDEX tileTopkOffsetValue = GetTileTopkValueOffset(tileTopkValueGm_, tileId, tileCount, oneRowGmOffset);
+    if (tileTopkValue_(tileTopkValueIndex) > 0) {
+        AscendC::LocalTensor<T> topkValueOutLocal = topkValueQueue_.AllocTensor<T>();
+        AscendC::LocalTensor<uint8_t> shareTmpBuffer = sortedShareMemTbuf_.Get<uint8_t>();
+        LocalTensor<int32_t> topkSrcIndexLocal = topkSrcIndexTbuf_.Get<int32_t>();
+        uint32_t tileDataStart = numTileData_ * tileId;
+        uint32_t tailTileSize = totalDataNum_ - tileDataStart;
+        uint32_t nowTileSize = (tileId == (tileCount - 1) ? tailTileSize : numTileData_);
+        LocalTensor<bool> emptyFinishLocal;
+        static constexpr TopKConfig topkConfig{TopKAlgo::RADIX_SELECT, TopKOrder::UNSET, false};
+        TopkTiling emptyTopkTiling;
+        uint32_t aglinNum = ROUND_UP_AGLIN(nowTileSize);
+        TopKInfo topKInfo;
+        topKInfo.outter = 1;
+        topKInfo.inner = aglinNum;
+        topKInfo.n = nowTileSize;
+        // clear aglin value
+        int32_t gapValue = (aglinNum - nowTileSize);
+        T defaultValue = IS_LARGEST ? GetTypeMinValue<T>() : GetTypeMaxValue<T>();
+        for (int i = 0; i < gapValue; i++) {
+            inputLocalTensor(nowTileSize + i) = defaultValue;
+        }
+        if constexpr (IsSameType<T_INDEX_TO, int32_t>::value) {
+            AscendC::LocalTensor<int32_t> topkValueOutIndexLocal = topkValueIndexQueue_.AllocTensor<int32_t>();
+            AscendC::TopK<T, false, false, false, TopKMode::TOPK_NORMAL, topkConfig>(
+                topkValueOutLocal, topkValueOutIndexLocal, inputLocalTensor, topkSrcIndexLocal, emptyFinishLocal,
+                shareTmpBuffer, static_cast<int32_t>(tileTopkValue_(tileTopkValueIndex)), emptyTopkTiling, topKInfo,
+                IS_LARGEST);
+            // convert index to global index
+            int32_t indexStride = tileId * numTileData_;
+            AscendC::Adds(topkValueOutIndexLocal, topkValueOutIndexLocal, indexStride, nowTileSize);
+            topkValueIndexQueue_.EnQue<int32_t>(topkValueOutIndexLocal);
+        } else {
+            AscendC::LocalTensor<int64_t> topkValueOutIndexLocal = topkValueIndexQueue_.AllocTensor<int64_t>();
+            AscendC::LocalTensor<int32_t> topkValueOutIndexTmp = topkValueIndexTbuf_.Get<int32_t>();
+            AscendC::TopK<T, false, false, false, TopKMode::TOPK_NORMAL, topkConfig>(
+                topkValueOutLocal, topkValueOutIndexTmp, inputLocalTensor, topkSrcIndexLocal, emptyFinishLocal,
+                shareTmpBuffer, static_cast<int32_t>(tileTopkValue_(tileTopkValueIndex)), emptyTopkTiling, topKInfo,
+                IS_LARGEST);
+            AscendC::Cast<int64_t, int32_t>(topkValueOutIndexLocal, topkValueOutIndexTmp, RoundMode::CAST_NONE,
+                                            static_cast<int32_t>(tileTopkValue_(tileTopkValueIndex)));
+            int64_t indexStride = tileId * numTileData_;
+            AscendC::Adds(topkValueOutIndexLocal, topkValueOutIndexLocal, indexStride, nowTileSize);
+            topkValueIndexQueue_.EnQue<int64_t>(topkValueOutIndexLocal);
+            topkValueIndexTbuf_.FreeTensor(topkValueOutIndexTmp);
+        }
+        // push data enque
+        topkValueQueue_.EnQue<T>(topkValueOutLocal);
+        // store data to GM
+        // data offset
+        uint32_t tileTopkOffset = tileTopkOffsetValue - tileTopkValue_(tileTopkValueIndex);
+        uint64_t timesLoopOffset = sortLoopRound_ * unsortedDimParallel_ * topkValueInitInput_;
+        uint64_t topkAnserOffset = unsortedAxisId * topkValueInitInput_ + timesLoopOffset;
+        PipeBarrier<PIPE_ALL>();
+        CopyTopkValue2Gm(topkAnserOffset, tileTopkOffset, tileTopkValue_(tileTopkValueIndex));
+    }
+}
+
+template <typename T, typename UNSIGNED_TYPE, int32_t NUM_PASS, bool IS_LARGEST, bool IS_SORT, typename T_INDEX,
+          typename T_INDEX_TO>
+__aicore__ inline void RadixSortTopK<T, UNSIGNED_TYPE, NUM_PASS, IS_LARGEST, IS_SORT, T_INDEX, T_INDEX_TO>::SortTopKRes(
+    LocalTensor<T> xLocal)
+{
+    uint32_t unsortedAxisId = GetBlockIdx() / lastDimRealCore_;
+    uint64_t timesLoopOffset = sortLoopRound_ * unsortedDimParallel_ * topkValueInitInput_;
+    uint64_t topkAnserOffset = unsortedAxisId * topkValueInitInput_ + timesLoopOffset;
+    AscendC::LocalTensor<T> topkValueOutLocal = topkValueQueue_.AllocTensor<T>();
+    AscendC::LocalTensor<T_INDEX_TO> topkValueOutIndexLocal = topkValueIndexQueue_.AllocTensor<T_INDEX_TO>();
+    AscendC::LocalTensor<uint8_t> shareTmpBuffer = sortedShareMemTbuf_.Get<uint8_t>();
+    AscendC::LocalTensor<T_INDEX_TO> topkSrcIndexCopyLocal = topkSrcIndexCopyTbuf_.Get<T_INDEX_TO>();
+    uint32_t currTileSizeAlign = ROUND_UP_AGLIN(topkValueInitInput_ * sizeof(T)) / sizeof(T);
+    DataCopyPadExtParams<T> padParams;
+    padParams.isPad = true;
+    padParams.rightPadding = currTileSizeAlign - topkValueInitInput_;
+    padParams.paddingValue = static_cast<T>(0);
+    DataCopyExtParams dataCopyParam;
+    dataCopyParam.blockCount = 1;
+    dataCopyParam.blockLen = topkValueInitInput_ * sizeof(T);
+    dataCopyParam.srcStride = 0;
+    dataCopyParam.dstStride = 0;
+    DataCopyPad(xLocal, topkValueGm_[topkAnserOffset], dataCopyParam, padParams);
+    T_INDEX_TO indexAlignSize = ROUND_UP_AGLIN(topkValueInitInput_ * sizeof(T_INDEX_TO)) / sizeof(T_INDEX_TO);
+    DataCopyPadExtParams<T_INDEX_TO> padParamsIndex;
+    padParamsIndex.isPad = true;
+    padParamsIndex.rightPadding = indexAlignSize - topkValueInitInput_;
+    padParamsIndex.paddingValue = static_cast<T_INDEX_TO>(0);
+    DataCopyExtParams dataCopyParamIndex;
+    dataCopyParamIndex.blockCount = 1;
+    dataCopyParamIndex.blockLen = topkValueInitInput_ * sizeof(T_INDEX_TO);
+    dataCopyParamIndex.srcStride = 0;
+    dataCopyParamIndex.dstStride = 0;
+    DataCopyPad(topkSrcIndexCopyLocal, topkValueIndexGm_[topkAnserOffset], // T_INDEX_TO
+                dataCopyParamIndex, padParamsIndex);
+    event_t eventId = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::MTE2_V));
+    SetFlag<HardEvent::MTE2_V>(eventId);
+    WaitFlag<HardEvent::MTE2_V>(eventId);
+    // sort ac api
+    static constexpr SortConfig sortConfig{SortType::RADIX_SORT, IS_LARGEST};
+    AscendC::Sort<T, T_INDEX_TO, false, sortConfig>(topkValueOutLocal, topkValueOutIndexLocal, xLocal,
+                                                    topkSrcIndexCopyLocal, shareTmpBuffer, topkValueInitInput_);
+    topkSrcIndexCopyTbuf_.FreeTensor(topkSrcIndexCopyLocal);
+    PipeBarrier<PIPE_ALL>();
+    // copy sort answer out
+    // push data enque
+    topkValueQueue_.EnQue<T>(topkValueOutLocal);
+    topkValueIndexQueue_.EnQue<T_INDEX_TO>(topkValueOutIndexLocal);
+    CopyTopkValue2Gm(topkAnserOffset, 0, topkValueInitInput_);
+}
+
+template <typename T, typename UNSIGNED_TYPE, int32_t NUM_PASS, bool IS_LARGEST, bool IS_SORT, typename T_INDEX,
+          typename T_INDEX_TO>
+__aicore__ inline void RadixSortTopK<T, UNSIGNED_TYPE, NUM_PASS, IS_LARGEST, IS_SORT, T_INDEX,
+                                     T_INDEX_TO>::CopyTopkValue2Gm(uint64_t gmOffset, uint64_t tileOffset,
+                                                                   uint32_t topKValue)
+{
+    // copy result out
+    // copy sorted value
+    AscendC::LocalTensor<T> topkValueOutLocal = topkValueQueue_.DeQue<T>();
+    AscendC::DataCopyExtParams dataCopyParamValue{static_cast<uint16_t>(1),
+                                                  static_cast<uint32_t>(topKValue * sizeof(T)), 0, 0, 0};
+    if (needSortWithIndex_) {
+        AscendC::DataCopyPad(topkValuesGm_[gmOffset + tileOffset], topkValueOutLocal, dataCopyParamValue);
+    } else {
+        AscendC::DataCopyPad(topkValueGm_[gmOffset + tileOffset], topkValueOutLocal, dataCopyParamValue);
+    }
+    topkValueQueue_.FreeTensor(topkValueOutLocal);
+    // copy sorted value index
+    AscendC::LocalTensor<T_INDEX_TO> topkValueOutIndexLocal = topkValueIndexQueue_.DeQue<T_INDEX_TO>();
+    AscendC::DataCopyExtParams dataCopyParamIndex{static_cast<uint16_t>(1),
+                                                  static_cast<uint32_t>(topKValue * sizeof(T_INDEX_TO)), 0, 0, 0};
+    if (needSortWithIndex_) {
+        AscendC::DataCopyPad(topkIndicesGm_[gmOffset + tileOffset], topkValueOutIndexLocal, dataCopyParamIndex);
+    } else {
+        AscendC::DataCopyPad(topkValueIndexGm_[gmOffset + tileOffset], topkValueOutIndexLocal, dataCopyParamIndex);
+    }
+    topkValueIndexQueue_.FreeTensor(topkValueOutIndexLocal);
+}
+
+template <typename T, typename UNSIGNED_TYPE, int32_t NUM_PASS, bool IS_LARGEST, bool IS_SORT, typename T_INDEX,
+          typename T_INDEX_TO>
+__aicore__ inline void RadixSortTopK<T, UNSIGNED_TYPE, NUM_PASS, IS_LARGEST, IS_SORT, T_INDEX,
+                                     T_INDEX_TO>::CopyDataInWithReuseBuffer(GlobalTensor<T> inputX,
+                                                                            LocalTensor<T> xLocal, uint64_t tileOffset,
+                                                                            uint32_t currTileSize)
+{
+    uint32_t currTileSizeAlign = ROUND_UP_AGLIN(currTileSize * sizeof(T)) / sizeof(T);
+    DataCopyPadExtParams<T> padParams;
+    padParams.isPad = true;
+    padParams.rightPadding = currTileSizeAlign - currTileSize;
+    padParams.paddingValue = static_cast<T>(0);
+    DataCopyExtParams dataCopyParam;
+    dataCopyParam.blockCount = 1;
+    dataCopyParam.blockLen = currTileSize * sizeof(T);
+    dataCopyParam.srcStride = 0;
+    dataCopyParam.dstStride = 0;
+    DataCopyPad(xLocal, inputX[tileOffset], dataCopyParam, padParams);
+    inQueueX_.EnQue(xLocal);
+}
+
+template <typename T, typename UNSIGNED_TYPE, int32_t NUM_PASS, bool IS_LARGEST, bool IS_SORT, typename T_INDEX,
+          typename T_INDEX_TO>
+__aicore__ inline void RadixSortTopK<T, UNSIGNED_TYPE, NUM_PASS, IS_LARGEST, IS_SORT, T_INDEX, T_INDEX_TO>::CopyDataIn(
+    GlobalTensor<T> inputX, uint64_t tileOffset, uint32_t currTileSize)
+{
+    LocalTensor<T> xLocal = inQueueX_.AllocTensor<T>();
+    uint32_t currTileSizeAlign = ROUND_UP_AGLIN(currTileSize * sizeof(T)) / sizeof(T);
+    DataCopyPadExtParams<T> padParams;
+    padParams.isPad = true;
+    padParams.rightPadding = currTileSizeAlign - currTileSize;
+    padParams.paddingValue = static_cast<T>(0);
+    DataCopyExtParams dataCopyParam;
+    dataCopyParam.blockCount = 1;
+    dataCopyParam.blockLen = currTileSize * sizeof(T);
+    dataCopyParam.srcStride = 0;
+    dataCopyParam.dstStride = 0;
+    DataCopyPad(xLocal, inputX[tileOffset], dataCopyParam, padParams);
+    inQueueX_.EnQue(xLocal);
+}
+
+template <typename T, typename UNSIGNED_TYPE, int32_t NUM_PASS, bool IS_LARGEST, bool IS_SORT, typename T_INDEX,
+          typename T_INDEX_TO>
+__aicore__ inline void RadixSortTopK<T, UNSIGNED_TYPE, NUM_PASS, IS_LARGEST, IS_SORT, T_INDEX,
+                                     T_INDEX_TO>::CopyDataToUb(GlobalTensor<T> inputX, LocalTensor<T> localTensorBuffer,
+                                                               uint64_t gmOffset, uint32_t currTileSize)
+{
+    uint32_t currTileSizeAlign = ROUND_UP_AGLIN(currTileSize * sizeof(T)) / sizeof(T);
+    DataCopyPadExtParams<T> padParams;
+    padParams.isPad = true;
+    padParams.rightPadding = currTileSizeAlign - currTileSize;
+    padParams.paddingValue = static_cast<T>(0);
+    DataCopyExtParams dataCopyParam;
+    dataCopyParam.blockCount = 1;
+    dataCopyParam.blockLen = currTileSize * sizeof(T);
+    dataCopyParam.srcStride = 0;
+    dataCopyParam.dstStride = 0;
+    DataCopyPad(localTensorBuffer, inputX[gmOffset], dataCopyParam, padParams);
+}
+
+template <typename T, typename UNSIGNED_TYPE, int32_t NUM_PASS, bool IS_LARGEST, bool IS_SORT, typename T_INDEX,
+          typename T_INDEX_TO>
+__aicore__ inline void RadixSortTopK<T, UNSIGNED_TYPE, NUM_PASS, IS_LARGEST, IS_SORT, T_INDEX,
+                                     T_INDEX_TO>::CopyDataToGm(GlobalTensor<uint32_t> inputX,
+                                                               LocalTensor<uint32_t> localTensorBuffer,
+                                                               uint64_t gmOffset, uint32_t currTileSize)
+{
+    DataCopyExtParams dataCopyParam;
+    dataCopyParam.blockCount = 1;
+    dataCopyParam.blockLen = currTileSize * sizeof(uint32_t);
+    dataCopyParam.srcStride = 0;
+    dataCopyParam.dstStride = 0;
+    DataCopyPad(inputX[gmOffset], localTensorBuffer, dataCopyParam);
+}
+
+template <typename T, typename UNSIGNED_TYPE, int32_t NUM_PASS, bool IS_LARGEST, bool IS_SORT, typename T_INDEX,
+          typename T_INDEX_TO>
+__aicore__ inline void
+RadixSortTopK<T, UNSIGNED_TYPE, NUM_PASS, IS_LARGEST, IS_SORT, T_INDEX, T_INDEX_TO>::GetTileExcusive(
+    LocalTensor<UNSIGNED_TYPE> inputX, LocalTensor<int32_t> cumSumHist, UNSIGNED_TYPE andDataMask,
+    UNSIGNED_TYPE involveDataMask, int32_t round, uint32_t numTileData)
+{
+    if constexpr (topk::is_same<int64_t, T>::value || topk::is_same<uint64_t, T>::value) {
+        RadixSortTopKB64<T, uint64_t, NUM_PASS, IS_LARGEST, int32_t> radixSortTopK;
+        radixSortTopK.GetCumSum(inputX, cumSumHist, andDataMask, involveDataMask, round, numTileData);
+    } else if constexpr (topk::is_same<int32_t, T>::value || topk::is_same<uint32_t, T>::value ||
+                         topk::is_same<float, T>::value) {
+        RadixSortTopKB32<T, uint32_t, NUM_PASS, IS_LARGEST, int32_t> radixSortTopK;
+        radixSortTopK.GetCumSum(inputX, cumSumHist, andDataMask, involveDataMask, round, numTileData);
+    } else if constexpr (topk::is_same<half, T>::value || topk::is_same<uint16_t, T>::value ||
+                         topk::is_same<int16_t, T>::value || topk::is_same<bfloat16_t, T>::value) {
+        RadixSortTopKB16<T, uint16_t, NUM_PASS, IS_LARGEST, int32_t> radixSortTopK;
+        radixSortTopK.GetCumSum(inputX, cumSumHist, andDataMask, involveDataMask, round, numTileData);
+    } else if constexpr (topk::is_same<int8_t, T>::value || topk::is_same<uint8_t, T>::value) {
+        RadixSortTopKB8<T, uint8_t, NUM_PASS, IS_LARGEST, int32_t> radixSortTopK;
+        radixSortTopK.GetCumSum(inputX, cumSumHist, andDataMask, involveDataMask, round, numTileData);
+    }
+}
+
+template <typename T, typename UNSIGNED_TYPE, int32_t NUM_PASS, bool IS_LARGEST, bool IS_SORT, typename T_INDEX,
+          typename T_INDEX_TO>
+__aicore__ inline LocalTensor<UNSIGNED_TYPE>
+RadixSortTopK<T, UNSIGNED_TYPE, NUM_PASS, IS_LARGEST, IS_SORT, T_INDEX, T_INDEX_TO>::PreProcess(LocalTensor<T> inputX,
+                                                                                                uint32_t numTileData)
+{
+    if constexpr (topk::is_same<int64_t, T>::value) {
+        RadixBlockSortSimdB64<T, uint64_t, NUM_PASS, IS_LARGEST, T_INDEX> radixSortTopK;
+        radixSortTopK.TwiddleInB64(inputX, inputXCopy_, numTileData);
+        return inputXCopy_;
+    } else if constexpr (topk::is_same<int32_t, T>::value) {
+        RadixBlockSortSimdB32<T, uint32_t, NUM_PASS, IS_LARGEST, T_INDEX> radixSortTopK;
+        radixSortTopK.TwiddleInB32(inputX, inputXCopy_, numTileData);
+        return inputXCopy_;
+    } else if constexpr (topk::is_same<half, T>::value || topk::is_same<bfloat16_t, T>::value) {
+        RadixBlockSortSimdB16<T, uint16_t, NUM_PASS, IS_LARGEST, T_INDEX> radixSortTopK;
+        radixSortTopK.TwiddleInFp16(inputX, inputXCopy_, numTileData);
+        return inputXCopy_;
+    } else if constexpr (topk::is_same<float, T>::value) {
+        RadixBlockSortSimdB32<T, uint32_t, NUM_PASS, IS_LARGEST, T_INDEX> radixSortTopK;
+        radixSortTopK.TwiddleInFp32(inputX, inputXCopy_, numTileData);
+        return inputXCopy_;
+    } else if constexpr (topk::is_same<int16_t, T>::value) {
+        RadixBlockSortSimdB16<T, uint16_t, NUM_PASS, IS_LARGEST, T_INDEX> radixSortTopK;
+        radixSortTopK.TwiddleInB16(inputX, inputXCopy_, numTileData);
+        return inputXCopy_;
+    } else if constexpr (topk::is_same<int8_t, T>::value) {
+        RadixBlockSortSimdB8<T, uint8_t, NUM_PASS, IS_LARGEST, T_INDEX> radixSortTopK;
+        radixSortTopK.TwiddleInB8(inputX, inputXCopy_, numTileData);
+        return inputXCopy_;
+    } else {
+        if (IS_LARGEST) {
+            ReverseInputData(inputX, inputXCopy_, numTileData);
+            return inputXCopy_;
+        }
+        return inputX;
+    }
+}
+
+template <typename T, typename UNSIGNED_TYPE, int32_t NUM_PASS, bool IS_LARGEST, bool IS_SORT, typename T_INDEX,
+          typename T_INDEX_TO>
+__aicore__ inline void RadixSortTopK<T, UNSIGNED_TYPE, NUM_PASS, IS_LARGEST, IS_SORT, T_INDEX,
+                                     T_INDEX_TO>::ReverseInputData(LocalTensor<UNSIGNED_TYPE> inputX,
+                                                                   LocalTensor<UNSIGNED_TYPE> reverseInputX,
+                                                                   uint32_t numTileData)
+{
+    if constexpr (topk::is_same<uint64_t, T>::value) {
+        RadixBlockSortSimdB64<T, uint64_t, NUM_PASS, IS_LARGEST, T_INDEX> radixBlockSort;
+        radixBlockSort.ReverseInputData(inputX, reverseInputX, numTileData);
+    } else if constexpr (topk::is_same<uint32_t, T>::value) {
+        RadixBlockSortSimdB32<T, uint32_t, NUM_PASS, IS_LARGEST, T_INDEX> radixBlockSort;
+        radixBlockSort.ReverseInputData(inputX, reverseInputX, numTileData);
+    } else if constexpr (topk::is_same<uint16_t, T>::value) {
+        RadixBlockSortSimdB16<T, uint16_t, NUM_PASS, IS_LARGEST, T_INDEX> radixBlockSort;
+        radixBlockSort.ReverseInputData(inputX, reverseInputX, numTileData);
+    } else if constexpr (topk::is_same<uint8_t, T>::value) {
+        RadixBlockSortSimdB8<T, uint8_t, NUM_PASS, IS_LARGEST, T_INDEX> radixBlockSort;
+        radixBlockSort.ReverseInputData(inputX, reverseInputX, numTileData);
+    }
+}
+
+template <typename T, typename UNSIGNED_TYPE, int32_t NUM_PASS, bool IS_LARGEST, bool IS_SORT, typename T_INDEX,
+          typename T_INDEX_TO>
+__aicore__ inline void RadixSortTopK<T, UNSIGNED_TYPE, NUM_PASS, IS_LARGEST, IS_SORT, T_INDEX, T_INDEX_TO>::CopyUb2Ub(
+    LocalTensor<uint32_t> outputUb, LocalTensor<uint32_t> inputUb, T_INDEX offset)
+{
+    __ubuf__ uint32_t* inputUbPtr = (__ubuf__ uint32_t*)inputUb.GetPhyAddr();
+    __ubuf__ uint32_t* outputUbPtr = (__ubuf__ uint32_t*)outputUb.GetPhyAddr();
+    __VEC_SCOPE__
+    {
+        Reg::RegTensor<uint32_t> inputVectorOne;
+        Reg::MaskReg predicateDefaultB32 = Reg::CreateMask<uint32_t, Reg::MaskPattern::VL8>();
+        Reg::LoadAlign<uint32_t, Reg::LoadDist::DIST_BRC_B32>(inputVectorOne, inputUbPtr + offset);
+        Reg::StoreAlign<uint32_t, Reg::PostLiteral::POST_MODE_UPDATE>(outputUbPtr, inputVectorOne,
+                                                                    topk::ONE_TIMES_B32_NUM, predicateDefaultB32);
+    }
+}
+
+template <typename T, typename UNSIGNED_TYPE, int32_t NUM_PASS, bool IS_LARGEST, bool IS_SORT, typename T_INDEX,
+          typename T_INDEX_TO>
+__aicore__ inline void RadixSortTopK<T, UNSIGNED_TYPE, NUM_PASS, IS_LARGEST, IS_SORT, T_INDEX, T_INDEX_TO>::StoreKToGm(
+    LocalTensor<uint32_t> reuseBuffer2Copy, T_INDEX tileTopkValueIndex, uint64_t oneRowGmOffset, uint32_t tileId)
+{
+    event_t eventIdScalar = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::S_V));
+    SetFlag<HardEvent::S_V>(eventIdScalar);
+    WaitFlag<HardEvent::S_V>(eventIdScalar);
+    CopyUb2Ub(reuseBuffer2Copy, tileTopkValue_, tileTopkValueIndex);
+    event_t eventId = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::V_MTE3));
+    SetFlag<HardEvent::V_MTE3>(eventId);
+    WaitFlag<HardEvent::V_MTE3>(eventId);
+    CopyDataToGm(tileTopkValueGm_[oneRowGmOffset], reuseBuffer2Copy, tileId, 1);
+}
+#endif

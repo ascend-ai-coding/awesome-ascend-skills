@@ -1,0 +1,47 @@
+{
+  "skill_name": "knowledge-ingest",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "空环境首次准备知识库",
+      "prompt": "这台机器还没有知识库。请从本轮问答材料的当前插件目录调用原生准备入口 setup_knowledge.py，用 discover 检查新知识仓。请给我知识仓版本、卡片数和实际准备、检查的结果。",
+      "expected_output": "实际从空环境用原生入口克隆知识仓、检查依赖、构建并完整校验索引。在同一知识仓运行 discover，交付两次工具结果及知识仓版本和卡片数。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "增量融合与草稿",
+      "prompt": "我手上有一张排障卡。同事推测 A5 也可能遇到同一问题，目前没有复现或验证记录。请读取本轮插件目录的 evals/fixtures/query-index-troubleshooting-original.md，把这条新材料补进编辑稿，在工作区保存为 query-index-troubleshooting.md。",
+      "expected_output": "读取原卡全文，保留有效事实并增量融合，避免整卡覆盖。把新推测标为待验证，不扩大已验证平台范围，不自动发布。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "入库收尾",
+      "prompt": "我已整理了一条新的排障结论，提交上库前需要检查什么？",
+      "expected_output": "检查内容与当前 Profile、导航日志和链接，按当前知识仓规范和入口校验并重建验证索引，确认目标查询可召回。不强制图谱、无关工程实验或调用专用摄入 Skill。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 4,
+      "title": "查重与增量入库",
+      "prompt": "我想把这次 A2 的 SyncAll 排障记录补进知识库。请从本轮插件目录的 evals/fixtures/syncall-ingest-input.md 取材料，查重并入库，交付更新的卡片路径、验证结果和适用范围。",
+      "expected_output": "用通用入库工具按 A2 查重、读完原卡并增量更新，保留原有事实和适用边界。导航和重建后的索引通过完整校验，A2 查询召回同一卡片且读回新增证据，材料校验成功并返回该卡路径。",
+      "files": [],
+      "config": {
+        "eval_mode": "text"
+      },
+      "expectations": [
+        {
+          "type": "contains",
+          "pattern": "KNOWLEDGE_FIXTURE_VERIFIED",
+          "description": "交付工作区原生校验通过的回执"
+        }
+      ]
+    }
+  ]
+}

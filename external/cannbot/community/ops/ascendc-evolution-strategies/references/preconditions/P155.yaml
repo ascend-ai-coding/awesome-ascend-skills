@@ -1,0 +1,33 @@
+strategy_id: P155
+description: 两趟 softmax，P/中间量在另一核关键路径 适用性检查。
+
+strategy_meta:
+  id: "P155"
+  slug: "P155_softmax_flattened_tile_stream"
+  title: "P155: softmax 两趟合成一条扁平 tile 流并提前 2 tile 预取"
+  bottlenecks: [sync_overhead, mte2_stall]
+  op_families: [attention, softmax]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p155_softmax_flattened_tile_stream.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p155_softmax_flattened_tile_stream.md"
+  playbook_slug: "P155_softmax_flattened_tile_stream"
+checks:
+  - id: has_softmax
+    type: grep_count
+    pattern: "softmax|Exp|rowmax"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未发现两趟 softmax 结构 → P155 不适用。"
+  - id: has_ring
+    type: grep_count
+    pattern: "ws|DataCopy|flag"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未发现 score ring/flag 交接 → P155 不适用。"

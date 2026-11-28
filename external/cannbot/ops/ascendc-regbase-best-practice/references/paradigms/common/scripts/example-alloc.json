@@ -1,0 +1,12 @@
+{
+  "inputs": ["x", "gamma"],
+  "outputs": ["y"],
+  "pinned": ["mu"],
+  "steps": [
+    {"id": "S1", "op": "CopyIn x",             "reads": [],             "writes": ["x"]},
+    {"id": "S2", "op": "ReduceMean(高阶API)",  "reads": ["x"],          "writes": ["mu"]},
+    {"id": "S3", "op": "CopyIn gamma",         "reads": [],             "writes": ["gamma"]},
+    {"id": "S4", "op": "VF: Mul(brc)",         "reads": ["gamma","mu"], "writes": ["y"]}
+  ],
+  "exclusive_branches": []
+}

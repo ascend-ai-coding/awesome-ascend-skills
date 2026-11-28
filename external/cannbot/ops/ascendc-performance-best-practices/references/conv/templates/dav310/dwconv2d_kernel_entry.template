@@ -1,0 +1,63 @@
+/*!
+ * \file dwconv2d_kernel.cpp
+ * \brief Depthwise __mix__(1,2) 入口 + launch_dwconv2d。
+ *
+ * ── 集成说明：落地为 dwconv2d_kernel.cpp，bisheng 编译。────────────────────────
+ */
+
+#include "dwconv2d_kernel.h"
+#include "dwconv2d_launch.h"
+
+using namespace dwconv2d;
+
+// __mix__(1, 2) is the direct-launch spelling of KERNEL_TYPE_MIX_AIC_1_2: one
+// Cube block and two Vector blocks per grid entry. The Vector side stages the
+// per-group weight in NZ layout into BL1, the Cube side consumes it, and the two
+// rendezvous through CrossCoreSetFlag/CrossCoreWaitFlag.
+//
+// The tiling rides in the kernel argument buffer as a by-value DwTiling. Only
+// the L1 ping-pong selector stays compile-time, because it decides the L1 buffer
+// layout and which AIV walks which group.
+template <typename T, uint8_t L1PP>
+__global__ __aicore__ __mix__(1, 2) void dwconv2d_kernel(GM_ADDR x, GM_ADDR weight, GM_ADDR bias, GM_ADDR y,
+                                                         DwTiling tiling)
+{
+    DepthwiseConv2dKernel<T, L1PP> op;
+    op.Init(x, weight, bias, y, tiling);
+    op.Process();
+}
+
+template <typename T, uint8_t L1PP>
+static void LaunchTyped(GM_ADDR x, GM_ADDR weight, GM_ADDR bias, GM_ADDR y, const DwTiling& tiling, void* stream)
+{
+    const uint32_t blockDim = tiling.blockDim;
+    dwconv2d_kernel<T, L1PP><<<blockDim, nullptr, stream>>>(x, weight, bias, y, tiling);
+}
+
+template <typename T>
+static void LaunchDtyped(GM_ADDR x, GM_ADDR weight, GM_ADDR bias, GM_ADDR y, const DwTiling& tiling, void* stream)
+{
+    if (tiling.l1PingPong == 3) {
+        LaunchTyped<T, 3>(x, weight, bias, y, tiling, stream);
+    } else {
+        LaunchTyped<T, 0>(x, weight, bias, y, tiling, stream);
+    }
+}
+
+extern "C" void launch_dwconv2d(GM_ADDR x, GM_ADDR weight, GM_ADDR bias, GM_ADDR y, const DwTiling& tiling,
+                                void* stream)
+{
+    switch (tiling.dtype) {
+        case DwDType::FP16:
+            LaunchDtyped<half>(x, weight, bias, y, tiling, stream);
+            break;
+        case DwDType::FP32:
+            LaunchDtyped<float>(x, weight, bias, y, tiling, stream);
+            break;
+        case DwDType::BF16:
+            LaunchDtyped<bfloat16_t>(x, weight, bias, y, tiling, stream);
+            break;
+        default:
+            break;
+    }
+}

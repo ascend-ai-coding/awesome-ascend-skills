@@ -1,0 +1,106 @@
+{
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "算子性能优化工作流",
+      "config": {
+        "max_tokens": 150000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "请先加载 tilelang-perf-optimization 技能（可 Read 其 SKILL.md 与 references/）；沙箱内没有算子工程和测试数据，不需要实际执行 msprof 或运行 kernel。假设我的 TileLang GEMM 算子精度已通过、性能不达标：优化前的前置步骤与门禁是什么（基线采集要采哪些内容、精度不通过时怎么办）？怎样判断算子属于 Cube/Vector/混合型、用什么工具判断？性能验证用什么工具、禁止什么做法？每个优化点应如何实施与验证（改动粒度、验证内容、与基线对比、无收益或回退时怎么办）？",
+      "expected_output": "1. 回复应说明优化前须先采集基线（性能 + 精度），且精度未通过禁止进入后续优化步骤。\n2. 回复应给出算子类型判断方法：用 get_kernel_source() 查看翻译后的 Ascend C 代码，搜索 IS_ASCEND_AIC（Cube 型）/IS_ASCEND_AIV（Vector 型），两者都有为混合型；性能验证必须使用 msprof op，禁止 Python/Torch 计时。\n3. 回复应说明逐项实施与效果验证：每次只改一个优化点、改完立即验证，性能无收益或回退则回退本轮修改；效果验证同时包含性能与精度并对比基线。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "性能优化的前置约束",
+      "config": {
+        "max_tokens": 80000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "算子精度还没完全通过验证，可以先开始做性能优化吗？有什么必须遵守的原则？",
+      "expected_output": "1. 回复应强调精度优先：精度未通过禁止进入性能优化步骤，且每个优化点后必须重新验证精度。\n2. 回复应说明逐项实施：每次只改一个优化点/参数、改完立即验证。\n3. 回复应说明优化记录保存在 examples/{op_name}/perf_tuning/ 目录，包含 baseline.json、optimization_log.md、final_report.md；性能无收益或回退时回退本轮修改。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "性能基线必须来自 msprof op",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我用 Python time.time 和 torch 事件测了 kernel 10 次平均值。能否作为 TileLang 优化基线和最终证据？",
+      "expected_output": "1. 回复应拒绝 Python/Torch 计时作为性能门禁、基线或最终证据，并说明性能基线与每轮结果的唯一性能口径是 msprof op 针对目标 kernel 采集的设备端耗时（读 OpBasicInfo.csv 的 Task Duration(us)）。\n2. 回复应说明 msprof 采集的口径与纪律：采集前核对 Freq=1800/1800、先做 warm-up，报告需声明统计口径；Python/Torch 计时只能作为显式声明口径的第二参考（端到端延迟），不能作为 kernel 优化决策依据。\n3. 回复应说明基线与每轮验证必须同时包含精度验证（精度未通过禁止后续优化步骤），且结果记录到 examples/{op_name}/perf_tuning/ 下的 baseline.json 与 optimization_log.md。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 4,
+      "title": "算子类型以翻译后源码标记判定",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "kernel 源码看起来只有 Vector 后处理，但 get_kernel_source() 同时出现 IS_ASCEND_AIC 和 IS_ASCEND_AIV。优化路线应判为什么类型？",
+      "expected_output": "回复应依据翻译后的 Ascend C 标记判为混合型；只有 AIC 为 Cube、只有 AIV 为 Vector、两者都有为混合。不能仅凭 Python 表面代码或算子名称选择文档。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 5,
+      "title": "优化点识别与实施步骤不能合并",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "看到 optimization-guide 的标题像适用，就直接 Edit 代码，可以吗？请加载并使用 tilelang-perf-optimization 技能回答。",
+      "expected_output": "1. 回复应说明不能仅凭标题判定适用就直接 Edit：Step3 必须先读 optimization-guide/performance-antipatterns 的章节标题初筛，再逐项阅读“适用场景”“约束”确认，并在 optimization_log.md 输出 Part A 优化点清单（含适用/不适用、原因与参考文件行号）。\n2. 回复应说明 Part A 之后要写 Part B [ORDER-PLAN]，按布局依赖、数量依赖、配置依赖排出实施顺序。\n3. 回复应说明 Step4 的日志门禁：每项先写 [ORDER-CHECK] 才可 Read，写 [IMPL-#N] 记录文档约束才可 Edit，写 [RESULT-#N] 后才可进入下一项。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 6,
+      "title": "扩大 kernel 调用域前先做复用审计",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "一个优化会新增 decode shape 和 BF16 路径，但兼容性维度有两项 unknown。ORDER-PLAN 能直接写 reuse 现有 kernel 吗？",
+      "expected_output": "回复应先写 KERNEL-REUSE-PRECHECK，按该优化章节给出的兼容维度记录新增调用域和 unknown/false；存在未知时不能 direct-reuse。Edit 前还要复核 KERNEL-REUSE-AUDIT，先修复现有 kernel 或新建并单独验证，再扩大调用域。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 7,
+      "title": "Double Buffer 修改前必须完成三问分析",
+      "config": {
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "准备把 BUFFER_NUM 从1改2。实施前有哪些强制分析，能否只改配置看性能？（沙箱内没有算子工程和测试数据，不需要实际执行 msprof 或运行 kernel，只需给出实施前的强制分析项与门禁）",
+      "expected_output": "1. 回复应说明修改 BUFFER_NUM 前必须先完成 [DB-ANALYSIS] 三问：循环内是否有 MTE3（CopyOut）、是否存在跨迭代累加器、选择何种同步方式；未完成禁止写代码。\n2. 回复应说明不能只改配置看性能：须先按算子类型选择同步方式（纯 Vector / 使用 T.mma 的 Cube / CV 融合必须从 AUTO_SYNC=False 开始并手写 flag 同步，仅 T.gemm_v0 类可保持自动同步），否则双缓冲不生效。\n3. 回复应说明 BUFFER_NUM 改动仍作为单一优化点单独实施与验证，改完必须重新验证精度、用 msprof op 采集性能并记录结果。",
+      "expectations": [],
+      "files": []
+    }
+  ],
+  "skill_name": "tilelang-perf-optimization"
+}

@@ -1,0 +1,2092 @@
+{
+  "doc": {
+    "doc_path": "out/operator_storage/abs/base",
+    "doc_name": "abs",
+    "doc_part": "sub_function_hash",
+    "md_format": [
+      "## aclnnAbsGetWorkspaceSize\n\n- **参数说明：**\n  \n  <table style=\"undefined;table-layout: fixed; width: 1494px\"><colgroup>\n  <col style=\"width: 146px\">\n  <col style=\"width: 110px\">\n  <col style=\"width: 301px\">\n  <col style=\"width: 219px\">\n  <col style=\"width: 328px\">\n  <col style=\"width: 101px\">\n  <col style=\"width: 143px\">\n  <col style=\"width: 146px\">\n  </colgroup>\n  <thead>\n    <tr>\n      <th>参数名</th>\n      <th>输入/输出</th>\n      <th>描述</th>\n      <th>使用说明</th>\n      <th>数据类型</th>\n      <th>数据格式</th>\n      <th>维度(shape)</th>\n      <th>非连续Tensor</th>\n    </tr></thead>\n  <tbody>\n    <tr>\n      <td>self</td>\n      <td>输入</td>\n      <td>待进行abs计算的入参，公式中的self。</td>\n      <td>-</td>\n      <td>FLOAT、FLOAT16、DOUBLE、BFLOAT16、INT8、INT16、INT32、INT64、UINT8、BOOL、COMPLEX32、COMPLEX64</td>\n      <td>ND</td>\n      <td>0-8</td>\n      <td>√</td>\n    </tr>\n    <tr>\n      <td>out</td>\n      <td>输出</td>\n      <td>待进行abs计算的出参，公式中的out。</td>\n      <td>shape与self相同。</td>\n      <td>FLOAT、FLOAT16、DOUBLE、BFLOAT16、INT8、INT16、INT32、INT64、UINT8、BOOL</td>\n      <td>ND</td>\n      <td>0-8</td>\n      <td>√</td>\n    </tr>\n    <tr>\n      <td>workspaceSize</td>\n      <td>输出</td>\n      <td>返回需要在Device侧申请的workspace大小。</td>\n      <td>-</td>\n      <td>-</td>\n      <td>-</td>\n      <td>-</td>\n      <td>-</td>\n    </tr>\n    <tr>\n      <td>executor</td>\n      <td>输出</td>\n      <td>返回op执行器，包含了算子计算流程。</td>\n      <td>-</td>\n      <td>-</td>\n      <td>-</td>\n      <td>-</td>\n      <td>-</td>\n    </tr>\n  </tbody>\n  </table>\n  \n  - <term>Atlas 训练系列产品</term>、<term>Atlas 推理系列产品</term>：不支持BFLOAT16、COMPLEX32、COMPLEX64。\n  \n- **返回值：**\n\n  aclnnStatus：返回状态码，具体参见[aclnn返回码](../../../docs/zh/context/aclnn返回码.md)。\n\n  第一段接口会完成入参校验，出现以下场景时报错：\n  \n  <table style=\"undefined;table-layout: fixed;width: 1155px\"><colgroup>\n  <col style=\"width: 319px\">\n  <col style=\"width: 144px\">\n  <col style=\"width: 671px\">\n  </colgroup>\n  <thead>\n    <tr>\n      <th>返回码</th>\n      <th>错误码</th>\n      <th>描述</th>\n    </tr>\n  </thead>\n  <tbody>\n    <tr>\n      <td>ACLNN_ERR_PARAM_NULLPTR</td>\n      <td>161001</td>\n      <td>传入的tensor是空指针。</td>\n    </tr>\n    <tr>\n      <td rowspan=\"8\">ACLNN_ERR_PARAM_INVALID</td>\n      <td rowspan=\"8\">161002</td>\n      <td>self的数据类型和数据格式不在支持的范围之内。</td>\n    </tr>\n    <tr>\n      <td>self的数据维度超过了8维。</td>\n    </tr>\n    <tr>\n      <td>self和out的数据形状不一致。</td>\n    </tr>\n    <tr>\n      <td>当self为实数时，self和out的数据类型不一致。当self为COMPLEX64时，out的数据类型不为FLOAT32。当self为COMPLEX32时，out的数据类型不为FLOAT16</td>\n    </tr>\n  </tbody></table>",
+      "## aclnnAbs\n\n- **参数说明：**\n  <table style=\"undefined;table-layout: fixed; width: 953px\"><colgroup>\n  <col style=\"width: 173px\">\n  <col style=\"width: 112px\">\n  <col style=\"width: 668px\">\n  </colgroup>\n  <thead>\n    <tr>\n      <th>参数名</th>\n      <th>输入/输出</th>\n      <th>描述</th>\n    </tr></thead>\n  <tbody>\n    <tr>\n      <td>workspace</td>\n      <td>输入</td>\n      <td>在Device侧申请的workspace内存地址。</td>\n    </tr>\n    <tr>\n      <td>workspaceSize</td>\n      <td>输入</td>\n      <td>在Device侧申请的workspace大小，由第一段接口aclnnAbsGetWorkspaceSize获取。</td>\n    </tr>\n    <tr>\n      <td>executor</td>\n      <td>输入</td>\n      <td>op执行器，包含了算子计算流程。</td>\n    </tr>\n    <tr>\n      <td>stream</td>\n      <td>输入</td>\n      <td>指定执行任务的Stream。</td>\n    </tr>\n  </tbody>\n  </table>\n\n- **返回值：**\n\n  aclnnStatus：返回状态码，具体参见[aclnn返回码](../../../docs/zh/context/aclnn返回码.md)。"
+    ],
+    "sub_part": {
+      "param_matrix": {
+        "sub_function_1_param_matrix": {
+          "des": [
+            {
+              "content": {
+                "self": "待进行abs计算的入参，公式中的self。",
+                "out": "待进行abs计算的出参，公式中的out。",
+                "workspaceSize": "返回需要在Device侧申请的workspace大小。",
+                "executor": "返回op执行器，包含了算子计算流程。"
+              }
+            }
+          ],
+          "inout": [
+            {
+              "content": {
+                "self": "输入",
+                "out": "输出",
+                "workspaceSize": "输出",
+                "executor": "输出"
+              }
+            }
+          ],
+          "usage": [
+            {
+              "content": {
+                "self": "-",
+                "out": "shape与self相同。",
+                "workspaceSize": "-",
+                "executor": "-"
+              }
+            }
+          ],
+          "dtype": [
+            {
+              "content": {
+                "self": "FLOAT、FLOAT16、DOUBLE、BFLOAT16、INT8、INT16、INT32、INT64、UINT8、BOOL、COMPLEX32、COMPLEX64",
+                "out": "FLOAT、FLOAT16、DOUBLE、BFLOAT16、INT8、INT16、INT32、INT64、UINT8、BOOL",
+                "workspaceSize": "-",
+                "executor": "-"
+              }
+            }
+          ],
+          "dmat": [
+            {
+              "content": {
+                "self": "ND",
+                "out": "ND",
+                "workspaceSize": "-",
+                "executor": "-"
+              }
+            }
+          ],
+          "shape": [
+            {
+              "content": {
+                "self": "0-8",
+                "out": "0-8",
+                "workspaceSize": "-",
+                "executor": "-"
+              }
+            }
+          ],
+          "tensor": [
+            {
+              "content": {
+                "self": "√",
+                "out": "√",
+                "workspaceSize": "-",
+                "executor": "-"
+              }
+            }
+          ]
+        },
+        "sub_function_2_param_matrix": {
+          "des": [
+            {
+              "content": {
+                "workspace": "在Device侧申请的workspace内存地址。",
+                "workspaceSize": "在Device侧申请的workspace大小，由第一段接口aclnnAbsGetWorkspaceSize获取。",
+                "executor": "op执行器，包含了算子计算流程。",
+                "stream": "指定执行任务的Stream。"
+              }
+            }
+          ],
+          "inout": [
+            {
+              "content": {
+                "workspace": "输入",
+                "workspaceSize": "输入",
+                "executor": "输入",
+                "stream": "输入"
+              }
+            }
+          ],
+          "usage": [
+            {
+              "content": {
+                "workspace": "",
+                "workspaceSize": "",
+                "executor": "",
+                "stream": ""
+              }
+            }
+          ],
+          "dtype": [
+            {
+              "content": {
+                "workspace": "",
+                "workspaceSize": "",
+                "executor": "",
+                "stream": ""
+              }
+            }
+          ],
+          "dmat": [
+            {
+              "content": {
+                "workspace": "",
+                "workspaceSize": "",
+                "executor": "",
+                "stream": ""
+              }
+            }
+          ],
+          "shape": [
+            {
+              "content": {
+                "workspace": "",
+                "workspaceSize": "",
+                "executor": "",
+                "stream": ""
+              }
+            }
+          ],
+          "tensor": [
+            {
+              "content": {
+                "workspace": "",
+                "workspaceSize": "",
+                "executor": "",
+                "stream": ""
+              }
+            }
+          ]
+        }
+      },
+      "fixconfig_1": {
+        "sub_function_1_fixconfig_1": "返回值",
+        "sub_function_2_fixconfig_1": "返回值"
+      },
+      "fixconfig_2": {
+        "sub_function_1_fixconfig_2": "aclnnStatus：返回状态码，具体参见[aclnn返回码](../../../docs/zh/context/aclnn返回码.md)",
+        "sub_function_2_fixconfig_2": "aclnnStatus：返回状态码，具体参见[aclnn返回码](../../../docs/zh/context/aclnn返回码.md)"
+      },
+      "changeconfig": {
+        "sub_function_1_changeconfig": "第一段接口会完成入参校验，出现以下场景时报错：",
+        "sub_function_2_changeconfig": ""
+      },
+      "errorcode_matrix": {
+        "sub_function_1_errorcode": "<table style=\"undefined;table-layout: fixed;width: 1155px\"><colgroup>\n  <col style=\"width: 319px\">\n  <col style=\"width: 144px\">\n  <col style=\"width: 671px\">\n  </colgroup>\n  <thead>\n    <tr>\n      <th>返回码</th>\n      <th>错误码</th>\n      <th>描述</th>\n    </tr>\n  </thead>\n  <tbody>\n    <tr>\n      <td>ACLNN_ERR_PARAM_NULLPTR</td>\n      <td>161001</td>\n      <td>传入的tensor是空指针。</td>\n    </tr>\n    <tr>\n      <td rowspan=\"8\">ACLNN_ERR_PARAM_INVALID</td>\n      <td rowspan=\"8\">161002</td>\n      <td>self的数据类型和数据格式不在支持的范围之内。</td>\n    </tr>\n    <tr>\n      <td>self的数据维度超过了8维。</td>\n    </tr>\n    <tr>\n      <td>self和out的数据形状不一致。</td>\n    </tr>\n    <tr>\n      <td>当self为实数时，self和out的数据类型不一致。当self为COMPLEX64时，out的数据类型不为FLOAT32。当self为COMPLEX32时，out的数据类型不为FLOAT16</td>\n    </tr>\n  </tbody></table>",
+        "sub_function_2_errorcode": ""
+      }
+    }
+  },
+  "anchor_tuple": [
+    {
+      "anchor_id": "anchor_file_001",
+      "anchor_information": {
+        "type": "file",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.h",
+          "file_name": "aclnn_abs.h"
+        },
+        "level2": {
+          "code_map": {
+            "nodes": [
+              "aclnnAbsGetWorkspaceSize",
+              "aclnnAbs"
+            ],
+            "edges": []
+          },
+          "token_hash": "/**\n * Copyright (c) 2025 Huawei Technologies Co., Ltd.\n * This program is free software, you can redistribute it and/or modify it under the terms and conditions of\n * CANN Open Software License Agreement Version 2.0 (the \"License\").\n * Please refer to the License for details. You may not use this file except in compliance with the License.\n * THIS SOFTWARE IS PROVIDED ON AN \"AS IS\" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,\n * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.\n * See LICENSE in the root of the software repository for the full text of the License.\n */\n\n#ifndef OP_API_INC_LEVEL2_ACLNN_ABS_H_\n#define OP_API_INC_LEVEL2_ACLNN_ABS_H_\n\n#include \"aclnn_util.h\"\n#include \"aclnn/aclnn_base.h\"\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n#define ACLNN_MAX_SHAPE_RANK 8\n\n/**\n * @brief aclnnAbs的第一段接口，根据具体的计算流程，计算workspace大小。\n * @domain aclnn_math\n * 算子功能：返回输入Tensor中每个元素绝对值的结果\n * 计算公式：\n * $$ out_{i} = abs(self_{i}) $$\n *\n * 计算图：\n * ```mermaid\n * graph LR\n *   A[(self)]--->B([l0op::Contiguous])\n *   B--->C([l0op::Abs])\n *   C--->D([l0op::ViewCopy])\n *   D--->E[(out)]\n * ```\n *\n * @param [in] self: 待进行abs计算的入参。npu device侧的aclTensor,\n * 数据类型支持BFLOAT16(仅昇腾910B AI处理器、昇腾910_93 AI处理器、昇腾950 AI处理器支持)FLOAT、FLOAT16、DOUBLE、\n * INT8、INT16、INT32、INT64、UINT8、BOOL，数据格式支持ND，支持非连续的Tensor。\n * @param [in] out: abs计算的出参。npu device侧的aclTensor,\n * 数据类型支持BFLOAT16(仅昇腾910B AI处理器、昇腾910_93 AI处理器、昇腾950 AI处理器支持)FLOAT、FLOAT16、DOUBLE、\n * INT8、INT16、INT32、INT64、UINT8、BOOL，数据格式支持ND，支持非连续的Tensor。\n * @param [out] workspaceSize: 返回用户需要在npu device侧申请的workspace大小。\n * @param [out] executor: 返回op执行器，包括算子计算流程\n * @return aclnnStatus: 返回状态码\n */\nACLNN_API aclnnStatus\naclnnAbsGetWorkspaceSize(const aclTensor* self, aclTensor* out, uint64_t* workspaceSize, aclOpExecutor** executor);\n\n/**\n * @brief aclnnAbs的第二段接口，用于执行计算。\n * @param [in] workspace: 在npu device侧申请的workspace内存起址。\n * @param [in] workspaceSize: 在npu device侧申请的workspace大小，由第一段接口aclnnAbsGetWorkspaceSize获取。\n * @param [in] exector: op执行器，包含了算子计算流程。\n * @param [in] stream: acl stream流。\n * @return aclnnStatus: 返回状态码\n */\nACLNN_API aclnnStatus\naclnnAbs(void* workspace, uint64_t workspaceSize, aclOpExecutor* executor, const aclrtStream stream);\n\n#ifdef __cplusplus\n}\n#endif\n\n#endif // OP_API_INC_LEVEL2_ACLNN_ABS_H_",
+          "file_功能": "定义aclnnAbs算子的Level2 API头文件，提供获取Workspace大小和执行绝对值计算的两段式接口声明，支持多种数据类型及非连续Tensor。"
+        },
+        "level3": {
+          "tree_id": "abs/base（## Abs算子基础实现目录，封装API接口、主机逻辑、图元数据、分块策略、内核计算及测试用例等核心模块）\n├── abs/base/op_api（## Abs算子API层实现目录，提供ACLNN接口定义、参数校验、数据类型适配及主机端调度入口）\n│   ├── aclnn_abs.cpp 实现Ascend NPU上Abs算子的ACLNN API层逻辑，负责参数校验、数据类型适配、内存布局处理及计算任务编排。\n│   ├── aclnn_abs.h 定义aclnnAbs算子的Level2 API头文件，提供获取Workspace大小和执行绝对值计算的两段式接口声明，支持多种数据类型及非连续Tensor。\n│   ├── abs.h 该文件是Abs算子Level 0 API的头文件，定义了面向底层执行器的绝对值计算接口声明，作为算子框架中Host侧调用Kernel的入口抽象层。\n│   └── abs.cpp 实现Abs算子的主机端调度逻辑，包括输出张量分配、形状推导、数据类型校验及根据芯片架构动态选择AiCore或AiCPU执行路径。\n├── abs/base/op_graph（## Abs算子图引擎注册目录，定义GE原型信息、输入输出接口及框架兼容性元数据）\n│   └── abs_proto.h 定义Abs算子在GE图引擎中的原型注册信息，声明算子的输入输出接口、支持的数据类型及框架兼容性，是算子接入计算图的基础元数据描述文件。\n├── abs/base/op_host（## Abs算子主机端通用逻辑目录，包含元数据定义、形状推导及特定架构Tiling策略实现）\n│   ├── abs_def.cpp 定义Abs算子的元数据规范，注册输入输出张量的数据类型、格式约束及AI Core硬件执行配置，是算子在框架中识别与调度的基础声明文件。\n│   └── abs_infershape.cpp 实现Abs算子的形状与数据类型推导逻辑。\n│   └── abs/base/op_host/arch35（## Abs算子Arch35架构主机端Tiling策略目录，负责分块参数生成与硬件资源适配）\n│   │   ├── abs_tiling_arch35.h 该文件定义了Arch35架构下Abs算子的Tiling策略头文件，负责声明主机端分块计算所需的数据结构与接口，用于指导内核按硬件资源进行任务切分。\n│   │   └── abs_tiling_arch35.cpp 该文件负责Ascend Arch35架构下Abs算子的Tiling策略生成。\n├── abs/base/op_kernel（## Abs算子设备端Kernel实现目录，包含Tiling数据结构、Kernel入口函数及DAG计算逻辑）\n│   ├── abs_apt.cpp 实现Abs算子在AI Core上的底层计算逻辑，作为设备端Kernel入口函数。\n│   └── abs_struct.h 定义Abs算子内核层专用的Tiling数据结构，用于在Host与Device间传递分块计算参数。\n│   └── abs/base/op_kernel/arch35（## Abs算子Arch35架构设备端Kernel目录，实现DAG计算流水线及复数高精度运算逻辑）\n│   │   ├── abs_dag.h 定义Abs算子在Arch35架构下的设备端DAG（有向无环图）计算流水线，通过模板化数据流编排实现绝对值运算的自动化调度与内存管理。\n│   │   └── abs_complex_dag.h 实现复数绝对值算子的AI Core底层DAG计算逻辑。\n└── abs/base/tests（## Abs算子单元测试总目录，覆盖API校验、形状推导及Tiling策略等功能的验证代码）\n    └── abs/base/tests/ut（## Abs算子单元测试集合目录，集中管理API、形状推导及Tiling策略的GTest验证代码）\n        ├── abs/base/tests/ut/op_api（## Abs算子API层单元测试目录，验证ACLNN接口的参数校验与Workspace获取功能）\n        │   └── test_aclnn_abs.cpp 该文件是Abs算子API层的单元测试代码，基于GTest框架验证`aclnnAbs`接口的参数校验逻辑。\n        └── abs/base/tests/ut/op_host（## Abs算子主机端逻辑单元测试目录，验证形状推导及Tiling策略在不同场景下的正确性）\n        │   └── test_abs_infershape.cpp 该文件是Abs算子形状推导（Infershape）功能的单元测试代码。\n            └── abs/base/tests/ut/op_host/arch35（## Abs算子Arch35架构Tiling策略单元测试目录，验证分块参数生成的正确性与异常处理）\n            │   └── test_abs_tiling_arch35.cpp 该文件是Abs算子在Arch35架构下的Tiling策略单元测试，用于验证不同数据类型（FP16/32、INT8/16/32/64、BF16及复数类型）的切分参数生成正确性，并覆盖输入输出类型不匹配、空Tensor等异常场景。"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.h",
+            "file_name": "aclnn_abs.h",
+            "file_功能": "定义aclnnAbs算子的Level2 API头文件，提供获取Workspace大小和执行绝对值计算的两段式接口声明，支持多种数据类型及非连续Tensor。",
+            "file_content": "/**\n * Copyright (c) 2025 Huawei Technologies Co., Ltd.\n * This program is free software, you can redistribute it and/or modify it under the terms and conditions of\n * CANN Open Software License Agreement Version 2.0 (the \"License\").\n * Please refer to the License for details. You may not use this file except in compliance with the License.\n * THIS SOFTWARE IS PROVIDED ON AN \"AS IS\" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,\n * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.\n * See LICENSE in the root of the software repository for the full text of the License.\n */\n\n#ifndef OP_API_INC_LEVEL2_ACLNN_ABS_H_\n#define OP_API_INC_LEVEL2_ACLNN_ABS_H_\n\n#include \"aclnn_util.h\"\n#include \"aclnn/aclnn_base.h\"\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n#define ACLNN_MAX_SHAPE_RANK 8\n\n/**\n * @brief aclnnAbs的第一段接口，根据具体的计算流程，计算workspace大小。\n * @domain aclnn_math\n * 算子功能：返回输入Tensor中每个元素绝对值的结果\n * 计算公式：\n * $$ out_{i} = abs(self_{i}) $$\n *\n * 计算图：\n * ```mermaid\n * graph LR\n *   A[(self)]--->B([l0op::Contiguous])\n *   B--->C([l0op::Abs])\n *   C--->D([l0op::ViewCopy])\n *   D--->E[(out)]\n * ```\n *\n * @param [in] self: 待进行abs计算的入参。npu device侧的aclTensor,\n * 数据类型支持BFLOAT16(仅昇腾910B AI处理器、昇腾910_93 AI处理器、昇腾950 AI处理器支持)FLOAT、FLOAT16、DOUBLE、\n * INT8、INT16、INT32、INT64、UINT8、BOOL，数据格式支持ND，支持非连续的Tensor。\n * @param [in] out: abs计算的出参。npu device侧的aclTensor,\n * 数据类型支持BFLOAT16(仅昇腾910B AI处理器、昇腾910_93 AI处理器、昇腾950 AI处理器支持)FLOAT、FLOAT16、DOUBLE、\n * INT8、INT16、INT32、INT64、UINT8、BOOL，数据格式支持ND，支持非连续的Tensor。\n * @param [out] workspaceSize: 返回用户需要在npu device侧申请的workspace大小。\n * @param [out] executor: 返回op执行器，包括算子计算流程\n * @return aclnnStatus: 返回状态码\n */\nACLNN_API aclnnStatus\naclnnAbsGetWorkspaceSize(const aclTensor* self, aclTensor* out, uint64_t* workspaceSize, aclOpExecutor** executor);\n\n/**\n * @brief aclnnAbs的第二段接口，用于执行计算。\n * @param [in] workspace: 在npu device侧申请的workspace内存起址。\n * @param [in] workspaceSize: 在npu device侧申请的workspace大小，由第一段接口aclnnAbsGetWorkspaceSize获取。\n * @param [in] exector: op执行器，包含了算子计算流程。\n * @param [in] stream: acl stream流。\n * @return aclnnStatus: 返回状态码\n */\nACLNN_API aclnnStatus\naclnnAbs(void* workspace, uint64_t workspaceSize, aclOpExecutor* executor, const aclrtStream stream);\n\n#ifdef __cplusplus\n}\n#endif\n\n#endif // OP_API_INC_LEVEL2_ACLNN_ABS_H_"
+          },
+          "gene_rule": {
+            "deter": "暂空",
+            "target": [
+              [
+                "sub_function_1_param_matrix",
+                "des"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "inout"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "usage"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "dtype"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "dmat"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "shape"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "des"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "inout"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "usage"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "dtype"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "dmat"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "shape"
+              ]
+            ]
+          },
+          "evidence_id": "ev_file_001"
+        }
+      ],
+      "note": "以下为file型标准结构"
+    },
+    {
+      "anchor_id": "anchor_file_002",
+      "anchor_information": {
+        "type": "file",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+          "file_name": "aclnn_abs.cpp"
+        },
+        "level2": {
+          "code_map": {
+            "nodes": [
+              "GetDtypeSupportList",
+              "GetCurrentPlatformInfo",
+              "IsRegBase",
+              "HasEmptyTensor",
+              "IsEmpty",
+              "SpecialDtypeTensorNeedPassthrough",
+              "CheckNotNull",
+              "CheckDtypeValid",
+              "GetDataType",
+              "IsComplexType",
+              "find",
+              "end",
+              "CheckFormat",
+              "ACLNN_ERR_PARAM_INVALID",
+              "GetStorageFormat",
+              "IsPrivateFormat",
+              "CheckShape",
+              "CheckParams",
+              "ACLNN_ERR_PARAM_NULLPTR",
+              "IsSupportComplexAbs",
+              "CheckType",
+              "aclnnAbsGetWorkspaceSize",
+              "ACLNN_ERR_INNER_CREATE_EXECUTOR",
+              "ACLNN_ERR_INNER_NULLPTR",
+              "HasEmptyTensor",
+              "ReleaseTo",
+              "SpecialDtypeTensorNeedPassthrough",
+              "GetWorkspaceSize",
+              "IsSupportComplexAbs",
+              "Abs",
+              "get",
+              "aclnnAbs",
+              "CommonOpExecutorRun"
+            ],
+            "edges": [
+              {
+                "source": "GetDtypeSupportList",
+                "type": "calls",
+                "target": "GetCurrentPlatformInfo"
+              },
+              {
+                "source": "GetDtypeSupportList",
+                "type": "calls",
+                "target": "IsRegBase"
+              },
+              {
+                "source": "HasEmptyTensor",
+                "type": "calls",
+                "target": "IsEmpty"
+              },
+              {
+                "source": "CheckDtypeValid",
+                "type": "calls",
+                "target": "GetDataType"
+              },
+              {
+                "source": "CheckDtypeValid",
+                "type": "calls",
+                "target": "IsComplexType"
+              },
+              {
+                "source": "CheckDtypeValid",
+                "type": "calls",
+                "target": "find"
+              },
+              {
+                "source": "CheckDtypeValid",
+                "type": "calls",
+                "target": "end"
+              },
+              {
+                "source": "CheckFormat",
+                "type": "returns",
+                "target": "ACLNN_ERR_PARAM_INVALID"
+              },
+              {
+                "source": "CheckFormat",
+                "type": "returns",
+                "target": "ACLNN_ERR_PARAM_INVALID"
+              },
+              {
+                "source": "CheckFormat",
+                "type": "calls",
+                "target": "GetStorageFormat"
+              },
+              {
+                "source": "CheckFormat",
+                "type": "calls",
+                "target": "GetStorageFormat"
+              },
+              {
+                "source": "CheckFormat",
+                "type": "calls",
+                "target": "IsPrivateFormat"
+              },
+              {
+                "source": "CheckFormat",
+                "type": "calls",
+                "target": "GetStorageFormat"
+              },
+              {
+                "source": "CheckParams",
+                "type": "returns",
+                "target": "ACLNN_ERR_PARAM_NULLPTR"
+              },
+              {
+                "source": "CheckParams",
+                "type": "returns",
+                "target": "ACLNN_ERR_PARAM_INVALID"
+              },
+              {
+                "source": "CheckParams",
+                "type": "returns",
+                "target": "ACLNN_ERR_PARAM_INVALID"
+              },
+              {
+                "source": "CheckParams",
+                "type": "returns",
+                "target": "ACLNN_ERR_PARAM_INVALID"
+              },
+              {
+                "source": "IsSupportComplexAbs",
+                "type": "calls",
+                "target": "IsComplexType"
+              },
+              {
+                "source": "IsSupportComplexAbs",
+                "type": "calls",
+                "target": "GetCurrentPlatformInfo"
+              },
+              {
+                "source": "IsSupportComplexAbs",
+                "type": "calls",
+                "target": "CheckType"
+              },
+              {
+                "source": "aclnnAbsGetWorkspaceSize",
+                "type": "returns",
+                "target": "ACLNN_ERR_INNER_CREATE_EXECUTOR"
+              },
+              {
+                "source": "aclnnAbsGetWorkspaceSize",
+                "type": "returns",
+                "target": "ACLNN_ERR_INNER_NULLPTR"
+              },
+              {
+                "source": "aclnnAbsGetWorkspaceSize",
+                "type": "returns",
+                "target": "ACLNN_ERR_INNER_NULLPTR"
+              },
+              {
+                "source": "aclnnAbsGetWorkspaceSize",
+                "type": "returns",
+                "target": "ACLNN_ERR_INNER_NULLPTR"
+              },
+              {
+                "source": "aclnnAbsGetWorkspaceSize",
+                "type": "returns",
+                "target": "ACLNN_ERR_INNER_NULLPTR"
+              },
+              {
+                "source": "aclnnAbsGetWorkspaceSize",
+                "type": "calls",
+                "target": "HasEmptyTensor"
+              },
+              {
+                "source": "aclnnAbsGetWorkspaceSize",
+                "type": "calls",
+                "target": "ReleaseTo"
+              },
+              {
+                "source": "aclnnAbsGetWorkspaceSize",
+                "type": "calls",
+                "target": "SpecialDtypeTensorNeedPassthrough"
+              },
+              {
+                "source": "aclnnAbsGetWorkspaceSize",
+                "type": "calls",
+                "target": "GetWorkspaceSize"
+              },
+              {
+                "source": "aclnnAbsGetWorkspaceSize",
+                "type": "calls",
+                "target": "ReleaseTo"
+              },
+              {
+                "source": "aclnnAbsGetWorkspaceSize",
+                "type": "calls",
+                "target": "IsSupportComplexAbs"
+              },
+              {
+                "source": "aclnnAbsGetWorkspaceSize",
+                "type": "calls",
+                "target": "GetDataType"
+              },
+              {
+                "source": "aclnnAbsGetWorkspaceSize",
+                "type": "calls",
+                "target": "Abs"
+              },
+              {
+                "source": "aclnnAbsGetWorkspaceSize",
+                "type": "calls",
+                "target": "get"
+              },
+              {
+                "source": "aclnnAbsGetWorkspaceSize",
+                "type": "calls",
+                "target": "GetWorkspaceSize"
+              },
+              {
+                "source": "aclnnAbsGetWorkspaceSize",
+                "type": "calls",
+                "target": "ReleaseTo"
+              },
+              {
+                "source": "aclnnAbs",
+                "type": "calls",
+                "target": "CommonOpExecutorRun"
+              }
+            ]
+          },
+          "token_hash": "/**\n * Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.\n * This program is free software, you can redistribute it and/or modify it under the terms and conditions of\n * CANN Open Software License Agreement Version 2.0 (the \"License\").\n * Please refer to the License for details. You may not use this file except in compliance with the License.\n * THIS SOFTWARE IS PROVIDED ON AN \"AS IS\" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,\n * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.\n * See LICENSE in the root of the software repository for the full text of the License.\n */\n\n#include <unordered_map>\n#include \"aclnn_abs.h\"\n#include \"abs.h\"\n#include \"../../complex_abs/op_api/complex_abs.h\"\n#include \"aclnn_kernels/contiguous.h\"\n#include \"aclnn_kernels/common/op_error_check.h\"\n#include \"opdev/op_log.h\"\n#include \"opdev/op_dfx.h\"\n#include \"opdev/common_types.h\"\n#include \"opdev/data_type_utils.h\"\n#include \"opdev/make_op_executor.h\"\n#include \"opdev/platform.h\"\n#include \"op_api/aclnn_check.h\"\n\nusing namespace op;\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\nstatic const std::initializer_list<DataType> ASCEND910_DTYPE_DTYPE_SUPPORT_LIST = {\n    DataType::DT_DOUBLE, DataType::DT_FLOAT, DataType::DT_FLOAT16, DataType::DT_INT64, DataType::DT_INT32,\n    DataType::DT_INT16,  DataType::DT_INT8,  DataType::DT_UINT8,   DataType::DT_BOOL};\n\nstatic const std::initializer_list<DataType> ASCEND910B_DTYPE_DTYPE_SUPPORT_LIST = {\n    DataType::DT_DOUBLE, DataType::DT_FLOAT, DataType::DT_FLOAT16, DataType::DT_INT64, DataType::DT_INT32,\n    DataType::DT_INT16,  DataType::DT_INT8,  DataType::DT_UINT8,   DataType::DT_BOOL,  DataType::DT_BF16,\n    DataType::DT_COMPLEX64};\n\nstatic const std::initializer_list<DataType> ARCH_REGBASE_DTYPE_DTYPE_SUPPORT_LIST = {\n    DataType::DT_DOUBLE, DataType::DT_FLOAT, DataType::DT_FLOAT16, DataType::DT_INT64, DataType::DT_INT32,\n    DataType::DT_INT16,  DataType::DT_INT8,  DataType::DT_UINT8,   DataType::DT_BOOL,  DataType::DT_BF16,\n    DataType::DT_COMPLEX32,  DataType::DT_COMPLEX64};\n\nstatic const std::unordered_map<DataType, DataType> COMPLEX_IN_AND_OUT_DTYPE_MAP = {\n    {DataType::DT_COMPLEX32, DataType::DT_FLOAT16}, \n    {DataType::DT_COMPLEX64, DataType::DT_FLOAT},\n    {DataType::DT_COMPLEX128, DataType::DT_DOUBLE}\n};\n\nstatic const std::initializer_list<DataType>& GetDtypeSupportList()\n{\n    auto npuArch = GetCurrentPlatformInfo().GetCurNpuArch();\n    if (npuArch == NpuArch::DAV_2201) {\n        return ASCEND910B_DTYPE_DTYPE_SUPPORT_LIST;\n    } else if (IsRegBase(npuArch)) {\n        return ARCH_REGBASE_DTYPE_DTYPE_SUPPORT_LIST;\n    } else {\n        return ASCEND910_DTYPE_DTYPE_SUPPORT_LIST;\n    }\n}\n\nstatic bool HasEmptyTensor(const aclTensor* self)\n{\n    // 检查张量是否存在空维\n    if (self->IsEmpty()) {\n        return true;\n    }\n\n    return false;\n}\n\nstatic bool SpecialDtypeTensorNeedPassthrough(const aclTensor* self)\n{\n    if (self->GetDataType() == DataType::DT_UINT8 || self->GetDataType() == DataType::DT_BOOL) {\n        return true;\n    }\n\n    return false;\n}\n\nstatic bool CheckNotNull(const aclTensor* self, const aclTensor* out)\n{\n    OP_CHECK_NULL(self, return false);\n    OP_CHECK_NULL(out, return false);\n\n    return true;\n}\n\nstatic bool CheckDtypeValid(const aclTensor* self, const aclTensor* out)\n{\n    // 检查self的数据类型是否在支持列表内，out类型随动检查\n    auto supportList = GetDtypeSupportList();\n    OP_CHECK_DTYPE_NOT_SUPPORT(self, supportList, return false);\n\n    // 当self不为复数时，self和out数据类型必须一样\n    auto selfDtype = self->GetDataType();\n    if (IsComplexType(selfDtype)) {\n        auto promoteOutDtype = COMPLEX_IN_AND_OUT_DTYPE_MAP.find(selfDtype);\n        if (promoteOutDtype != COMPLEX_IN_AND_OUT_DTYPE_MAP.end()) {\n            OP_CHECK_DTYPE_NOT_MATCH(out, promoteOutDtype->second, return false);\n        }\n    } else {\n        OP_CHECK_DTYPE_NOT_MATCH(self, out->GetDataType(), return false);\n    }\n\n    return true;\n}\n\nstatic bool CheckFormat(const aclTensor* self, const aclTensor* out)\n{\n    // 输入输出的格式需要一致\n    if (self->GetStorageFormat() != out->GetStorageFormat()) {\n        OP_LOGE(\n            ACLNN_ERR_PARAM_INVALID, \"Format of input and output should be equal. self [%s], out [%s].\",\n            ToString(self->GetStorageShape()).GetString(), ToString(out->GetStorageShape()).GetString());\n        return false;\n    }\n\n    // self格式不能是私有格式\n    if (IsPrivateFormat(self->GetStorageFormat())) {\n        OP_LOGE(ACLNN_ERR_PARAM_INVALID, \"Format only support ND、NCHW、NHWC、HWCN、NDHWC、NCDHW.\");\n        return false;\n    }\n\n    return true;\n}\n\nstatic bool CheckShape(const aclTensor* self, const aclTensor* out)\n{\n    // 所有算子的维度都不能超过8\n    OP_CHECK_MAX_DIM(self, ACLNN_MAX_SHAPE_RANK, return false);\n\n    // self和out的shape必须一致\n    OP_CHECK_SHAPE_NOT_EQUAL(self, out, return false);\n\n    return true;\n}\n\nstatic aclnnStatus CheckParams(const aclTensor* self, const aclTensor* out)\n{\n    // 1. 检查参数是否为空指针\n    CHECK_RET(CheckNotNull(self, out), ACLNN_ERR_PARAM_NULLPTR);\n\n    // 2. 检查输入的数据类型是否在API支持的数据类型范围内，需要根据api定义校验\n    CHECK_RET(CheckDtypeValid(self, out), ACLNN_ERR_PARAM_INVALID);\n\n    // 3. 检查数据格式是否支持\n    CHECK_RET(CheckFormat(self, out), ACLNN_ERR_PARAM_INVALID);\n\n    // 4. 检查shape是否满足约束\n    CHECK_RET(CheckShape(self, out), ACLNN_ERR_PARAM_INVALID);\n\n    return ACLNN_SUCCESS;\n}\n\nstatic bool IsSupportComplexAbs(const op::DataType selfType) {\n    if (IsComplexType(selfType)) {\n        auto npuArch = GetCurrentPlatformInfo().GetCurNpuArch();\n        if (npuArch == NpuArch::DAV_2201) {\n            return CheckType(selfType, ASCEND910B_DTYPE_DTYPE_SUPPORT_LIST);\n        } else {\n            return false;\n        }\n    } else {\n        return false;\n    }\n}\n\naclnnStatus aclnnAbsGetWorkspaceSize(\n    const aclTensor* self, aclTensor* out, uint64_t* workspaceSize, aclOpExecutor** executor)\n{\n    L2_DFX_PHASE_1(aclnnAbs, DFX_IN(self), DFX_OUT(out));\n\n    // 固定写法，创建OpExecutor\n    auto uniqueExecutor = CREATE_EXECUTOR();\n    CHECK_RET(uniqueExecutor.get() != nullptr, ACLNN_ERR_INNER_CREATE_EXECUTOR);\n\n    // 固定写法，参数检查\n    auto ret = CheckParams(self, out);\n    CHECK_RET(ret == ACLNN_SUCCESS, ret);\n\n    // 空Tensor处理\n    if (HasEmptyTensor(self)) {\n        *workspaceSize = 0;\n        uniqueExecutor.ReleaseTo(executor);\n        return ACLNN_SUCCESS;\n    }\n\n    // self如果非连续，需要转换\n    auto selfContiguous = l0op::Contiguous(self, uniqueExecutor.get());\n    CHECK_RET(selfContiguous != nullptr, ACLNN_ERR_INNER_NULLPTR);\n\n    // UINT8和BOOL类型，直接拷贝透传\n    if (SpecialDtypeTensorNeedPassthrough(selfContiguous)) {\n        auto viewCopyResult = l0op::ViewCopy(selfContiguous, out, uniqueExecutor.get());\n        *workspaceSize = uniqueExecutor->GetWorkspaceSize();\n        uniqueExecutor.ReleaseTo(executor);\n        return (viewCopyResult != nullptr) ? ACLNN_SUCCESS : ACLNN_ERR_INNER_NULLPTR;\n    }\n\n    // 调用l0算子Abs进行计算\n    const aclTensor* absResult = nullptr;\n    if (IsSupportComplexAbs(selfContiguous->GetDataType())) {\n        absResult = l0op::ComplexAbs(selfContiguous, uniqueExecutor.get());\n    } else{\n        absResult = l0op::Abs(selfContiguous, uniqueExecutor.get());\n    }\n    CHECK_RET(absResult != nullptr, ACLNN_ERR_INNER_NULLPTR);\n\n    // 如果出参out是非连续Tensor，需要把计算完的连续Tensor转非连续\n    auto viewCopyResult = l0op::ViewCopy(absResult, out, uniqueExecutor.get());\n    CHECK_RET(viewCopyResult != nullptr, ACLNN_ERR_INNER_NULLPTR);\n\n    // 固定写法，获取计算过程中需要使用的workspace大小\n    *workspaceSize = uniqueExecutor->GetWorkspaceSize();\n    uniqueExecutor.ReleaseTo(executor);\n    return ACLNN_SUCCESS;\n}\n\naclnnStatus aclnnAbs(void* workspace, uint64_t workspaceSize, aclOpExecutor* executor, const aclrtStream stream)\n{\n    L2_DFX_PHASE_2(aclnnAbs);\n\n    return CommonOpExecutorRun(workspace, workspaceSize, executor, stream);\n}\n\n#ifdef __cplusplus\n}\n#endif\n",
+          "file_功能": "实现Ascend NPU上Abs算子的ACLNN API层逻辑，负责参数校验、数据类型适配、内存布局处理及计算任务编排。支持多架构dtype差异处理，对复数、特殊类型及非连续Tensor进行分支调度，最终通过L0算子完成绝对值计算。"
+        },
+        "level3": {
+          "tree_id": "abs/base（## Abs算子基础实现目录，封装API接口、主机逻辑、图元数据、分块策略、内核计算及测试用例等核心模块）\n├── abs/base/op_api（## Abs算子API层实现目录，提供ACLNN接口定义、参数校验、数据类型适配及主机端调度入口）\n│   ├── aclnn_abs.cpp 实现Ascend NPU上Abs算子的ACLNN API层逻辑，负责参数校验、数据类型适配、内存布局处理及计算任务编排。\n│   ├── aclnn_abs.h 定义aclnnAbs算子的Level2 API头文件，提供获取Workspace大小和执行绝对值计算的两段式接口声明，支持多种数据类型及非连续Tensor。\n│   ├── abs.h 该文件是Abs算子Level 0 API的头文件，定义了面向底层执行器的绝对值计算接口声明，作为算子框架中Host侧调用Kernel的入口抽象层。\n│   └── abs.cpp 实现Abs算子的主机端调度逻辑，包括输出张量分配、形状推导、数据类型校验及根据芯片架构动态选择AiCore或AiCPU执行路径。\n├── abs/base/op_graph（## Abs算子图引擎注册目录，定义GE原型信息、输入输出接口及框架兼容性元数据）\n│   └── abs_proto.h 定义Abs算子在GE图引擎中的原型注册信息，声明算子的输入输出接口、支持的数据类型及框架兼容性，是算子接入计算图的基础元数据描述文件。\n├── abs/base/op_host（## Abs算子主机端通用逻辑目录，包含元数据定义、形状推导及特定架构Tiling策略实现）\n│   ├── abs_def.cpp 定义Abs算子的元数据规范，注册输入输出张量的数据类型、格式约束及AI Core硬件执行配置，是算子在框架中识别与调度的基础声明文件。\n│   └── abs_infershape.cpp 实现Abs算子的形状与数据类型推导逻辑。\n│   └── abs/base/op_host/arch35（## Abs算子Arch35架构主机端Tiling策略目录，负责分块参数生成与硬件资源适配）\n│   │   ├── abs_tiling_arch35.h 该文件定义了Arch35架构下Abs算子的Tiling策略头文件，负责声明主机端分块计算所需的数据结构与接口，用于指导内核按硬件资源进行任务切分。\n│   │   └── abs_tiling_arch35.cpp 该文件负责Ascend Arch35架构下Abs算子的Tiling策略生成。\n├── abs/base/op_kernel（## Abs算子设备端Kernel实现目录，包含Tiling数据结构、Kernel入口函数及DAG计算逻辑）\n│   ├── abs_apt.cpp 实现Abs算子在AI Core上的底层计算逻辑，作为设备端Kernel入口函数。\n│   └── abs_struct.h 定义Abs算子内核层专用的Tiling数据结构，用于在Host与Device间传递分块计算参数。\n│   └── abs/base/op_kernel/arch35（## Abs算子Arch35架构设备端Kernel目录，实现DAG计算流水线及复数高精度运算逻辑）\n│   │   ├── abs_dag.h 定义Abs算子在Arch35架构下的设备端DAG（有向无环图）计算流水线，通过模板化数据流编排实现绝对值运算的自动化调度与内存管理。\n│   │   └── abs_complex_dag.h 实现复数绝对值算子的AI Core底层DAG计算逻辑。\n└── abs/base/tests（## Abs算子单元测试总目录，覆盖API校验、形状推导及Tiling策略等功能的验证代码）\n    └── abs/base/tests/ut（## Abs算子单元测试集合目录，集中管理API、形状推导及Tiling策略的GTest验证代码）\n        ├── abs/base/tests/ut/op_api（## Abs算子API层单元测试目录，验证ACLNN接口的参数校验与Workspace获取功能）\n        │   └── test_aclnn_abs.cpp 该文件是Abs算子API层的单元测试代码，基于GTest框架验证`aclnnAbs`接口的参数校验逻辑。\n        └── abs/base/tests/ut/op_host（## Abs算子主机端逻辑单元测试目录，验证形状推导及Tiling策略在不同场景下的正确性）\n        │   └── test_abs_infershape.cpp 该文件是Abs算子形状推导（Infershape）功能的单元测试代码。\n            └── abs/base/tests/ut/op_host/arch35（## Abs算子Arch35架构Tiling策略单元测试目录，验证分块参数生成的正确性与异常处理）\n            │   └── test_abs_tiling_arch35.cpp 该文件是Abs算子在Arch35架构下的Tiling策略单元测试，用于验证不同数据类型（FP16/32、INT8/16/32/64、BF16及复数类型）的切分参数生成正确性，并覆盖输入输出类型不匹配、空Tensor等异常场景。"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+            "file_name": "aclnn_abs.cpp",
+            "file_功能": "实现Ascend NPU上Abs算子的ACLNN API层逻辑，负责参数校验、数据类型适配、内存布局处理及计算任务编排。支持多架构dtype差异处理，对复数、特殊类型及非连续Tensor进行分支调度，最终通过L0算子完成绝对值计算。",
+            "file_content": "/**\n * Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.\n * This program is free software, you can redistribute it and/or modify it under the terms and conditions of\n * CANN Open Software License Agreement Version 2.0 (the \"License\").\n * Please refer to the License for details. You may not use this file except in compliance with the License.\n * THIS SOFTWARE IS PROVIDED ON AN \"AS IS\" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,\n * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.\n * See LICENSE in the root of the software repository for the full text of the License.\n */\n\n#include <unordered_map>\n#include \"aclnn_abs.h\"\n#include \"abs.h\"\n#include \"../../complex_abs/op_api/complex_abs.h\"\n#include \"aclnn_kernels/contiguous.h\"\n#include \"aclnn_kernels/common/op_error_check.h\"\n#include \"opdev/op_log.h\"\n#include \"opdev/op_dfx.h\"\n#include \"opdev/common_types.h\"\n#include \"opdev/data_type_utils.h\"\n#include \"opdev/make_op_executor.h\"\n#include \"opdev/platform.h\"\n#include \"op_api/aclnn_check.h\"\n\nusing namespace op;\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\nstatic const std::initializer_list<DataType> ASCEND910_DTYPE_DTYPE_SUPPORT_LIST = {\n    DataType::DT_DOUBLE, DataType::DT_FLOAT, DataType::DT_FLOAT16, DataType::DT_INT64, DataType::DT_INT32,\n    DataType::DT_INT16,  DataType::DT_INT8,  DataType::DT_UINT8,   DataType::DT_BOOL};\n\nstatic const std::initializer_list<DataType> ASCEND910B_DTYPE_DTYPE_SUPPORT_LIST = {\n    DataType::DT_DOUBLE, DataType::DT_FLOAT, DataType::DT_FLOAT16, DataType::DT_INT64, DataType::DT_INT32,\n    DataType::DT_INT16,  DataType::DT_INT8,  DataType::DT_UINT8,   DataType::DT_BOOL,  DataType::DT_BF16,\n    DataType::DT_COMPLEX64};\n\nstatic const std::initializer_list<DataType> ARCH_REGBASE_DTYPE_DTYPE_SUPPORT_LIST = {\n    DataType::DT_DOUBLE, DataType::DT_FLOAT, DataType::DT_FLOAT16, DataType::DT_INT64, DataType::DT_INT32,\n    DataType::DT_INT16,  DataType::DT_INT8,  DataType::DT_UINT8,   DataType::DT_BOOL,  DataType::DT_BF16,\n    DataType::DT_COMPLEX32,  DataType::DT_COMPLEX64};\n\nstatic const std::unordered_map<DataType, DataType> COMPLEX_IN_AND_OUT_DTYPE_MAP = {\n    {DataType::DT_COMPLEX32, DataType::DT_FLOAT16}, \n    {DataType::DT_COMPLEX64, DataType::DT_FLOAT},\n    {DataType::DT_COMPLEX128, DataType::DT_DOUBLE}\n};\n\nstatic const std::initializer_list<DataType>& GetDtypeSupportList()\n{\n    auto npuArch = GetCurrentPlatformInfo().GetCurNpuArch();\n    if (npuArch == NpuArch::DAV_2201) {\n        return ASCEND910B_DTYPE_DTYPE_SUPPORT_LIST;\n    } else if (IsRegBase(npuArch)) {\n        return ARCH_REGBASE_DTYPE_DTYPE_SUPPORT_LIST;\n    } else {\n        return ASCEND910_DTYPE_DTYPE_SUPPORT_LIST;\n    }\n}\n\nstatic bool HasEmptyTensor(const aclTensor* self)\n{\n    // 检查张量是否存在空维\n    if (self->IsEmpty()) {\n        return true;\n    }\n\n    return false;\n}\n\nstatic bool SpecialDtypeTensorNeedPassthrough(const aclTensor* self)\n{\n    if (self->GetDataType() == DataType::DT_UINT8 || self->GetDataType() == DataType::DT_BOOL) {\n        return true;\n    }\n\n    return false;\n}\n\nstatic bool CheckNotNull(const aclTensor* self, const aclTensor* out)\n{\n    OP_CHECK_NULL(self, return false);\n    OP_CHECK_NULL(out, return false);\n\n    return true;\n}\n\nstatic bool CheckDtypeValid(const aclTensor* self, const aclTensor* out)\n{\n    // 检查self的数据类型是否在支持列表内，out类型随动检查\n    auto supportList = GetDtypeSupportList();\n    OP_CHECK_DTYPE_NOT_SUPPORT(self, supportList, return false);\n\n    // 当self不为复数时，self和out数据类型必须一样\n    auto selfDtype = self->GetDataType();\n    if (IsComplexType(selfDtype)) {\n        auto promoteOutDtype = COMPLEX_IN_AND_OUT_DTYPE_MAP.find(selfDtype);\n        if (promoteOutDtype != COMPLEX_IN_AND_OUT_DTYPE_MAP.end()) {\n            OP_CHECK_DTYPE_NOT_MATCH(out, promoteOutDtype->second, return false);\n        }\n    } else {\n        OP_CHECK_DTYPE_NOT_MATCH(self, out->GetDataType(), return false);\n    }\n\n    return true;\n}\n\nstatic bool CheckFormat(const aclTensor* self, const aclTensor* out)\n{\n    // 输入输出的格式需要一致\n    if (self->GetStorageFormat() != out->GetStorageFormat()) {\n        OP_LOGE(\n            ACLNN_ERR_PARAM_INVALID, \"Format of input and output should be equal. self [%s], out [%s].\",\n            ToString(self->GetStorageShape()).GetString(), ToString(out->GetStorageShape()).GetString());\n        return false;\n    }\n\n    // self格式不能是私有格式\n    if (IsPrivateFormat(self->GetStorageFormat())) {\n        OP_LOGE(ACLNN_ERR_PARAM_INVALID, \"Format only support ND、NCHW、NHWC、HWCN、NDHWC、NCDHW.\");\n        return false;\n    }\n\n    return true;\n}\n\nstatic bool CheckShape(const aclTensor* self, const aclTensor* out)\n{\n    // 所有算子的维度都不能超过8\n    OP_CHECK_MAX_DIM(self, ACLNN_MAX_SHAPE_RANK, return false);\n\n    // self和out的shape必须一致\n    OP_CHECK_SHAPE_NOT_EQUAL(self, out, return false);\n\n    return true;\n}\n\nstatic aclnnStatus CheckParams(const aclTensor* self, const aclTensor* out)\n{\n    // 1. 检查参数是否为空指针\n    CHECK_RET(CheckNotNull(self, out), ACLNN_ERR_PARAM_NULLPTR);\n\n    // 2. 检查输入的数据类型是否在API支持的数据类型范围内，需要根据api定义校验\n    CHECK_RET(CheckDtypeValid(self, out), ACLNN_ERR_PARAM_INVALID);\n\n    // 3. 检查数据格式是否支持\n    CHECK_RET(CheckFormat(self, out), ACLNN_ERR_PARAM_INVALID);\n\n    // 4. 检查shape是否满足约束\n    CHECK_RET(CheckShape(self, out), ACLNN_ERR_PARAM_INVALID);\n\n    return ACLNN_SUCCESS;\n}\n\nstatic bool IsSupportComplexAbs(const op::DataType selfType) {\n    if (IsComplexType(selfType)) {\n        auto npuArch = GetCurrentPlatformInfo().GetCurNpuArch();\n        if (npuArch == NpuArch::DAV_2201) {\n            return CheckType(selfType, ASCEND910B_DTYPE_DTYPE_SUPPORT_LIST);\n        } else {\n            return false;\n        }\n    } else {\n        return false;\n    }\n}\n\naclnnStatus aclnnAbsGetWorkspaceSize(\n    const aclTensor* self, aclTensor* out, uint64_t* workspaceSize, aclOpExecutor** executor)\n{\n    L2_DFX_PHASE_1(aclnnAbs, DFX_IN(self), DFX_OUT(out));\n\n    // 固定写法，创建OpExecutor\n    auto uniqueExecutor = CREATE_EXECUTOR();\n    CHECK_RET(uniqueExecutor.get() != nullptr, ACLNN_ERR_INNER_CREATE_EXECUTOR);\n\n    // 固定写法，参数检查\n    auto ret = CheckParams(self, out);\n    CHECK_RET(ret == ACLNN_SUCCESS, ret);\n\n    // 空Tensor处理\n    if (HasEmptyTensor(self)) {\n        *workspaceSize = 0;\n        uniqueExecutor.ReleaseTo(executor);\n        return ACLNN_SUCCESS;\n    }\n\n    // self如果非连续，需要转换\n    auto selfContiguous = l0op::Contiguous(self, uniqueExecutor.get());\n    CHECK_RET(selfContiguous != nullptr, ACLNN_ERR_INNER_NULLPTR);\n\n    // UINT8和BOOL类型，直接拷贝透传\n    if (SpecialDtypeTensorNeedPassthrough(selfContiguous)) {\n        auto viewCopyResult = l0op::ViewCopy(selfContiguous, out, uniqueExecutor.get());\n        *workspaceSize = uniqueExecutor->GetWorkspaceSize();\n        uniqueExecutor.ReleaseTo(executor);\n        return (viewCopyResult != nullptr) ? ACLNN_SUCCESS : ACLNN_ERR_INNER_NULLPTR;\n    }\n\n    // 调用l0算子Abs进行计算\n    const aclTensor* absResult = nullptr;\n    if (IsSupportComplexAbs(selfContiguous->GetDataType())) {\n        absResult = l0op::ComplexAbs(selfContiguous, uniqueExecutor.get());\n    } else{\n        absResult = l0op::Abs(selfContiguous, uniqueExecutor.get());\n    }\n    CHECK_RET(absResult != nullptr, ACLNN_ERR_INNER_NULLPTR);\n\n    // 如果出参out是非连续Tensor，需要把计算完的连续Tensor转非连续\n    auto viewCopyResult = l0op::ViewCopy(absResult, out, uniqueExecutor.get());\n    CHECK_RET(viewCopyResult != nullptr, ACLNN_ERR_INNER_NULLPTR);\n\n    // 固定写法，获取计算过程中需要使用的workspace大小\n    *workspaceSize = uniqueExecutor->GetWorkspaceSize();\n    uniqueExecutor.ReleaseTo(executor);\n    return ACLNN_SUCCESS;\n}\n\naclnnStatus aclnnAbs(void* workspace, uint64_t workspaceSize, aclOpExecutor* executor, const aclrtStream stream)\n{\n    L2_DFX_PHASE_2(aclnnAbs);\n\n    return CommonOpExecutorRun(workspace, workspaceSize, executor, stream);\n}\n\n#ifdef __cplusplus\n}\n#endif\n"
+          },
+          "gene_rule": {
+            "deter": "暂空",
+            "target": [
+              [
+                "sub_function_1_param_matrix",
+                "des"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "inout"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "usage"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "dtype"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "dmat"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "shape"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "tensor"
+              ],
+              [
+                "sub_function_1_errorcode",
+                "errorcode"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "des"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "inout"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "usage"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "dtype"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "dmat"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "shape"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "tensor"
+              ],
+              [
+                "sub_function_2_errorcode",
+                "errorcode"
+              ]
+            ]
+          },
+          "evidence_id": "ev_file_002"
+        }
+      ],
+      "note": "以下为file型标准结构"
+    },
+    {
+      "anchor_id": "anchor_file_003",
+      "anchor_information": {
+        "type": "file",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_graph/abs_proto.h",
+          "file_name": "abs_proto.h"
+        },
+        "level2": {
+          "code_map": {
+            "nodes": [
+              "ge"
+            ],
+            "edges": []
+          },
+          "token_hash": "/**\n * Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.\n * This program is free software, you can redistribute it and/or modify it under the terms and conditions of\n * CANN Open Software License Agreement Version 2.0 (the \"License\").\n * Please refer to the License for details. You may not use this file except in compliance with the License.\n * THIS SOFTWARE IS PROVIDED ON AN \"AS IS\" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,\n * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.\n * See LICENSE in the root of the software repository for the full text of the License.\n */\n\n/*!\n * \\file cast_proto.h\n * \\brief\n */\n#ifndef OP_PROTO_ABS_PROTO_H_\n#define OP_PROTO_ABS_PROTO_H_\n\n#include \"graph/operator_reg.h\"\n\nnamespace ge\n{\n/**\n*@brief Computes the absolute value of a tensor.\n\n* @par Inputs:\n* One input, including:\n* x: An ND or 5HD tensor. Support 1D~8D. Must be one of the following types:\n* uint8, bool, bfloat16, float16, float32, double, int8, int16, int32, int64, complex32, complex64\n\n* @par Outputs:\n* y: A ND Tensor. Has the same dtype as \"x\".\n\n* @par Third-party framework compatibility\n* Compatible with the TensorFlow operator Abs.\n*/\nREG_OP(Abs)\n    .INPUT(x, \"T\")\n    .OUTPUT(y, \"T\")\n    .DATATYPE(T, TensorType({DT_UINT8, DT_BOOL, DT_FLOAT16, DT_BF16, DT_FLOAT, DT_DOUBLE, DT_INT8, DT_INT16,\n                             DT_INT32, DT_INT64, DT_COMPLEX32, DT_COMPLEX64}))\n    .OP_END_FACTORY_REG(Abs)\n\n} // namespace ge\n#endif // OP_PROTO_ABS_PROTO_H_",
+          "file_功能": "定义Abs算子在GE图引擎中的原型注册信息，声明算子的输入输出接口、支持的数据类型及框架兼容性，是算子接入计算图的基础元数据描述文件。"
+        },
+        "level3": {
+          "tree_id": "abs/base（## Abs算子基础实现目录，封装API接口、主机逻辑、图元数据、分块策略、内核计算及测试用例等核心模块）\n├── abs/base/op_api（## Abs算子API层实现目录，提供ACLNN接口定义、参数校验、数据类型适配及主机端调度入口）\n│   ├── aclnn_abs.cpp 实现Ascend NPU上Abs算子的ACLNN API层逻辑，负责参数校验、数据类型适配、内存布局处理及计算任务编排。\n│   ├── aclnn_abs.h 定义aclnnAbs算子的Level2 API头文件，提供获取Workspace大小和执行绝对值计算的两段式接口声明，支持多种数据类型及非连续Tensor。\n│   ├── abs.h 该文件是Abs算子Level 0 API的头文件，定义了面向底层执行器的绝对值计算接口声明，作为算子框架中Host侧调用Kernel的入口抽象层。\n│   └── abs.cpp 实现Abs算子的主机端调度逻辑，包括输出张量分配、形状推导、数据类型校验及根据芯片架构动态选择AiCore或AiCPU执行路径。\n├── abs/base/op_graph（## Abs算子图引擎注册目录，定义GE原型信息、输入输出接口及框架兼容性元数据）\n│   └── abs_proto.h 定义Abs算子在GE图引擎中的原型注册信息，声明算子的输入输出接口、支持的数据类型及框架兼容性，是算子接入计算图的基础元数据描述文件。\n├── abs/base/op_host（## Abs算子主机端通用逻辑目录，包含元数据定义、形状推导及特定架构Tiling策略实现）\n│   ├── abs_def.cpp 定义Abs算子的元数据规范，注册输入输出张量的数据类型、格式约束及AI Core硬件执行配置，是算子在框架中识别与调度的基础声明文件。\n│   └── abs_infershape.cpp 实现Abs算子的形状与数据类型推导逻辑。\n│   └── abs/base/op_host/arch35（## Abs算子Arch35架构主机端Tiling策略目录，负责分块参数生成与硬件资源适配）\n│   │   ├── abs_tiling_arch35.h 该文件定义了Arch35架构下Abs算子的Tiling策略头文件，负责声明主机端分块计算所需的数据结构与接口，用于指导内核按硬件资源进行任务切分。\n│   │   └── abs_tiling_arch35.cpp 该文件负责Ascend Arch35架构下Abs算子的Tiling策略生成。\n├── abs/base/op_kernel（## Abs算子设备端Kernel实现目录，包含Tiling数据结构、Kernel入口函数及DAG计算逻辑）\n│   ├── abs_apt.cpp 实现Abs算子在AI Core上的底层计算逻辑，作为设备端Kernel入口函数。\n│   └── abs_struct.h 定义Abs算子内核层专用的Tiling数据结构，用于在Host与Device间传递分块计算参数。\n│   └── abs/base/op_kernel/arch35（## Abs算子Arch35架构设备端Kernel目录，实现DAG计算流水线及复数高精度运算逻辑）\n│   │   ├── abs_dag.h 定义Abs算子在Arch35架构下的设备端DAG（有向无环图）计算流水线，通过模板化数据流编排实现绝对值运算的自动化调度与内存管理。\n│   │   └── abs_complex_dag.h 实现复数绝对值算子的AI Core底层DAG计算逻辑。\n└── abs/base/tests（## Abs算子单元测试总目录，覆盖API校验、形状推导及Tiling策略等功能的验证代码）\n    └── abs/base/tests/ut（## Abs算子单元测试集合目录，集中管理API、形状推导及Tiling策略的GTest验证代码）\n        ├── abs/base/tests/ut/op_api（## Abs算子API层单元测试目录，验证ACLNN接口的参数校验与Workspace获取功能）\n        │   └── test_aclnn_abs.cpp 该文件是Abs算子API层的单元测试代码，基于GTest框架验证`aclnnAbs`接口的参数校验逻辑。\n        └── abs/base/tests/ut/op_host（## Abs算子主机端逻辑单元测试目录，验证形状推导及Tiling策略在不同场景下的正确性）\n        │   └── test_abs_infershape.cpp 该文件是Abs算子形状推导（Infershape）功能的单元测试代码。\n            └── abs/base/tests/ut/op_host/arch35（## Abs算子Arch35架构Tiling策略单元测试目录，验证分块参数生成的正确性与异常处理）\n            │   └── test_abs_tiling_arch35.cpp 该文件是Abs算子在Arch35架构下的Tiling策略单元测试，用于验证不同数据类型（FP16/32、INT8/16/32/64、BF16及复数类型）的切分参数生成正确性，并覆盖输入输出类型不匹配、空Tensor等异常场景。"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_graph/abs_proto.h",
+            "file_name": "abs_proto.h",
+            "file_功能": "定义Abs算子在GE图引擎中的原型注册信息，声明算子的输入输出接口、支持的数据类型及框架兼容性，是算子接入计算图的基础元数据描述文件。",
+            "file_content": "/**\n * Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.\n * This program is free software, you can redistribute it and/or modify it under the terms and conditions of\n * CANN Open Software License Agreement Version 2.0 (the \"License\").\n * Please refer to the License for details. You may not use this file except in compliance with the License.\n * THIS SOFTWARE IS PROVIDED ON AN \"AS IS\" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,\n * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.\n * See LICENSE in the root of the software repository for the full text of the License.\n */\n\n/*!\n * \\file cast_proto.h\n * \\brief\n */\n#ifndef OP_PROTO_ABS_PROTO_H_\n#define OP_PROTO_ABS_PROTO_H_\n\n#include \"graph/operator_reg.h\"\n\nnamespace ge\n{\n/**\n*@brief Computes the absolute value of a tensor.\n\n* @par Inputs:\n* One input, including:\n* x: An ND or 5HD tensor. Support 1D~8D. Must be one of the following types:\n* uint8, bool, bfloat16, float16, float32, double, int8, int16, int32, int64, complex32, complex64\n\n* @par Outputs:\n* y: A ND Tensor. Has the same dtype as \"x\".\n\n* @par Third-party framework compatibility\n* Compatible with the TensorFlow operator Abs.\n*/\nREG_OP(Abs)\n    .INPUT(x, \"T\")\n    .OUTPUT(y, \"T\")\n    .DATATYPE(T, TensorType({DT_UINT8, DT_BOOL, DT_FLOAT16, DT_BF16, DT_FLOAT, DT_DOUBLE, DT_INT8, DT_INT16,\n                             DT_INT32, DT_INT64, DT_COMPLEX32, DT_COMPLEX64}))\n    .OP_END_FACTORY_REG(Abs)\n\n} // namespace ge\n#endif // OP_PROTO_ABS_PROTO_H_"
+          },
+          "gene_rule": {
+            "deter": "暂空",
+            "target": [
+              [
+                "sub_function_1_param_matrix",
+                "des"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "inout"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "usage"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "dtype"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "dmat"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "des"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "inout"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "usage"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "dtype"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "dmat"
+              ]
+            ]
+          },
+          "evidence_id": "ev_file_003"
+        }
+      ],
+      "note": "以下为file型标准结构"
+    },
+    {
+      "anchor_id": "anchor_function_001",
+      "anchor_information": {
+        "type": "function",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+          "function_name": "aclnnAbsGetWorkspaceSize"
+        },
+        "level2": {
+          "call": [
+            "HasEmptyTensor",
+            "ReleaseTo",
+            "SpecialDtypeTensorNeedPassthrough",
+            "GetWorkspaceSize",
+            "IsSupportComplexAbs",
+            "GetDataType",
+            "Abs",
+            "get"
+          ],
+          "callee": [],
+          "return": [
+            "ACLNN_ERR_INNER_CREATE_EXECUTOR",
+            "ACLNN_ERR_INNER_NULLPTR"
+          ]
+        },
+        "level3": {
+          "function_sign": "aclnnStatus aclnnAbsGetWorkspaceSize(\n    const aclTensor* self, aclTensor* out, uint64_t* workspaceSize, aclOpExecutor** executor)\n{\n    L2_DFX_PHASE_1(aclnnAbs, DFX_IN(self), DFX_OUT(out));\n\n    // 固定写法，创建OpExecutor\n    auto uniqueExecutor = CREATE_EXECUTOR();\n    CHECK_RET(uniqueExecutor.get() != nullptr, ACLNN_ERR_INNER_CREATE_EXECUTOR);\n\n    // 固定写法，参数检查\n    auto ret = CheckParams(self, out);\n    CHECK_RET(ret == ACLNN_SUCCESS, ret);\n\n    // 空Tensor处理\n    if (HasEmptyTensor(self)) {\n        *workspaceSize = 0;\n        uniqueExecutor.ReleaseTo(executor);\n        return ACLNN_SUCCESS;\n    }\n\n    // self如果非连续，需要转换\n    auto selfContiguous = l0op::Contiguous(self, uniqueExecutor.get());\n    CHECK_RET(selfContiguous != nullptr, ACLNN_ERR_INNER_NULLPTR);\n\n    // UINT8和BOOL类型，直接拷贝透传\n    if (SpecialDtypeTensorNeedPassthrough(selfContiguous)) {\n        auto viewCopyResult = l0op::ViewCopy(selfContiguous, out, uniqueExecutor.get());\n        *workspaceSize = uniqueExecutor->GetWorkspaceSize();\n        uniqueExecutor.ReleaseTo(executor);\n        return (viewCopyResult != nullptr) ? ACLNN_SUCCESS : ACLNN_ERR_INNER_NULLPTR;\n    }\n\n    // 调用l0算子Abs进行计算\n    const aclTensor* absResult = nullptr;\n    if (IsSupportComplexAbs(selfContiguous->GetDataType())) {\n        absResult = l0op::ComplexAbs(selfContiguous, uniqueExecutor.get());\n    } else{\n        absResult = l0op::Abs(selfContiguous, uniqueExecutor.get());\n    }\n    CHECK_RET(absResult != nullptr, ACLNN_ERR_INNER_NULLPTR);\n\n    // 如果出参out是非连续Tensor，需要把计算完的连续Tensor转非连续\n    auto viewCopyResult = l0op::ViewCopy(absResult, out, uniqueExecutor.get());\n    CHECK_RET(viewCopyResult != nullptr, ACLNN_ERR_INNER_NULLPTR);\n\n    // 固定写法，获取计算过程中需要使用的workspace大小\n    *workspaceSize = uniqueExecutor->GetWorkspaceSize();\n    uniqueExecutor.ReleaseTo(executor);\n    return ACLNN_SUCCESS;\n}"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+            "content": [
+              {
+                "function_hash": "aclnnStatus aclnnAbsGetWorkspaceSize(\n    const aclTensor* self, aclTensor* out, uint64_t* workspaceSize, aclOpExecutor** executor)\n{\n    L2_DFX_PHASE_1(aclnnAbs, DFX_IN(self), DFX_OUT(out));\n\n    // 固定写法，创建OpExecutor\n    auto uniqueExecutor = CREATE_EXECUTOR();\n    CHECK_RET(uniqueExecutor.get() != nullptr, ACLNN_ERR_INNER_CREATE_EXECUTOR);\n\n    // 固定写法，参数检查\n    auto ret = CheckParams(self, out);\n    CHECK_RET(ret == ACLNN_SUCCESS, ret);\n\n    // 空Tensor处理\n    if (HasEmptyTensor(self)) {\n        *workspaceSize = 0;\n        uniqueExecutor.ReleaseTo(executor);\n        return ACLNN_SUCCESS;\n    }\n\n    // self如果非连续，需要转换\n    auto selfContiguous = l0op::Contiguous(self, uniqueExecutor.get());\n    CHECK_RET(selfContiguous != nullptr, ACLNN_ERR_INNER_NULLPTR);\n\n    // UINT8和BOOL类型，直接拷贝透传\n    if (SpecialDtypeTensorNeedPassthrough(selfContiguous)) {\n        auto viewCopyResult = l0op::ViewCopy(selfContiguous, out, uniqueExecutor.get());\n        *workspaceSize = uniqueExecutor->GetWorkspaceSize();\n        uniqueExecutor.ReleaseTo(executor);\n        return (viewCopyResult != nullptr) ? ACLNN_SUCCESS : ACLNN_ERR_INNER_NULLPTR;\n    }\n\n    // 调用l0算子Abs进行计算\n    const aclTensor* absResult = nullptr;\n    if (IsSupportComplexAbs(selfContiguous->GetDataType())) {\n        absResult = l0op::ComplexAbs(selfContiguous, uniqueExecutor.get());\n    } else{\n        absResult = l0op::Abs(selfContiguous, uniqueExecutor.get());\n    }\n    CHECK_RET(absResult != nullptr, ACLNN_ERR_INNER_NULLPTR);\n\n    // 如果出参out是非连续Tensor，需要把计算完的连续Tensor转非连续\n    auto viewCopyResult = l0op::ViewCopy(absResult, out, uniqueExecutor.get());\n    CHECK_RET(viewCopyResult != nullptr, ACLNN_ERR_INNER_NULLPTR);\n\n    // 固定写法，获取计算过程中需要使用的workspace大小\n    *workspaceSize = uniqueExecutor->GetWorkspaceSize();\n    uniqueExecutor.ReleaseTo(executor);\n    return ACLNN_SUCCESS;\n}",
+                "full_function": ""
+              }
+            ],
+            "call": "暂空",
+            "callee": "暂空",
+            "return": "暂空"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_1_param_matrix",
+                "des"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "inout"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "usage"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "dtype"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "dmat"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "shape"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "tensor"
+              ],
+              [
+                "sub_function_1_errorcode",
+                "errorcode"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "des"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "inout"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "usage"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "dtype"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "dmat"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "shape"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "tensor"
+              ],
+              [
+                "sub_function_2_errorcode",
+                "errorcode"
+              ]
+            ]
+          },
+          "evidence_id": "ev_function_001"
+        }
+      ],
+      "note": "以下为function型标准结构"
+    },
+    {
+      "anchor_id": "anchor_function_002",
+      "anchor_information": {
+        "type": "function",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+          "function_name": "aclnnAbs"
+        },
+        "level2": {
+          "call": [
+            "CommonOpExecutorRun"
+          ],
+          "callee": [],
+          "return": []
+        },
+        "level3": {
+          "function_sign": "aclnnStatus aclnnAbs(void* workspace, uint64_t workspaceSize, aclOpExecutor* executor, const aclrtStream stream)\n{\n    L2_DFX_PHASE_2(aclnnAbs);\n\n    return CommonOpExecutorRun(workspace, workspaceSize, executor, stream);\n}"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+            "content": [
+              {
+                "function_hash": "aclnnStatus aclnnAbs(void* workspace, uint64_t workspaceSize, aclOpExecutor* executor, const aclrtStream stream)\n{\n    L2_DFX_PHASE_2(aclnnAbs);\n\n    return CommonOpExecutorRun(workspace, workspaceSize, executor, stream);\n}",
+                "full_function": ""
+              }
+            ],
+            "call": "暂空",
+            "callee": "暂空",
+            "return": "暂空"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_1_param_matrix",
+                "des"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "inout"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "usage"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "dtype"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "dmat"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "shape"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "tensor"
+              ],
+              [
+                "sub_function_1_errorcode",
+                "errorcode"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "des"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "inout"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "usage"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "dtype"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "dmat"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "shape"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "tensor"
+              ],
+              [
+                "sub_function_2_errorcode",
+                "errorcode"
+              ]
+            ]
+          },
+          "evidence_id": "ev_function_002"
+        }
+      ],
+      "note": "以下为function型标准结构"
+    },
+    {
+      "anchor_id": "anchor_note_001",
+      "anchor_information": {
+        "type": "note",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.h",
+          "behind_code": "ACLNN_API aclnnStatus\naclnnAbsGetWorkspaceSize(const aclTensor* self, aclTensor* out, uint64_t* workspaceSize, aclOpExecutor** executor);"
+        },
+        "level2": {
+          "token_hash": "ACLNN_API aclnnStatus\naclnnAbsGetWorkspaceSize(const aclTensor* self, aclTensor* out, uint64_t* workspaceSize, aclOpExecutor** executor);",
+          "note_hash": "@brief aclnnAbs的第一段接口，根据具体的计算流程，计算workspace大小。\n\n@domain aclnn_math\n\n算子功能：返回输入Tensor中每个元素绝对值的结果\n\n计算公式：\n\n$$ out_{i} = abs(self_{i}) $$\n\n\n计算图：\n\n```mermaid\n\ngraph LR\n\nA[(self)]--->B([l0op::Contiguous])\n\nB--->C([l0op::Abs])\n\nC--->D([l0op::ViewCopy])\n\nD--->E[(out)]\n\n```\n\n\n@param [in] self: 待进行abs计算的入参。npu device侧的aclTensor,\n\n数据类型支持BFLOAT16(仅昇腾910B AI处理器、昇腾910_93 AI处理器、昇腾950 AI处理器支持)FLOAT、FLOAT16、DOUBLE、\n\nINT8、INT16、INT32、INT64、UINT8、BOOL，数据格式支持ND，支持非连续的Tensor。\n\n@param [in] out: abs计算的出参。npu device侧的aclTensor,\n\n数据类型支持BFLOAT16(仅昇腾910B AI处理器、昇腾910_93 AI处理器、昇腾950 AI处理器支持)FLOAT、FLOAT16、DOUBLE、\n\nINT8、INT16、INT32、INT64、UINT8、BOOL，数据格式支持ND，支持非连续的Tensor。\n\n@param [out] workspaceSize: 返回用户需要在npu device侧申请的workspace大小。\n\n@param [out] executor: 返回op执行器，包括算子计算流程\n\n@return aclnnStatus: 返回状态码"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.h",
+            "content": "@brief aclnnAbs的第一段接口，根据具体的计算流程，计算workspace大小。\n\n@domain aclnn_math\n\n算子功能：返回输入Tensor中每个元素绝对值的结果\n\n计算公式：\n\n$$ out_{i} = abs(self_{i}) $$\n\n\n计算图：\n\n```mermaid\n\ngraph LR\n\nA[(self)]--->B([l0op::Contiguous])\n\nB--->C([l0op::Abs])\n\nC--->D([l0op::ViewCopy])\n\nD--->E[(out)]\n\n```\n\n\n@param [in] self: 待进行abs计算的入参。npu device侧的aclTensor,\n\n数据类型支持BFLOAT16(仅昇腾910B AI处理器、昇腾910_93 AI处理器、昇腾950 AI处理器支持)FLOAT、FLOAT16、DOUBLE、\n\nINT8、INT16、INT32、INT64、UINT8、BOOL，数据格式支持ND，支持非连续的Tensor。\n\n@param [in] out: abs计算的出参。npu device侧的aclTensor,\n\n数据类型支持BFLOAT16(仅昇腾910B AI处理器、昇腾910_93 AI处理器、昇腾950 AI处理器支持)FLOAT、FLOAT16、DOUBLE、\n\nINT8、INT16、INT32、INT64、UINT8、BOOL，数据格式支持ND，支持非连续的Tensor。\n\n@param [out] workspaceSize: 返回用户需要在npu device侧申请的workspace大小。\n\n@param [out] executor: 返回op执行器，包括算子计算流程\n\n@return aclnnStatus: 返回状态码",
+            "behind_code": "ACLNN_API aclnnStatus\naclnnAbsGetWorkspaceSize(const aclTensor* self, aclTensor* out, uint64_t* workspaceSize, aclOpExecutor** executor);"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_1_param_matrix",
+                "des"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "inout"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "usage"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "dtype"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "dmat"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "shape"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "tensor"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "des"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "inout"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "usage"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "dtype"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "dmat"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "shape"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "tensor"
+              ]
+            ]
+          },
+          "evidence_id": "ev_note_001"
+        }
+      ],
+      "note": "以下为note型标准结构"
+    },
+    {
+      "anchor_id": "anchor_note_002",
+      "anchor_information": {
+        "type": "note",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.h",
+          "behind_code": "ACLNN_API aclnnStatus\naclnnAbs(void* workspace, uint64_t workspaceSize, aclOpExecutor* executor, const aclrtStream stream);"
+        },
+        "level2": {
+          "token_hash": "ACLNN_API aclnnStatus\naclnnAbs(void* workspace, uint64_t workspaceSize, aclOpExecutor* executor, const aclrtStream stream);",
+          "note_hash": "@brief aclnnAbs的第二段接口，用于执行计算。\n\n@param [in] workspace: 在npu device侧申请的workspace内存起址。\n\n@param [in] workspaceSize: 在npu device侧申请的workspace大小，由第一段接口aclnnAbsGetWorkspaceSize获取。\n\n@param [in] exector: op执行器，包含了算子计算流程。\n\n@param [in] stream: acl stream流。\n\n@return aclnnStatus: 返回状态码"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.h",
+            "content": "@brief aclnnAbs的第二段接口，用于执行计算。\n\n@param [in] workspace: 在npu device侧申请的workspace内存起址。\n\n@param [in] workspaceSize: 在npu device侧申请的workspace大小，由第一段接口aclnnAbsGetWorkspaceSize获取。\n\n@param [in] exector: op执行器，包含了算子计算流程。\n\n@param [in] stream: acl stream流。\n\n@return aclnnStatus: 返回状态码",
+            "behind_code": "ACLNN_API aclnnStatus\naclnnAbs(void* workspace, uint64_t workspaceSize, aclOpExecutor* executor, const aclrtStream stream);"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_1_param_matrix",
+                "des"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "inout"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "usage"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "dtype"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "dmat"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "shape"
+              ],
+              [
+                "sub_function_1_param_matrix",
+                "tensor"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "des"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "inout"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "usage"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "dtype"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "dmat"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "shape"
+              ],
+              [
+                "sub_function_2_param_matrix",
+                "tensor"
+              ]
+            ]
+          },
+          "evidence_id": "ev_note_002"
+        }
+      ],
+      "note": "以下为note型标准结构"
+    },
+    {
+      "anchor_id": "anchor_section_001",
+      "anchor_information": {
+        "type": "section",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+          "start_line": "18",
+          "end_line": "33",
+          "token_hash": "#include \"opdev/op_dfx.h\"\n#include \"opdev/common_types.h\"\n#include \"opdev/data_type_utils.h\"\n#include \"opdev/make_op_executor.h\"\n#include \"opdev/platform.h\"\n#include \"op_api/aclnn_check.h\"\n\nusing namespace op;\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\nstatic const std::initializer_list<DataType> ASCEND910_DTYPE_DTYPE_SUPPORT_LIST = {\n    DataType::DT_DOUBLE, DataType::DT_FLOAT, DataType::DT_FLOAT16, DataType::DT_INT64, DataType::DT_INT32,\n    DataType::DT_INT16,  DataType::DT_INT8,  DataType::DT_UINT8,   DataType::DT_BOOL};"
+        },
+        "level2": {
+          "token_hash": "#include \"opdev/op_dfx.h\"\n#include \"opdev/common_types.h\"\n#include \"opdev/data_type_utils.h\"\n#include \"opdev/make_op_executor.h\"\n#include \"opdev/platform.h\"\n#include \"op_api/aclnn_check.h\"\n\nusing namespace op;\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\nstatic const std::initializer_list<DataType> ASCEND910_DTYPE_DTYPE_SUPPORT_LIST = {\n    DataType::DT_DOUBLE, DataType::DT_FLOAT, DataType::DT_FLOAT16, DataType::DT_INT64, DataType::DT_INT32,\n    DataType::DT_INT16,  DataType::DT_INT8,  DataType::DT_UINT8,   DataType::DT_BOOL};"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+            "content": "#include \"opdev/op_dfx.h\"\n#include \"opdev/common_types.h\"\n#include \"opdev/data_type_utils.h\"\n#include \"opdev/make_op_executor.h\"\n#include \"opdev/platform.h\"\n#include \"op_api/aclnn_check.h\"\n\nusing namespace op;\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\nstatic const std::initializer_list<DataType> ASCEND910_DTYPE_DTYPE_SUPPORT_LIST = {\n    DataType::DT_DOUBLE, DataType::DT_FLOAT, DataType::DT_FLOAT16, DataType::DT_INT64, DataType::DT_INT32,\n    DataType::DT_INT16,  DataType::DT_INT8,  DataType::DT_UINT8,   DataType::DT_BOOL};"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_1_param_matrix",
+                "dtype"
+              ]
+            ]
+          },
+          "evidence_id": "ev_section_001"
+        }
+      ],
+      "note": "以下为section型标准结构"
+    },
+    {
+      "anchor_id": "anchor_section_002",
+      "anchor_information": {
+        "type": "section",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+          "start_line": "18",
+          "end_line": "33",
+          "token_hash": "#include \"opdev/op_dfx.h\"\n#include \"opdev/common_types.h\"\n#include \"opdev/data_type_utils.h\"\n#include \"opdev/make_op_executor.h\"\n#include \"opdev/platform.h\"\n#include \"op_api/aclnn_check.h\"\n\nusing namespace op;\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\nstatic const std::initializer_list<DataType> ASCEND910_DTYPE_DTYPE_SUPPORT_LIST = {\n    DataType::DT_DOUBLE, DataType::DT_FLOAT, DataType::DT_FLOAT16, DataType::DT_INT64, DataType::DT_INT32,\n    DataType::DT_INT16,  DataType::DT_INT8,  DataType::DT_UINT8,   DataType::DT_BOOL};"
+        },
+        "level2": {
+          "token_hash": "#include \"opdev/op_dfx.h\"\n#include \"opdev/common_types.h\"\n#include \"opdev/data_type_utils.h\"\n#include \"opdev/make_op_executor.h\"\n#include \"opdev/platform.h\"\n#include \"op_api/aclnn_check.h\"\n\nusing namespace op;\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\nstatic const std::initializer_list<DataType> ASCEND910_DTYPE_DTYPE_SUPPORT_LIST = {\n    DataType::DT_DOUBLE, DataType::DT_FLOAT, DataType::DT_FLOAT16, DataType::DT_INT64, DataType::DT_INT32,\n    DataType::DT_INT16,  DataType::DT_INT8,  DataType::DT_UINT8,   DataType::DT_BOOL};"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+            "content": "#include \"opdev/op_dfx.h\"\n#include \"opdev/common_types.h\"\n#include \"opdev/data_type_utils.h\"\n#include \"opdev/make_op_executor.h\"\n#include \"opdev/platform.h\"\n#include \"op_api/aclnn_check.h\"\n\nusing namespace op;\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\nstatic const std::initializer_list<DataType> ASCEND910_DTYPE_DTYPE_SUPPORT_LIST = {\n    DataType::DT_DOUBLE, DataType::DT_FLOAT, DataType::DT_FLOAT16, DataType::DT_INT64, DataType::DT_INT32,\n    DataType::DT_INT16,  DataType::DT_INT8,  DataType::DT_UINT8,   DataType::DT_BOOL};"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_2_param_matrix",
+                "dtype"
+              ]
+            ]
+          },
+          "evidence_id": "ev_section_002"
+        }
+      ],
+      "note": "以下为section型标准结构"
+    },
+    {
+      "anchor_id": "anchor_section_003",
+      "anchor_information": {
+        "type": "section",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+          "start_line": "31",
+          "end_line": "32",
+          "token_hash": "{\n    DataType::DT_DOUBLE, DataType::DT_FLOAT, DataType::DT_FLOAT16, DataType::DT_INT64, DataType::DT_INT32,\n    DataType::DT_INT16,  DataType::DT_INT8,  DataType::DT_UINT8,   DataType::DT_BOOL}"
+        },
+        "level2": {
+          "token_hash": "{\n    DataType::DT_DOUBLE, DataType::DT_FLOAT, DataType::DT_FLOAT16, DataType::DT_INT64, DataType::DT_INT32,\n    DataType::DT_INT16,  DataType::DT_INT8,  DataType::DT_UINT8,   DataType::DT_BOOL}"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+            "content": "{\n    DataType::DT_DOUBLE, DataType::DT_FLOAT, DataType::DT_FLOAT16, DataType::DT_INT64, DataType::DT_INT32,\n    DataType::DT_INT16,  DataType::DT_INT8,  DataType::DT_UINT8,   DataType::DT_BOOL}"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_1_param_matrix",
+                "dtype"
+              ]
+            ]
+          },
+          "evidence_id": "ev_section_003"
+        }
+      ],
+      "note": "以下为section型标准结构"
+    },
+    {
+      "anchor_id": "anchor_section_004",
+      "anchor_information": {
+        "type": "section",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+          "start_line": "31",
+          "end_line": "32",
+          "token_hash": "{\n    DataType::DT_DOUBLE, DataType::DT_FLOAT, DataType::DT_FLOAT16, DataType::DT_INT64, DataType::DT_INT32,\n    DataType::DT_INT16,  DataType::DT_INT8,  DataType::DT_UINT8,   DataType::DT_BOOL}"
+        },
+        "level2": {
+          "token_hash": "{\n    DataType::DT_DOUBLE, DataType::DT_FLOAT, DataType::DT_FLOAT16, DataType::DT_INT64, DataType::DT_INT32,\n    DataType::DT_INT16,  DataType::DT_INT8,  DataType::DT_UINT8,   DataType::DT_BOOL}"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+            "content": "{\n    DataType::DT_DOUBLE, DataType::DT_FLOAT, DataType::DT_FLOAT16, DataType::DT_INT64, DataType::DT_INT32,\n    DataType::DT_INT16,  DataType::DT_INT8,  DataType::DT_UINT8,   DataType::DT_BOOL}"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_2_param_matrix",
+                "dtype"
+              ]
+            ]
+          },
+          "evidence_id": "ev_section_004"
+        }
+      ],
+      "note": "以下为section型标准结构"
+    },
+    {
+      "anchor_id": "anchor_section_005",
+      "anchor_information": {
+        "type": "section",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+          "start_line": "35",
+          "end_line": "37",
+          "token_hash": "{\n    DataType::DT_DOUBLE, DataType::DT_FLOAT, DataType::DT_FLOAT16, DataType::DT_INT64, DataType::DT_INT32,\n    DataType::DT_INT16,  DataType::DT_INT8,  DataType::DT_UINT8,   DataType::DT_BOOL,  DataType::DT_BF16,\n    DataType::DT_COMPLEX64}"
+        },
+        "level2": {
+          "token_hash": "{\n    DataType::DT_DOUBLE, DataType::DT_FLOAT, DataType::DT_FLOAT16, DataType::DT_INT64, DataType::DT_INT32,\n    DataType::DT_INT16,  DataType::DT_INT8,  DataType::DT_UINT8,   DataType::DT_BOOL,  DataType::DT_BF16,\n    DataType::DT_COMPLEX64}"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+            "content": "{\n    DataType::DT_DOUBLE, DataType::DT_FLOAT, DataType::DT_FLOAT16, DataType::DT_INT64, DataType::DT_INT32,\n    DataType::DT_INT16,  DataType::DT_INT8,  DataType::DT_UINT8,   DataType::DT_BOOL,  DataType::DT_BF16,\n    DataType::DT_COMPLEX64}"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_1_param_matrix",
+                "dtype"
+              ]
+            ]
+          },
+          "evidence_id": "ev_section_005"
+        }
+      ],
+      "note": "以下为section型标准结构"
+    },
+    {
+      "anchor_id": "anchor_section_006",
+      "anchor_information": {
+        "type": "section",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+          "start_line": "35",
+          "end_line": "37",
+          "token_hash": "{\n    DataType::DT_DOUBLE, DataType::DT_FLOAT, DataType::DT_FLOAT16, DataType::DT_INT64, DataType::DT_INT32,\n    DataType::DT_INT16,  DataType::DT_INT8,  DataType::DT_UINT8,   DataType::DT_BOOL,  DataType::DT_BF16,\n    DataType::DT_COMPLEX64}"
+        },
+        "level2": {
+          "token_hash": "{\n    DataType::DT_DOUBLE, DataType::DT_FLOAT, DataType::DT_FLOAT16, DataType::DT_INT64, DataType::DT_INT32,\n    DataType::DT_INT16,  DataType::DT_INT8,  DataType::DT_UINT8,   DataType::DT_BOOL,  DataType::DT_BF16,\n    DataType::DT_COMPLEX64}"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+            "content": "{\n    DataType::DT_DOUBLE, DataType::DT_FLOAT, DataType::DT_FLOAT16, DataType::DT_INT64, DataType::DT_INT32,\n    DataType::DT_INT16,  DataType::DT_INT8,  DataType::DT_UINT8,   DataType::DT_BOOL,  DataType::DT_BF16,\n    DataType::DT_COMPLEX64}"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_2_param_matrix",
+                "dtype"
+              ]
+            ]
+          },
+          "evidence_id": "ev_section_006"
+        }
+      ],
+      "note": "以下为section型标准结构"
+    },
+    {
+      "anchor_id": "anchor_section_007",
+      "anchor_information": {
+        "type": "section",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+          "start_line": "46",
+          "end_line": "45",
+          "token_hash": "{DataType::DT_COMPLEX32, DataType::DT_FLOAT16}"
+        },
+        "level2": {
+          "token_hash": "{DataType::DT_COMPLEX32, DataType::DT_FLOAT16}"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+            "content": "{DataType::DT_COMPLEX32, DataType::DT_FLOAT16}"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_1_param_matrix",
+                "dtype"
+              ]
+            ]
+          },
+          "evidence_id": "ev_section_007"
+        }
+      ],
+      "note": "以下为section型标准结构"
+    },
+    {
+      "anchor_id": "anchor_section_008",
+      "anchor_information": {
+        "type": "section",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+          "start_line": "46",
+          "end_line": "45",
+          "token_hash": "{DataType::DT_COMPLEX32, DataType::DT_FLOAT16}"
+        },
+        "level2": {
+          "token_hash": "{DataType::DT_COMPLEX32, DataType::DT_FLOAT16}"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+            "content": "{DataType::DT_COMPLEX32, DataType::DT_FLOAT16}"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_2_param_matrix",
+                "dtype"
+              ]
+            ]
+          },
+          "evidence_id": "ev_section_008"
+        }
+      ],
+      "note": "以下为section型标准结构"
+    },
+    {
+      "anchor_id": "anchor_section_009",
+      "anchor_information": {
+        "type": "section",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+          "start_line": "48",
+          "end_line": "47",
+          "token_hash": "{DataType::DT_COMPLEX128, DataType::DT_DOUBLE}"
+        },
+        "level2": {
+          "token_hash": "{DataType::DT_COMPLEX128, DataType::DT_DOUBLE}"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+            "content": "{DataType::DT_COMPLEX128, DataType::DT_DOUBLE}"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_1_param_matrix",
+                "dtype"
+              ]
+            ]
+          },
+          "evidence_id": "ev_section_009"
+        }
+      ],
+      "note": "以下为section型标准结构"
+    },
+    {
+      "anchor_id": "anchor_section_010",
+      "anchor_information": {
+        "type": "section",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+          "start_line": "48",
+          "end_line": "47",
+          "token_hash": "{DataType::DT_COMPLEX128, DataType::DT_DOUBLE}"
+        },
+        "level2": {
+          "token_hash": "{DataType::DT_COMPLEX128, DataType::DT_DOUBLE}"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+            "content": "{DataType::DT_COMPLEX128, DataType::DT_DOUBLE}"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_2_param_matrix",
+                "dtype"
+              ]
+            ]
+          },
+          "evidence_id": "ev_section_010"
+        }
+      ],
+      "note": "以下为section型标准结构"
+    },
+    {
+      "anchor_id": "anchor_section_011",
+      "anchor_information": {
+        "type": "section",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+          "start_line": "46",
+          "end_line": "61",
+          "token_hash": "    {DataType::DT_COMPLEX32, DataType::DT_FLOAT16}, \n    {DataType::DT_COMPLEX64, DataType::DT_FLOAT},\n    {DataType::DT_COMPLEX128, DataType::DT_DOUBLE}\n};\n\nstatic const std::initializer_list<DataType>& GetDtypeSupportList()\n{\n    auto npuArch = GetCurrentPlatformInfo().GetCurNpuArch();\n    if (npuArch == NpuArch::DAV_2201) {\n        return ASCEND910B_DTYPE_DTYPE_SUPPORT_LIST;\n    } else if (IsRegBase(npuArch)) {\n        return ARCH_REGBASE_DTYPE_DTYPE_SUPPORT_LIST;\n    } else {\n        return ASCEND910_DTYPE_DTYPE_SUPPORT_LIST;\n    }\n}"
+        },
+        "level2": {
+          "token_hash": "    {DataType::DT_COMPLEX32, DataType::DT_FLOAT16}, \n    {DataType::DT_COMPLEX64, DataType::DT_FLOAT},\n    {DataType::DT_COMPLEX128, DataType::DT_DOUBLE}\n};\n\nstatic const std::initializer_list<DataType>& GetDtypeSupportList()\n{\n    auto npuArch = GetCurrentPlatformInfo().GetCurNpuArch();\n    if (npuArch == NpuArch::DAV_2201) {\n        return ASCEND910B_DTYPE_DTYPE_SUPPORT_LIST;\n    } else if (IsRegBase(npuArch)) {\n        return ARCH_REGBASE_DTYPE_DTYPE_SUPPORT_LIST;\n    } else {\n        return ASCEND910_DTYPE_DTYPE_SUPPORT_LIST;\n    }\n}"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+            "content": "    {DataType::DT_COMPLEX32, DataType::DT_FLOAT16}, \n    {DataType::DT_COMPLEX64, DataType::DT_FLOAT},\n    {DataType::DT_COMPLEX128, DataType::DT_DOUBLE}\n};\n\nstatic const std::initializer_list<DataType>& GetDtypeSupportList()\n{\n    auto npuArch = GetCurrentPlatformInfo().GetCurNpuArch();\n    if (npuArch == NpuArch::DAV_2201) {\n        return ASCEND910B_DTYPE_DTYPE_SUPPORT_LIST;\n    } else if (IsRegBase(npuArch)) {\n        return ARCH_REGBASE_DTYPE_DTYPE_SUPPORT_LIST;\n    } else {\n        return ASCEND910_DTYPE_DTYPE_SUPPORT_LIST;\n    }\n}"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_1_param_matrix",
+                "dtype"
+              ]
+            ]
+          },
+          "evidence_id": "ev_section_011"
+        }
+      ],
+      "note": "以下为section型标准结构"
+    },
+    {
+      "anchor_id": "anchor_section_012",
+      "anchor_information": {
+        "type": "section",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+          "start_line": "46",
+          "end_line": "61",
+          "token_hash": "    {DataType::DT_COMPLEX32, DataType::DT_FLOAT16}, \n    {DataType::DT_COMPLEX64, DataType::DT_FLOAT},\n    {DataType::DT_COMPLEX128, DataType::DT_DOUBLE}\n};\n\nstatic const std::initializer_list<DataType>& GetDtypeSupportList()\n{\n    auto npuArch = GetCurrentPlatformInfo().GetCurNpuArch();\n    if (npuArch == NpuArch::DAV_2201) {\n        return ASCEND910B_DTYPE_DTYPE_SUPPORT_LIST;\n    } else if (IsRegBase(npuArch)) {\n        return ARCH_REGBASE_DTYPE_DTYPE_SUPPORT_LIST;\n    } else {\n        return ASCEND910_DTYPE_DTYPE_SUPPORT_LIST;\n    }\n}"
+        },
+        "level2": {
+          "token_hash": "    {DataType::DT_COMPLEX32, DataType::DT_FLOAT16}, \n    {DataType::DT_COMPLEX64, DataType::DT_FLOAT},\n    {DataType::DT_COMPLEX128, DataType::DT_DOUBLE}\n};\n\nstatic const std::initializer_list<DataType>& GetDtypeSupportList()\n{\n    auto npuArch = GetCurrentPlatformInfo().GetCurNpuArch();\n    if (npuArch == NpuArch::DAV_2201) {\n        return ASCEND910B_DTYPE_DTYPE_SUPPORT_LIST;\n    } else if (IsRegBase(npuArch)) {\n        return ARCH_REGBASE_DTYPE_DTYPE_SUPPORT_LIST;\n    } else {\n        return ASCEND910_DTYPE_DTYPE_SUPPORT_LIST;\n    }\n}"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+            "content": "    {DataType::DT_COMPLEX32, DataType::DT_FLOAT16}, \n    {DataType::DT_COMPLEX64, DataType::DT_FLOAT},\n    {DataType::DT_COMPLEX128, DataType::DT_DOUBLE}\n};\n\nstatic const std::initializer_list<DataType>& GetDtypeSupportList()\n{\n    auto npuArch = GetCurrentPlatformInfo().GetCurNpuArch();\n    if (npuArch == NpuArch::DAV_2201) {\n        return ASCEND910B_DTYPE_DTYPE_SUPPORT_LIST;\n    } else if (IsRegBase(npuArch)) {\n        return ARCH_REGBASE_DTYPE_DTYPE_SUPPORT_LIST;\n    } else {\n        return ASCEND910_DTYPE_DTYPE_SUPPORT_LIST;\n    }\n}"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_2_param_matrix",
+                "dtype"
+              ]
+            ]
+          },
+          "evidence_id": "ev_section_012"
+        }
+      ],
+      "note": "以下为section型标准结构"
+    },
+    {
+      "anchor_id": "anchor_section_013",
+      "anchor_information": {
+        "type": "section",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+          "start_line": "130",
+          "end_line": "137",
+          "token_hash": "{\n    // 所有算子的维度都不能超过8\n    OP_CHECK_MAX_DIM(self, ACLNN_MAX_SHAPE_RANK, return false);\n\n    // self和out的shape必须一致\n    OP_CHECK_SHAPE_NOT_EQUAL(self, out, return false);\n\n    return true;\n}"
+        },
+        "level2": {
+          "token_hash": "{\n    // 所有算子的维度都不能超过8\n    OP_CHECK_MAX_DIM(self, ACLNN_MAX_SHAPE_RANK, return false);\n\n    // self和out的shape必须一致\n    OP_CHECK_SHAPE_NOT_EQUAL(self, out, return false);\n\n    return true;\n}"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+            "content": "{\n    // 所有算子的维度都不能超过8\n    OP_CHECK_MAX_DIM(self, ACLNN_MAX_SHAPE_RANK, return false);\n\n    // self和out的shape必须一致\n    OP_CHECK_SHAPE_NOT_EQUAL(self, out, return false);\n\n    return true;\n}"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_1_param_matrix",
+                "dtype"
+              ]
+            ]
+          },
+          "evidence_id": "ev_section_013"
+        }
+      ],
+      "note": "以下为section型标准结构"
+    },
+    {
+      "anchor_id": "anchor_section_014",
+      "anchor_information": {
+        "type": "section",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+          "start_line": "130",
+          "end_line": "137",
+          "token_hash": "{\n    // 所有算子的维度都不能超过8\n    OP_CHECK_MAX_DIM(self, ACLNN_MAX_SHAPE_RANK, return false);\n\n    // self和out的shape必须一致\n    OP_CHECK_SHAPE_NOT_EQUAL(self, out, return false);\n\n    return true;\n}"
+        },
+        "level2": {
+          "token_hash": "{\n    // 所有算子的维度都不能超过8\n    OP_CHECK_MAX_DIM(self, ACLNN_MAX_SHAPE_RANK, return false);\n\n    // self和out的shape必须一致\n    OP_CHECK_SHAPE_NOT_EQUAL(self, out, return false);\n\n    return true;\n}"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+            "content": "{\n    // 所有算子的维度都不能超过8\n    OP_CHECK_MAX_DIM(self, ACLNN_MAX_SHAPE_RANK, return false);\n\n    // self和out的shape必须一致\n    OP_CHECK_SHAPE_NOT_EQUAL(self, out, return false);\n\n    return true;\n}"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_2_param_matrix",
+                "dtype"
+              ]
+            ]
+          },
+          "evidence_id": "ev_section_014"
+        }
+      ],
+      "note": "以下为section型标准结构"
+    },
+    {
+      "anchor_id": "anchor_section_015",
+      "anchor_information": {
+        "type": "section",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+          "start_line": "68",
+          "end_line": "83",
+          "token_hash": "    }\n\n    return false;\n}\n\nstatic bool SpecialDtypeTensorNeedPassthrough(const aclTensor* self)\n{\n    if (self->GetDataType() == DataType::DT_UINT8 || self->GetDataType() == DataType::DT_BOOL) {\n        return true;\n    }\n\n    return false;\n}\n\nstatic bool CheckNotNull(const aclTensor* self, const aclTensor* out)\n{"
+        },
+        "level2": {
+          "token_hash": "    }\n\n    return false;\n}\n\nstatic bool SpecialDtypeTensorNeedPassthrough(const aclTensor* self)\n{\n    if (self->GetDataType() == DataType::DT_UINT8 || self->GetDataType() == DataType::DT_BOOL) {\n        return true;\n    }\n\n    return false;\n}\n\nstatic bool CheckNotNull(const aclTensor* self, const aclTensor* out)\n{"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+            "content": "    }\n\n    return false;\n}\n\nstatic bool SpecialDtypeTensorNeedPassthrough(const aclTensor* self)\n{\n    if (self->GetDataType() == DataType::DT_UINT8 || self->GetDataType() == DataType::DT_BOOL) {\n        return true;\n    }\n\n    return false;\n}\n\nstatic bool CheckNotNull(const aclTensor* self, const aclTensor* out)\n{"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_1_param_matrix",
+                "dtype"
+              ]
+            ]
+          },
+          "evidence_id": "ev_section_015"
+        }
+      ],
+      "note": "以下为section型标准结构"
+    },
+    {
+      "anchor_id": "anchor_section_016",
+      "anchor_information": {
+        "type": "section",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+          "start_line": "68",
+          "end_line": "83",
+          "token_hash": "    }\n\n    return false;\n}\n\nstatic bool SpecialDtypeTensorNeedPassthrough(const aclTensor* self)\n{\n    if (self->GetDataType() == DataType::DT_UINT8 || self->GetDataType() == DataType::DT_BOOL) {\n        return true;\n    }\n\n    return false;\n}\n\nstatic bool CheckNotNull(const aclTensor* self, const aclTensor* out)\n{"
+        },
+        "level2": {
+          "token_hash": "    }\n\n    return false;\n}\n\nstatic bool SpecialDtypeTensorNeedPassthrough(const aclTensor* self)\n{\n    if (self->GetDataType() == DataType::DT_UINT8 || self->GetDataType() == DataType::DT_BOOL) {\n        return true;\n    }\n\n    return false;\n}\n\nstatic bool CheckNotNull(const aclTensor* self, const aclTensor* out)\n{"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+            "content": "    }\n\n    return false;\n}\n\nstatic bool SpecialDtypeTensorNeedPassthrough(const aclTensor* self)\n{\n    if (self->GetDataType() == DataType::DT_UINT8 || self->GetDataType() == DataType::DT_BOOL) {\n        return true;\n    }\n\n    return false;\n}\n\nstatic bool CheckNotNull(const aclTensor* self, const aclTensor* out)\n{"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_2_param_matrix",
+                "dtype"
+              ]
+            ]
+          },
+          "evidence_id": "ev_section_016"
+        }
+      ],
+      "note": "以下为section型标准结构"
+    },
+    {
+      "anchor_id": "anchor_section_017",
+      "anchor_information": {
+        "type": "section",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+          "start_line": "83",
+          "end_line": "87",
+          "token_hash": "{\n    OP_CHECK_NULL(self, return false);\n    OP_CHECK_NULL(out, return false);\n\n    return true;\n}"
+        },
+        "level2": {
+          "token_hash": "{\n    OP_CHECK_NULL(self, return false);\n    OP_CHECK_NULL(out, return false);\n\n    return true;\n}"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+            "content": "{\n    OP_CHECK_NULL(self, return false);\n    OP_CHECK_NULL(out, return false);\n\n    return true;\n}"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_1_param_matrix",
+                "dtype"
+              ]
+            ]
+          },
+          "evidence_id": "ev_section_017"
+        }
+      ],
+      "note": "以下为section型标准结构"
+    },
+    {
+      "anchor_id": "anchor_section_018",
+      "anchor_information": {
+        "type": "section",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+          "start_line": "83",
+          "end_line": "87",
+          "token_hash": "{\n    OP_CHECK_NULL(self, return false);\n    OP_CHECK_NULL(out, return false);\n\n    return true;\n}"
+        },
+        "level2": {
+          "token_hash": "{\n    OP_CHECK_NULL(self, return false);\n    OP_CHECK_NULL(out, return false);\n\n    return true;\n}"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+            "content": "{\n    OP_CHECK_NULL(self, return false);\n    OP_CHECK_NULL(out, return false);\n\n    return true;\n}"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_2_param_matrix",
+                "dtype"
+              ]
+            ]
+          },
+          "evidence_id": "ev_section_018"
+        }
+      ],
+      "note": "以下为section型标准结构"
+    },
+    {
+      "anchor_id": "anchor_section_019",
+      "anchor_information": {
+        "type": "section",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+          "start_line": "85",
+          "end_line": "100",
+          "token_hash": "    OP_CHECK_NULL(out, return false);\n\n    return true;\n}\n\nstatic bool CheckDtypeValid(const aclTensor* self, const aclTensor* out)\n{\n    // 检查self的数据类型是否在支持列表内，out类型随动检查\n    auto supportList = GetDtypeSupportList();\n    OP_CHECK_DTYPE_NOT_SUPPORT(self, supportList, return false);\n\n    // 当self不为复数时，self和out数据类型必须一样\n    auto selfDtype = self->GetDataType();\n    if (IsComplexType(selfDtype)) {\n        auto promoteOutDtype = COMPLEX_IN_AND_OUT_DTYPE_MAP.find(selfDtype);\n        if (promoteOutDtype != COMPLEX_IN_AND_OUT_DTYPE_MAP.end()) {"
+        },
+        "level2": {
+          "token_hash": "    OP_CHECK_NULL(out, return false);\n\n    return true;\n}\n\nstatic bool CheckDtypeValid(const aclTensor* self, const aclTensor* out)\n{\n    // 检查self的数据类型是否在支持列表内，out类型随动检查\n    auto supportList = GetDtypeSupportList();\n    OP_CHECK_DTYPE_NOT_SUPPORT(self, supportList, return false);\n\n    // 当self不为复数时，self和out数据类型必须一样\n    auto selfDtype = self->GetDataType();\n    if (IsComplexType(selfDtype)) {\n        auto promoteOutDtype = COMPLEX_IN_AND_OUT_DTYPE_MAP.find(selfDtype);\n        if (promoteOutDtype != COMPLEX_IN_AND_OUT_DTYPE_MAP.end()) {"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+            "content": "    OP_CHECK_NULL(out, return false);\n\n    return true;\n}\n\nstatic bool CheckDtypeValid(const aclTensor* self, const aclTensor* out)\n{\n    // 检查self的数据类型是否在支持列表内，out类型随动检查\n    auto supportList = GetDtypeSupportList();\n    OP_CHECK_DTYPE_NOT_SUPPORT(self, supportList, return false);\n\n    // 当self不为复数时，self和out数据类型必须一样\n    auto selfDtype = self->GetDataType();\n    if (IsComplexType(selfDtype)) {\n        auto promoteOutDtype = COMPLEX_IN_AND_OUT_DTYPE_MAP.find(selfDtype);\n        if (promoteOutDtype != COMPLEX_IN_AND_OUT_DTYPE_MAP.end()) {"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_1_param_matrix",
+                "dtype"
+              ]
+            ]
+          },
+          "evidence_id": "ev_section_019"
+        }
+      ],
+      "note": "以下为section型标准结构"
+    },
+    {
+      "anchor_id": "anchor_section_020",
+      "anchor_information": {
+        "type": "section",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+          "start_line": "85",
+          "end_line": "100",
+          "token_hash": "    OP_CHECK_NULL(out, return false);\n\n    return true;\n}\n\nstatic bool CheckDtypeValid(const aclTensor* self, const aclTensor* out)\n{\n    // 检查self的数据类型是否在支持列表内，out类型随动检查\n    auto supportList = GetDtypeSupportList();\n    OP_CHECK_DTYPE_NOT_SUPPORT(self, supportList, return false);\n\n    // 当self不为复数时，self和out数据类型必须一样\n    auto selfDtype = self->GetDataType();\n    if (IsComplexType(selfDtype)) {\n        auto promoteOutDtype = COMPLEX_IN_AND_OUT_DTYPE_MAP.find(selfDtype);\n        if (promoteOutDtype != COMPLEX_IN_AND_OUT_DTYPE_MAP.end()) {"
+        },
+        "level2": {
+          "token_hash": "    OP_CHECK_NULL(out, return false);\n\n    return true;\n}\n\nstatic bool CheckDtypeValid(const aclTensor* self, const aclTensor* out)\n{\n    // 检查self的数据类型是否在支持列表内，out类型随动检查\n    auto supportList = GetDtypeSupportList();\n    OP_CHECK_DTYPE_NOT_SUPPORT(self, supportList, return false);\n\n    // 当self不为复数时，self和out数据类型必须一样\n    auto selfDtype = self->GetDataType();\n    if (IsComplexType(selfDtype)) {\n        auto promoteOutDtype = COMPLEX_IN_AND_OUT_DTYPE_MAP.find(selfDtype);\n        if (promoteOutDtype != COMPLEX_IN_AND_OUT_DTYPE_MAP.end()) {"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+            "content": "    OP_CHECK_NULL(out, return false);\n\n    return true;\n}\n\nstatic bool CheckDtypeValid(const aclTensor* self, const aclTensor* out)\n{\n    // 检查self的数据类型是否在支持列表内，out类型随动检查\n    auto supportList = GetDtypeSupportList();\n    OP_CHECK_DTYPE_NOT_SUPPORT(self, supportList, return false);\n\n    // 当self不为复数时，self和out数据类型必须一样\n    auto selfDtype = self->GetDataType();\n    if (IsComplexType(selfDtype)) {\n        auto promoteOutDtype = COMPLEX_IN_AND_OUT_DTYPE_MAP.find(selfDtype);\n        if (promoteOutDtype != COMPLEX_IN_AND_OUT_DTYPE_MAP.end()) {"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_2_param_matrix",
+                "dtype"
+              ]
+            ]
+          },
+          "evidence_id": "ev_section_020"
+        }
+      ],
+      "note": "以下为section型标准结构"
+    },
+    {
+      "anchor_id": "anchor_section_021",
+      "anchor_information": {
+        "type": "section",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+          "start_line": "91",
+          "end_line": "107",
+          "token_hash": "{\n    // 检查self的数据类型是否在支持列表内，out类型随动检查\n    auto supportList = GetDtypeSupportList();\n    OP_CHECK_DTYPE_NOT_SUPPORT(self, supportList, return false);\n\n    // 当self不为复数时，self和out数据类型必须一样\n    auto selfDtype = self->GetDataType();\n    if (IsComplexType(selfDtype)) {\n        auto promoteOutDtype = COMPLEX_IN_AND_OUT_DTYPE_MAP.find(selfDtype);\n        if (promoteOutDtype != COMPLEX_IN_AND_OUT_DTYPE_MAP.end()) {\n            OP_CHECK_DTYPE_NOT_MATCH(out, promoteOutDtype->second, return false);\n        }\n    } else {\n        OP_CHECK_DTYPE_NOT_MATCH(self, out->GetDataType(), return false);\n    }\n\n    return true;\n}"
+        },
+        "level2": {
+          "token_hash": "{\n    // 检查self的数据类型是否在支持列表内，out类型随动检查\n    auto supportList = GetDtypeSupportList();\n    OP_CHECK_DTYPE_NOT_SUPPORT(self, supportList, return false);\n\n    // 当self不为复数时，self和out数据类型必须一样\n    auto selfDtype = self->GetDataType();\n    if (IsComplexType(selfDtype)) {\n        auto promoteOutDtype = COMPLEX_IN_AND_OUT_DTYPE_MAP.find(selfDtype);\n        if (promoteOutDtype != COMPLEX_IN_AND_OUT_DTYPE_MAP.end()) {\n            OP_CHECK_DTYPE_NOT_MATCH(out, promoteOutDtype->second, return false);\n        }\n    } else {\n        OP_CHECK_DTYPE_NOT_MATCH(self, out->GetDataType(), return false);\n    }\n\n    return true;\n}"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+            "content": "{\n    // 检查self的数据类型是否在支持列表内，out类型随动检查\n    auto supportList = GetDtypeSupportList();\n    OP_CHECK_DTYPE_NOT_SUPPORT(self, supportList, return false);\n\n    // 当self不为复数时，self和out数据类型必须一样\n    auto selfDtype = self->GetDataType();\n    if (IsComplexType(selfDtype)) {\n        auto promoteOutDtype = COMPLEX_IN_AND_OUT_DTYPE_MAP.find(selfDtype);\n        if (promoteOutDtype != COMPLEX_IN_AND_OUT_DTYPE_MAP.end()) {\n            OP_CHECK_DTYPE_NOT_MATCH(out, promoteOutDtype->second, return false);\n        }\n    } else {\n        OP_CHECK_DTYPE_NOT_MATCH(self, out->GetDataType(), return false);\n    }\n\n    return true;\n}"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_1_param_matrix",
+                "dmat"
+              ]
+            ]
+          },
+          "evidence_id": "ev_section_021"
+        }
+      ],
+      "note": "以下为section型标准结构"
+    },
+    {
+      "anchor_id": "anchor_section_022",
+      "anchor_information": {
+        "type": "section",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+          "start_line": "91",
+          "end_line": "107",
+          "token_hash": "{\n    // 检查self的数据类型是否在支持列表内，out类型随动检查\n    auto supportList = GetDtypeSupportList();\n    OP_CHECK_DTYPE_NOT_SUPPORT(self, supportList, return false);\n\n    // 当self不为复数时，self和out数据类型必须一样\n    auto selfDtype = self->GetDataType();\n    if (IsComplexType(selfDtype)) {\n        auto promoteOutDtype = COMPLEX_IN_AND_OUT_DTYPE_MAP.find(selfDtype);\n        if (promoteOutDtype != COMPLEX_IN_AND_OUT_DTYPE_MAP.end()) {\n            OP_CHECK_DTYPE_NOT_MATCH(out, promoteOutDtype->second, return false);\n        }\n    } else {\n        OP_CHECK_DTYPE_NOT_MATCH(self, out->GetDataType(), return false);\n    }\n\n    return true;\n}"
+        },
+        "level2": {
+          "token_hash": "{\n    // 检查self的数据类型是否在支持列表内，out类型随动检查\n    auto supportList = GetDtypeSupportList();\n    OP_CHECK_DTYPE_NOT_SUPPORT(self, supportList, return false);\n\n    // 当self不为复数时，self和out数据类型必须一样\n    auto selfDtype = self->GetDataType();\n    if (IsComplexType(selfDtype)) {\n        auto promoteOutDtype = COMPLEX_IN_AND_OUT_DTYPE_MAP.find(selfDtype);\n        if (promoteOutDtype != COMPLEX_IN_AND_OUT_DTYPE_MAP.end()) {\n            OP_CHECK_DTYPE_NOT_MATCH(out, promoteOutDtype->second, return false);\n        }\n    } else {\n        OP_CHECK_DTYPE_NOT_MATCH(self, out->GetDataType(), return false);\n    }\n\n    return true;\n}"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+            "content": "{\n    // 检查self的数据类型是否在支持列表内，out类型随动检查\n    auto supportList = GetDtypeSupportList();\n    OP_CHECK_DTYPE_NOT_SUPPORT(self, supportList, return false);\n\n    // 当self不为复数时，self和out数据类型必须一样\n    auto selfDtype = self->GetDataType();\n    if (IsComplexType(selfDtype)) {\n        auto promoteOutDtype = COMPLEX_IN_AND_OUT_DTYPE_MAP.find(selfDtype);\n        if (promoteOutDtype != COMPLEX_IN_AND_OUT_DTYPE_MAP.end()) {\n            OP_CHECK_DTYPE_NOT_MATCH(out, promoteOutDtype->second, return false);\n        }\n    } else {\n        OP_CHECK_DTYPE_NOT_MATCH(self, out->GetDataType(), return false);\n    }\n\n    return true;\n}"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_2_param_matrix",
+                "dmat"
+              ]
+            ]
+          },
+          "evidence_id": "ev_section_022"
+        }
+      ],
+      "note": "以下为section型标准结构"
+    },
+    {
+      "anchor_id": "anchor_section_023",
+      "anchor_information": {
+        "type": "section",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+          "start_line": "113",
+          "end_line": "117",
+          "token_hash": "{\n        OP_LOGE(\n            ACLNN_ERR_PARAM_INVALID, \"Format of input and output should be equal. self [%s], out [%s].\",\n            ToString(self->GetStorageShape()).GetString(), ToString(out->GetStorageShape()).GetString());\n        return false;\n    }"
+        },
+        "level2": {
+          "token_hash": "{\n        OP_LOGE(\n            ACLNN_ERR_PARAM_INVALID, \"Format of input and output should be equal. self [%s], out [%s].\",\n            ToString(self->GetStorageShape()).GetString(), ToString(out->GetStorageShape()).GetString());\n        return false;\n    }"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+            "content": "{\n        OP_LOGE(\n            ACLNN_ERR_PARAM_INVALID, \"Format of input and output should be equal. self [%s], out [%s].\",\n            ToString(self->GetStorageShape()).GetString(), ToString(out->GetStorageShape()).GetString());\n        return false;\n    }"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_1_param_matrix",
+                "dmat"
+              ]
+            ]
+          },
+          "evidence_id": "ev_section_023"
+        }
+      ],
+      "note": "以下为section型标准结构"
+    },
+    {
+      "anchor_id": "anchor_section_024",
+      "anchor_information": {
+        "type": "section",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+          "start_line": "113",
+          "end_line": "117",
+          "token_hash": "{\n        OP_LOGE(\n            ACLNN_ERR_PARAM_INVALID, \"Format of input and output should be equal. self [%s], out [%s].\",\n            ToString(self->GetStorageShape()).GetString(), ToString(out->GetStorageShape()).GetString());\n        return false;\n    }"
+        },
+        "level2": {
+          "token_hash": "{\n        OP_LOGE(\n            ACLNN_ERR_PARAM_INVALID, \"Format of input and output should be equal. self [%s], out [%s].\",\n            ToString(self->GetStorageShape()).GetString(), ToString(out->GetStorageShape()).GetString());\n        return false;\n    }"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+            "content": "{\n        OP_LOGE(\n            ACLNN_ERR_PARAM_INVALID, \"Format of input and output should be equal. self [%s], out [%s].\",\n            ToString(self->GetStorageShape()).GetString(), ToString(out->GetStorageShape()).GetString());\n        return false;\n    }"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_2_param_matrix",
+                "dmat"
+              ]
+            ]
+          },
+          "evidence_id": "ev_section_024"
+        }
+      ],
+      "note": "以下为section型标准结构"
+    },
+    {
+      "anchor_id": "anchor_section_025",
+      "anchor_information": {
+        "type": "section",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+          "start_line": "98",
+          "end_line": "113",
+          "token_hash": "    if (IsComplexType(selfDtype)) {\n        auto promoteOutDtype = COMPLEX_IN_AND_OUT_DTYPE_MAP.find(selfDtype);\n        if (promoteOutDtype != COMPLEX_IN_AND_OUT_DTYPE_MAP.end()) {\n            OP_CHECK_DTYPE_NOT_MATCH(out, promoteOutDtype->second, return false);\n        }\n    } else {\n        OP_CHECK_DTYPE_NOT_MATCH(self, out->GetDataType(), return false);\n    }\n\n    return true;\n}\n\nstatic bool CheckFormat(const aclTensor* self, const aclTensor* out)\n{\n    // 输入输出的格式需要一致\n    if (self->GetStorageFormat() != out->GetStorageFormat()) {"
+        },
+        "level2": {
+          "token_hash": "    if (IsComplexType(selfDtype)) {\n        auto promoteOutDtype = COMPLEX_IN_AND_OUT_DTYPE_MAP.find(selfDtype);\n        if (promoteOutDtype != COMPLEX_IN_AND_OUT_DTYPE_MAP.end()) {\n            OP_CHECK_DTYPE_NOT_MATCH(out, promoteOutDtype->second, return false);\n        }\n    } else {\n        OP_CHECK_DTYPE_NOT_MATCH(self, out->GetDataType(), return false);\n    }\n\n    return true;\n}\n\nstatic bool CheckFormat(const aclTensor* self, const aclTensor* out)\n{\n    // 输入输出的格式需要一致\n    if (self->GetStorageFormat() != out->GetStorageFormat()) {"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+            "content": "    if (IsComplexType(selfDtype)) {\n        auto promoteOutDtype = COMPLEX_IN_AND_OUT_DTYPE_MAP.find(selfDtype);\n        if (promoteOutDtype != COMPLEX_IN_AND_OUT_DTYPE_MAP.end()) {\n            OP_CHECK_DTYPE_NOT_MATCH(out, promoteOutDtype->second, return false);\n        }\n    } else {\n        OP_CHECK_DTYPE_NOT_MATCH(self, out->GetDataType(), return false);\n    }\n\n    return true;\n}\n\nstatic bool CheckFormat(const aclTensor* self, const aclTensor* out)\n{\n    // 输入输出的格式需要一致\n    if (self->GetStorageFormat() != out->GetStorageFormat()) {"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_1_param_matrix",
+                "shape"
+              ]
+            ]
+          },
+          "evidence_id": "ev_section_025"
+        }
+      ],
+      "note": "以下为section型标准结构"
+    },
+    {
+      "anchor_id": "anchor_section_026",
+      "anchor_information": {
+        "type": "section",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+          "start_line": "98",
+          "end_line": "113",
+          "token_hash": "    if (IsComplexType(selfDtype)) {\n        auto promoteOutDtype = COMPLEX_IN_AND_OUT_DTYPE_MAP.find(selfDtype);\n        if (promoteOutDtype != COMPLEX_IN_AND_OUT_DTYPE_MAP.end()) {\n            OP_CHECK_DTYPE_NOT_MATCH(out, promoteOutDtype->second, return false);\n        }\n    } else {\n        OP_CHECK_DTYPE_NOT_MATCH(self, out->GetDataType(), return false);\n    }\n\n    return true;\n}\n\nstatic bool CheckFormat(const aclTensor* self, const aclTensor* out)\n{\n    // 输入输出的格式需要一致\n    if (self->GetStorageFormat() != out->GetStorageFormat()) {"
+        },
+        "level2": {
+          "token_hash": "    if (IsComplexType(selfDtype)) {\n        auto promoteOutDtype = COMPLEX_IN_AND_OUT_DTYPE_MAP.find(selfDtype);\n        if (promoteOutDtype != COMPLEX_IN_AND_OUT_DTYPE_MAP.end()) {\n            OP_CHECK_DTYPE_NOT_MATCH(out, promoteOutDtype->second, return false);\n        }\n    } else {\n        OP_CHECK_DTYPE_NOT_MATCH(self, out->GetDataType(), return false);\n    }\n\n    return true;\n}\n\nstatic bool CheckFormat(const aclTensor* self, const aclTensor* out)\n{\n    // 输入输出的格式需要一致\n    if (self->GetStorageFormat() != out->GetStorageFormat()) {"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+            "content": "    if (IsComplexType(selfDtype)) {\n        auto promoteOutDtype = COMPLEX_IN_AND_OUT_DTYPE_MAP.find(selfDtype);\n        if (promoteOutDtype != COMPLEX_IN_AND_OUT_DTYPE_MAP.end()) {\n            OP_CHECK_DTYPE_NOT_MATCH(out, promoteOutDtype->second, return false);\n        }\n    } else {\n        OP_CHECK_DTYPE_NOT_MATCH(self, out->GetDataType(), return false);\n    }\n\n    return true;\n}\n\nstatic bool CheckFormat(const aclTensor* self, const aclTensor* out)\n{\n    // 输入输出的格式需要一致\n    if (self->GetStorageFormat() != out->GetStorageFormat()) {"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_2_param_matrix",
+                "shape"
+              ]
+            ]
+          },
+          "evidence_id": "ev_section_026"
+        }
+      ],
+      "note": "以下为section型标准结构"
+    },
+    {
+      "anchor_id": "anchor_section_027",
+      "anchor_information": {
+        "type": "section",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+          "start_line": "115",
+          "end_line": "130",
+          "token_hash": "            ACLNN_ERR_PARAM_INVALID, \"Format of input and output should be equal. self [%s], out [%s].\",\n            ToString(self->GetStorageShape()).GetString(), ToString(out->GetStorageShape()).GetString());\n        return false;\n    }\n\n    // self格式不能是私有格式\n    if (IsPrivateFormat(self->GetStorageFormat())) {\n        OP_LOGE(ACLNN_ERR_PARAM_INVALID, \"Format only support ND、NCHW、NHWC、HWCN、NDHWC、NCDHW.\");\n        return false;\n    }\n\n    return true;\n}\n\nstatic bool CheckShape(const aclTensor* self, const aclTensor* out)\n{"
+        },
+        "level2": {
+          "token_hash": "            ACLNN_ERR_PARAM_INVALID, \"Format of input and output should be equal. self [%s], out [%s].\",\n            ToString(self->GetStorageShape()).GetString(), ToString(out->GetStorageShape()).GetString());\n        return false;\n    }\n\n    // self格式不能是私有格式\n    if (IsPrivateFormat(self->GetStorageFormat())) {\n        OP_LOGE(ACLNN_ERR_PARAM_INVALID, \"Format only support ND、NCHW、NHWC、HWCN、NDHWC、NCDHW.\");\n        return false;\n    }\n\n    return true;\n}\n\nstatic bool CheckShape(const aclTensor* self, const aclTensor* out)\n{"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+            "content": "            ACLNN_ERR_PARAM_INVALID, \"Format of input and output should be equal. self [%s], out [%s].\",\n            ToString(self->GetStorageShape()).GetString(), ToString(out->GetStorageShape()).GetString());\n        return false;\n    }\n\n    // self格式不能是私有格式\n    if (IsPrivateFormat(self->GetStorageFormat())) {\n        OP_LOGE(ACLNN_ERR_PARAM_INVALID, \"Format only support ND、NCHW、NHWC、HWCN、NDHWC、NCDHW.\");\n        return false;\n    }\n\n    return true;\n}\n\nstatic bool CheckShape(const aclTensor* self, const aclTensor* out)\n{"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_1_param_matrix",
+                "shape"
+              ]
+            ]
+          },
+          "evidence_id": "ev_section_027"
+        }
+      ],
+      "note": "以下为section型标准结构"
+    },
+    {
+      "anchor_id": "anchor_section_028",
+      "anchor_information": {
+        "type": "section",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+          "start_line": "115",
+          "end_line": "130",
+          "token_hash": "            ACLNN_ERR_PARAM_INVALID, \"Format of input and output should be equal. self [%s], out [%s].\",\n            ToString(self->GetStorageShape()).GetString(), ToString(out->GetStorageShape()).GetString());\n        return false;\n    }\n\n    // self格式不能是私有格式\n    if (IsPrivateFormat(self->GetStorageFormat())) {\n        OP_LOGE(ACLNN_ERR_PARAM_INVALID, \"Format only support ND、NCHW、NHWC、HWCN、NDHWC、NCDHW.\");\n        return false;\n    }\n\n    return true;\n}\n\nstatic bool CheckShape(const aclTensor* self, const aclTensor* out)\n{"
+        },
+        "level2": {
+          "token_hash": "            ACLNN_ERR_PARAM_INVALID, \"Format of input and output should be equal. self [%s], out [%s].\",\n            ToString(self->GetStorageShape()).GetString(), ToString(out->GetStorageShape()).GetString());\n        return false;\n    }\n\n    // self格式不能是私有格式\n    if (IsPrivateFormat(self->GetStorageFormat())) {\n        OP_LOGE(ACLNN_ERR_PARAM_INVALID, \"Format only support ND、NCHW、NHWC、HWCN、NDHWC、NCDHW.\");\n        return false;\n    }\n\n    return true;\n}\n\nstatic bool CheckShape(const aclTensor* self, const aclTensor* out)\n{"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+            "content": "            ACLNN_ERR_PARAM_INVALID, \"Format of input and output should be equal. self [%s], out [%s].\",\n            ToString(self->GetStorageShape()).GetString(), ToString(out->GetStorageShape()).GetString());\n        return false;\n    }\n\n    // self格式不能是私有格式\n    if (IsPrivateFormat(self->GetStorageFormat())) {\n        OP_LOGE(ACLNN_ERR_PARAM_INVALID, \"Format only support ND、NCHW、NHWC、HWCN、NDHWC、NCDHW.\");\n        return false;\n    }\n\n    return true;\n}\n\nstatic bool CheckShape(const aclTensor* self, const aclTensor* out)\n{"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_2_param_matrix",
+                "shape"
+              ]
+            ]
+          },
+          "evidence_id": "ev_section_028"
+        }
+      ],
+      "note": "以下为section型标准结构"
+    },
+    {
+      "anchor_id": "anchor_section_029",
+      "anchor_information": {
+        "type": "section",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+          "start_line": "111",
+          "end_line": "126",
+          "token_hash": "{\n    // 输入输出的格式需要一致\n    if (self->GetStorageFormat() != out->GetStorageFormat()) {\n        OP_LOGE(\n            ACLNN_ERR_PARAM_INVALID, \"Format of input and output should be equal. self [%s], out [%s].\",\n            ToString(self->GetStorageShape()).GetString(), ToString(out->GetStorageShape()).GetString());\n        return false;\n    }\n\n    // self格式不能是私有格式\n    if (IsPrivateFormat(self->GetStorageFormat())) {\n        OP_LOGE(ACLNN_ERR_PARAM_INVALID, \"Format only support ND、NCHW、NHWC、HWCN、NDHWC、NCDHW.\");\n        return false;\n    }\n\n    return true;\n}"
+        },
+        "level2": {
+          "token_hash": "{\n    // 输入输出的格式需要一致\n    if (self->GetStorageFormat() != out->GetStorageFormat()) {\n        OP_LOGE(\n            ACLNN_ERR_PARAM_INVALID, \"Format of input and output should be equal. self [%s], out [%s].\",\n            ToString(self->GetStorageShape()).GetString(), ToString(out->GetStorageShape()).GetString());\n        return false;\n    }\n\n    // self格式不能是私有格式\n    if (IsPrivateFormat(self->GetStorageFormat())) {\n        OP_LOGE(ACLNN_ERR_PARAM_INVALID, \"Format only support ND、NCHW、NHWC、HWCN、NDHWC、NCDHW.\");\n        return false;\n    }\n\n    return true;\n}"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+            "content": "{\n    // 输入输出的格式需要一致\n    if (self->GetStorageFormat() != out->GetStorageFormat()) {\n        OP_LOGE(\n            ACLNN_ERR_PARAM_INVALID, \"Format of input and output should be equal. self [%s], out [%s].\",\n            ToString(self->GetStorageShape()).GetString(), ToString(out->GetStorageShape()).GetString());\n        return false;\n    }\n\n    // self格式不能是私有格式\n    if (IsPrivateFormat(self->GetStorageFormat())) {\n        OP_LOGE(ACLNN_ERR_PARAM_INVALID, \"Format only support ND、NCHW、NHWC、HWCN、NDHWC、NCDHW.\");\n        return false;\n    }\n\n    return true;\n}"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_1_errorcode",
+                "errorcode"
+              ],
+              [
+                "sub_function_2_errorcode",
+                "errorcode"
+              ]
+            ]
+          },
+          "evidence_id": "ev_section_029"
+        }
+      ],
+      "note": "以下为section型标准结构"
+    },
+    {
+      "anchor_id": "anchor_section_030",
+      "anchor_information": {
+        "type": "section",
+        "level1": {
+          "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+          "start_line": "140",
+          "end_line": "155",
+          "token_hash": "static aclnnStatus CheckParams(const aclTensor* self, const aclTensor* out)\n{\n    // 1. 检查参数是否为空指针\n    CHECK_RET(CheckNotNull(self, out), ACLNN_ERR_PARAM_NULLPTR);\n\n    // 2. 检查输入的数据类型是否在API支持的数据类型范围内，需要根据api定义校验\n    CHECK_RET(CheckDtypeValid(self, out), ACLNN_ERR_PARAM_INVALID);\n\n    // 3. 检查数据格式是否支持\n    CHECK_RET(CheckFormat(self, out), ACLNN_ERR_PARAM_INVALID);\n\n    // 4. 检查shape是否满足约束\n    CHECK_RET(CheckShape(self, out), ACLNN_ERR_PARAM_INVALID);\n\n    return ACLNN_SUCCESS;\n}"
+        },
+        "level2": {
+          "token_hash": "static aclnnStatus CheckParams(const aclTensor* self, const aclTensor* out)\n{\n    // 1. 检查参数是否为空指针\n    CHECK_RET(CheckNotNull(self, out), ACLNN_ERR_PARAM_NULLPTR);\n\n    // 2. 检查输入的数据类型是否在API支持的数据类型范围内，需要根据api定义校验\n    CHECK_RET(CheckDtypeValid(self, out), ACLNN_ERR_PARAM_INVALID);\n\n    // 3. 检查数据格式是否支持\n    CHECK_RET(CheckFormat(self, out), ACLNN_ERR_PARAM_INVALID);\n\n    // 4. 检查shape是否满足约束\n    CHECK_RET(CheckShape(self, out), ACLNN_ERR_PARAM_INVALID);\n\n    return ACLNN_SUCCESS;\n}"
+        }
+      },
+      "evidence": [
+        {
+          "evidence_information": {
+            "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.cpp",
+            "content": "static aclnnStatus CheckParams(const aclTensor* self, const aclTensor* out)\n{\n    // 1. 检查参数是否为空指针\n    CHECK_RET(CheckNotNull(self, out), ACLNN_ERR_PARAM_NULLPTR);\n\n    // 2. 检查输入的数据类型是否在API支持的数据类型范围内，需要根据api定义校验\n    CHECK_RET(CheckDtypeValid(self, out), ACLNN_ERR_PARAM_INVALID);\n\n    // 3. 检查数据格式是否支持\n    CHECK_RET(CheckFormat(self, out), ACLNN_ERR_PARAM_INVALID);\n\n    // 4. 检查shape是否满足约束\n    CHECK_RET(CheckShape(self, out), ACLNN_ERR_PARAM_INVALID);\n\n    return ACLNN_SUCCESS;\n}"
+          },
+          "gene_rule": {
+            "deter": "",
+            "target": [
+              [
+                "sub_function_1_errorcode",
+                "errorcode"
+              ],
+              [
+                "sub_function_2_errorcode",
+                "errorcode"
+              ]
+            ]
+          },
+          "evidence_id": "ev_section_030"
+        }
+      ],
+      "note": "以下为section型标准结构"
+    }
+  ]
+}

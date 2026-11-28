@@ -147,8 +147,15 @@ def _fallback_doc_text(api_name: str) -> str | None:
     )
 
 
-def resolve_docs_path(explicit_path: str | None) -> str:
-    """定位 _op_plugin_docs.py 的位置。"""
+_OFFLINE_LIST_HINT = (
+    "[!] 无 torch_npu 环境且未指定 --docs-path，已降级到 _FALLBACK_DOCS 兜底集。\n"
+    "    完整算子目录请查算子总表：references/torch_npu_API/torch_npu_list.md\n"
+    "    （该表为版本快照，可能与实际安装版本 drift，签名以本地 docstring 或在线文档为准）"
+)
+
+
+def resolve_docs_path(explicit_path: str | None) -> str | None:
+    """定位 _op_plugin_docs.py。无 torch_npu 且无显式路径时返回 None，由调用方降级。"""
     if explicit_path:
         if not os.path.isfile(explicit_path):
             raise QueryError(f"指定的 --docs-path 不存在: {explicit_path}")
@@ -156,11 +163,8 @@ def resolve_docs_path(explicit_path: str | None) -> str:
 
     try:
         import torch_npu
-    except ImportError as exc:
-        raise QueryError(
-            "torch_npu 未安装。请在装有 torch_npu 的 NPU 环境中运行，"
-            "或用 --docs-path 显式指定 _op_plugin_docs.py 路径。"
-        ) from exc
+    except ImportError:
+        return None
 
     candidate = os.path.join(torch_npu.__path__[0], "_op_plugin_docs.py")
     if not os.path.isfile(candidate):
@@ -171,15 +175,18 @@ def resolve_docs_path(explicit_path: str | None) -> str:
     return candidate
 
 
-def parse_doc_entries(docs_path: str) -> list[tuple[str, str]]:
+def parse_doc_entries(docs_path: str | None) -> list[tuple[str, str]]:
     """解析 _op_plugin_docs.py，并合并 fallback 条目。
 
     优先级：_op_plugin_docs.py 的真实 docstring > _FALLBACK_DOCS。
     若 op-plugin 后续补齐 docstring，会自动覆盖 fallback 条目。
+    docs_path 为 None（无环境降级）时只返回 _FALLBACK_DOCS。
     """
-    with open(docs_path, encoding="utf-8") as f:
-        content = f.read()
-    entries = DOC_ENTRY_PATTERN.findall(content)
+    entries: list[tuple[str, str]] = []
+    if docs_path is not None:
+        with open(docs_path, encoding="utf-8") as f:
+            content = f.read()
+        entries = DOC_ENTRY_PATTERN.findall(content)
 
     existing = {name for name, _ in entries}
     for name in _FALLBACK_DOCS:
@@ -188,7 +195,7 @@ def parse_doc_entries(docs_path: str) -> list[tuple[str, str]]:
     return entries
 
 
-def cmd_show(api_name: str, docs_path: str) -> None:
+def cmd_show(api_name: str, docs_path: str | None) -> None:
     """单 API 详情。
 
     查找优先级：
@@ -227,11 +234,17 @@ def cmd_show(api_name: str, docs_path: str) -> None:
             f"建议补充到本脚本的 _FALLBACK_DOCS 字典。"
         )
 
+    if docs_path is None:
+        raise QueryError(
+            f"未找到 API: {api_name}\n{_OFFLINE_LIST_HINT}"
+        )
     raise QueryError(f"未找到 API: {api_name}")
 
 
-def cmd_search(keyword: str, max_results: int, docs_path: str) -> None:
+def cmd_search(keyword: str, max_results: int, docs_path: str | None) -> None:
     """反向搜索：关键词匹配 API 名或文档内容。"""
+    if docs_path is None:
+        _emit(_OFFLINE_LIST_HINT, file=sys.stderr)
     entries = parse_doc_entries(docs_path)
     keyword_lower = keyword.lower()
 
@@ -261,8 +274,10 @@ def cmd_search(keyword: str, max_results: int, docs_path: str) -> None:
         _emit()
 
 
-def cmd_list(prefix: str | None, docs_path: str) -> None:
+def cmd_list(prefix: str | None, docs_path: str | None) -> None:
     """枚举所有算子名。"""
+    if docs_path is None:
+        _emit(_OFFLINE_LIST_HINT, file=sys.stderr)
     entries = parse_doc_entries(docs_path)
     names = sorted({name for name, _ in entries})
 

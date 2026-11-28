@@ -1,0 +1,47 @@
+strategy_id: P72
+description: Matmul 多核切 K 适用性检查 — 算子 M/N 较小无法切多核，当前未沿 K 轴切分并行
+strategy_meta:
+  id: "P72"
+  slug: "P72_matmul_split_k"
+  title: "P72: Matmul 多核切 K (Matmul Multi-Core Split-K)"
+  bottlenecks: [tiling_imbalance]
+  op_families: [matmul]
+  conflicts_with: []
+  synergizes_with: [P71]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p72_matmul_split_k.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p72_matmul_split_k.md"
+  playbook_slug: "P72_matmul_split_k"
+checks:
+  - id: has_small_mn
+    type: grep_count
+    pattern: "M|N|m|n|small.*M|small.*N|singleCore"
+    files: [kernel, header]
+    expected: ">= 1"
+    fail_msg: "算子 M/N 足够大 → P72 不适用"
+
+  - id: has_matmul_reduce
+    type: grep_count
+    pattern: "Matmul|matmul|K|k|split.*K|splitK"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "算子无 Matmul → P72 收益低"
+
+  - id: no_splitk_yet
+    type: grep_count
+    pattern: "EnableMultiCoreSplitK|SplitK|split.*k|AtomicAdd.*matmul"
+    files: [kernel]
+    expected: "== 0"
+    fail_msg: "算子已切 K → P72 已应用"
+
+  - id: not_pure_validation
+    type: grep_count
+    pattern: "OP_CHECK|shape.*check|dim.*check|validation"
+    files: [kernel, header]
+    expected: "<= 3"
+    fail_msg: "纯 Host 侧 shape 校验 → P72 解决的是 K 轴并行"

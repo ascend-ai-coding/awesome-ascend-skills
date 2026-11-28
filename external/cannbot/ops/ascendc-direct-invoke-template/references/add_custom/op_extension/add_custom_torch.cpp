@@ -8,7 +8,7 @@
  * See LICENSE in the software repository for the full text of the License.
  */
 
-// ⚠️ Stream 同步反模式（详见 torch-ascendc-op-extension SKILL.md「Stream 同步模式」和 references/anti_patterns.md）：
+// ⚠️ Stream 同步反模式（详见 torch-ascendc-op-extension 的 routes/direct-invoke.md「Stream 同步模式」和 references/direct-invoke/anti_patterns.md）：
 //   ❌ stream(false) + 函数调用 → 乱序：不清 queue，kernel 先于之前操作执行
 //   ❌ lambda 内传 NPUStream + OpCommand → 死锁：queue 等 lambda，lambda 等 queue 空
 //   ❌ zeros_like 创建输出 → 乱序：zeros_like 入 queue 但 kernel 不入 queue，用 empty_like

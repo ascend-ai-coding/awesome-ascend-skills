@@ -1,0 +1,19 @@
+strategy_id: P146
+description: "P146: 910B2C 非对齐 DMA 与标量通道加固套件"
+
+strategy_meta:
+  id: "P146"
+  slug: "P146_910b2c_alignment_scalar_hardening"
+  title: "P146: 910B2C 非对齐 DMA 与标量通道加固套件"
+  bottlenecks: [mte2_stall, scalar_loading, ub_memory_pressure]
+  op_families: [attention, elementwise, normalization, broadcast_mask]
+  conflicts_with: []
+  synergizes_with: [P144, P145, P10, P66]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: false
+  has_playbook: false
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p146_910b2c_alignment_scalar_hardening.md"
+  quantified_gain: [{"shape": "64_TripletAttention 50-case（910B2C，小 H×W 7×11~21×23 全覆盖）", "baseline_us": 4966.7, "optimized_us": 380.9, "speedup": 1.28, "source": "ops-perf-evolution output/64_TripletAttention_v2 round_3/parallel_2（Wpad=RoundUp8、Hpad8 列读、2-block 读、广播 8× 缓冲）"}]

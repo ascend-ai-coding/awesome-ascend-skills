@@ -1,0 +1,5 @@
+{"category":"Host Info","cpu physical count":2,"cpu logical count":88,"memory total size(MB)":515563.11,"disk total size(GB)":5864.53}
+{"category":"Device Info","npu count":1,"chip info":"Ascend950PR_9599 V100","arch info":"3510"}
+{"category":"CPU Information","control cpu count":1,"ai cpu count":6,"ai cpu frequency(MHZ)":1500}
+{"category":"AI Core Information","ai core count":36,"ai cube count":36,"ai vector count":72,"ai cube frequency(MHZ)":1650,"ai vector frequency(MHZ)":1650}
+{"category":"Memory Information","hbm total(MB)":131072,"hbm used(MB)":62061.89,"hbm frequency(MHZ)":1500}

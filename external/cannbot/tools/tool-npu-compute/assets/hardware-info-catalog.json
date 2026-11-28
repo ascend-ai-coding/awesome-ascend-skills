@@ -1,0 +1,277 @@
+{
+  "schema_version": 1,
+  "output_file": "HardwareInfo.jsonl",
+  "format": {
+    "container": "JSON Lines",
+    "record_order": [
+      "Host Info",
+      "Device Info",
+      "CPU Information",
+      "AI Core Information",
+      "Memory Information"
+    ],
+    "description": "每行是一个独立 JSON 对象，category 标识类别。"
+  },
+  "categories": [
+    {
+      "name": "Host Info",
+      "description": "采集主机的 CPU、内存和采集目录所在文件系统信息。",
+      "fields": [
+        {
+          "name": "category",
+          "json_type": "string",
+          "meaning": "主机信息类别标识。",
+          "unit": "无",
+          "source": "序列化时固定写入 Host Info。",
+          "variability": "固定标识",
+          "analysis": "用于识别主机信息行。",
+          "notes": "不是性能指标。"
+        },
+        {
+          "name": "cpu physical count",
+          "json_type": "integer",
+          "meaning": "在线 CPU 对应的物理 CPU 封装数量。",
+          "unit": "个",
+          "source": "读取在线 CPU 列表并对 physical_package_id 去重。",
+          "variability": "主机配置，通常稳定",
+          "analysis": "用于比较主机 CPU 封装规模。",
+          "notes": "表示 Socket 或 Package 数量，不表示物理 Core 数量。"
+        },
+        {
+          "name": "cpu logical count",
+          "json_type": "integer",
+          "meaning": "主机配置的逻辑 CPU 数量。",
+          "unit": "个",
+          "source": "sysconf(_SC_NPROCESSORS_CONF)。",
+          "variability": "主机配置，通常稳定",
+          "analysis": "用于比较主机逻辑 CPU 规模。",
+          "notes": "不表示目标程序使用的线程数。"
+        },
+        {
+          "name": "memory total size(MB)",
+          "json_type": "number",
+          "meaning": "主机物理内存总容量。",
+          "unit": "MB",
+          "source": "sysinfo 返回的总内存字节数除以 1024^2。",
+          "variability": "主机配置，通常稳定",
+          "analysis": "用于确认主机内存规模。",
+          "notes": "不表示采集时空闲量或目标程序占用量。"
+        },
+        {
+          "name": "disk total size(GB)",
+          "json_type": "number",
+          "meaning": "采集目录所在文件系统的总容量。",
+          "unit": "GB",
+          "source": "statvfs 返回的文件系统总块数乘块大小后除以 1024^3。",
+          "variability": "文件系统配置，通常稳定",
+          "analysis": "用于确认采集数据所在文件系统的容量环境。",
+          "notes": "不表示所有磁盘容量，也不表示剩余空间。"
+        }
+      ]
+    },
+    {
+      "name": "Device Info",
+      "description": "Runtime 可见设备数量、SoC 标识和 NPU 架构信息。",
+      "fields": [
+        {
+          "name": "category",
+          "json_type": "string",
+          "meaning": "NPU 设备信息类别标识。",
+          "unit": "无",
+          "source": "序列化时固定写入 Device Info。",
+          "variability": "固定标识",
+          "analysis": "用于识别设备信息行。",
+          "notes": "不是性能指标。"
+        },
+        {
+          "name": "npu count",
+          "json_type": "integer",
+          "meaning": "Runtime 当前可见的 NPU 设备数量。",
+          "unit": "个",
+          "source": "aclrtGetDeviceCount。",
+          "variability": "运行环境配置，通常稳定",
+          "analysis": "用于确认采集环境可见的设备规模。",
+          "notes": "不表示本次 Kernel 使用的设备数量。"
+        },
+        {
+          "name": "chip info",
+          "json_type": "string",
+          "meaning": "SoC 名称和芯片版本组成的设备型号信息。",
+          "unit": "无",
+          "source": "aclrtGetSocName 的结果与非空芯片版本以空格连接。",
+          "variability": "设备型号，通常稳定",
+          "analysis": "用于判断不同采集是否来自同类 SoC。",
+          "notes": "字段可能因底层查询失败而为空或缺少版本部分。"
+        },
+        {
+          "name": "arch info",
+          "json_type": "string",
+          "meaning": "NPU 架构属性的十进制字符串。",
+          "unit": "无",
+          "source": "Runtime 的 NPU 架构设备属性转换为字符串。",
+          "variability": "设备架构，通常稳定",
+          "analysis": "用于区分 NPU 架构代际。",
+          "notes": "即使内容仅含数字，JSON 类型仍为 string。"
+        }
+      ]
+    },
+    {
+      "name": "CPU Information",
+      "description": "设备控制 CPU 和 AI CPU 的资源信息。",
+      "fields": [
+        {
+          "name": "category",
+          "json_type": "string",
+          "meaning": "设备侧 CPU 信息类别标识。",
+          "unit": "无",
+          "source": "序列化时固定写入 CPU Information。",
+          "variability": "固定标识",
+          "analysis": "用于识别设备侧 CPU 信息行。",
+          "notes": "不是性能指标。"
+        },
+        {
+          "name": "control cpu count",
+          "json_type": "integer",
+          "meaning": "设备 Control CPU Core 数量。",
+          "unit": "个",
+          "source": "设备接口返回的 Control CPU Core 数量。",
+          "variability": "设备配置，通常稳定",
+          "analysis": "用于确认设备控制侧 CPU 资源规模。",
+          "notes": "不表示主机 CPU 数量。"
+        },
+        {
+          "name": "ai cpu count",
+          "json_type": "integer",
+          "meaning": "设备 AI CPU Core 数量。",
+          "unit": "个",
+          "source": "Runtime 返回的 AI CPU Core 数量设备属性。",
+          "variability": "设备配置，通常稳定",
+          "analysis": "用于确认设备 AI CPU 资源规模。",
+          "notes": "不表示 AI Core、Cube Core 或 Vector Core 数量。"
+        },
+        {
+          "name": "ai cpu frequency(MHZ)",
+          "json_type": "integer",
+          "meaning": "采集时 AI CPU 当前频率。",
+          "unit": "MHz",
+          "source": "设备管理接口返回的 AI CPU 当前频率。",
+          "variability": "运行状态，可能变化",
+          "analysis": "用于记录和比较 AI CPU 频率环境。",
+          "notes": "不直接用于 AIC/AIV PMU 时长计算。"
+        }
+      ]
+    },
+    {
+      "name": "AI Core Information",
+      "description": "AI Core、Cube Core、Vector Core 数量和频率信息。",
+      "fields": [
+        {
+          "name": "category",
+          "json_type": "string",
+          "meaning": "设备计算 Core 信息类别标识。",
+          "unit": "无",
+          "source": "序列化时固定写入 AI Core Information。",
+          "variability": "固定标识",
+          "analysis": "用于识别设备计算 Core 信息行。",
+          "notes": "不是性能指标。"
+        },
+        {
+          "name": "ai core count",
+          "json_type": "integer",
+          "meaning": "Runtime 报告的 AI Core 数量。",
+          "unit": "个",
+          "source": "Runtime 的 AI Core 数量设备属性。",
+          "variability": "设备配置，通常稳定",
+          "analysis": "用于比较设备总体 AI Core 资源规模。",
+          "notes": "按接口原值解释，不根据 Cube 和 Vector 数量自行推导。"
+        },
+        {
+          "name": "ai cube count",
+          "json_type": "integer",
+          "meaning": "Runtime 报告的 Cube Core 数量。",
+          "unit": "个",
+          "source": "Runtime 的 Cube Core 数量设备属性。",
+          "variability": "设备配置，通常稳定",
+          "analysis": "用于比较 Cube 计算资源规模。",
+          "notes": "字段读取失败时可能保留默认值 0。"
+        },
+        {
+          "name": "ai vector count",
+          "json_type": "integer",
+          "meaning": "Runtime 报告的 Vector Core 数量。",
+          "unit": "个",
+          "source": "Runtime 的 Vector Core 数量设备属性。",
+          "variability": "设备配置，通常稳定",
+          "analysis": "用于比较 Vector 计算资源规模。",
+          "notes": "字段读取失败时可能保留默认值 0。"
+        },
+        {
+          "name": "ai cube frequency(MHZ)",
+          "json_type": "integer",
+          "meaning": "采集时使用的 Cube Core 频率信息。",
+          "unit": "MHz",
+          "source": "依次读取当前频率、固定频率，均失败时使用 1650。",
+          "variability": "运行状态或回退值",
+          "analysis": "用于记录和比较 Cube Core 频率环境。",
+          "notes": "仅凭该字段不能断言 CSV 公式实际使用了完全相同的配置值。"
+        },
+        {
+          "name": "ai vector frequency(MHZ)",
+          "json_type": "integer",
+          "meaning": "采集时使用的 Vector Core 频率信息。",
+          "unit": "MHz",
+          "source": "依次读取当前频率、固定频率，均失败时使用 1650。",
+          "variability": "运行状态或回退值",
+          "analysis": "用于记录和比较 Vector Core 频率环境。",
+          "notes": "仅凭该字段不能断言 CSV 公式实际使用了完全相同的配置值。"
+        }
+      ]
+    },
+    {
+      "name": "Memory Information",
+      "description": "设备 HBM 容量、使用量和频率信息。",
+      "fields": [
+        {
+          "name": "category",
+          "json_type": "string",
+          "meaning": "设备 HBM 信息类别标识。",
+          "unit": "无",
+          "source": "序列化时固定写入 Memory Information。",
+          "variability": "固定标识",
+          "analysis": "用于识别设备 HBM 信息行。",
+          "notes": "不是性能指标。"
+        },
+        {
+          "name": "hbm total(MB)",
+          "json_type": "number",
+          "meaning": "平台报告的 HBM 总容量。",
+          "unit": "MB",
+          "source": "平台接口返回的 HBM 总字节数除以 1024^2。",
+          "variability": "设备配置，通常稳定",
+          "analysis": "用于确认设备 HBM 规模。",
+          "notes": "容量采用二进制 MB。"
+        },
+        {
+          "name": "hbm used(MB)",
+          "json_type": "number",
+          "meaning": "Runtime 可见 HBM 内存池的已使用量。",
+          "unit": "MB",
+          "source": "Runtime 返回的 HBM 可分配总量减空闲量后除以 1024^2。",
+          "variability": "采集时状态，可能变化",
+          "analysis": "用于观察采集时 Runtime 内存池使用状态。",
+          "notes": "不应直接等同于整卡所有进程的物理 HBM 占用。"
+        },
+        {
+          "name": "hbm frequency(MHZ)",
+          "json_type": "integer",
+          "meaning": "采集时 HBM 频率。",
+          "unit": "MHz",
+          "source": "设备管理接口返回的 HBM 频率。",
+          "variability": "运行状态，可能变化",
+          "analysis": "用于记录和比较 HBM 频率环境。",
+          "notes": "不直接代入当前五种 CSV 的公开计算公式。"
+        }
+      ]
+    }
+  ]
+}

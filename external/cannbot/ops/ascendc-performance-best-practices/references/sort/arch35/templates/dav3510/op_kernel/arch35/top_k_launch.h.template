@@ -1,0 +1,102 @@
+#ifndef TOP_K_LAUNCH_H
+#define TOP_K_LAUNCH_H
+
+#include <cstdint>
+
+#include "top_k_tiling_arch35.h"
+#include "transpose/top_k_transpose_launch.h"
+
+#ifndef GM_ADDR
+#define GM_ADDR void*
+#endif
+
+enum TopKDtypeId : int64_t {
+    TOPK_DTYPE_INT8 = 0,
+    TOPK_DTYPE_UINT8 = 1,
+    TOPK_DTYPE_INT32 = 2,
+    TOPK_DTYPE_INT64 = 3,
+    TOPK_DTYPE_FP16 = 4,
+    TOPK_DTYPE_FP32 = 5,
+    TOPK_DTYPE_BF16 = 6,
+};
+
+enum TopKSpecialTilingKey : int64_t {
+    TOPK_TILING_KEY_SMALL_AXIS = 900001,
+    TOPK_TILING_KEY_FALLBACK = 900002,
+    TOPK_TILING_KEY_TRANSPOSE_FALLBACK = 900003,
+};
+
+struct TopKSmallAxisParams {
+    int64_t outer = 0;
+    int64_t axisLen = 0;
+    int64_t inner = 0;
+    int64_t isLargest = 1;
+    int64_t tileWidth = 0;
+    int64_t usedCores = 0;
+    int64_t localMemoryBytes = 0;
+};
+
+// Necessary fallback for non-last axes beyond the ops-math mode-8 limit.
+// This is the compact host/device contract used by the pre-existing strided
+// kernel; only cases with axisLen > 2048 are routed here.
+struct TopKFallbackParams {
+    int64_t outer = 0;
+    int64_t dimLen = 0;
+    int64_t inner = 0;
+    int64_t rows = 0;
+    int64_t k = 0;
+    int64_t isLargest = 1;
+    int64_t branch = 0;
+    int64_t usedCores = 1;
+    int64_t rowsPerCore = 0;
+    int64_t g = 1;
+    int64_t dChunk = 0;
+    int64_t kPad = 0;
+    int64_t kIdxPad = 0;
+    int64_t mergePad = 0;
+    int64_t tmpSize = 0;
+};
+
+struct TopKTransposeFallbackParams {
+    int64_t innerTilingKey = 0;
+    int64_t inputOffset = 0;
+    int64_t valuesOffset = 0;
+    int64_t indicesOffset = 0;
+    int64_t innerWorkspaceOffset = 0;
+    int64_t innerWorkspaceBytes = 0;
+    topk_transpose::TransposeTiling inputTranspose{};
+    topk_transpose::TransposeTiling valuesTranspose{};
+    topk_transpose::TransposeTiling indicesTranspose{};
+};
+
+struct TopKLaunchParams {
+    int64_t tilingKey = 0;
+    int64_t usedCores = 0;
+    int64_t workspaceBytes = 0;
+    int64_t localMemoryBytes = 0;
+    int64_t scheduleMode = 1;
+    TopKTilingDataSimd tiling{};
+    TopKSmallAxisParams smallAxis{};
+    TopKFallbackParams fallback{};
+    TopKTransposeFallbackParams transposeFallback{};
+};
+
+extern "C" {
+int32_t calc_topk_params(const int64_t* shape, int64_t rank, int64_t k, int64_t dim, int64_t isLargest,
+                         int64_t dtypeId, int64_t deviceId, TopKLaunchParams* params);
+int32_t launch_topk(GM_ADDR x, GM_ADDR y, GM_ADDR idx, GM_ADDR workspace, int64_t dtypeId,
+                    const TopKLaunchParams& params, void* stream);
+
+int32_t calc_topk_small_axis_params(int64_t outer, int64_t axisLen, int64_t inner, int64_t isLargest,
+                                    int64_t coreNum, uint64_t ubSize, TopKSmallAxisParams* params);
+
+int32_t calc_topk_fallback_params(int64_t outer, int64_t dimLen, int64_t inner, int64_t k,
+                                  int64_t isLargest, int64_t dtypeId, int64_t coreNum,
+                                  TopKFallbackParams* params);
+void launch_topk_fallback(GM_ADDR x, GM_ADDR y, GM_ADDR idx, int64_t dtypeId,
+                          const TopKFallbackParams& params, void* stream);
+
+int32_t get_topk_core_num(int64_t deviceId, int64_t* coreNum);
+}
+
+#endif

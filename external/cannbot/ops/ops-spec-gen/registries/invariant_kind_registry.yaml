@@ -1,0 +1,130 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+
+# Invariant（算子不变量）—— 算子输出必须满足的、可机器断言的数学性质
+#
+# 作用：
+#   算子开发时，光靠"和参考实现对拍"不够。比如 softmax 输出是否真的归一化（sum=1）、
+#   relu 是否真的非负、matmul 输出 shape 是否符合 outputs[].shape_rule 推导 —— 这些"算子应
+#   有的数学性质"用 invariant 显式声明出来，校验器/测试器就能机器断言，而不是依赖人审。
+#
+# 使用方法：
+#   spec.yaml 的 math_semantics.invariants[] 数组里每条形如：
+#     - name: sum_to_one        # 自取的人读名
+#       kind: reduce_equals     # 必须落在本文件的某条 kind
+#       reducer: sum            # 由 kind 的 required_fields 决定
+#       axis: "${attr.dim}"
+#       value: 1.0
+#       tolerance_inherit: true
+#   校验器（stage 2）逐条对照本文件检查：kind 是否合法、required_fields 是否齐全、
+#   tolerance_inherit 是否符合该 kind 的约束。
+#
+# 三组分类：
+#   value      —— 直接约束输出的值（元素级阈值 / 归约后等于常量 / 值域 / 离散集合）
+#   algebraic  —— 算子的代数性质（交换律 / 结合律 / 单调性 / 幺元 / 零元）—— 不依赖参考
+#                 实现，靠算子自身的两种调用方式互相对拍即可断言
+#   structural —— 结构性约束（输出 shape / 中间 tensor 不外漏），与 dtype 解耦，
+#                 因此 tolerance_inherit 必为 false
+#
+# 维护：新增 kind 必须先登记到本文件，并在 schemas/op-spec.json 的 invariants.kind.enum
+#       同步增加；validator 会自动从本文件加载白名单，无需改 Python 代码。
+#
+# 何时用、何时不用：日常算子若 reference_oracle 可达，machine_check.kind=matches_oracle
+#       已是主力检测手段，invariants 可留空；下列范式仍建议显式声明 1+ 条 invariant：
+#         - NumericalStable    (e.g. softmax 的 sum_to_one)
+#         - FusedComposite     (e.g. no_leak_intermediates)
+#         - Reduction          (e.g. reduce_equals 锁归一化语义)
+#         - Contraction        (e.g. equals_when_input_is_zero)
+#       oracle 不可达（自研 / collective / quantization）时 invariant 是唯一机器断言手段。
+
+schema_version: 1
+
+# A 组：value（输出值约束）—— 允许 tolerance_inherit
+value:
+  # 元素级 ≥ 阈值；e.g. relu 输出 ≥ 0；softmax 输出 ≥ 0
+  - kind: elementwise_ge
+    required_fields: [value]
+
+  # 元素级 ≤ 阈值；e.g. sigmoid / softmax 输出 ≤ 1
+  - kind: elementwise_le
+    required_fields: [value]
+
+  # 元素级 == 标量；e.g. zeros_like 输出 ≡ 0；常量算子
+  - kind: elementwise_eq
+    required_fields: [value]
+
+  # 沿轴归约后等于常量；e.g. softmax 沿 reduce_axis 求和 == 1.0；概率分布算子
+  - kind: reduce_equals
+    required_fields: [reducer, axis, value]
+    reducer_enum: [sum, mean, max, min]
+
+  # 输出值落在闭区间 [lo, hi]；e.g. sigmoid ∈ [0,1]；tanh ∈ [-1,1]；clamp(x, lo, hi)
+  - kind: range_in
+    required_fields: [range]
+
+  # 输出取值在有限集合内；e.g. one_hot ∈ {0,1}；sign ∈ {-1,0,1}；bool 算子 ∈ {True,False}
+  - kind: produces_in_set
+    required_fields: [set]
+    forbid_tolerance_inherit: true   # 离散集合无需容差
+
+# B 组：algebraic（代数性质）—— 允许 tolerance_inherit
+algebraic:
+  # f(f(x)) == f(x)；e.g. relu(relu(x)) == relu(x)；abs(abs(x)) == abs(x)；contiguous
+  - kind: idempotent
+    required_fields: []
+
+  # 输入 swap 后输出不变；e.g. add 的 x+y == y+x；mul 的 x*y == y*x；max(x,y) == max(y,x)
+  - kind: equals_under_swap
+    required_fields: [swap]
+
+  # 一侧为零时输出 == 另一侧；e.g. add(x, 0) == x；sub(x, 0) == x（zero_input 是零的那一侧）
+  - kind: equals_input_when_other_is_zero
+    required_fields: [identity_input, zero_input]
+
+  # 一侧为单位元时输出 == 另一侧；e.g. matmul(A, I) == A；mul(x, 1) == x（仅 composition 内可用）
+  - kind: equals_input_when_other_is_identity
+    required_fields: [identity_input, other_input, condition]
+    only_in_composition: true
+
+  # 任一输入为零时输出为零；e.g. matmul(0, B) == 0；mul(0, x) == 0；contraction 类常用
+  - kind: equals_when_input_is_zero
+    required_fields: [value]
+
+  # 沿 batch 维结合律 (A·B)·C ≈ A·(B·C)；e.g. batch_matmul、reduce_sum 累加（浮点容差内）
+  - kind: associative_along_batch
+    required_fields: []
+    require_tolerance_inherit: true
+
+  # 沿某轴单调；e.g. cumsum(非负输入) 沿累加轴 increasing；sort 沿排序轴单调
+  - kind: monotone_along
+    required_fields: [axis, direction]
+    direction_enum: [increasing, decreasing]
+
+# C 组：structural（结构性约束）—— tolerance_inherit 必须为 false
+structural:
+  # 输出是输入的某种 permutation（值集合相同，位置可变）；e.g. sort、shuffle
+  - kind: permutation_of_input
+    required_fields: []
+    forbid_tolerance_inherit: true
+
+  # 对输出施以某外部 op 后等于某输入；e.g. complex 满足 torch.real(out)==real / torch.imag(out)==imag；fft 与 ifft 互逆
+  - kind: equals_after_op
+    required_fields: [op, target_input]
+    forbid_tolerance_inherit: false   # algebraic 可有
+
+  # 输出 shape 等于某既定模式；macro 字段是该模式的标签（保留作历史兼容）。
+  # 真值约束由 stage 3 的 outputs[].shape_rule (numpy_expr) 求解；本 invariant 主要
+  # 给运行期测试 / 文档引用使用，不是 stage 3 的真值校验入口。
+  - kind: shape_equals_macro
+    required_fields: [macro]
+    forbid_tolerance_inherit: true
+
+  # 中间 tensor 不出现在 outputs；e.g. fused softmax 的 max-shifted exp 不外露；任何 FusedComposite 的 dataflow.no_leak
+  - kind: no_leak_intermediates
+    required_fields: []
+    forbid_tolerance_inherit: true

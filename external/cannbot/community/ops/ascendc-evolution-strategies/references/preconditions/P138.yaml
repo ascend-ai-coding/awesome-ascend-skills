@@ -1,0 +1,41 @@
+strategy_id: P138
+description: host tiling 是否用写死的 L0 尺寸或缺 L0 容量查询 — 跨硬件可移植性/稳定性加固的适用性判断
+strategy_meta:
+  id: "P138"
+  slug: "P138_host_tiling_l0_capacity_guard"
+  title: "P138: host tiling 查询 L0A/L0C 容量并按需自适应降维（跨硬件稳定性）"
+  bottlenecks: [near_optimal, db_not_effective]
+  op_families: [attention, flash_attention, matmul]
+  conflicts_with: []
+  synergizes_with: [P135]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p138_host_tiling_l0_capacity_guard.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p138_host_tiling_l0_capacity_guard.md"
+  playbook_slug: "P138_host_tiling_l0_capacity_guard"
+  quantified_gain: [{"shape": "SparseFlashAttention 20-case 910c（BenchSite 同 kernel 复测）", "baseline_us": 0, "optimized_us": 0, "speedup": 1.0, "source": "cannbench-evo round_11→12，job_e23199ece961：随机 SIGSEGV(10/20 无性能数据) → 修复后 20/20 全测，score 59.24"}]
+checks:
+  - id: has_cube_tiling_params
+    type: grep_count
+    pattern: "groupTile|baseM|baseN|tiling|numBlocks|workspaceBytes|Calc.*Tiling"
+    files: [host, tiling]
+    expected: ">= 1"
+    fail_msg: "host/tiling 未发现 Cube tiling 参数（groupTile/baseM 等）→ P138 不适用"
+
+  - id: hardcoded_tile_literal
+    type: grep_count
+    pattern: 'groupTile\\s*=\\s*[0-9]+|kCubeMaxM\\s*=\\s*[0-9]+|baseM\\s*=\\s*[0-9]+|constexpr.*k.*Tile\\s*=\\s*[0-9]+'
+    files: [host, tiling, header]
+    expected: ">= 1"
+    fail_msg: "未发现写死的 tile 常量 → P138 加固点可能不适用（确认是否已用运行时容量）"
+
+  - id: lacks_l0_query
+    type: grep_count
+    pattern: "GetCoreMemSize.*L0|L0_A|L0_C|l0cSize|L0C_SIZE"
+    files: [host, tiling]
+    expected: "== 0"
+    fail_msg: "已存在 L0 容量查询/检查（L0_A/L0_C）→ P138 可能已应用"

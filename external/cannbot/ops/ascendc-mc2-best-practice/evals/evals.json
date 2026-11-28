@@ -1,0 +1,315 @@
+{
+  "skill_name": "ascendc-mc2-best-practice",
+  "eval_mode": "text",
+  "evals": [
+    {
+      "id": 1,
+      "title": "通算融合算子开发完整工作流",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ]
+      },
+      "prompt": "收到一个尚未选底座的 Ascend C 多卡通算融合需求，怎样按数据分布、芯片和调用方式确定路线，哪些组合可以直调、哪些须注册？选型后，以 Ascend 950 的 APACE 集合通信与矩阵融合为例，说明 ops-direct-invoke 插件从环境检查到汇报的流程。开发 MoE Dispatch/Combine 时，又怎样分阶段推进并验证各 Rank 的结果？",
+      "expected_output": "1. APACE 插件依次完成环境检查、设计、设计串讲、开发、检视、按需修复、精度与性能验收、完成汇报。若给出编号，串讲为 Step 2.5，验收为 Step 6，汇报为 Step 7。\n2. 先按算子数据流、芯片和调用形态查路线：950 集合通信可按框架采用 blaze-shmem 或 APACE 的 AIV+URMA 直调，MoE 窗口搬运走 ascendc-api，910B 的 HCCL 高阶集合通信与矩阵融合走注册调用。\n3. MoE 生成或改造按 samples 补规格和样例、api-rules 核对通信接口与状态协议、tiling-scheme 设计多核分工推进；按 Dispatch 或 Combine 的数据流逐 Rank 对比参考输出及相应的路由或计数结果。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "title": "两条通信路径的区分与决策",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ]
+      },
+      "prompt": "以同时支持这两条路线的 Ascend 950 为例，怎样依据数据分布，为新算子选择 SHMEM/UDMA 或 MTE 通信？接手已有实现时，如果交接信息只有算子名和芯片型号，能确定用了哪条路线吗？请说明怎样沿一次跨卡搬运，从地址来源和实际调用的接口辨认这两种实现。",
+      "expected_output": "新算子按数据流选型：按 Rank 分片交换并与矩阵计算重叠的场景可选 SHMEM/UDMA，例如 AllToAll+Matmul；按 token 和目标专家路由的 MoE Dispatch/Combine 可选窗口上的 MTE 搬运。辨认已有实现时，SHMEM 对称内存及 UDMA 搬运调用是前者的依据，经 winContext/mc2Context 取得窗口并用 MTE 搬运是后者的依据。只凭算子名或芯片名不足以识别实际实现。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 3,
+      "title": "SHMEM 路径约束：通信与计算红线",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ]
+      },
+      "prompt": "在 Ascend 950 的 blaze-shmem 直调路线实现 AllToAll+Matmul，Host、通信核和计算核各用哪些接口或模板？以一个缓冲槽为例，什么事件允许开始计算，什么事件允许下一轮覆写？现有 aclnn 注册实现用 HCCL 高阶通信，矩阵调度还从通信域取 Rank 来定位输出分片。这两处移植到直调时分别要处理什么依赖？其中的 Rank 依赖来自矩阵计算 API，还是这个实现的输出分片调度？",
+      "expected_output": "Host 初始化 SHMEM 并分配对称内存；通信核用 aclshmemx_udma_* 搬运，计算核用 Blaze Kernel/BlockMmad。按传输完成语义确认通信块就绪（如 quiet），按参与范围做跨 Rank 同步，再用 AIV/AIC 事件交给计算核；同一槽的最后一个消费者释放后才可覆写。注册实现中的 HCCL 高阶通信使用框架注入的 GetHcclContext。矩阵侧的 Rank 依赖属于该实现的输出分片调度；直调时从 SHMEM 的 PE 编号或 Host 传入的 Rank 重新定位分片。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 4,
+      "title": "ascendc-api 路线（MTE通信）约束：MoE 特化四红线",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ]
+      },
+      "prompt": "开发使用 ascendc-api（MTE 通信）的 MoE Dispatch/Combine 时，跨卡数据怎么搬、窗口地址怎么取、共享 GM 和状态区怎么访问？多个核从发布数据到消费完一个状态槽，需要遵守什么顺序和写入归属？",
+      "expected_output": "回复应覆盖 ascendc-api 路线（MTE通信）的四大约束：① 跨卡搬运走 MTE通信，禁止 Hccl::AlltoAll/AlltoAllV/AllReduce 等高阶原语做数据搬运；② window 地址必须走 compat 层（GetBaseWindAddrByRankId 等统一接口），禁止直接硬编码 HcclA3OpResParam/HcclA5OpResParam 字段偏移；③ 共享 GM/状态区走 DataCopyPad，禁止 GetValue/SetValue 直接访问；④ 状态协议：先数据后状态、每核只写自己槽位、消费后清理。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 5,
+      "title": "ascendc-api 路线（MTE通信）的工程推进方式",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ]
+      },
+      "prompt": "我要生成一个新的 MoE dispatch 算子，或者在样例工程基础上改造。请先加载 ascendc-mc2-best-practice 技能并阅读其 SKILL.md 后回答：1）这类任务命中哪条路线，是否还套用通用 add.asc 模板？2）入口 B「生成新算子或在样例工程基础上改造」默认拆成哪几部分，每部分按顺序要读哪些文档——samples 的规格补齐与数据流路径、api-rules 覆盖哪些 MoE 特化主题、tiling-scheme 的分核方案按哪几个环节推进？3）如果任务同时包含「先阅读现有实现」与「再进行改造」，入口 A 与入口 B 的先后顺序是什么？",
+      "expected_output": "1. 新建或改造 MoE Dispatch 使用 ascendc-api 的 MTE 通信和入口 B，以 Dispatch 样例为工程起点，依次走 samples、api-rules、tiling-scheme，无需套用通用 add.asc 模板。\n2. samples 先用 spec-template.md 补齐规格，再用 dispatch-dataflow.md 确定 Dispatch 数据流；api-rules 核对 DataCopyPad、窗口取址、同步可见性、状态协议和 Dispatch/Combine 接口契约。\n3. tiling-scheme 按window-memory-layout、multi-core-formulas、split-core-design、double-buffer-protocol 四个主题的资料逐步展开；同时要求阅读已有实现和改造时，先走入口 A 理解原实现，再走入口 B 补齐规格并改造。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 6,
+      "title": "通算融合 Skill 与其他 Ascend C 技能的区分（正向看护）",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ],
+        "distractor_skills": [
+          "ascendc-direct-invoke-template",
+          "ascendc-api-best-practices",
+          "ascendc-tiling-design",
+          "npu-arch"
+        ]
+      },
+      "prompt": "准备从普通单卡 Kernel 直调转做 Ascend 950 多卡融合。一个算子用 SHMEM 对称内存交换矩阵分片，另一个用通信窗口按 token 做 MoE Dispatch/Combine。两者分别怎样搬运跨卡数据，矩阵乘由哪套模板调度？请说明谁分配 MoE 窗口、怎样取得各 Rank 的地址、怎样访问共享数据和交接状态，以及比单卡多出的启动、分片和验证工作。",
+      "expected_output": "按给定的存储和数据分布识别两条直调路线：对称内存交换使用 SHMEM/UDMA 配合 Blaze 矩阵模板；按 token 访问通信窗口使用 ascendc-api 的 MTE 搬运。MoE 路线上 HCCL 分配窗口、MTE 搬运，窗口经 compat 层取址，共享 GM 与状态区用 DataCopyPad；先写数据再发布状态，各核只写自己的槽，消费后清理。还应说明多卡建链、分片与多 Rank 验证给单卡直调流程增加了哪些工作。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 7,
+      "title": "能力声明查询：supported 路径与参考实现",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A5"
+        ]
+      },
+      "prompt": "Ascend 950 上用 APACE 框架开发集合通信类 MC2 算子（Kernel 直调），支持吗？请查路线登记表，分别给出可参考的实现路径和继续开发应阅读的 Skill 知识目录。",
+      "expected_output": "查询 capability-declaration.md，确认 dav-3510 × collective-comm × 直调 × AIV+URMA × APACE 为 supported；列出 ops-transformer 的 mc2/common/op_kernel/apace/kernel/ 下 all_to_all_quant_matmul 和 all_gather_quant_matmul，并给出继续开发应查阅的 Skill 知识目录 references/foundations/apace/。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 8,
+      "title": "能力声明查询：否定行给出确定否决",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A2"
+        ]
+      },
+      "prompt": "我想在 Ascend 910B（dav-2201）上用 SHMEM/UDMA 直调实现 AllToAll+Matmul，路线登记表支持吗？如果不支持，请各给一个方案：保留 910B 时采用什么开发和调用方式；保留 SHMEM 直调时选什么芯片和底座。登记为支持某条开发路线，能否据此断定已有可直接调用的 AllToAll+Matmul？",
+      "expected_output": "910B 的 dav-2201 × UDMA 登记为 unsupported；该直调路线在 Ascend 950（dav-3510）验证。保留 910B 时可走 hccl-matmul，用 HCCL 高阶通信与 AscendC::Matmul，经 aclnn 注册调用；保留 SHMEM 直调时可在 Ascend 950 使用 blaze-shmem。两种取舍各给一个可行方案即可。路线登记说明这一组合可用于开发；要断定已有可直接使用的算子，还须有匹配 AllToAll+Matmul 语义的实现依据。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 9,
+      "title": "能力声明查询：ascendc-api 路线（MTE通信）双平台",
+      "config": {
+        "max_tokens": 500000,
+        "max_tokens_by_model": {
+          "deepseek-v4-flash": 520000
+        },
+        "ascend_platforms": [
+          "A3"
+        ]
+      },
+      "prompt": "A3 上开发 MoE Dispatch 直调算子，路线登记表是否支持？A3 和 A5 的窗口结构有差异，为什么能共用样例？请给出 Dispatch 样例工程名，以及规格、通信接口规则和分核方案各自的知识入口。",
+      "expected_output": "回复应查询 capability-declaration.md，确认 dav-2201 × moe × 直调 × HCCL window+MTE 为 supported（compat 层抹平 A3/A5 window 结构差异），路由到 references/foundations/ascendc-api/moe-dispatch-combine/ 知识目录（samples/api-rules/tiling-scheme），参考实现为 moe_dispatch_direct_invoke_sample。",
+      "files": [],
+      "expectations": []
+    },
+    {
+      "id": 10,
+      "title": "apace 按请求目的路由（关键能力）",
+      "config": {
+        "max_tokens": 500000,
+        "ascend_platforms": [
+          "A5"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "在 Ascend 950 用 APACE 开发 AllToAll+QuantMatmul，独立开发与使用 ops-direct-invoke 插件分别从哪里开始？请给出插件入口文档。对两套流程分别说明完整交付到哪里、只交付设计在哪里停止；如果只做咨询、评审或排障，又该读哪些资料？",
+      "expected_output": "独立开发使用 APACE 四步流程：完整实现走 Step 1–4，只交付设计走 Step 2 接口核对和 Step 3 设计。插件从 APACE 的 workflow_integration.md 进入；完整交付至插件 Step 7，只交付设计在插件 Step 2 形成设计，涉及交接时走 Step 2.5 串讲，停在插件 Step 3 开发之前。咨询、评审或排障按问题查阅相关资料。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 11,
+      "title": "apace 路线模型判定（关键能力）",
+      "config": {
+        "max_tokens": 500000,
+        "ascend_platforms": [
+          "A5"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "APACE 的 apace_native、apace_custom、unsupported 分别按什么证据判断？PUT/GET 与 compute-first 分别描述什么，是否足以决定路线？如果 block 接口不足，绕开它用裸 Ascend C 重写，是否仍算 APACE 定制？",
+      "expected_output": "官方 apace/kernel 有直接满足需求的同语义实现时选 apace_native。官方未覆盖时，已核实的 block 接口可组合实现且唯一命中可用于设计的场景，选 apace_custom；block 能力不足或场景零命中、多命中时，当前路线记 unsupported。PUT 是向对端写，GET 是从对端读，compute-first 是先计算再通信；用这些语义核对实现与场景后决定路线。放弃 block 用裸 Ascend C 重写属于另选底座。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 12,
+      "title": "apace 计算执行原则（关键能力）",
+      "config": {
+        "max_tokens": 500000,
+        "ascend_platforms": [
+          "A5"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "在 Ascend 950 的 APACE UDMA 直调算子中，不同输入 dtype 有不同 Kernel 入口。我想在生产 Host 上先打包、解包跨卡数据，让 Kernel 只做 MatMul；CPU Golden 也需要重排来计算期望值。两种重排分别是否合理？从准备输入和多卡建链，到选择入口、启动并取回结果，Host 负责什么？哪些操作必须在设备侧融合？",
+      "expected_output": "生产路径从原始输入出发，在一次 MIX Kernel launch 中由 AIV 与 AIC 协同完成算子语义要求的打包、跨 Rank 搬运、解包及矩阵计算。Host 准备输入输出与缓冲、计算 Tiling、多 Rank 启动并建链（交换 rootInfo、取得通信与窗口资源、跨 Rank 就绪），按 dtype 选择 Kernel 入口并启动，负责输入输出传输。用于测试的 CPU Golden 可对同一原始输入独立模拟重排与通信；Host 预排后将结果喂给候选 Kernel 会跳过待验证的工作。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 13,
+      "title": "APACE 多卡精度排查：核对 Golden 分片并定位首个偏差",
+      "config": {
+        "max_tokens": 500000,
+        "ascend_platforms": [
+          "A5"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "各 Rank 先做本地 QuantMatmul，再用 ReduceScatter 规约并分发部分积。现在每卡输出与 Golden 都不符，仅核对过 shape。怎样检验多卡参考数据的生成过程，如何区分生成器和 Kernel 的错误，又应在什么条件下先改哪一处？请查阅随附 Skill 及相关资料作答，无需编译、运行算子或采集设备数据。",
+      "expected_output": "先由算子契约推导各 Rank 的输入与期望输出，明确 M/N/K 各轴的分片或复制关系，核对 gen_data 的取片、规约和输出归属；形状相同仍可能取错分片。若生成器切错轴，先修正并重生成 Golden，用原输入复验。若分布和参考计算正确，再按本地计算、跨卡规约定位候选 Kernel 的首次偏差。仅凭全部不匹配不能断定其中一方已错。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 15,
+      "title": "apace 归约 in-place Cast 导致精度系统性错误",
+      "config": {
+        "max_tokens": 500000,
+        "ascend_platforms": [
+          "A5"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "一个 compute-first 算子逐来源归约时误差持续增大。采样显示进入 Cast 前 BF16 源值正确，转换后的 FP32 与源缓冲从同一字节开始，尚未读取的下一段源值在累加前已改变。首次破坏发生在哪里？设计缓冲时，要求当前 FP32 块消费完之前已备好下一来源的转换结果，怎样分配空间，何时才能复用？请查阅随附 Skill 及相关资料作答，无需编译、运行算子或采集设备数据。",
+      "expected_output": "首次破坏发生在 BF16→FP32 的原地宽化，同量元素所需字节数翻倍，写回覆盖了尚未读取的 BF16。保留原输入的未读区，按 FP32 元素大小给两个同时存活的转换结果各留足互不重叠的空间，按来源交替使用；对应累加消费完成后才可复用该槽。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 16,
+      "title": "apace L2 flush 死代码导致性能数据不可复现",
+      "config": {
+        "max_tokens": 500000,
+        "ascend_platforms": [
+          "A5"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "目标是测量 APACE 冷缓存下的多轮性能。代码分配了 cacheFlush buffer，却没有提交刷缓存的操作；MTE2 带宽读数偏高。请解释这段代码的效果与读数成因，说明怎样修正采样、怎样用各卡的 msprof 时间线验收每一轮。请查阅随附 Skill 及相关资料作答，无需编译、运行算子或采集设备数据。",
+      "expected_output": "仅分配未使用的 buffer 不产生驱逐流量，权重可能仍命中 L2，使读数高估冷缓存下的带宽。每一轮在主 Kernel 前实际执行能驱逐目标数据的 flush kernel（例如 heavy_add_kernel）。逐 Rank 在同一测量窗口检查：每轮一次的实现应有与轮数相等的 flush 记录，每一次都在对应主 Kernel 之前完成；只有分配记录、预热或只核对总条数均不足以证明逐轮冷缓存。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 17,
+      "title": "apace 场景唯一命中授权（关键能力）",
+      "config": {
+        "max_tokens": 500000,
+        "ascend_platforms": [
+          "A5"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "已核对的 APACE AllToAll、AllGather 参考 kernel 都是 PUT。同一源码范围内找到了 AllToAll GET 钩子，未找到 AllGather GET 钩子。新需求是 UDMA 直调的 GET AllGather+QuantMatmul：各 Rank 持有 B 的不同 N 列，先计算本地结果列，再拉取其他 Rank 的结果，拼出完整矩阵。请查随附 Skill 的场景登记，说明怎样记录调查边界、选哪条路线、哪些组件能复用、哪些仍须实现与验证。无需再搜索外部源码、编译或上机。",
+      "expected_output": "给定边界内，AllGather GET 钩子和使用它的参考 kernel 记 not_found；AllToAll 的 GET 钩子只证明该操作有相应实现，不能证明 AllGather 已实现或 APACE 不支持。需求唯一命中 get-all-gather-quant-matmul，选 apace_custom。可用 PUT AllGather 参考实现理解接口组合，复用已核实的 block 接口；GET 通信实现及其分发注册、调用该路径的 kernel 和多 Rank 结果仍需实现或验证。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 18,
+      "title": "apace 问题记录格式（关键能力）",
+      "config": {
+        "max_tokens": 500000,
+        "ascend_platforms": [
+          "A5"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "评审 APACE 工程时发现目标架构未设置。构建日志来自容器 build-a（CANN 9.2）：`cmake --build build` 返回 2，ASC 编译器首错为“未选择目标架构”。没有生成可运行产物，也没有向 NPU 提交 Kernel。请分别说明三件事：（1）请用给出的环境、命令及日志填写本轮记录，分别判断审查、构建与设备运行的状态。（2）要让后续代码评审能复用这个故障，应该写进 APACE 的哪份文档、哪张表？以此例说明一行记录的内容。（3）若修复后换到另一个容器上机，要保留哪些运行环境、设备及命令信息来支持设备结论？请查阅随附 Skill 及相关参考文档作答，无需编译、运行算子或采集设备数据。",
+      "expected_output": "审查可辨认出目标架构缺失的构建风险；build-a（CANN 9.2）实际执行 cmake --build build 返回 2，首错为未选择目标架构，构建已失败。没有设备执行，设备运行记未验证。在 review-checklist.md 的常见 FAIL 原因表记录现象、原因和修复，例如 ASC 编译失败／目标架构未配置／按目标设备设置架构后重新构建。另一次上机须记录实际运行环境和 CANN 版本、设备及 Rank 配置、命令与返回码，再根据执行结果判断。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 19,
+      "title": "apace 四步流程边界（关键能力）",
+      "config": {
+        "max_tokens": 500000,
+        "ascend_platforms": [
+          "A5"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "apace 四步流程中，Step 2（Framework Investigation）和 Step 3（Design）各自的边界是什么？Step 2 可以推荐实现路线吗？Step 3 可以写实现代码吗？",
+      "expected_output": "应说明：Step 2 是设计前核对——只读核对 apace 框架的接口事实（matmul 链路/通信接口/入口 ABI/官方覆盖性），事实默认内联于 DESIGN.md §0.3，不做方案推荐、不匹配场景、不选择路线、不编译或运行设备；Step 3 依据需求和核对事实完成路线决策，生成冻结的 DESIGN 和 PLAN，不复制文件、不写实现、不构建项目。每个步骤都有明确的边界声明。",
+      "expectations": [],
+      "files": []
+    },
+    {
+      "id": 20,
+      "title": "910B HCCL 高阶注册路线（hccl-matmul）",
+      "config": {
+        "max_tokens": 100000,
+        "ascend_platforms": [
+          "A2"
+        ],
+        "eval_mode": "text"
+      },
+      "prompt": "我要在 Ascend 910B（dav-2201 / A2）上开发 AllGather+Matmul 通算融合算子，用 HCCL 高阶 API 和 AscendC::Matmul，通过 aclnn 单算子调用。请给出登记的路线、对应知识目录和参考实现。这个实现对启动方式、通信、计算和量化支持有哪些限制？PTA 怎么接？",
+      "expected_output": "根据能力表确认 dav-2201 × collective-comm × 注册 × HCCL 高阶 × hccl-matmul 为 supported，给出 references/foundations/hccl-matmul/ 和 all_gather_matmul 参考实现。该路线通过 aclnn 注册调用，禁止 <<<>>> 直调。通信使用 Hccl<HCCL_SERVER_TYPE_AICPU> V2（InitV2、SetCcTilingV2），与 AscendC::Matmul 配合；参考实现由 AIC 执行主体，Finalize 前完成跨核同步，不走 SHMEM/Blaze，样例覆盖非量化数据。PTA 按 torch-ascendc-op-extension 的 aclnn 注册路线 B 接入。",
+      "expectations": [],
+      "files": []
+    }
+  ]
+}

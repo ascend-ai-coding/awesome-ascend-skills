@@ -1,0 +1,33 @@
+strategy_id: P151
+description: MIX CV ring，per-task 固定成本与有效 pipe 时间同量级 适用性检查。
+
+strategy_meta:
+  id: "P151"
+  slug: "P151_mgroup_batching"
+  title: "P151: MIX(CV) per-task 固定成本墙：优先 M 方向合批，而不是加宽 N"
+  bottlenecks: [sync_overhead, tiling_imbalance]
+  op_families: [cv_fusion, matmul]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p151_mgroup_batching.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p151_mgroup_batching.md"
+  playbook_slug: "P151_mgroup_batching"
+checks:
+  - id: has_task_loop
+    type: grep_count
+    pattern: "task|groupRows|mGroup"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未发现 task/M 方向合批结构 → P151 不适用。"
+  - id: has_workspace
+    type: grep_count
+    pattern: "GM|workspace|ring"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未发现 GM ring/workspace 交接 → P151 不适用。"

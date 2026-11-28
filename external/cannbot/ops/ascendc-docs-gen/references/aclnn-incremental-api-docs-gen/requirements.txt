@@ -1,0 +1,12 @@
+# Runtime dependencies for aclnn-incremental-api-docs-gen (loose constraints; see WORKFLOW.md)
+clang>=21.1.7
+libclang>=18.1.1
+openai>=2.32.0
+httpx>=0.27.0
+pydantic>=2.0
+pyyaml>=6.0.3
+questionary>=2.1.1
+requests>=2.33.1
+rich>=15.0.0
+# Dev/test
+pytest>=9.0

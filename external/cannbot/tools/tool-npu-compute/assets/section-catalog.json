@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "sets": {
+    "basic": [
+      "Pipeline",
+      "PipeUtilization",
+      "Memory",
+      "MemoryL0",
+      "MemoryUB",
+      "L2Cache",
+      "ArithmeticUtilization"
+    ],
+    "full": [
+      "Pipeline",
+      "PipeUtilization",
+      "Memory",
+      "MemoryL0",
+      "MemoryUB",
+      "L2Cache",
+      "ArithmeticUtilization",
+      "ResourceConflictRatio"
+    ]
+  },
+  "sections": [
+    {"name": "PipeUtilization", "result_file": "PipeUtilization.csv", "result_kind": "pmu_csv", "reference": "references/pipe-utilization.md", "inspector": "scripts/inspect_csv.py"},
+    {"name": "Memory", "result_file": "Memory.csv", "result_kind": "pmu_csv", "reference": "references/memory.md", "inspector": "scripts/inspect_csv.py"},
+    {"name": "MemoryL0", "result_file": "MemoryL0.csv", "result_kind": "pmu_csv", "reference": "references/memory-l0.md", "inspector": "scripts/inspect_csv.py"},
+    {"name": "MemoryUB", "result_file": "MemoryUB.csv", "result_kind": "pmu_csv", "reference": "references/memory-ub.md", "inspector": "scripts/inspect_csv.py"},
+    {"name": "L2Cache", "result_file": "L2Cache.csv", "result_kind": "pmu_csv", "reference": "references/l2-cache.md", "inspector": "scripts/inspect_csv.py"},
+    {"name": "Pipeline", "result_file": "PipeTrace.json", "result_kind": "pipeline_trace", "reference": "references/pipeline.md", "inspector": "scripts/inspect_pipe_trace.py"},
+    {"name": "ArithmeticUtilization", "result_file": "ArithmeticUtilization.csv", "result_kind": "pmu_csv", "reference": "references/arithmetic-utilization.md", "inspector": "scripts/inspect_csv.py"},
+    {"name": "ResourceConflictRatio", "result_file": "ResourceConflictRatio.csv", "result_kind": "pmu_csv", "reference": "references/resource-conflict-ratio.md", "inspector": "scripts/inspect_csv.py"}
+  ],
+  "default_results": [
+    {"name": "HardwareInfo", "result_file": "HardwareInfo.jsonl", "result_kind": "hardware_info", "reference": "references/hardware-info.md", "inspector": "scripts/inspect_hardware_info.py"},
+    {"name": "Summary", "result_file": "summary.jsonl", "result_kind": "summary", "reference": "references/summary.md", "inspector": "scripts/inspect_summary.py"}
+  ]
+}

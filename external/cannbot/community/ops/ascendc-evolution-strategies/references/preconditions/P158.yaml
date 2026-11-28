@@ -1,0 +1,33 @@
+strategy_id: P158
+description: BSH K/V 小 burst，D 轴连续，转置成本可覆盖 适用性检查。
+
+strategy_meta:
+  id: "P158"
+  slug: "P158_head_major_kv_layout"
+  title: "P158: head-major K/V 布局把 strided 小 burst 变成连续 burst"
+  bottlenecks: [mte2_stall, memory_bound]
+  op_families: [attention, datapath]
+  conflicts_with: []
+  synergizes_with: []
+  requires: []
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p158_head_major_kv_layout.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p158_head_major_kv_layout.md"
+  playbook_slug: "P158_head_major_kv_layout"
+checks:
+  - id: has_transpose
+    type: grep_count
+    pattern: "npu_confusion_transpose|BSH|stride"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未发现 head-major 转置/stride 路径 → P158 不适用。"
+  - id: has_dma
+    type: grep_count
+    pattern: "DataCopy|MTE2"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未发现 K/V DMA 路径 → P158 不适用。"

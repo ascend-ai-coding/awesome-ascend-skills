@@ -1,0 +1,40 @@
+strategy_id: P34
+
+strategy_meta:
+  id: "P34"
+  slug: "P34_weight_load_once_reuse"
+  title: "P34: Weight 常驻与预计算复用"
+  bottlenecks: [bus_contention, mte2_stall]
+  op_families: [normalization, matmul]
+  conflicts_with: []
+  synergizes_with: [P41, P8]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p34_weight_load_once_reuse.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p34_weight_load_once_reuse.md"
+  playbook_slug: "P34_weight_load_once_reuse"
+checks:
+  - id: has_weight
+    type: grep_count
+    pattern: "weight|Weight|scale|Scale|gamma|Gamma"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 weight/scale/gamma 相关数据 → 无常驻复用对象，不适用 P34。"
+
+  - id: has_loop
+    type: grep_count
+    pattern: "for.*loop|loop|迭代|Process"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到循环迭代结构 → 无跨迭代复用场景，不适用 P34。"
+
+  - id: has_datacopy
+    type: grep_count
+    pattern: "DataCopy|CopyIn|CopyOut"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到数据搬运操作 → 无搬运优化空间，不适用 P34。"

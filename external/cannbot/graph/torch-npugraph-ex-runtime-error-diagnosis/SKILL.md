@@ -7,8 +7,8 @@ description: PyTorch 昇腾 NPU npugraph_ex 运行时报错诊断。覆盖 ACL g
   side assert、segfault、OOM、CANN plog。
 original-name: torch-npugraph-ex-runtime-error-diagnosis
 synced-from: https://gitcode.com/cann/cannbot-skills
-synced-date: '2026-05-26'
-synced-commit: ac5bbd2b4cf427d011874e11f8d1e8b1bef66eda
+synced-date: '2026-11-28'
+synced-commit: 7a09cdfac4b2869dca6b6fd4531a0a5e539d6096
 license: UNKNOWN
 ---
 

@@ -1,0 +1,190 @@
+{
+    "doc": {
+        "doc_path": "out/operator_storage/abs/base/docs",
+        "doc_name": "aclnnAbs.md",
+        "doc_part": "function_proto",
+        "md_format": [
+            "## 函数原型\n\n每个算子分为[两段式接口](../../../docs/zh/context/两段式接口.md)，必须先调用“aclnnAbsGetWorkspaceSize”接口获取计算所需workspace大小以及包含了算子计算流程的执行器，再调用“aclnnAbs”接口执行计算。\n\n```Cpp\naclnnStatus aclnnAbsGetWorkspaceSize(\n  const aclTensor *self, \n  aclTensor       *out, \n  uint64_t        *workspaceSize, \n  aclOpExecutor  **executor)\n```\n\n```Cpp\naclnnStatus aclnnAbs(\n  void              *workspace, \n  uint64_t           workspaceSize, \n  aclOpExecutor     *executor, \n  const aclrtStream  stream)\n```"
+        ],
+        "sub_part": {
+            "function_proto_clarify": [
+                {
+                    "content": "每个算子分为[两段式接口](../../../docs/zh/context/两段式接口.md)，必须先调用“aclnnAbsGetWorkspaceSize”接口获取计算所需workspace大小以及包含了算子计算流程的执行器，再调用“aclnnAbs”接口执行计算。"
+                }
+            ],
+            "sub_function_sign": [
+                {
+                    "content": "aclnnStatus aclnnAbsGetWorkspaceSize(\n  const aclTensor *self, \n  aclTensor       *out, \n  uint64_t        *workspaceSize, \n  aclOpExecutor  **executor)\n"
+                },
+                {
+                    "content": "aclnnStatus aclnnAbs(\n  void              *workspace, \n  uint64_t           workspaceSize, \n  aclOpExecutor     *executor, \n  const aclrtStream  stream)\n"
+                }
+            ]
+        }
+    },
+    "anchor_tuple": [
+        {
+            "anchor_id": "anchor_file_009",
+            "anchor_information": {
+                "type": "file",
+                "level1": {
+                    "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.h",
+                    "file_name": "aclnn_abs.h"
+                },
+                "level2": {
+                    "code_map": {
+                        "nodes": [
+                            "aclnnAbsGetWorkspaceSize",
+                            "aclnnAbs"
+                        ],
+                        "edges": []
+                    },
+                    "token_hash": "/**\n * Copyright (c) 2025 Huawei Technologies Co., Ltd.\n * This program is free software, you can redistribute it and/or modify it under the terms and conditions of\n * CANN Open Software License Agreement Version 2.0 (the \"License\").\n * Please refer to the License for details. You may not use this file except in compliance with the License.\n * THIS SOFTWARE IS PROVIDED ON AN \"AS IS\" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,\n * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.\n * See LICENSE in the root of the software repository for the full text of the License.\n */\n\n#ifndef OP_API_INC_LEVEL2_ACLNN_ABS_H_\n#define OP_API_INC_LEVEL2_ACLNN_ABS_H_\n\n#include \"aclnn_util.h\"\n#include \"aclnn/aclnn_base.h\"\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n#define ACLNN_MAX_SHAPE_RANK 8\n\n/**\n * @brief aclnnAbs的第一段接口，根据具体的计算流程，计算workspace大小。\n * @domain aclnn_math\n * 算子功能：返回输入Tensor中每个元素绝对值的结果\n * 计算公式：\n * $$ out_{i} = abs(self_{i}) $$\n *\n * 计算图：\n * ```mermaid\n * graph LR\n *   A[(self)]--->B([l0op::Contiguous])\n *   B--->C([l0op::Abs])\n *   C--->D([l0op::ViewCopy])\n *   D--->E[(out)]\n * ```\n *\n * @param [in] self: 待进行abs计算的入参。npu device侧的aclTensor,\n * 数据类型支持BFLOAT16(仅昇腾910B AI处理器、昇腾910_93 AI处理器、昇腾950 AI处理器支持)FLOAT、FLOAT16、DOUBLE、\n * INT8、INT16、INT32、INT64、UINT8、BOOL，数据格式支持ND，支持非连续的Tensor。\n * @param [in] out: abs计算的出参。npu device侧的aclTensor,\n * 数据类型支持BFLOAT16(仅昇腾910B AI处理器、昇腾910_93 AI处理器、昇腾950 AI处理器支持)FLOAT、FLOAT16、DOUBLE、\n * INT8、INT16、INT32、INT64、UINT8、BOOL，数据格式支持ND，支持非连续的Tensor。\n * @param [out] workspaceSize: 返回用户需要在npu device侧申请的workspace大小。\n * @param [out] executor: 返回op执行器，包括算子计算流程\n * @return aclnnStatus: 返回状态码\n */\nACLNN_API aclnnStatus\naclnnAbsGetWorkspaceSize(const aclTensor* self, aclTensor* out, uint64_t* workspaceSize, aclOpExecutor** executor);\n\n/**\n * @brief aclnnAbs的第二段接口，用于执行计算。\n * @param [in] workspace: 在npu device侧申请的workspace内存起址。\n * @param [in] workspaceSize: 在npu device侧申请的workspace大小，由第一段接口aclnnAbsGetWorkspaceSize获取。\n * @param [in] exector: op执行器，包含了算子计算流程。\n * @param [in] stream: acl stream流。\n * @return aclnnStatus: 返回状态码\n */\nACLNN_API aclnnStatus\naclnnAbs(void* workspace, uint64_t workspaceSize, aclOpExecutor* executor, const aclrtStream stream);\n\n#ifdef __cplusplus\n}\n#endif\n\n#endif // OP_API_INC_LEVEL2_ACLNN_ABS_H_",
+                    "file_功能": "定义aclnnAbs算子的Level2 API头文件，提供获取Workspace大小和执行绝对值计算的两段式接口声明，支持多种数据类型及非连续Tensor。"
+                },
+                "level3": {
+                    "tree_id": "abs/base（## Abs算子基础实现目录，封装API接口、主机逻辑、图元数据、分块策略、内核计算及测试用例等核心模块）\n├── abs/base/op_api（## Abs算子API层实现目录，提供ACLNN接口定义、参数校验、数据类型适配及主机端调度入口）\n│   ├── aclnn_abs.cpp 实现Ascend NPU上Abs算子的ACLNN API层逻辑，负责参数校验、数据类型适配、内存布局处理及计算任务编排。\n│   ├── aclnn_abs.h 定义aclnnAbs算子的Level2 API头文件，提供获取Workspace大小和执行绝对值计算的两段式接口声明，支持多种数据类型及非连续Tensor。\n│   ├── abs.h 该文件是Abs算子Level 0 API的头文件，定义了面向底层执行器的绝对值计算接口声明，作为算子框架中Host侧调用Kernel的入口抽象层。\n│   └── abs.cpp 实现Abs算子的主机端调度逻辑，包括输出张量分配、形状推导、数据类型校验及根据芯片架构动态选择AiCore或AiCPU执行路径。\n├── abs/base/op_graph（## Abs算子图引擎注册目录，定义GE原型信息、输入输出接口及框架兼容性元数据）\n│   └── abs_proto.h 定义Abs算子在GE图引擎中的原型注册信息，声明算子的输入输出接口、支持的数据类型及框架兼容性，是算子接入计算图的基础元数据描述文件。\n├── abs/base/op_host（## Abs算子主机端通用逻辑目录，包含元数据定义、形状推导及特定架构Tiling策略实现）\n│   ├── abs_def.cpp 定义Abs算子的元数据规范，注册输入输出张量的数据类型、格式约束及AI Core硬件执行配置，是算子在框架中识别与调度的基础声明文件。\n│   └── abs_infershape.cpp 实现Abs算子的形状与数据类型推导逻辑。\n│   └── abs/base/op_host/arch35（## Abs算子Arch35架构主机端Tiling策略目录，负责分块参数生成与硬件资源适配）\n│   │   ├── abs_tiling_arch35.h 该文件定义了Arch35架构下Abs算子的Tiling策略头文件，负责声明主机端分块计算所需的数据结构与接口，用于指导内核按硬件资源进行任务切分。\n│   │   └── abs_tiling_arch35.cpp 该文件负责Ascend Arch35架构下Abs算子的Tiling策略生成。\n├── abs/base/op_kernel（## Abs算子设备端Kernel实现目录，包含Tiling数据结构、Kernel入口函数及DAG计算逻辑）\n│   ├── abs_apt.cpp 实现Abs算子在AI Core上的底层计算逻辑，作为设备端Kernel入口函数。\n│   └── abs_struct.h 定义Abs算子内核层专用的Tiling数据结构，用于在Host与Device间传递分块计算参数。\n│   └── abs/base/op_kernel/arch35（## Abs算子Arch35架构设备端Kernel目录，实现DAG计算流水线及复数高精度运算逻辑）\n│   │   ├── abs_dag.h 定义Abs算子在Arch35架构下的设备端DAG（有向无环图）计算流水线，通过模板化数据流编排实现绝对值运算的自动化调度与内存管理。\n│   │   └── abs_complex_dag.h 实现复数绝对值算子的AI Core底层DAG计算逻辑。\n└── abs/base/tests（## Abs算子单元测试总目录，覆盖API校验、形状推导及Tiling策略等功能的验证代码）\n    └── abs/base/tests/ut（## Abs算子单元测试集合目录，集中管理API、形状推导及Tiling策略的GTest验证代码）\n        ├── abs/base/tests/ut/op_api（## Abs算子API层单元测试目录，验证ACLNN接口的参数校验与Workspace获取功能）\n        │   └── test_aclnn_abs.cpp 该文件是Abs算子API层的单元测试代码，基于GTest框架验证`aclnnAbs`接口的参数校验逻辑。\n        └── abs/base/tests/ut/op_host（## Abs算子主机端逻辑单元测试目录，验证形状推导及Tiling策略在不同场景下的正确性）\n        │   └── test_abs_infershape.cpp 该文件是Abs算子形状推导（Infershape）功能的单元测试代码。\n            └── abs/base/tests/ut/op_host/arch35（## Abs算子Arch35架构Tiling策略单元测试目录，验证分块参数生成的正确性与异常处理）\n            │   └── test_abs_tiling_arch35.cpp 该文件是Abs算子在Arch35架构下的Tiling策略单元测试，用于验证不同数据类型（FP16/32、INT8/16/32/64、BF16及复数类型）的切分参数生成正确性，并覆盖输入输出类型不匹配、空Tensor等异常场景。"
+                }
+            },
+            "evidence": [
+                {
+                    "evidence_information": {
+                        "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.h",
+                        "file_name": "aclnn_abs.h",
+                        "file_功能": "定义aclnnAbs算子的Level2 API头文件，提供获取Workspace大小和执行绝对值计算的两段式接口声明，支持多种数据类型及非连续Tensor。",
+                        "file_content": "/**\n * Copyright (c) 2025 Huawei Technologies Co., Ltd.\n * This program is free software, you can redistribute it and/or modify it under the terms and conditions of\n * CANN Open Software License Agreement Version 2.0 (the \"License\").\n * Please refer to the License for details. You may not use this file except in compliance with the License.\n * THIS SOFTWARE IS PROVIDED ON AN \"AS IS\" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,\n * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.\n * See LICENSE in the root of the software repository for the full text of the License.\n */\n\n#ifndef OP_API_INC_LEVEL2_ACLNN_ABS_H_\n#define OP_API_INC_LEVEL2_ACLNN_ABS_H_\n\n#include \"aclnn_util.h\"\n#include \"aclnn/aclnn_base.h\"\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n#define ACLNN_MAX_SHAPE_RANK 8\n\n/**\n * @brief aclnnAbs的第一段接口，根据具体的计算流程，计算workspace大小。\n * @domain aclnn_math\n * 算子功能：返回输入Tensor中每个元素绝对值的结果\n * 计算公式：\n * $$ out_{i} = abs(self_{i}) $$\n *\n * 计算图：\n * ```mermaid\n * graph LR\n *   A[(self)]--->B([l0op::Contiguous])\n *   B--->C([l0op::Abs])\n *   C--->D([l0op::ViewCopy])\n *   D--->E[(out)]\n * ```\n *\n * @param [in] self: 待进行abs计算的入参。npu device侧的aclTensor,\n * 数据类型支持BFLOAT16(仅昇腾910B AI处理器、昇腾910_93 AI处理器、昇腾950 AI处理器支持)FLOAT、FLOAT16、DOUBLE、\n * INT8、INT16、INT32、INT64、UINT8、BOOL，数据格式支持ND，支持非连续的Tensor。\n * @param [in] out: abs计算的出参。npu device侧的aclTensor,\n * 数据类型支持BFLOAT16(仅昇腾910B AI处理器、昇腾910_93 AI处理器、昇腾950 AI处理器支持)FLOAT、FLOAT16、DOUBLE、\n * INT8、INT16、INT32、INT64、UINT8、BOOL，数据格式支持ND，支持非连续的Tensor。\n * @param [out] workspaceSize: 返回用户需要在npu device侧申请的workspace大小。\n * @param [out] executor: 返回op执行器，包括算子计算流程\n * @return aclnnStatus: 返回状态码\n */\nACLNN_API aclnnStatus\naclnnAbsGetWorkspaceSize(const aclTensor* self, aclTensor* out, uint64_t* workspaceSize, aclOpExecutor** executor);\n\n/**\n * @brief aclnnAbs的第二段接口，用于执行计算。\n * @param [in] workspace: 在npu device侧申请的workspace内存起址。\n * @param [in] workspaceSize: 在npu device侧申请的workspace大小，由第一段接口aclnnAbsGetWorkspaceSize获取。\n * @param [in] exector: op执行器，包含了算子计算流程。\n * @param [in] stream: acl stream流。\n * @return aclnnStatus: 返回状态码\n */\nACLNN_API aclnnStatus\naclnnAbs(void* workspace, uint64_t workspaceSize, aclOpExecutor* executor, const aclrtStream stream);\n\n#ifdef __cplusplus\n}\n#endif\n\n#endif // OP_API_INC_LEVEL2_ACLNN_ABS_H_"
+                    },
+                    "gene_rule": {
+                        "deter": "",
+                        "target": [
+                            [
+                                "function_proto_clarify"
+                            ],
+                            [
+                                "sub_function_sign"
+                            ]
+                        ]
+                    },
+                    "evidence_id": "ev_009"
+                }
+            ],
+            "note": "以下为file型标准结构"
+        },
+        {
+            "anchor_id": "anchor_function_010",
+            "anchor_information": {
+                "type": "function",
+                "level1": {
+                    "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.h",
+                    "function_name": "aclnnAbsGetWorkspaceSize"
+                },
+                "level2": {
+                    "call": [
+                        "HasEmptyTensor",
+                        "ReleaseTo",
+                        "SpecialDtypeTensorNeedPassthrough",
+                        "GetWorkspaceSize",
+                        "IsSupportComplexAbs",
+                        "GetDataType",
+                        "Abs",
+                        "get"
+                    ],
+                    "callee": [],
+                    "return": [
+                        "ACLNN_ERR_INNER_CREATE_EXECUTOR",
+                        "ACLNN_ERR_INNER_NULLPTR"
+                    ]
+                },
+                "level3": {
+                    "function_sign": "aclnnStatus aclnnAbsGetWorkspaceSize(const aclTensor* self, aclTensor* out, uint64_t* workspaceSize, aclOpExecutor** executor)"
+                }
+            },
+            "evidence": [
+                {
+                    "evidence_information": {
+                        "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.h",
+                        "content": [
+                            {
+                                "function_hash": "aclnnStatus aclnnAbsGetWorkspaceSize(const aclTensor* self, aclTensor* out, uint64_t* workspaceSize, aclOpExecutor** executor)",
+                                "full_function": ""
+                            }
+                        ],
+                        "call": [
+                            "HasEmptyTensor",
+                            "ReleaseTo",
+                            "SpecialDtypeTensorNeedPassthrough",
+                            "GetWorkspaceSize",
+                            "IsSupportComplexAbs",
+                            "GetDataType",
+                            "Abs",
+                            "get"
+                        ],
+                        "callee": [],
+                        "return": [
+                            "ACLNN_ERR_INNER_CREATE_EXECUTOR",
+                            "ACLNN_ERR_INNER_NULLPTR"
+                        ]
+                    },
+                    "gene_rule": {
+                        "deter": "",
+                        "target": [
+                            [
+                                "sub_function_sign"
+                            ]
+                        ]
+                    },
+                    "evidence_id": "ev_010"
+                }
+            ],
+            "note": "以下为function型标准结构"
+        },
+        {
+            "anchor_id": "anchor_function_011",
+            "anchor_information": {
+                "type": "function",
+                "level1": {
+                    "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.h",
+                    "function_name": "aclnnAbs"
+                },
+                "level2": {
+                    "call": [
+                        "CommonOpExecutorRun"
+                    ],
+                    "callee": [],
+                    "return": []
+                },
+                "level3": {
+                    "function_sign": "aclnnStatus aclnnAbs(void* workspace, uint64_t workspaceSize, aclOpExecutor* executor, const aclrtStream stream)"
+                }
+            },
+            "evidence": [
+                {
+                    "evidence_information": {
+                        "file_path": "out/operator_storage/abs/base/op_api/aclnn_abs.h",
+                        "content": [
+                            {
+                                "function_hash": "aclnnStatus aclnnAbs(void* workspace, uint64_t workspaceSize, aclOpExecutor* executor, const aclrtStream stream)",
+                                "full_function": ""
+                            }
+                        ],
+                        "call": [
+                            "CommonOpExecutorRun"
+                        ],
+                        "callee": [],
+                        "return": []
+                    },
+                    "gene_rule": {
+                        "deter": "",
+                        "target": [
+                            [
+                                "sub_function_sign"
+                            ]
+                        ]
+                    },
+                    "evidence_id": "ev_011"
+                }
+            ],
+            "note": "以下为function型标准结构"
+        }
+    ]
+}

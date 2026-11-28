@@ -1,0 +1,19 @@
+strategy_id: P147
+description: "P147: NPU 卷积输入 12-sig-bit 舍入模拟（host 侧复现 F.conv2d 数值）"
+
+strategy_meta:
+  id: "P147"
+  slug: "P147_npu_conv_12sig_rounding_emulation"
+  title: "P147: NPU 卷积输入 12-sig-bit 舍入模拟（host 侧复现 F.conv2d 数值）"
+  bottlenecks: [compute_bound, scalar_compute]
+  op_families: [attention, cv_fusion, elementwise]
+  conflicts_with: []
+  synergizes_with: [P144, P129, A1]
+  requires: []
+  complexity: "L1"
+  deprecated: false
+  has_preconditions: false
+  has_playbook: false
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p147_npu_conv_12sig_rounding_emulation.md"
+  quantified_gain: [{"shape": "64_TripletAttention 50-case（910B2C，K=3/5/7 全覆盖）", "baseline_us": 0, "optimized_us": 0, "speedup": 1.0, "source": "ops-perf-evolution output/64_TripletAttention_v2：K=3 大 case 相对误差超 verifier 桶 → RoundTo12Sig 后 50/50 通过（使 1.28x 结果成立的前提）"}]

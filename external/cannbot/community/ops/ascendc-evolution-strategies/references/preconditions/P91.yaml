@@ -1,0 +1,40 @@
+strategy_id: P91
+
+strategy_meta:
+  id: "P91"
+  slug: "P91_softmax_grad_precompute"
+  title: "P91: Softmax 梯度预计算独立阶段 (Softmax Gradient Pre-Computation Phase)"
+  bottlenecks: [compute_bound]
+  op_families: [flash_attention]
+  conflicts_with: []
+  synergizes_with: [P88, P79]
+  requires: []
+  complexity: "L2"
+  deprecated: false
+  has_preconditions: true
+  has_playbook: true
+  doc_repo: cannbot-knowledge
+  doc_path: "knowledge/contrib/ascendc/optimizations/evolution_strategies/cards/p91_softmax_grad_precompute.md"
+  playbook_path: "knowledge/contrib/ascendc/runbooks/performance/p91_softmax_grad_precompute.md"
+  playbook_slug: "P91_softmax_grad_precompute"
+checks:
+  - id: has_softmax
+    type: grep_count
+    pattern: "softmax.*grad|SoftmaxGrad|sfmg|flash.*attention.*grad|attention.*backward"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 Softmax Gradient 或 Flash Attention Backward 代码 → 不适用 P91。"
+
+  - id: has_reducesum
+    type: grep_count
+    pattern: "ReduceSum|ReduceMax|ReduceMin"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 Reduce 操作 → P91 仅适用于需要 dY*O ReduceSum 的 FA 反向场景。"
+
+  - id: has_mul
+    type: grep_count
+    pattern: "Mul.*Vec|Broadcast|dY|dy.*O"
+    files: [kernel]
+    expected: ">= 1"
+    fail_msg: "未检测到 dY*O 逐元素乘法 → 不适用 P91。"
